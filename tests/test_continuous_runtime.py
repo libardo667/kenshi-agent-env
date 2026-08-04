@@ -4554,6 +4554,7 @@ def test_an_accepted_plan_leaves_a_trace_the_next_plan_can_read(tmp_path) -> Non
         PlanDisposition,
         PlannerContextManifest,
     )
+    from kenshi_agent.outcome_recorder import OutcomeRecorder
     from kenshi_agent.runtime import AgentRuntime
 
     store = MemoryStore(
@@ -4566,6 +4567,16 @@ def test_an_accepted_plan_leaves_a_trace_the_next_plan_can_read(tmp_path) -> Non
     runner.run_id = "continuity"
     runner.logger = SimpleNamespace(write=lambda *a, **k: None)
     runner._ledger = ledger
+    runner.outcomes = OutcomeRecorder(
+        ledger=ledger,
+        logger=runner.logger,
+        reporter=None,
+        run_id="continuity",
+        decorate=lambda observation: observation,
+        log_observation=lambda observation: None,
+        log_world_state_update=lambda update: None,
+        state_store=lambda: None,
+    )
     runner.continuity = ContinuityService(
         run_id="continuity",
         store=store,
@@ -4620,7 +4631,7 @@ def test_an_accepted_plan_leaves_a_trace_the_next_plan_can_read(tmp_path) -> Non
     assert not any(item.startswith("Set out to") for item in recalled)
 
     started = datetime.now(UTC)
-    runner._record_plan_outcome(
+    runner.outcomes.record_plan_outcome(
         plan,
         disposition=PlanDisposition.FAILED,
         reason="The exit was never reached.",

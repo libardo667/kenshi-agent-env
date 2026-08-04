@@ -38,6 +38,7 @@ from kenshi_agent.non_progress import (
     retry_state_fingerprint,
     unchanged_definitive_no_op_reason,
 )
+from kenshi_agent.outcome_recorder import OutcomeRecorder
 from kenshi_agent.runtime import AgentRuntime
 
 
@@ -910,6 +911,16 @@ def test_runtime_records_the_post_action_purchase_retry_state() -> None:
         action_outcome_limit=4,
     )
     runtime.logger = Logger()
+    runtime.outcomes = OutcomeRecorder(
+        ledger=runtime._ledger,
+        logger=runtime.logger,
+        reporter=None,
+        run_id=runtime.run_id,
+        decorate=lambda observation: observation,
+        log_observation=lambda observation: None,
+        log_world_state_update=lambda update: None,
+        state_store=lambda: None,
+    )
     receipt = ActionReceipt(
         action=action,
         control_mode=ControlMode.NATIVE_ASSISTED,
@@ -949,7 +960,7 @@ def test_runtime_records_the_post_action_purchase_retry_state() -> None:
         confidence=1.0,
     )
 
-    runtime._record_action_outcome(  # noqa: SLF001
+    runtime.outcomes.record_action_outcome(
         decision,
         receipt,
         before,

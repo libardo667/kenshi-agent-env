@@ -34,10 +34,11 @@ from kenshi_agent.models import (
     Transition,
     WorldStateRevision,
 )
+from kenshi_agent.outcome_recorder import OutcomeRecorder, TelemetryChange
 from kenshi_agent.planners import HeuristicPlanner
 from kenshi_agent.planners.base import Planner
 from kenshi_agent.reflexes import ReflexEngine
-from kenshi_agent.runtime import AgentRuntime, TelemetryChange
+from kenshi_agent.runtime import AgentRuntime
 from kenshi_agent.safety import ActionGuard
 from kenshi_agent.session_log import SessionLogger
 from kenshi_agent.skills import MacroRegistry
@@ -368,7 +369,7 @@ def test_interaction_requires_movement_or_dialogue_not_ambient_frame_change() ->
         dry_run=False,
     )
 
-    assessment, feedback = AgentRuntime._assess_outcome(
+    assessment, feedback = OutcomeRecorder._assess_outcome(
         receipt,
         None,
         visual_change=0.5,
@@ -420,7 +421,7 @@ def test_telemetry_changes_report_vendor_route_progress() -> None:
         }
     )
 
-    changes = AgentRuntime._telemetry_changes(before, after)
+    changes = OutcomeRecorder._telemetry_changes(before, after)
 
     assert "distance to Barman: 96.00 -> 82.00 (14.00 closer)" in changes
     assert "camera bearing to Barman: -70.0 -> -25.0 degrees" in changes
@@ -434,7 +435,7 @@ def test_purchase_outcome_requires_money_and_food_confirmation() -> None:
         dry_run=False,
     )
 
-    verified = AgentRuntime._assess_outcome(
+    verified = OutcomeRecorder._assess_outcome(
         receipt,
         TelemetrySnapshot(),
         visual_change=0.1,
@@ -444,7 +445,7 @@ def test_purchase_outcome_requires_money_and_food_confirmation() -> None:
         ],
         movement_distance=0.0,
     )
-    unverified = AgentRuntime._assess_outcome(
+    unverified = OutcomeRecorder._assess_outcome(
         receipt,
         TelemetrySnapshot(),
         visual_change=0.1,
@@ -527,7 +528,7 @@ def test_displacement_without_new_choices_is_not_progress() -> None:
         dry_run=False,
     )
 
-    assessment, feedback = AgentRuntime._assess_outcome(
+    assessment, feedback = OutcomeRecorder._assess_outcome(
         receipt,
         TelemetrySnapshot(),
         visual_change=0.6,
@@ -556,7 +557,7 @@ def test_displacement_that_reveals_a_new_choice_is_progress() -> None:
         dry_run=False,
     )
 
-    assessment, _ = AgentRuntime._assess_outcome(
+    assessment, _ = OutcomeRecorder._assess_outcome(
         receipt,
         TelemetrySnapshot(),
         visual_change=0.6,
@@ -578,7 +579,7 @@ def test_world_time_transition_alone_is_not_progress() -> None:
         dry_run=False,
     )
 
-    assessment, feedback = AgentRuntime._assess_outcome(
+    assessment, feedback = OutcomeRecorder._assess_outcome(
         receipt,
         TelemetrySnapshot(),
         visual_change=0.0,
@@ -594,14 +595,14 @@ def test_world_time_transition_alone_is_not_progress() -> None:
 
 
 def test_camera_recovery_that_found_nothing_to_do_is_not_progress() -> None:
-    already_clear = AgentRuntime._assess_outcome(
+    already_clear = OutcomeRecorder._assess_outcome(
         _camera_recovery_receipt(CameraRecoveryStatus.ALREADY_CLEAR),
         TelemetrySnapshot(),
         visual_change=0.0,
         telemetry_changes=[],
         movement_distance=0.0,
     )
-    recovered = AgentRuntime._assess_outcome(
+    recovered = OutcomeRecorder._assess_outcome(
         _camera_recovery_receipt(CameraRecoveryStatus.RECOVERED),
         TelemetrySnapshot(),
         visual_change=0.0,
@@ -642,7 +643,7 @@ def test_telemetry_changes_mark_mechanical_deltas_as_not_decision_relevant() -> 
         }
     )
 
-    changes = AgentRuntime._telemetry_changes_detailed(before, after)
+    changes = OutcomeRecorder._telemetry_changes_detailed(before, after)
     relevant = {change.label for change in changes if change.decision_relevant}
     mechanical = {change.label for change in changes if not change.decision_relevant}
 
@@ -652,7 +653,7 @@ def test_telemetry_changes_mark_mechanical_deltas_as_not_decision_relevant() -> 
         "Puhat moved 50.00 world units",
     }
     assert not relevant
-    assert [change.label for change in changes] == AgentRuntime._telemetry_changes(
+    assert [change.label for change in changes] == OutcomeRecorder._telemetry_changes(
         before,
         after,
     )
@@ -666,7 +667,7 @@ def test_telemetry_changes_name_nutrition_by_its_model_facing_meaning() -> None:
         {"squad": [{"id": "char-hep", "name": "Hep", "selected": True, "hunger": 2.6}]}
     )
 
-    labels = AgentRuntime._telemetry_changes(before, after)
+    labels = OutcomeRecorder._telemetry_changes(before, after)
 
     assert "nutrition reserve: 2.80 -> 2.60" in labels
     assert not any(label.startswith("hunger") for label in labels)
