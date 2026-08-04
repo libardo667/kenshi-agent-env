@@ -326,6 +326,26 @@
       "title": "ApproachDialogueTargetAction",
       "type": "object"
     },
+    "AuthorizationCode": {
+      "description": "Why an operation may or may not emit host input right now.",
+      "enum": [
+        "allowed",
+        "calibration_drifted",
+        "observation_unavailable",
+        "telemetry_stale",
+        "telemetry_age_ceiling_unknown",
+        "telemetry_age_unknown",
+        "telemetry_too_old",
+        "revision_regressed",
+        "control_mode_changed",
+        "input_authority_withdrawn",
+        "operation_unauthorized",
+        "precondition_untrue",
+        "failure_condition_active"
+      ],
+      "title": "AuthorizationCode",
+      "type": "string"
+    },
     "CalibrationIdentity": {
       "additionalProperties": false,
       "description": "Every fact a profile-calibrated pointer action depends on.\n\nEach field is nullable and a missing value stays missing. A null is never\ntreated as a match, because an unobserved window mode or UI scale is not\nevidence that it is the expected one.",
@@ -1462,6 +1482,17 @@
       "properties": {
         "decision": {
           "$ref": "#/$defs/InputBoundaryDecision"
+        },
+        "code": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AuthorizationCode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "reason": {
           "maxLength": 1000,

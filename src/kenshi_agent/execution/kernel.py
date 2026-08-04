@@ -7,13 +7,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from ..authorization import InputBoundaryDecision
 from ..input_boundary import ExecutionToken
 from ..models import (
     Action,
     CommandDispatchContext,
     ConditionEvaluation,
     ConditionResult,
-    InputBoundaryDecision,
     Observation,
     ObservationPolicy,
     PlanEnvelope,

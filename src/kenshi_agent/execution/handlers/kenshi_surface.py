@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Literal, Protocol, TypeVar
 
 from ... import operation_definitions as operations
+from ...authorization import InputBoundaryDecision
 from ...config import CaptureConfig, ControlsConfig, RuntimeConfig
 from ...control.base import InputController, PrimitiveInputAction
 from ...control.calibration import (
@@ -36,7 +37,6 @@ from ...models import (
     ContextActionKind,
     ControlMode,
     HotkeyAction,
-    InputBoundaryDecision,
     KeyAction,
     MouseButtonAction,
     MouseDragAction,

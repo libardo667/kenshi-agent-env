@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from .authorization import AuthorizationCode, InputBoundaryDecision
 from .control.calibration import calibration_allows_input
 from .models import (
     CalibrationReport,
@@ -21,7 +22,6 @@ from .models import (
     ConditionEvaluation,
     ConditionResult,
     ControlMode,
-    InputBoundaryDecision,
     InputBoundaryReport,
     Observation,
     WorldStateRevision,
@@ -82,6 +82,7 @@ class ExecutionToken(_ExecutionTokenState):
 
     def _reject(
         self,
+        code: AuthorizationCode,
         reason: str,
         *,
         lease_wait_seconds: float,
@@ -90,6 +91,7 @@ class ExecutionToken(_ExecutionTokenState):
     ) -> InputBoundaryReport:
         return self._report(
             InputBoundaryDecision.REJECTED,
+            code,
             reason,
             lease_wait_seconds=lease_wait_seconds,
             boundary_revision=boundary_revision,
@@ -99,6 +101,7 @@ class ExecutionToken(_ExecutionTokenState):
     def _report(
         self,
         decision: InputBoundaryDecision,
+        code: AuthorizationCode,
         reason: str,
         *,
         lease_wait_seconds: float,
@@ -107,6 +110,7 @@ class ExecutionToken(_ExecutionTokenState):
     ) -> InputBoundaryReport:
         return InputBoundaryReport(
             decision=decision,
+            code=code,
             reason=reason,
             lease_wait_seconds=lease_wait_seconds,
             plan_id=self.plan_id,
@@ -128,6 +132,7 @@ class ExecutionToken(_ExecutionTokenState):
         # condition still holds, because the coordinates no longer mean anything.
         if calibration is not None and not calibration_allows_input(calibration):
             return self._reject(
+                AuthorizationCode.CALIBRATION_DRIFTED,
                 "Calibration identity is no longer usable "  # mutation: diagnostic-only
                 "at the input boundary "  # mutation: diagnostic-only
                 f"({calibration.status.value}): {calibration.reason}",  # mutation: diagnostic-only
@@ -137,6 +142,7 @@ class ExecutionToken(_ExecutionTokenState):
         observation = self.latest_observation()
         if observation is None:
             return self._reject(
+                AuthorizationCode.OBSERVATION_UNAVAILABLE,
                 "No canonical observation is available "  # mutation: diagnostic-only
                 "at the input boundary, so "  # mutation: diagnostic-only
                 "current state cannot be proven.",  # mutation: diagnostic-only
@@ -146,6 +152,7 @@ class ExecutionToken(_ExecutionTokenState):
         boundary_revision = observation.world_revision
         if observation.telemetry_stale:
             return self._reject(
+                AuthorizationCode.TELEMETRY_STALE,
                 "The canonical telemetry is stale "  # mutation: diagnostic-only
                 "at the input boundary.",  # mutation: diagnostic-only
                 lease_wait_seconds=lease_wait_seconds,
@@ -153,6 +160,7 @@ class ExecutionToken(_ExecutionTokenState):
             )
         if self.max_telemetry_age_seconds is None:
             return self._reject(
+                AuthorizationCode.TELEMETRY_AGE_CEILING_UNKNOWN,
                 "The telemetry age ceiling is unknown "  # mutation: diagnostic-only
                 "at the input boundary, so "  # mutation: diagnostic-only
                 "fresh authority cannot be proven.",  # mutation: diagnostic-only
@@ -161,6 +169,7 @@ class ExecutionToken(_ExecutionTokenState):
             )
         if observation.telemetry_age_seconds is None:
             return self._reject(
+                AuthorizationCode.TELEMETRY_AGE_UNKNOWN,
                 "The canonical telemetry age is unknown "  # mutation: diagnostic-only
                 "at the input boundary, so "  # mutation: diagnostic-only
                 "fresh authority cannot be proven.",  # mutation: diagnostic-only
@@ -169,6 +178,7 @@ class ExecutionToken(_ExecutionTokenState):
             )
         if observation.telemetry_age_seconds > self.max_telemetry_age_seconds:
             return self._reject(
+                AuthorizationCode.TELEMETRY_TOO_OLD,
                 "The canonical telemetry age at the input boundary "  # mutation: diagnostic-only
                 f"({observation.telemetry_age_seconds:.3f}s) "  # mutation: diagnostic-only
                 "exceeds the configured "  # mutation: diagnostic-only
@@ -178,6 +188,7 @@ class ExecutionToken(_ExecutionTokenState):
             )
         if self.validated_revision.is_later_than(boundary_revision):
             return self._reject(
+                AuthorizationCode.REVISION_REGRESSED,
                 "The canonical revision regressed "  # mutation: diagnostic-only
                 "while the input lease was pending.",  # mutation: diagnostic-only
                 lease_wait_seconds=lease_wait_seconds,
@@ -186,6 +197,7 @@ class ExecutionToken(_ExecutionTokenState):
 
         if observation.control_mode != self.control_mode:
             return self._reject(
+                AuthorizationCode.CONTROL_MODE_CHANGED,
                 "Control mode changed from "  # mutation: diagnostic-only
                 f"{self.control_mode.value!r} "  # mutation: diagnostic-only
                 f"to {observation.control_mode.value!r} "  # mutation: diagnostic-only
@@ -202,6 +214,7 @@ class ExecutionToken(_ExecutionTokenState):
         ]
         if blocking:
             return self._reject(
+                AuthorizationCode.INPUT_AUTHORITY_WITHDRAWN,
                 "Input authority was withdrawn at the boundary "  # mutation: diagnostic-only
                 f"by {blocking[0]!r}.",  # mutation: diagnostic-only
                 lease_wait_seconds=lease_wait_seconds,
@@ -212,6 +225,7 @@ class ExecutionToken(_ExecutionTokenState):
             authority_error = self.authority_validator(observation)
             if authority_error is not None:
                 return self._reject(
+                    AuthorizationCode.OPERATION_UNAUTHORIZED,
                     "The action no longer passes its safety "  # mutation: diagnostic-only
                     "and reference checks "  # mutation: diagnostic-only
                     f"at the input boundary: {authority_error}",  # mutation: diagnostic-only
@@ -233,6 +247,7 @@ class ExecutionToken(_ExecutionTokenState):
         )
         if blocked is not None:
             return self._reject(
+                AuthorizationCode.PRECONDITION_UNTRUE,
                 "A plan assumption or step precondition "  # mutation: diagnostic-only
                 "is no longer true at the input boundary: "  # mutation: diagnostic-only
                 f"{blocked.result.value}: {blocked.reason}",  # mutation: diagnostic-only
@@ -264,6 +279,7 @@ class ExecutionToken(_ExecutionTokenState):
                 )
             )
             return self._reject(
+                AuthorizationCode.FAILURE_CONDITION_ACTIVE,
                 reason,
                 lease_wait_seconds=lease_wait_seconds,
                 boundary_revision=boundary_revision,
@@ -272,6 +288,7 @@ class ExecutionToken(_ExecutionTokenState):
 
         return self._report(
             InputBoundaryDecision.REVALIDATED,
+            AuthorizationCode.ALLOWED,
             "Assumptions, preconditions, failure conditions, control mode, "
             "and input authority still hold on the latest canonical revision "
             "inside the input lease.",

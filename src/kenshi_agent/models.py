@@ -23,6 +23,7 @@ from pydantic import (
 )
 from pydantic_core import core_schema
 
+from .authorization import AuthorizationCode, InputBoundaryDecision
 from .nutrition import (
     model_facing_telemetry_payload,
 )
@@ -253,14 +254,6 @@ class CalibrationReport(StrictModel):
     observed: CalibrationIdentity | None = None
     mismatched_fields: list[str] = Field(default_factory=list, max_length=16)
     unobserved_fields: list[str] = Field(default_factory=list, max_length=16)
-
-
-class InputBoundaryDecision(StrEnum):
-    """Outcome of the final revalidation performed inside the acquired input lease."""
-
-    NOT_REQUIRED = "not_required"
-    REVALIDATED = "revalidated"
-    REJECTED = "rejected"
 
 
 class InterruptPolicy(StrEnum):
@@ -5073,6 +5066,10 @@ class InputBoundaryReport(StrictModel):
     """
 
     decision: InputBoundaryDecision
+    # The typed verdict behind `reason`. Records written before authorization
+    # codes existed carry none, so this stays optional rather than defaulting to
+    # a value that would reinterpret an older refusal as something it never said.
+    code: AuthorizationCode | None = None
     reason: str = Field(min_length=1, max_length=1000)
     lease_wait_seconds: float = Field(default=0.0, ge=0.0)
     plan_id: str | None = Field(default=None, max_length=96)
