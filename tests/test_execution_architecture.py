@@ -174,3 +174,44 @@ def test_the_control_surface_holds_no_operation_semantics() -> None:
         if isinstance(node, ast.ClassDef) and node.name == "KenshiControlSurface"
     )
     assert _defined_methods(surface) & operations == set()
+
+
+def test_the_run_loop_carries_no_operation_family_logic() -> None:
+    """Sequencing must not know what any particular operation means.
+
+    The coordinator decides when to observe, plan, execute and record. Which
+    operation is running is the operation definition's business and the
+    handler's, so a semantic action class or operation kind appearing inside the
+    loop means scheduling has taken back knowledge Stage 2 distributed.
+    """
+
+    kinds = {definition.kind for definition in OPERATION_DEFINITION_LIST}
+    families = {
+        definition.handler_key.split(".", 1)[0] for definition in OPERATION_DEFINITION_LIST
+    }
+    # Pause is host control shared by preemption and final safe state, not an
+    # operation family the loop reasons about.
+    allowed = {"Action", "StopAction", "PauseAction", "PlannerAction"}
+
+    runtime = next(
+        node
+        for node in _tree(SOURCE / "runtime.py").body
+        if isinstance(node, ast.ClassDef) and node.name == "AgentRuntime"
+    )
+    loop = next(
+        member
+        for member in runtime.body
+        if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and member.name == "_run_scheduled"
+    )
+    found: list[str] = []
+    for node in ast.walk(loop):
+        if (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and node.value in (kinds | families)
+        ):
+            found.append(f"runtime.py:{node.lineno}:{node.value}")
+        if isinstance(node, ast.Name) and node.id.endswith("Action") and node.id not in allowed:
+            found.append(f"runtime.py:{node.lineno}:{node.id}")
+    assert found == []
