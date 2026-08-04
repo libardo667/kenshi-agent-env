@@ -1292,3 +1292,59 @@ behavior under test.
 Worth considering after reconstruction: a progress-based stall terminal that
 ends an approach when position stops changing, rather than waiting out a
 wall-clock timeout that is sized for the slowest legitimate walk.
+
+### 19.3 A run bundle cannot say why an affordance was not offered
+
+Observed repeatedly while post-morteming `reconstruction-stage-2-vertical-r2`
+and `reconstruction-stage-4-r1`, 2026-08-03.
+
+Run bundles record the affordance that was *chosen* - `affordance_receipt` with
+its lifecycle - and never the menu it was chosen from. `planner_context_prepared`
+carries `current_target_ids` and counts, not offers. Observations are stored as
+digests, so `squad` and `ui.selected_character_ids` are absent entirely.
+
+The consequence is that the most common question after a disappointing run -
+"why didn't it do the obvious thing?" - is not answerable from the evidence. It
+has to be reconstructed by reading enumeration code, re-deriving gate conditions
+by hand, and inferring the offer set from telemetry fragments. That inference
+was wrong more than once in a single session, and being wrong is cheap to do
+confidently, because nothing contradicts it.
+
+Recording the offered affordance set per planner context - ids, operation kinds,
+and for anything enumerated but withheld, the gate that withheld it - turns an
+hour of archaeology into one query. It is also the only way to distinguish
+"the model ignored a good option" from "the option was never on the menu",
+which are different problems with different fixes.
+
+### 19.4 Authorability gates can be stricter than the invariant they protect
+
+Observed in `harvest_resource`, 2026-08-03.
+
+`bind_harvest_resource` binds an exact actor by identity:
+
+```python
+selected = [c for c in telemetry.squad if c.selected and c.id == action.actor_id]
+```
+
+That line is what makes the actor exact. The binding then *additionally*
+requires `telemetry.ui.selected_character_ids == [action.actor_id]` - that the
+squad selection be narrowed to precisely that one character - and
+`harvest_resource_is_currently_authorable` repeats the same demand before the
+affordance is offered at all.
+
+The singleton requirement is plausibly a need of the final inventory transfer,
+which drives one unambiguous recipient panel. It is not a need of travelling to
+the node or of mining, yet it gates the whole operation. A squad can walk to a
+resource together and have its primary actor work it; the exactness that
+conservation depends on comes from `actor_id`, not from the selection set being
+a singleton.
+
+The practical cost is that a multi-character start - `kae-03-broke-pair`, for
+instance - cannot harvest at all until something first narrows the selection,
+and nothing says so. The affordance is simply absent, with no stated reason,
+which is 19.3's problem wearing a different hat.
+
+Worth revisiting afterward: scope such gates to the phase that needs them.
+Requiring at bind time what only one late phase depends on removes an operation
+from the menu for situations it would have handled correctly.
+
