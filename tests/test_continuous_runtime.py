@@ -22,7 +22,7 @@ from kenshi_agent.config import MacroConfig, PlanningConfig, SafetyConfig
 from kenshi_agent.env import AgentEnvironment
 from kenshi_agent.evals import evaluate_log, replay_plan_lifecycle
 from kenshi_agent.input_boundary import ExecutionToken
-from kenshi_agent.memory import MemoryStore
+from kenshi_agent.memory import MemoryStore, RecallBudget
 from kenshi_agent.models import (
     GAME_SPEED_MULTIPLIER_BY_GEAR,
     Action,
@@ -4572,6 +4572,9 @@ def test_an_accepted_plan_leaves_a_trace_the_next_plan_can_read(tmp_path) -> Non
         ledger=ledger,
         logger=runner.logger,
         control_mode=ControlMode.INTERFACE_ONLY,
+        recall_budget=RecallBudget(commitments=4, current_target=4,
+                                   open_hypotheses=2, general=8),
+        fieldbook_project_limit=8,
         advisor_brief_ids=set,
     )
 

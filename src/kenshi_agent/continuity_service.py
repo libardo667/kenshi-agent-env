@@ -16,11 +16,12 @@ import sqlite3
 from collections import deque
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
+from typing import Any
 
 from .continuity import ContinuityAuthority, ContinuityLedger
 from .fieldbook import FieldbookTransitionError
 from .fieldbook_authority import FieldbookAuthority
-from .memory import MemoryStore
+from .memory import MemoryStore, RecallBudget
 from .models import (
     ActionReceipt,
     AuthoredPlannerContext,
@@ -43,9 +44,11 @@ from .models import (
     RecallMemoryAction,
 )
 from .runtime_continuity import (
+    ObservationRecall,
     build_fieldbook_read_receipt,
     build_memory_read_receipt,
     continuity_receipt_digests,
+    recall_for_observation,
     record_planner_delivery,
     search_durable_memory,
 )
@@ -68,6 +71,8 @@ class ContinuityService:
         ledger: ContinuityLedger,
         logger: SessionLogger,
         control_mode: ControlMode,
+        recall_budget: RecallBudget,
+        fieldbook_project_limit: int,
         advisor_brief_ids: Callable[[], set[str]],
         authority: ContinuityAuthority | None = None,
     ) -> None:
@@ -76,6 +81,8 @@ class ContinuityService:
         self._ledger = ledger
         self._logger = logger
         self._control_mode = control_mode
+        self._recall_budget = recall_budget
+        self._fieldbook_project_limit = fieldbook_project_limit
         self._authority = authority or ContinuityAuthority(
             run_id=run_id,
             store=store,
@@ -167,6 +174,51 @@ class ContinuityService:
                 step_index=observation.step_index,
                 payload={"boundary": failure.boundary, "reason": failure.reason},
             )
+
+    def recall(self, observation: Observation) -> ObservationRecall | None:
+        """Recall what this observation makes relevant, within the run's budget.
+
+        `None` means durable memory is disabled; an empty recall means memory was
+        consulted and had nothing, which is a different thing entirely.
+        """
+
+        if self._store is None:
+            return None
+        recalled = recall_for_observation(
+            self._store,
+            self._authority,
+            budget=self._recall_budget,
+            target_ids=observation.current_memory_target_ids(),
+        )
+        if recalled.failure is not None:
+            self._logger.write(
+                "continuity_store_failed",
+                step_index=observation.step_index,
+                payload={
+                    "boundary": recalled.failure.boundary,
+                    "reason": recalled.failure.reason,
+                },
+            )
+        return recalled
+
+    def fieldbook_index(self, observation: Observation) -> tuple[list[Any], Any]:
+        """List the projects a planner may see, or nothing if reads are degraded."""
+
+        if self._store is None or self._authority.reads_degraded_reason is not None:
+            return [], None
+        try:
+            return (
+                self._store.fieldbook.list_projects(limit=self._fieldbook_project_limit),
+                self._store.fieldbook.active_project_summary(),
+            )
+        except sqlite3.Error as exc:
+            reason = self._authority.quarantine_reads_after_store_failure(exc)
+            self._logger.write(
+                "continuity_store_failed",
+                step_index=observation.step_index,
+                payload={"boundary": "automatic_fieldbook_index", "reason": reason},
+            )
+            return [], None
 
     # --- commits -----------------------------------------------------------
 

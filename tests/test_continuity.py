@@ -85,7 +85,10 @@ def _attach_continuity(
 ) -> object:
     """Give a bare runner a real continuity service instead of a fake."""
 
+    from kenshi_agent.advisor import disabled_advisor_availability
+    from kenshi_agent.config import PlanningConfig
     from kenshi_agent.continuity_service import ContinuityService
+    from kenshi_agent.planner_context import PlannerContextAssembler
 
     service = ContinuityService(
         run_id=run_id,
@@ -93,10 +96,22 @@ def _attach_continuity(
         ledger=ledger,  # type: ignore[arg-type]
         logger=logger or SimpleNamespace(write=lambda *a, **k: None),  # type: ignore[arg-type]
         control_mode=ControlMode.INTERFACE_ONLY,
+        recall_budget=getattr(
+            runner,
+            "_recall_budget",
+            RecallBudget(commitments=4, current_target=4, open_hypotheses=2, general=8),
+        ),
+        fieldbook_project_limit=8,
         advisor_brief_ids=set,
         authority=authority,  # type: ignore[arg-type]
     )
     runner.continuity = service  # type: ignore[attr-defined]
+    runner.planner_context = PlannerContextAssembler(  # type: ignore[attr-defined]
+        continuity=service,
+        ledger=ledger,  # type: ignore[arg-type]
+        planning_config=getattr(runner, "planning_config", None) or PlanningConfig(),
+        advisor_availability=lambda _observation: disabled_advisor_availability(),
+    )
     return service
 
 def observation(
@@ -2604,7 +2619,7 @@ def test_decorating_observations_at_pump_rate_writes_nothing(tmp_path: Path) -> 
         current = observation(target_ids=("entity-a",))
         before = store._connection.total_changes
         for _ in range(30):
-            decorated = runner._with_memories(current)
+            decorated = runner.planner_context.decorate(current)
 
         assert store._connection.total_changes == before
         assert len(decorated.memories) == 2
@@ -3585,7 +3600,7 @@ def test_a_rejected_operation_is_shown_to_the_planner_that_would_repeat_it(
             plan_id="single-step",
             step_id="step-0",
         )
-        decorated = runner._with_memories(observation())
+        decorated = runner.planner_context.decorate(observation())
 
     assert [receipt.status for receipt in decorated.recent_continuity_receipts] == [
         ContinuityOperationStatus.REJECTED
@@ -3619,16 +3634,17 @@ def test_omitted_general_memories_are_declared_in_the_observation(
         runner.advisor = None
         runner._ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=0)
         engine, _ = authority(store, runner._ledger)
-        _attach_continuity(runner, store=store, ledger=runner._ledger, authority=engine)
         runner.planning_config = PlanningConfig()
+        # The service takes the budget when it is built, so set it first.
         runner._recall_budget = RecallBudget(
             commitments=1,
             current_target=1,
             open_hypotheses=1,
             general=2,
         )
+        _attach_continuity(runner, store=store, ledger=runner._ledger, authority=engine)
 
-        decorated = runner._with_memories(observation())
+        decorated = runner.planner_context.decorate(observation())
 
     assert len(decorated.memories) == 2
     assert decorated.memory_recall.total_omitted == 3

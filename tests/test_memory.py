@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from kenshi_agent.advisor import disabled_advisor_availability
 from kenshi_agent.campaign import CampaignScope, CampaignScopeOrigin
 from kenshi_agent.config import PlanningConfig
 from kenshi_agent.continuity import ContinuityLedger
@@ -22,6 +23,7 @@ from kenshi_agent.models import (
     StopAction,
     TelemetrySnapshot,
 )
+from kenshi_agent.planner_context import PlannerContextAssembler
 from kenshi_agent.runtime import AgentRuntime
 from kenshi_agent.session_log import SessionLogger
 
@@ -64,7 +66,19 @@ def attach_continuity(
         ledger=ledger,
         logger=SimpleNamespace(write=lambda *args, **kwargs: None),
         control_mode=ControlMode.INTERFACE_ONLY,
+        recall_budget=getattr(
+            runner,
+            "_recall_budget",
+            RecallBudget(commitments=4, current_target=4, open_hypotheses=2, general=8),
+        ),
+        fieldbook_project_limit=8,
         advisor_brief_ids=set,
+    )
+    runner.planner_context = PlannerContextAssembler(
+        continuity=runner.continuity,
+        ledger=ledger,
+        planning_config=getattr(runner, "planning_config", None) or PlanningConfig(),
+        advisor_availability=lambda _observation: disabled_advisor_availability(),
     )
 
 
@@ -237,7 +251,7 @@ def test_current_target_memory_survives_general_recall_overflow(
                 ],
             ),
         )
-        decorated = runner._with_memories(observation)
+        decorated = runner.planner_context.decorate(observation)
 
         assert [memory.target_id for memory in decorated.memories] == [
             target_id,
@@ -291,8 +305,8 @@ def test_target_memory_never_attaches_by_name_or_stale_identity(
             }
         )
 
-        assert runner._with_memories(same_name_new_identity).memories == []
-        assert runner._with_memories(stale_old_identity).memories == []
+        assert runner.planner_context.decorate(same_name_new_identity).memories == []
+        assert runner.planner_context.decorate(stale_old_identity).memories == []
     finally:
         store.close()
 
@@ -350,7 +364,7 @@ def test_entity_recall_reduces_repeated_approaches_in_controlled_policy(
         attach_continuity(runner, store, runner._ledger)
         runner.advisor = None
         runner.planning_config = PlanningConfig()
-        context = runner._with_memories(observation)
+        context = runner.planner_context.decorate(observation)
 
         path = tmp_path / f"{name}.jsonl"
         with SessionLogger(path, name) as logger:

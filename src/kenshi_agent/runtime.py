@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import sqlite3
 from collections.abc import Coroutine, Sequence
 from contextlib import suppress
 from dataclasses import asdict, dataclass
@@ -42,6 +41,7 @@ from .models import (
     ActionOutcome,
     ActionOutcomeAssessment,
     ActionReceipt,
+    AdvisorAvailability,
     AdvisorConsultEvidence,
     AdvisorConsultStatus,
     AffordanceExecution,
@@ -85,6 +85,7 @@ from .non_progress import retry_state_fingerprint
 from .nutrition import nutrition_reserve_change
 from .operation_authority import AuthorizationDecision, OperationAuthority
 from .operation_definitions import definition_for
+from .planner_context import PlannerContextAssembler
 from .planner_service import (
     PLANNER_ERROR_RATIONALE_MAX_CHARS,
     PlannerService,
@@ -97,9 +98,6 @@ from .planners.base import (
 from .planning import PlanningClock, PlanValidationError, SystemPlanningClock, validate_plan
 from .reflexes import ReflexEngine
 from .reporting import ConsoleDecisionReporter
-from .runtime_continuity import (
-    recall_for_observation,
-)
 from .safety import ActionGuard, SafetyViolation
 from .safety_supervisor import SafetyCause, SafetyPreemption, SafetySupervisor
 from .scenario_fixtures import ScenarioAttestation
@@ -253,6 +251,8 @@ class AgentRuntime:
             ledger=self._ledger,
             logger=logger,
             control_mode=control_mode,
+            recall_budget=self._recall_budget,
+            fieldbook_project_limit=fieldbook_project_limit,
             advisor_brief_ids=lambda: self._advisor_brief_ids,
         )
         self.planner_service = PlannerService(
@@ -263,6 +263,12 @@ class AgentRuntime:
         )
         self.reporter = reporter
         self.planning_config = planning_config or PlanningConfig()
+        self.planner_context = PlannerContextAssembler(
+            continuity=self.continuity,
+            ledger=self._ledger,
+            planning_config=self.planning_config,
+            advisor_availability=self._advisor_availability,
+        )
         self.planning_clock = planning_clock or SystemPlanningClock()
         self.observation_clock = observation_clock or SystemPlanningClock()
         self.log_full_observations = log_full_observations
@@ -297,6 +303,39 @@ class AgentRuntime:
 
         return self.authority.evaluate(action, observation)
 
+    def _advisor_availability(self, observation: Observation) -> AdvisorAvailability:
+        """Whether a brief may be requested right now, reservation included.
+
+        create_task schedules the provider coroutine for the next event-loop
+        turn. Expose the reservation immediately so a faster planner cannot
+        launch a duplicate in that small gap.
+        """
+
+        availability = (
+            self.advisor.availability(observation)
+            if self.advisor is not None
+            else disabled_advisor_availability()
+        )
+        advisor_task = getattr(self, "_advisor_task", None)
+        if (
+            advisor_task is not None
+            and not advisor_task.done()
+            and not getattr(self, "_advisor_result_ready", False)
+            and not availability.request_pending
+        ):
+            availability = availability.model_copy(
+                update={
+                    "may_request": False,
+                    "suggested": False,
+                    "request_pending": True,
+                    "reason": (
+                        "An advisor request is already pending; keep playing and "
+                        "use the brief after it arrives."
+                    ),
+                }
+            )
+        return availability
+
     async def run(self, *, max_steps: int, seed: int | None = None) -> RunSummary:
         return await self._run_scheduled(
             max_steps=max_steps,
@@ -321,7 +360,7 @@ class AgentRuntime:
         self._ledger.reset()
         self._advisor_brief_ids.clear()
         self.continuity.reset()
-        observation = self._with_memories(await self.environment.reset(seed=seed))
+        observation = self.planner_context.decorate(await self.environment.reset(seed=seed))
         self.logger.write(
             "run_started",
             payload={
@@ -358,7 +397,7 @@ class AgentRuntime:
                     state_store,
                     interval_seconds=(self.planning_config.observation_pump_seconds),
                     clock=self.observation_clock,
-                    transform=self._with_memories,
+                    transform=self.planner_context.decorate,
                     on_update=self._log_world_state_update,
                 )
                 await observation_pump.start()
@@ -503,7 +542,7 @@ class AgentRuntime:
                 # happened last: a plan outcome recorded after the executor
                 # returned must reach the planner that replaces that plan, with
                 # or without an observation pump running.
-                planner_observation = self._with_memories(observation)
+                planner_observation = self.planner_context.decorate(observation)
                 if planner_feedback is not None:
                     planner_observation = planner_observation.model_copy(
                         update={"planner_feedback": planner_feedback}
@@ -663,7 +702,7 @@ class AgentRuntime:
                         authored_context=authored_context,
                     )
                     steps_completed += completed
-                    observation = self._with_memories(observation)
+                    observation = self.planner_context.decorate(observation)
                     self._log_observation(observation)
                     continue
 
@@ -898,7 +937,9 @@ class AgentRuntime:
                     observation,
                     authored_context=authored_context,
                 )
-                observation = state_store.decorate_latest(self._with_memories(observation))
+                observation = state_store.decorate_latest(
+                    self.planner_context.decorate(observation)
+                )
                 plan_started_at = datetime.now(UTC)
                 self._plan_event(
                     "plan_accepted",
@@ -2079,7 +2120,7 @@ class AgentRuntime:
         plan_version: int = 1,
         step_id: str | None = None,
     ) -> Observation:
-        candidate = self._with_memories(transition.observation)
+        candidate = self.planner_context.decorate(transition.observation)
         update: StoreUpdate | None = None
         if self._state_store is None:
             latest = candidate
@@ -2137,7 +2178,7 @@ class AgentRuntime:
             step_id=step_id or f"step-{before.step_index}",
             command_id=command_id,
         )
-        latest = self._with_memories(latest)
+        latest = self.planner_context.decorate(latest)
         if self._state_store is None:
             self._log_observation(latest)
         else:
@@ -2274,91 +2315,6 @@ class AgentRuntime:
                 step_id=None,
                 reason=reason,
             )
-
-    def _with_memories(self, observation: Observation) -> Observation:
-        advisor_availability = (
-            self.advisor.availability(observation)
-            if self.advisor is not None
-            else disabled_advisor_availability()
-        )
-        advisor_task = getattr(self, "_advisor_task", None)
-        if (
-            advisor_task is not None
-            and not advisor_task.done()
-            and not getattr(self, "_advisor_result_ready", False)
-            and not advisor_availability.request_pending
-        ):
-            # create_task schedules the provider coroutine for the next event-loop
-            # turn. Expose the reservation immediately so a faster planner cannot
-            # launch a duplicate in that small gap.
-            advisor_availability = advisor_availability.model_copy(
-                update={
-                    "may_request": False,
-                    "suggested": False,
-                    "request_pending": True,
-                    "reason": (
-                        "An advisor request is already pending; keep playing and "
-                        "use the brief after it arrives."
-                    ),
-                }
-            )
-        updates: dict[str, object] = {
-            "planning_mode": self.planning_config.mode,
-            "recent_action_outcomes": self._ledger.recent_action_outcomes,
-            "recent_plan_outcomes": self._ledger.recent_plan_outcomes,
-            "recent_continuity_receipts": self.continuity.recent_receipts,
-            "recent_fieldbook_receipts": self.continuity.recent_fieldbook_receipts,
-            "continuity_writes_degraded_reason": (self.continuity.authority.writes_degraded_reason),
-            "continuity_reads_degraded_reason": (self.continuity.authority.reads_degraded_reason),
-            "advisor": advisor_availability,
-            "memory_search": self.continuity.pending_memory_search,
-            "fieldbook_read": self.continuity.pending_fieldbook_read,
-            "fieldbook_projects": [],
-            "active_fieldbook_project": None,
-        }
-        if self.memory is not None:
-            recalled = recall_for_observation(
-                self.memory,
-                self.continuity.authority,
-                budget=self._recall_budget,
-                target_ids=observation.current_memory_target_ids(),
-            )
-            updates["memories"] = recalled.records
-            updates["memory_recall"] = recalled.summary
-            updates["continuity_reads_degraded_reason"] = recalled.reads_degraded_reason
-            updates["continuity_writes_degraded_reason"] = recalled.writes_degraded_reason
-            if recalled.failure is not None:
-                self.logger.write(
-                    "continuity_store_failed",
-                    step_index=observation.step_index,
-                    payload={
-                        "boundary": recalled.failure.boundary,
-                        "reason": recalled.failure.reason,
-                    },
-                )
-            if self.continuity.authority.reads_degraded_reason is None:
-                try:
-                    updates["fieldbook_projects"] = self.memory.fieldbook.list_projects(
-                        limit=getattr(self, "fieldbook_project_limit", 8)
-                    )
-                    updates["active_fieldbook_project"] = (
-                        self.memory.fieldbook.active_project_summary()
-                    )
-                except sqlite3.Error as exc:
-                    reason = self.continuity.authority.quarantine_reads_after_store_failure(exc)
-                    updates["continuity_reads_degraded_reason"] = reason
-                    updates["continuity_writes_degraded_reason"] = (
-                        self.continuity.authority.writes_degraded_reason
-                    )
-                    self.logger.write(
-                        "continuity_store_failed",
-                        step_index=observation.step_index,
-                        payload={
-                            "boundary": "automatic_fieldbook_index",
-                            "reason": reason,
-                        },
-                    )
-        return observation.model_copy(update=updates)
 
     async def _execute_advisor_action(
         self,
@@ -2619,7 +2575,7 @@ class AgentRuntime:
         observation: Observation,
     ) -> Observation:
         current = self._state_store.latest if self._state_store is not None else None
-        latest = self._with_memories(current or observation)
+        latest = self.planner_context.decorate(current or observation)
         if self._state_store is None:
             return latest
         try:
@@ -2630,7 +2586,7 @@ class AgentRuntime:
             # advice is retained by AdvisorSession even if this opportunistic
             # context refresh loses that race.
             current = self._state_store.latest
-            return self._with_memories(current) if current is not None else latest
+            return self.planner_context.decorate(current) if current is not None else latest
 
     async def _finish_advisor_task(self) -> None:
         task = self._advisor_task
@@ -2701,7 +2657,7 @@ class AgentRuntime:
             plan_id=plan_id,
             step_id=step_id,
         )
-        latest = self._with_memories(observation)
+        latest = self.planner_context.decorate(observation)
         if self._state_store is not None:
             latest = self._state_store.decorate_latest(latest)
         return latest

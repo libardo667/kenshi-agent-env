@@ -214,7 +214,7 @@ def test_fieldbook_prose_cannot_change_current_telemetry_inventory(
         try:
             current = await runtime.environment.reset(seed=1)
             telemetry_before = current.telemetry
-            decorated = runtime._with_memories(current)
+            decorated = runtime.planner_context.decorate(current)
         finally:
             logger.close()
             store.close()
@@ -245,7 +245,7 @@ def test_continuous_stop_decision_commits_its_fieldbook_sidecar(
         )
         runtime, logger = runtime_for(tmp_path, UnusedPlanner(), store)
         try:
-            current = runtime._with_memories(await runtime.environment.reset(seed=1))
+            current = runtime.planner_context.decorate(await runtime.environment.reset(seed=1))
             runtime._state_store = runtime._new_world_state_store()
             current = runtime._state_store.publish(current).observation
             context = AuthoredPlannerContext(
