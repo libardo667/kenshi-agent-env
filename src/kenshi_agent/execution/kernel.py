@@ -21,6 +21,7 @@ from ..models import (
     Transition,
     WorldStateRevision,
 )
+from ..operation_authority import AuthorizationDecision, operation_fingerprint
 from ..operation_definitions import BoundOperation, OperationTerminal, TerminalOwner
 from ..planning import (
     PlanBudgetError,
@@ -68,14 +69,14 @@ TransitionObserver = Callable[
     Observation,
 ]
 ActionStartedReporter = Callable[[int, Action], None]
-AuthorityError = Callable[[Action, Observation], str | None]
+OperationAuthorized = Callable[[Action, Observation], AuthorizationDecision]
 
 
 @dataclass(frozen=True, slots=True)
 class KernelHooks:
     event: KernelEventReporter
     observe_transition: TransitionObserver
-    authority_error: AuthorityError
+    authorized: OperationAuthorized
     report_action_started: ActionStartedReporter | None = None
 
 
@@ -428,10 +429,11 @@ class ExecutionKernel:
             validated_revision=revision,
             latest_observation=self._latest_input_authority,
             max_telemetry_age_seconds=(self.input_boundary_max_telemetry_age_seconds()),
-            authority_validator=lambda current: self.hooks.authority_error(
+            authority_validator=lambda current: self.hooks.authorized(
                 bound.operation,
                 current,
             ),
+            authorized_fingerprint=operation_fingerprint(bound.operation),
             assumptions=tuple(request.plan.assumptions),
             preconditions=tuple(request.step.preconditions),
             failure_conditions=tuple(request.step.failure_conditions),

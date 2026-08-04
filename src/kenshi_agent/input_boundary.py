@@ -26,6 +26,7 @@ from .models import (
     Observation,
     WorldStateRevision,
 )
+from .operation_authority import AuthorizationDecision
 from .planning import evaluate_conditions
 from .terminal_state import TERMINAL_WINDOW_EVENT_PREFIX
 
@@ -48,7 +49,10 @@ class _ExecutionTokenState:
     validated_revision: WorldStateRevision
     latest_observation: Callable[[], Observation | None]
     max_telemetry_age_seconds: float | None
-    authority_validator: Callable[[Observation], str | None] | None = None
+    authority_validator: Callable[[Observation], AuthorizationDecision] | None = None
+    # The operation this token was authorized for. A boundary verdict about
+    # any other operation is not a revalidation of this one.
+    authorized_fingerprint: str | None = None
     assumptions: tuple[Condition, ...] = ()
     preconditions: tuple[Condition, ...] = ()
     failure_conditions: tuple[Condition, ...] = ()
@@ -222,13 +226,26 @@ class ExecutionToken(_ExecutionTokenState):
             )
 
         if self.authority_validator is not None:
-            authority_error = self.authority_validator(observation)
-            if authority_error is not None:
+            decision = self.authority_validator(observation)
+            if (
+                self.authorized_fingerprint is not None
+                and decision.operation_fingerprint != self.authorized_fingerprint
+            ):
                 return self._reject(
-                    AuthorizationCode.OPERATION_UNAUTHORIZED,
+                    AuthorizationCode.OPERATION_IDENTITY_CHANGED,
+                    "The input boundary authorized a different operation than "
+                    f"the one scheduled: {decision.operation_fingerprint} "
+                    f"is not {self.authorized_fingerprint}.",
+                    lease_wait_seconds=lease_wait_seconds,
+                    boundary_revision=boundary_revision,
+                )
+            if not decision.allowed:
+                violation = decision.details.get("violation", decision.code.value)
+                return self._reject(
+                    decision.code,
                     "The action no longer passes its safety "  # mutation: diagnostic-only
                     "and reference checks "  # mutation: diagnostic-only
-                    f"at the input boundary: {authority_error}",  # mutation: diagnostic-only
+                    f"at the input boundary: {violation}",  # mutation: diagnostic-only
                     lease_wait_seconds=lease_wait_seconds,
                     boundary_revision=boundary_revision,
                 )

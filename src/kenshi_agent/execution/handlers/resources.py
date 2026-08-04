@@ -11,6 +11,7 @@ from functools import partial
 from typing import Any, Literal, Protocol, cast
 
 from ... import operation_definitions as operations
+from ...authorization import AuthorizationCode
 from ...config import PlanningConfig
 from ...input_boundary import ExecutionToken
 from ...models import (
@@ -43,6 +44,7 @@ from ...models import (
     new_command_id,
     normalize_control_label,
 )
+from ...operation_authority import AuthorizationDecision, OperationAuthority
 from ...operation_definitions import BoundOperation
 from ...options import StatefulNativeMovementOption
 from ...resource_transfer import begin_resource_transfer, finalize_resource_transfer
@@ -653,7 +655,7 @@ class HarvestHandler:
             validated_revision=command.based_on_revision,
             latest_observation=parent.latest_observation,
             max_telemetry_age_seconds=parent.max_telemetry_age_seconds,
-            authority_validator=lambda current: self._phase_authority_error(
+            authority_validator=lambda current: self._phase_authorized(
                 action,
                 actor_id,
                 current,
@@ -704,30 +706,48 @@ class HarvestHandler:
         *,
         require_safe_actor: bool,
     ) -> None:
-        if error := self._phase_authority_error(
+        decision = self._phase_authorized(
             action,
             actor_id,
             observation,
             require_safe_actor=require_safe_actor,
-        ):
-            raise SafetyViolation(error)
+        )
+        if not decision.allowed:
+            raise SafetyViolation(
+                str(decision.details.get("violation", decision.code.value))
+            )
 
-    def _phase_authority_error(
+    def _phase_authorized(
         self,
         action: Action,
         actor_id: str,
         observation: Observation,
         *,
         require_safe_actor: bool,
-    ) -> str | None:
-        try:
-            self.guard.revalidate(action, observation)
-        except SafetyViolation as exc:
-            return str(exc)
-        return self._actor_error(
+    ) -> AuthorizationDecision:
+        """Answer a harvest phase with the same verdict every other step gets.
+
+        A composite's internal phases hold host input exactly like an ordinary
+        operation does, so they revalidate through the one authority rather than
+        an inner check with its own shape.
+        """
+
+        decision = OperationAuthority(self.guard).evaluate(action, observation)
+        if not decision.allowed:
+            return decision
+        actor_error = self._actor_error(
             actor_id,
             observation,
             require_safe=require_safe_actor,
+        )
+        if actor_error is None:
+            return decision
+        return AuthorizationDecision(
+            allowed=False,
+            code=AuthorizationCode.OPERATION_UNAUTHORIZED,
+            based_on_revision=observation.world_revision,
+            operation_fingerprint=decision.operation_fingerprint,
+            details={"violation": actor_error, "operation_kind": action.kind},
         )
 
     @staticmethod

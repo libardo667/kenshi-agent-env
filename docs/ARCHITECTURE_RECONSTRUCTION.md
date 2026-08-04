@@ -1010,6 +1010,23 @@ The runtime core should not carry development orchestration, generated-doc logic
 6. Remove old planner/action schemas, dead commands, obsolete generated reports, and superseded ADRs.
 7. Collapse historical live configurations to fixtures or delete them if they are neither supported nor used by tests.
 8. Keep mock and replay as proper adapters, not alternate architectural centers.
+9. Retire the macro/skill compatibility surface, or state plainly why it survives.
+
+   `SkillAction` and the configured macro registry are the last operations that
+   do not reach the runtime as ordinary operation definitions. They bind and
+   execute through the operation kernel, but they keep a parallel
+   macro-expanded guard: in `ActionGuard` that is roughly 250 lines across
+   `_validate_purchase`, `_validate_native_vendor_target`, and
+   `_validate_native_vendor_continuation`, reached by name-matching
+   `approach_confirmed_vendor`, `continue_confirmed_vendor_approach`, and
+   `buy_inspected_shop_item`. Stage 4 deliberately left that path alone rather
+   than pull this work forward, and `safety.py` says so in a comment that
+   promises "its own reconstruction stage" - this is that stage.
+
+   Decide per macro whether it becomes a first-class operation definition, is
+   absorbed by an existing one, or is deleted. A macro that survives must lose
+   its private validation path; `ActionGuard` may not keep a second policy for
+   operations reached by skill name.
 
 ### Documentation reset
 

@@ -101,6 +101,7 @@ from .models import (
 )
 from .non_progress import retry_state_fingerprint
 from .nutrition import nutrition_reserve_change
+from .operation_authority import AuthorizationDecision, OperationAuthority
 from .operation_definitions import definition_for
 from .planners import Planner
 from .planners.base import (
@@ -238,6 +239,9 @@ class AgentRuntime:
         self.planner = planner
         self.advisor = advisor
         self.guard = guard
+        # One cross-cutting authority, asked before scheduling and again
+        # inside the input lease, so both moments share one policy.
+        self.authority = OperationAuthority(guard)
         self.reflexes = reflexes
         self.logger = logger
         self.memory = memory
@@ -371,18 +375,14 @@ class AgentRuntime:
             confidence=1.0,
         )
 
-    def _action_authority_error(
+    def _action_authority(
         self,
         action: Action,
         observation: Observation,
-    ) -> str | None:
-        """Return why an ordinary action lost authority, without spending twice."""
+    ) -> AuthorizationDecision:
+        """Re-ask the one authority, without spending the same budget twice."""
 
-        try:
-            self.guard.revalidate(action, observation)
-        except SafetyViolation as exc:
-            return str(exc)
-        return None
+        return self.authority.evaluate(action, observation)
 
     async def run(self, *, max_steps: int, seed: int | None = None) -> RunSummary:
         return await self._run_scheduled(

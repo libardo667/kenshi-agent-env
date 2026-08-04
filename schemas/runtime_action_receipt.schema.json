@@ -340,6 +340,7 @@
         "control_mode_changed",
         "input_authority_withdrawn",
         "operation_unauthorized",
+        "operation_identity_changed",
         "precondition_untrue",
         "failure_condition_active"
       ],

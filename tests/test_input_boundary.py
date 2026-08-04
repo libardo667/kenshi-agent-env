@@ -25,6 +25,7 @@ from test_live_env import (
     movement_registry,
 )
 
+from kenshi_agent.authorization import AuthorizationCode
 from kenshi_agent.config import (
     CaptureConfig,
     ControlsConfig,
@@ -50,12 +51,31 @@ from kenshi_agent.models import (
     SkillAction,
     WorldStateRevision,
 )
+from kenshi_agent.operation_authority import AuthorizationDecision
 from kenshi_agent.planners.base import Planner
 from kenshi_agent.reflexes import ReflexEngine
 from kenshi_agent.runtime import AgentRuntime
 from kenshi_agent.safety import ActionGuard
 from kenshi_agent.session_log import SessionLogger
 
+
+def _allowed() -> AuthorizationDecision:
+    return AuthorizationDecision(
+        allowed=True,
+        code=AuthorizationCode.ALLOWED,
+        based_on_revision=revision(10),
+        operation_fingerprint="op-test",
+    )
+
+
+def _refused(violation: str) -> AuthorizationDecision:
+    return AuthorizationDecision(
+        allowed=False,
+        code=AuthorizationCode.OPERATION_UNAUTHORIZED,
+        based_on_revision=revision(10),
+        operation_fingerprint="op-test",
+        details={"violation": violation},
+    )
 
 def environment(
     tmp_path: Path,
@@ -267,7 +287,7 @@ def test_every_observation_bound_decision_preserves_authority_evidence() -> None
                 validated_revision=revision(10),
                 latest_observation=lambda: current,
                 max_telemetry_age_seconds=3.0,
-                authority_validator=lambda _: "target disappeared",
+                authority_validator=lambda _: _refused("target disappeared"),
             ),
             InputBoundaryDecision.REJECTED,
         ),
@@ -609,7 +629,9 @@ def test_action_authority_change_at_boundary_blocks_input() -> None:
         latest_observation=lambda: latest[0],
         max_telemetry_age_seconds=3.0,
         authority_validator=lambda current: (
-            "the exact target disappeared" if current.telemetry is not None else None
+            _refused("the exact target disappeared")
+            if current.telemetry is not None
+            else _allowed()
         ),
     )
 
@@ -874,3 +896,64 @@ def test_semantic_control_action_is_rejected_at_the_boundary(tmp_path: Path) -> 
         assert receipt.calibration.action_class.value == "semantic_current"
 
     asyncio.run(scenario())
+
+
+def test_a_boundary_verdict_about_another_operation_is_not_a_revalidation() -> None:
+    """Fresh evidence about the wrong operation must not authorize this one.
+
+    The lease check exists because state can change while a polite lease is
+    pending. If it answers about a different operation than the one scheduled,
+    it is current but irrelevant, and letting it pass would emit input for an
+    operation nothing ever authorized.
+    """
+
+    latest = [observation(sequence=12)]
+    token = ExecutionToken(
+        plan_id="plan-1",
+        plan_version=1,
+        step_id="operate",
+        command_id="cmd-" + "0" * 32,
+        control_mode=ControlMode.INTERFACE_ONLY,
+        validated_revision=revision(10),
+        latest_observation=lambda: latest[0],
+        max_telemetry_age_seconds=3.0,
+        authorized_fingerprint="op-scheduled",
+        authority_validator=lambda _: AuthorizationDecision(
+            allowed=True,
+            code=AuthorizationCode.ALLOWED,
+            based_on_revision=revision(12),
+            operation_fingerprint="op-something-else",
+        ),
+    )
+
+    boundary = token.revalidate()
+
+    assert boundary.decision is InputBoundaryDecision.REJECTED
+    assert boundary.code is AuthorizationCode.OPERATION_IDENTITY_CHANGED
+    assert "op-scheduled" in boundary.reason
+
+
+def test_a_boundary_verdict_about_the_scheduled_operation_revalidates() -> None:
+    latest = [observation(sequence=12)]
+    token = ExecutionToken(
+        plan_id="plan-1",
+        plan_version=1,
+        step_id="operate",
+        command_id="cmd-" + "0" * 32,
+        control_mode=ControlMode.INTERFACE_ONLY,
+        validated_revision=revision(10),
+        latest_observation=lambda: latest[0],
+        max_telemetry_age_seconds=3.0,
+        authorized_fingerprint="op-scheduled",
+        authority_validator=lambda _: AuthorizationDecision(
+            allowed=True,
+            code=AuthorizationCode.ALLOWED,
+            based_on_revision=revision(12),
+            operation_fingerprint="op-scheduled",
+        ),
+    )
+
+    boundary = token.revalidate()
+
+    assert boundary.decision is InputBoundaryDecision.REVALIDATED
+    assert boundary.code is AuthorizationCode.ALLOWED

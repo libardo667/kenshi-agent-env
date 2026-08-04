@@ -48,6 +48,7 @@ from .models import (
     StopAction,
 )
 from .non_progress import unchanged_definitive_no_op_reason
+from .operation_authority import AuthorizationDecision, OperationAuthority
 from .planning import (
     PlanBudgetLedger,
     PlanningClock,
@@ -57,7 +58,7 @@ from .planning import (
     validate_future_plan_patch,
 )
 from .reflexes import ReflexEngine
-from .safety import ActionGuard, SafetyViolation
+from .safety import ActionGuard
 from .session_log import SessionLogger
 from .world_state import WorldStateStore
 
@@ -239,6 +240,9 @@ class ContinuousPlanExecutor:
     ) -> None:
         self.environment = environment
         self.guard = guard
+        # One cross-cutting authority, asked before scheduling and again
+        # inside the input lease, so both moments share one policy.
+        self.authority = OperationAuthority(guard)
         self.reflexes = reflexes
         self.logger = logger
         self.clock = clock
@@ -278,7 +282,7 @@ class ContinuousPlanExecutor:
             hooks=KernelHooks(
                 event=self._event,
                 observe_transition=observe_transition,
-                authority_error=self._action_authority_error,
+                authorized=self._action_authority,
                 report_action_started=report_action_started,
             ),
             input_boundary_observation=environment.input_boundary_observation,
@@ -321,18 +325,14 @@ class ContinuousPlanExecutor:
             step_id=step_id,
         )
 
-    def _action_authority_error(
+    def _action_authority(
         self,
         action: Action,
         observation: Observation,
-    ) -> str | None:
-        """Return why an action lost authority, without spending its budget twice."""
+    ) -> AuthorizationDecision:
+        """Re-ask the one authority, without spending the same budget twice."""
 
-        try:
-            self.guard.revalidate(action, observation)
-        except SafetyViolation as exc:
-            return str(exc)
-        return None
+        return self.authority.evaluate(action, observation)
 
     @staticmethod
     def _has_concurrent_future_authority(

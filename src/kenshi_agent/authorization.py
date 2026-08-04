@@ -36,5 +36,6 @@ class AuthorizationCode(StrEnum):
     CONTROL_MODE_CHANGED = "control_mode_changed"
     INPUT_AUTHORITY_WITHDRAWN = "input_authority_withdrawn"
     OPERATION_UNAUTHORIZED = "operation_unauthorized"
+    OPERATION_IDENTITY_CHANGED = "operation_identity_changed"
     PRECONDITION_UNTRUE = "precondition_untrue"
     FAILURE_CONDITION_ACTIVE = "failure_condition_active"

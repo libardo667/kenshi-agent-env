@@ -1457,7 +1457,9 @@ def test_execution_token_carries_plan_authorization_into_dispatch(
         assert all(token.authority_validator is not None for token in tokens)
         live_observation = environment.observation().model_copy(update={"mode": "live"})
         assert tokens[0].authority_validator is not None
-        assert "unpause" in (tokens[0].authority_validator(live_observation) or "")
+        boundary_decision = tokens[0].authority_validator(live_observation)
+        assert not boundary_decision.allowed
+        assert "unpause" in str(boundary_decision.details.get("violation", ""))
         # The token must carry the same typed conditions the executor checked,
         # so the boundary re-uses the plan's authority rather than its own rule.
         assert all(token.assumptions for token in tokens)
