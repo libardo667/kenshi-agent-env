@@ -325,3 +325,17 @@ def test_native_movement_stall_uses_the_shared_conformance_module() -> None:
     assert "progress did not reset the stall interval" in tests
     assert "stable outdoor state did not complete at its limit" in tests
     assert f'"{NATIVE_WALK_DESTINATION_REACHED_RESULT}"' in plugin
+
+
+def test_native_resource_production_releases_only_command_owned_work() -> None:
+    plugin = PLUGIN_SOURCE.read_text(encoding="utf-8")
+    tests = (
+        PLUGIN_SOURCE.parent / "NativeCommandProtocolTests.cpp"
+    ).read_text(encoding="utf-8")
+
+    assert "resourceTaskIssuedByCommand" in plugin
+    assert "resourceTaskReleaseRequested" in plugin
+    assert "EvaluateResourceTaskRelease" in plugin
+    assert "walker->removeJob(" in plugin
+    assert "adopted resource work was claimed by the command" in tests
+    assert "released resource work did not reach its terminal" in tests

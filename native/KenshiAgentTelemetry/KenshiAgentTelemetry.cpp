@@ -167,6 +167,8 @@ namespace
         bool isContextAction;
         bool isResourceProduction;
         bool resourceTaskObserved;
+        bool resourceTaskIssuedByCommand;
+        bool resourceTaskReleaseRequested;
         unsigned int minimumOutputQuantity;
         TaskType expectedTask;
         // One uninterrupted pause may mean an abandoned movement order, but
@@ -265,6 +267,8 @@ namespace
         g_activeNativeCommand.isContextAction = false;
         g_activeNativeCommand.isResourceProduction = false;
         g_activeNativeCommand.resourceTaskObserved = false;
+        g_activeNativeCommand.resourceTaskIssuedByCommand = false;
+        g_activeNativeCommand.resourceTaskReleaseRequested = false;
         g_activeNativeCommand.minimumOutputQuantity = 1;
         g_activeNativeCommand.expectedTask = NULL_TASK;
         g_activeNativeCommand.originX = 0.0f;
@@ -590,6 +594,8 @@ namespace
         g_activeNativeCommand.isContextAction = false;
         g_activeNativeCommand.isResourceProduction = false;
         g_activeNativeCommand.resourceTaskObserved = false;
+        g_activeNativeCommand.resourceTaskIssuedByCommand = false;
+        g_activeNativeCommand.resourceTaskReleaseRequested = false;
         g_activeNativeCommand.minimumOutputQuantity = 1;
         g_activeNativeCommand.expectedTask = NULL_TASK;
         g_activeNativeCommand.originX = 0.0f;
@@ -2112,6 +2118,31 @@ namespace
                     if (state == KenshiAgentTelemetry::
                             RESOURCE_PRODUCTION_OUTPUT_READY)
                     {
+                        const KenshiAgentTelemetry::ResourceTaskReleaseState
+                            releaseState = KenshiAgentTelemetry::
+                                EvaluateResourceTaskRelease(
+                                    g_activeNativeCommand.
+                                        resourceTaskIssuedByCommand,
+                                    g_activeNativeCommand.
+                                        resourceTaskReleaseRequested,
+                                    resourceTaskActive);
+                        if (releaseState == KenshiAgentTelemetry::
+                                RESOURCE_TASK_RELEASE_REQUESTED)
+                        {
+                            // The bounded production option may remove only
+                            // the job that it created. Matching work present
+                            // before this command remains player-owned.
+                            walker->removeJob(
+                                g_activeNativeCommand.expectedTask);
+                            g_activeNativeCommand.
+                                resourceTaskReleaseRequested = true;
+                            return;
+                        }
+                        if (releaseState == KenshiAgentTelemetry::
+                                RESOURCE_TASK_RELEASE_WAITING)
+                        {
+                            return;
+                        }
                         FinishActiveNativeCommand(
                             "completed",
                             "resource_output_ready");
@@ -2936,6 +2967,9 @@ namespace
                 isResourceProduction;
             g_activeNativeCommand.resourceTaskObserved =
                 exactTaskAlreadyActive;
+            g_activeNativeCommand.resourceTaskIssuedByCommand =
+                isResourceProduction && !exactTaskAlreadyActive;
+            g_activeNativeCommand.resourceTaskReleaseRequested = false;
             g_activeNativeCommand.minimumOutputQuantity =
                 request.minimumOutputQuantity;
             g_activeNativeCommand.expectedTask = OPERATE_MACHINERY;

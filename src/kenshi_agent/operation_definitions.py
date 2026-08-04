@@ -3057,7 +3057,8 @@ PRODUCE_RESOURCE_OUTPUT_DEFINITION = OperationDefinition(
     summary=(
         "Keep one exact natural-resource job under option ownership until the "
         "resource output inventory contains stock. An Operating machine goal is "
-        "progress, not success; unchanged active work is adopted without reissue."
+        "progress, not success. Work issued by this option is released before its "
+        "terminal; unchanged active work is adopted and left player-owned."
     ),
     argument_source=(
         "target_id must be copied from one natural_resource entry in "
@@ -3099,7 +3100,8 @@ HARVEST_RESOURCE_DEFINITION = OperationDefinition(
         "Run one exact natural-resource job at Kenshi's observed 5x speed until "
         "the requested bounded yield exists, restore normal speed, transfer it "
         "conservatively into one exact selected actor, and close the two owned "
-        "inventory windows. Production, transfer, and cleanup are one "
+        "inventory windows. Its controller-issued work job is released, while "
+        "pre-existing work is preserved. Production, transfer, and cleanup are one "
         "interruptible controller option."
     ),
     argument_source=(

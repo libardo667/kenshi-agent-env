@@ -330,6 +330,31 @@ namespace
         {
             return Fail("lost work after task observation did not fail");
         }
+        if (EvaluateResourceTaskRelease(false, false, true) !=
+            RESOURCE_TASK_RELEASE_NOT_OWNED)
+        {
+            return Fail("adopted resource work was claimed by the command");
+        }
+        if (EvaluateResourceTaskRelease(true, false, true) !=
+            RESOURCE_TASK_RELEASE_REQUESTED)
+        {
+            return Fail("owned resource work did not request release");
+        }
+        if (EvaluateResourceTaskRelease(true, false, false) !=
+            RESOURCE_TASK_RELEASE_CONFIRMED)
+        {
+            return Fail("already-ended owned work requested a broad removal");
+        }
+        if (EvaluateResourceTaskRelease(true, true, true) !=
+            RESOURCE_TASK_RELEASE_WAITING)
+        {
+            return Fail("resource work completed before its job ended");
+        }
+        if (EvaluateResourceTaskRelease(true, true, false) !=
+            RESOURCE_TASK_RELEASE_CONFIRMED)
+        {
+            return Fail("released resource work did not reach its terminal");
+        }
         return 0;
     }
 
