@@ -1234,6 +1234,21 @@ Reconstruction is complete when all Stage 8 absence, presence, and verification 
 
 The presence of additional possible abstractions, stylistic improvements, or gameplay ideas is not evidence that reconstruction is incomplete.
 
+**Closed 2026-08-04.** The final tree passes the named absence and single-owner
+fitness gates, has zero production import cycles, and retains no legacy
+executor, macro/skill mode, compatibility re-export, unread canonical config
+field, generated blocker queue, or duplicate finalization owner. The complete
+portable gate, fresh Release x64 native build and protocol fixtures, installed
+DLL/protocol check, durable supervised verticals, current public live smoke,
+human-handoff proof, recover/stop proof, and 47-selection moderate soak satisfy
+the final matrix without adding gameplay frontier work.
+
+The [Stage 8 acceptance report](reconstruction/stage_8_acceptance.md) records
+the deletion and line deltas, authority replacements, removed compatibility,
+native artifact hashes, bounded evidence IDs, claim boundaries, and deferred
+gameplay/perception limitations. The accepting commit carries the tag
+`reconstruction-stage-8-accepted`.
+
 ---
 
 ## 16. Stage sequencing and rollback boundaries
@@ -1527,5 +1542,7 @@ recorded `pause_confirmed` with no additional finalizer input.
 
 Stage 5 extraction, Stage 3 closure, and the combined Sections 20.1/20.3 Stage 4
 closure are complete. Stage 6 is also closed as recorded in Section 13. Stage 7
-is next. Do not reopen these stages or restore deleted compatibility boundaries
-while moving tooling to the perimeter.
+and the final Stage 8 acceptance are closed as recorded in Sections 14 and 15.
+Do not reopen these stages or restore deleted compatibility boundaries. Further
+work begins from the accepted architecture and belongs to a separately scoped
+gameplay or perception frontier.
