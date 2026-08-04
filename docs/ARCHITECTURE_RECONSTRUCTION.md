@@ -1154,7 +1154,7 @@ Before merge, produce a concise report containing:
 - Former authorities and their replacements.
 - Compatibility fields and modes removed.
 - Portable/native/live evidence IDs.
-- Remaining limitations that are genuine gameplay or telemetry limitations rather than architecture debt.
+- Remaining limitations that are genuine gameplay or telemetry limitations rather than architecture debt. Section 19 records the ones observed during reconstruction.
 
 ### Completion state
 
@@ -1232,3 +1232,63 @@ These operations exercise planner provenance, private binding, controller-termin
 Then migrate screens/bindings, movement/dialogue, trade/inventory, and resources/composites in that order. Do not stop Stage 1 until `action_contracts.py` is deleted.
 
 That is the first real demolition checkpoint.
+
+---
+
+## 19. Deferred gameplay and perception findings
+
+Observations made while proving a reconstruction stage that are **not**
+architecture debt. Nothing here is a reason to change a stage's scope: Section
+6.4 forbids frontier work during reconstruction, and each of these is gameplay
+competence or perception. They are written down because a live run surfaced
+them, they will recur, and they belong in the Stage 8 report and the frontier
+work that follows.
+
+### 19.1 Prospecting scalars are area coverage, not deposit counts
+
+Observed in `reconstruction-stage-4-r1` at Squin, 2026-08-03.
+
+Kenshi's Prospecting Results window reports each resource as a number beside its
+name and, separately, draws a radar-style panel: the prospector as an arrow at
+the center, and deposits of the currently selected resource as bright blobs
+positioned relative to them.
+
+The number is the share of the scanned area the resource covers, against the
+window's own `Area Size` (414 m in the observed capture). Diffuse resources
+score meaningfully - water 60, fertility 100, stone 10 - because they blanket
+the zone. A discrete deposit occupies a trivial fraction of that area, so
+**iron and copper read `0` while deposits are plainly drawn on the panel**.
+
+The agent read `Iron: 0` as "no iron here", abandoned a zone whose panel showed
+two iron deposits, and travelled elsewhere. The two facts never conflicted; it
+consulted the wrong one.
+
+What this actually means:
+
+- The only channel carrying deposit *locations* is the spatial panel, and the
+  agent has no way to read it. Its one legible channel is the scalar, and for
+  the resources worth mining that scalar is misleading by construction.
+- Treating the number as a count will keep producing confident wrong
+  conclusions, because `0` is the expected reading for a present node.
+- A fix is perception work - reading the panel, or exporting deposit positions
+  through telemetry so the affordance layer can offer them - not a planner
+  prompt adjustment.
+
+### 19.2 A stalled monitored approach can consume minutes of a run's budget
+
+Observed in `reconstruction-stage-4-r1`, 2026-08-03.
+
+One `approach_dialogue_target` ran five minutes before ending on its step
+timeout, after the character walked into a building and stopped making progress.
+A later `move_to_character` ended as `cancelled: movement_stalled`.
+
+The machinery behaved correctly and this is not a defect in it: the native
+command reached a causal terminal, the reflex reclaimed ownership and re-paused,
+and the run continued. The cost is budgetary. Five minutes against a
+thirty-step run is a large fraction of the session spent proving one approach
+did not work, and a run can exhaust itself on navigation before reaching the
+behavior under test.
+
+Worth considering after reconstruction: a progress-based stall terminal that
+ends an approach when position stops changing, rather than waiting out a
+wall-clock timeout that is sized for the slowest legitimate walk.

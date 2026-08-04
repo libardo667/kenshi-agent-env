@@ -14,9 +14,9 @@ total. Rows are never dropped, so a blocker that stops recurring stays
 visible with the run that last exhibited it.
 
 ```text
-newest run  reconstruction-stage-2-vertical-r2
-signatures  56
-open        0
+newest run  reconstruction-stage-4-r1
+signatures  58
+open        2
 ```
 
 | signature | example | runs | seen | last run | last seen |
@@ -41,6 +41,7 @@ open        0
 | `Existing action guard rejected the step: Action requires one exact primary selected character.` | Existing action guard rejected the step: Action requires one exact primary selected character. | 3 | 6 | live-fresh-affordance-20260803-r1 | 2026-08-03T15:24:40Z |
 | `Existing action guard rejected the step: Per-minute primitive action rate limit would be exceeded.` | Existing action guard rejected the step: Per-minute primitive action rate limit would be exceeded. | 1 | 1 | live-fresh-affordance-20260803-r1 | 2026-08-03T15:24:40Z |
 | `Existing action guard rejected the step: Wait #s exceeds maximum #s.` | Existing action guard rejected the step: Wait 10.00s exceeds maximum 8.00s. | 1 | 3 | live-character-terminal-soak-20260731-r3 | 2026-07-31T15:09:38Z |
+| `Kenshi ended the native movement as '*': movement_stalled.` | Kenshi ended the native movement as 'cancelled': movement_stalled. | 1 | 4 | reconstruction-stage-4-r1 | 2026-08-04T02:25:04Z |
 | `Operation binding failed before execution: affordance is absent from the current observation` | Operation binding failed before execution: affordance is absent from the current observation | 1 | 3 | reconstruction-stage-2-20260803-r3 | 2026-08-03T21:24:36Z |
 | `Plan rejected before execution: plan declares max_purchase_actions #; declare at most #` | Plan rejected before execution: plan declares max_purchase_actions 8; declare at most 5 | 2 | 2 | live-atomic-timeout-soak-20260731-r1 | 2026-07-31T13:59:45Z |
 | `Plan rejected before execution: plan max_wall_seconds # exceeds #` | Plan rejected before execution: plan max_wall_seconds 65.0 exceeds 30.0 | 1 | 3 | live-pointer-target-setup-20260801-r2 | 2026-08-01T22:08:17Z |
@@ -76,4 +77,5 @@ open        0
 | `The monitored native option did not reach its terminal success, so the step cannot succeed: Monitored native movement ex` | The monitored native option did not reach its terminal success, so the step cannot succeed: Monitored native movement exceeded its step timeout before terminal | 1 | 3 | live-pointer-target-setup-20260801-r3 | 2026-08-01T22:11:30Z |
 | `The monitored native option did not reach its terminal success, so the step cannot succeed: The target is no longer amon` | The monitored native option did not reach its terminal success, so the step cannot succeed: The target is no longer among nearby entities. | 1 | 1 | live-creative-strategy-soak-20260802-r2 | 2026-08-02T16:58:11Z |
 | `The monitored option did not reach its terminal success, so the step cannot succeed: Kenshi ended the native movement as` | The monitored option did not reach its terminal success, so the step cannot succeed: Kenshi ended the native movement as 'cancelled': movement_stalled. | 2 | 2 | live-trade-window-owner-20260803-r1 | 2026-08-03T15:10:18Z |
+| `The monitored option exceeded its step timeout before terminal success.` | The monitored option exceeded its step timeout before terminal success. | 1 | 1 | reconstruction-stage-4-r1 | 2026-08-04T02:25:04Z |
 | `The operation completed but did not have its intended effect within #s: Observed #; expected greater_than #.` | The operation completed but did not have its intended effect within 10.0s: Observed 0; expected greater_than 0. | 1 | 1 | reconstruction-stage-2-planonly-r2 | 2026-08-03T22:53:29Z |
