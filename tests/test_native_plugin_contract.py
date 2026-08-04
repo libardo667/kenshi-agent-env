@@ -337,5 +337,26 @@ def test_native_resource_production_releases_only_command_owned_work() -> None:
     assert "resourceTaskReleaseRequested" in plugin
     assert "EvaluateResourceTaskRelease" in plugin
     assert "walker->removeJob(" in plugin
+    assert "resourceTasks->clearOrders()" in plugin
+    assert "resourceTasks->hasPlayerOrders()" in plugin
+    assert "resourceMovement->halt()" in plugin
+    assert "resource_output_ready_task_released" in plugin
     assert "adopted resource work was claimed by the command" in tests
-    assert "released resource work did not reach its terminal" in tests
+    assert "stable resource release did not confirm on time" in tests
+
+
+def test_native_group_travel_requires_every_selected_member_at_each_leg() -> None:
+    plugin = PLUGIN_SOURCE.read_text(encoding="utf-8")
+    tests = (
+        PLUGIN_SOURCE.parent / "NativeCommandProtocolTests.cpp"
+    ).read_text(encoding="utf-8")
+    map_monitor = plugin.split("if (mapTown != NULL)", 1)[1].split(
+        "bool buildingExitIndoors",
+        1,
+    )[0]
+
+    assert "if (selectedHandles.empty())" in plugin
+    assert "HasGroupReachedDestination" in map_monitor
+    assert "HasReachedFixedDirectionDestination" not in map_monitor
+    assert "stallX" in map_monitor
+    assert "member beyond another member's destination plane" in tests

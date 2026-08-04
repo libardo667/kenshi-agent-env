@@ -112,6 +112,8 @@ NATIVE_MAP_TRAVEL_CAPABILITY = "control.travel_to_map_destination"
 NATIVE_MAP_DESTINATIONS_CAPABILITY = "world.known_map_destinations"
 NATIVE_EXIT_BUILDING_CAPABILITY = "control.exit_current_building"
 NATIVE_WALK_DESTINATION_REACHED_RESULT = "walk_destination_reached"
+NATIVE_RESOURCE_OUTPUT_READY_RESULT = "resource_output_ready"
+NATIVE_RESOURCE_TASK_RELEASED_RESULT = "resource_output_ready_task_released"
 NATIVE_CONTEXT_ACTION_CAPABILITY = "control.perform_context_action"
 NATIVE_CONTEXT_TARGETS_CAPABILITY = "world.context_targets"
 WORLD_CONTEXT_TARGET_SCREEN_POSITIONS_CAPABILITY = "world.context_target_screen_positions"
@@ -3055,9 +3057,9 @@ PRODUCE_RESOURCE_OUTPUT_DEFINITION = OperationDefinition(
     version="1.0",
     operation_type=ProduceResourceOutputAction,
     summary=(
-        "Keep one exact natural-resource job under option ownership until the "
+        "Keep one exact natural-resource order under option ownership until the "
         "resource output inventory contains stock. An Operating machine goal is "
-        "progress, not success. Work issued by this option is released before its "
+        "progress, not success. Work issued by this option is fully cleared before its "
         "terminal; unchanged active work is adopted and left player-owned."
     ),
     argument_source=(
@@ -3088,7 +3090,12 @@ PRODUCE_RESOURCE_OUTPUT_DEFINITION = OperationDefinition(
     controller_verified=True,
     # Adopting the job is progress; only stock in the output inventory proves
     # the operation itself finished.
-    native_terminal_success_reasons=frozenset({"resource_output_ready"}),
+    native_terminal_success_reasons=frozenset(
+        {
+            NATIVE_RESOURCE_OUTPUT_READY_RESULT,
+            NATIVE_RESOURCE_TASK_RELEASED_RESULT,
+        }
+    ),
     authorable_when=resource_production_is_currently_authorable,
 )
 
@@ -3100,7 +3107,7 @@ HARVEST_RESOURCE_DEFINITION = OperationDefinition(
         "Run one exact natural-resource job at Kenshi's observed 5x speed until "
         "the requested bounded yield exists, restore normal speed, transfer it "
         "conservatively into one exact selected actor, and close the two owned "
-        "inventory windows. Its controller-issued work job is released, while "
+        "inventory windows. Its controller-issued operating order is cleared, while "
         "pre-existing work is preserved. Production, transfer, and cleanup are one "
         "interruptible controller option."
     ),

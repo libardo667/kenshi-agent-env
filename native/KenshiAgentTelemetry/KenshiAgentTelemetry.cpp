@@ -169,6 +169,8 @@ namespace
         bool resourceTaskObserved;
         bool resourceTaskIssuedByCommand;
         bool resourceTaskReleaseRequested;
+        KenshiAgentTelemetry::ResourceTaskReleaseConfirmationWindow
+            resourceTaskReleaseWindow;
         unsigned int minimumOutputQuantity;
         TaskType expectedTask;
         // One uninterrupted pause may mean an abandoned movement order, but
@@ -269,6 +271,8 @@ namespace
         g_activeNativeCommand.resourceTaskObserved = false;
         g_activeNativeCommand.resourceTaskIssuedByCommand = false;
         g_activeNativeCommand.resourceTaskReleaseRequested = false;
+        KenshiAgentTelemetry::ResetResourceTaskReleaseConfirmationWindow(
+            g_activeNativeCommand.resourceTaskReleaseWindow);
         g_activeNativeCommand.minimumOutputQuantity = 1;
         g_activeNativeCommand.expectedTask = NULL_TASK;
         g_activeNativeCommand.originX = 0.0f;
@@ -596,6 +600,8 @@ namespace
         g_activeNativeCommand.resourceTaskObserved = false;
         g_activeNativeCommand.resourceTaskIssuedByCommand = false;
         g_activeNativeCommand.resourceTaskReleaseRequested = false;
+        KenshiAgentTelemetry::ResetResourceTaskReleaseConfirmationWindow(
+            g_activeNativeCommand.resourceTaskReleaseWindow);
         g_activeNativeCommand.minimumOutputQuantity = 1;
         g_activeNativeCommand.expectedTask = NULL_TASK;
         g_activeNativeCommand.originX = 0.0f;
@@ -2030,6 +2036,8 @@ namespace
             FinishActiveNativeCommand("cancelled", "selection_mismatch");
             return;
         }
+        if (selectedHandles.empty())
+            selectedHandles.push_back(selectedHandle);
         Character* walker = selectedHandle.getCharacter();
         bool resourceTaskActive = false;
         if (g_activeNativeCommand.isContextAction)
@@ -2118,6 +2126,35 @@ namespace
                     if (state == KenshiAgentTelemetry::
                             RESOURCE_PRODUCTION_OUTPUT_READY)
                     {
+                        AI* resourceAI = walker->getAI();
+                        AITaskSytem* resourceTasks =
+                            resourceAI != NULL
+                                ? resourceAI->getTaskSystem()
+                                : NULL;
+                        CharMovement* resourceMovement =
+                            walker->getMovement();
+                        if (g_activeNativeCommand.
+                                resourceTaskIssuedByCommand &&
+                            (resourceTasks == NULL ||
+                             resourceMovement == NULL))
+                        {
+                            FinishActiveNativeCommand(
+                                "cancelled",
+                                "resource_task_release_unavailable");
+                            return;
+                        }
+                        const bool releaseStillActive =
+                            resourceTaskActive ||
+                            (resourceTasks != NULL &&
+                             resourceTasks->hasPlayerOrders());
+                        const bool releaseConfirmed =
+                            g_activeNativeCommand.resourceTaskReleaseRequested &&
+                            KenshiAgentTelemetry::
+                                ObserveResourceTaskReleaseConfirmation(
+                                    g_activeNativeCommand.
+                                        resourceTaskReleaseWindow,
+                                    releaseStillActive,
+                                    GetTickCount());
                         const KenshiAgentTelemetry::ResourceTaskReleaseState
                             releaseState = KenshiAgentTelemetry::
                                 EvaluateResourceTaskRelease(
@@ -2125,17 +2162,27 @@ namespace
                                         resourceTaskIssuedByCommand,
                                     g_activeNativeCommand.
                                         resourceTaskReleaseRequested,
-                                    resourceTaskActive);
+                                    releaseConfirmed);
                         if (releaseState == KenshiAgentTelemetry::
                                 RESOURCE_TASK_RELEASE_REQUESTED)
                         {
-                            // The bounded production option may remove only
-                            // the job that it created. Matching work present
-                            // before this command remains player-owned.
+                            // newPlayerTaskSelectedCharacters(..., false)
+                            // replaced the actor's prior ordinary order queue,
+                            // so this command owns that queue. removeJob clears
+                            // the visible Jobs entry; clearOrders and halt end
+                            // the still-running operating order underneath it.
                             walker->removeJob(
                                 g_activeNativeCommand.expectedTask);
+                            // resourceTasks and resourceMovement were proven
+                            // above for every controller-issued order.
+                            resourceTasks->clearOrders();
+                            resourceMovement->halt();
                             g_activeNativeCommand.
                                 resourceTaskReleaseRequested = true;
+                            KenshiAgentTelemetry::
+                                ResetResourceTaskReleaseConfirmationWindow(
+                                    g_activeNativeCommand.
+                                        resourceTaskReleaseWindow);
                             return;
                         }
                         if (releaseState == KenshiAgentTelemetry::
@@ -2145,7 +2192,10 @@ namespace
                         }
                         FinishActiveNativeCommand(
                             "completed",
-                            "resource_output_ready");
+                            releaseState == KenshiAgentTelemetry::
+                                    RESOURCE_TASK_RELEASE_CONFIRMED
+                                ? "resource_output_ready_task_released"
+                                : "resource_output_ready");
                         return;
                     }
                     if (state == KenshiAgentTelemetry::
@@ -2279,7 +2329,8 @@ namespace
             {
                 bool currentTownIdentityMatches = true;
                 bool insideTownWalls = true;
-                bool currentLegReached = true;
+                std::vector<KenshiAgentTelemetry::NativeMovementPosition>
+                    positions;
                 for (unsigned int index = 0;
                      index < selectedHandles.size();
                      ++index)
@@ -2306,17 +2357,20 @@ namespace
                         member->amInsideTownWalls() != 0;
                     const Ogre::Vector3 memberPosition =
                         member->getPosition();
-                    currentLegReached =
-                        currentLegReached &&
-                        KenshiAgentTelemetry::
-                            HasReachedFixedDirectionDestination(
-                                g_activeNativeCommand.originX,
-                                g_activeNativeCommand.originZ,
-                                destinationX,
-                                destinationZ,
-                                memberPosition.x,
-                                memberPosition.z);
+                    KenshiAgentTelemetry::NativeMovementPosition position;
+                    position.x = memberPosition.x;
+                    position.z = memberPosition.z;
+                    positions.push_back(position);
                 }
+                float stallX = here.x;
+                float stallZ = here.z;
+                const bool currentLegReached = KenshiAgentTelemetry::
+                    HasGroupReachedDestination(
+                        positions,
+                        destinationX,
+                        destinationZ,
+                        stallX,
+                        stallZ);
                 const KenshiAgentTelemetry::NativeMapTravelDecision decision =
                     KenshiAgentTelemetry::EvaluateNativeMapTravel(
                         currentTownIdentityMatches,
@@ -2370,8 +2424,8 @@ namespace
                 if (KenshiAgentTelemetry::ObserveNativeMovementStall(
                         g_activeNativeCommand.stallWindow,
                         false,
-                        here.x,
-                        here.z,
+                        stallX,
+                        stallZ,
                         GetTickCount()))
                 {
                     FinishActiveNativeCommand(
@@ -2457,7 +2511,7 @@ namespace
                         positions.push_back(position);
                     }
                     arrived = KenshiAgentTelemetry::
-                        HasGroupReachedDynamicDestination(
+                        HasGroupReachedDestination(
                             positions,
                             destinationX,
                             destinationZ,
@@ -2970,6 +3024,8 @@ namespace
             g_activeNativeCommand.resourceTaskIssuedByCommand =
                 isResourceProduction && !exactTaskAlreadyActive;
             g_activeNativeCommand.resourceTaskReleaseRequested = false;
+            KenshiAgentTelemetry::ResetResourceTaskReleaseConfirmationWindow(
+                g_activeNativeCommand.resourceTaskReleaseWindow);
             g_activeNativeCommand.minimumOutputQuantity =
                 request.minimumOutputQuantity;
             g_activeNativeCommand.expectedTask = OPERATE_MACHINERY;

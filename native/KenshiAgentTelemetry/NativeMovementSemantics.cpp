@@ -201,7 +201,7 @@ namespace KenshiAgentTelemetry
         return progressX * goalX + progressZ * goalZ >= goalLengthSquared;
     }
 
-    bool HasGroupReachedDynamicDestination(
+    bool HasGroupReachedDestination(
         const std::vector<NativeMovementPosition>& positions,
         float destinationX,
         float destinationZ,

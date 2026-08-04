@@ -107,10 +107,12 @@ namespace KenshiAgentTelemetry
         float currentX,
         float currentZ);
 
-    // A group walk owns every selected member. It reaches a dynamic character
-    // only when every member is inside the ordinary walk radius; the farthest
-    // member also owns stall progress so the leader cannot mask a stuck party.
-    bool HasGroupReachedDynamicDestination(
+    // A group walk owns every selected member. It reaches one shared
+    // destination only when every member is inside the ordinary walk radius;
+    // the farthest member also owns stall progress so the leader cannot mask
+    // a stuck party. Unlike single-character directional completion, a member
+    // far beyond the destination plane is not an arrival.
+    bool HasGroupReachedDestination(
         const std::vector<NativeMovementPosition>& positions,
         float destinationX,
         float destinationZ,

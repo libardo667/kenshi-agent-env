@@ -113,6 +113,7 @@ class _HarvestState:
     interrupted: bool = False
     failure_reason: str | None = None
     production_command_id: str | None = None
+    production_task_released: bool = False
     inventory_command_id: str | None = None
     transfer: ResourceTransferEvidence | None = None
     item_name: str | None = None
@@ -246,6 +247,14 @@ class HarvestHandler:
                 context,
             )
             state.receipts.append(result.transition.receipt)
+            production_acknowledgement = (
+                result.transition.receipt.native_acknowledgement
+            )
+            state.production_task_released = bool(
+                production_acknowledgement is not None
+                and production_acknowledgement.reason
+                == operations.NATIVE_RESOURCE_TASK_RELEASED_RESULT
+            )
             state.staged_patch = cast(StagedPatch | None, result.staged_patch)
             state.interrupted = result.status is OperationStatus.INTERRUPTED
             if not result.succeeded:
@@ -466,8 +475,14 @@ class HarvestHandler:
         transferred = self._transferred_quantity(state.transfer)
         if state.failure_reason is None and cleanup_confirmed:
             status = ResourceHarvestStatus.HARVESTED
+            release_reason = (
+                " The controller-issued operating order was fully released."
+                if state.production_task_released
+                else ""
+            )
             reason = (
-                f"Conserved {transferred} {state.item_name!r} into {actor_name!r}; {cleanup_reason}"
+                f"Conserved {transferred} {state.item_name!r} into {actor_name!r}; "
+                f"{cleanup_reason}{release_reason}"
             )
         elif state.failure_reason is None:
             status = ResourceHarvestStatus.CLEANUP_FAILED

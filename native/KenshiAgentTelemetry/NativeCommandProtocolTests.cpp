@@ -330,30 +330,56 @@ namespace
         {
             return Fail("lost work after task observation did not fail");
         }
-        if (EvaluateResourceTaskRelease(false, false, true) !=
+        if (EvaluateResourceTaskRelease(false, false, false) !=
             RESOURCE_TASK_RELEASE_NOT_OWNED)
         {
             return Fail("adopted resource work was claimed by the command");
         }
-        if (EvaluateResourceTaskRelease(true, false, true) !=
+        if (EvaluateResourceTaskRelease(true, false, false) !=
             RESOURCE_TASK_RELEASE_REQUESTED)
         {
             return Fail("owned resource work did not request release");
         }
-        if (EvaluateResourceTaskRelease(true, false, false) !=
-            RESOURCE_TASK_RELEASE_CONFIRMED)
-        {
-            return Fail("already-ended owned work requested a broad removal");
-        }
-        if (EvaluateResourceTaskRelease(true, true, true) !=
+        if (EvaluateResourceTaskRelease(true, true, false) !=
             RESOURCE_TASK_RELEASE_WAITING)
         {
-            return Fail("resource work completed before its job ended");
+            return Fail("resource work completed without stable inactivity");
         }
-        if (EvaluateResourceTaskRelease(true, true, false) !=
+        if (EvaluateResourceTaskRelease(true, true, true) !=
             RESOURCE_TASK_RELEASE_CONFIRMED)
         {
-            return Fail("released resource work did not reach its terminal");
+            return Fail("stably released resource work did not reach its terminal");
+        }
+
+        ResourceTaskReleaseConfirmationWindow releaseWindow;
+        ResetResourceTaskReleaseConfirmationWindow(releaseWindow);
+        if (ObserveResourceTaskReleaseConfirmation(
+                releaseWindow,
+                false,
+                1000UL))
+        {
+            return Fail("resource release completed on its first inactive frame");
+        }
+        if (ObserveResourceTaskReleaseConfirmation(
+                releaseWindow,
+                false,
+                1000UL + RESOURCE_TASK_RELEASE_CONFIRMATION_MS - 1UL))
+        {
+            return Fail("resource release completed before its stability window");
+        }
+        if (!ObserveResourceTaskReleaseConfirmation(
+                releaseWindow,
+                false,
+                1000UL + RESOURCE_TASK_RELEASE_CONFIRMATION_MS))
+        {
+            return Fail("stable resource release did not confirm on time");
+        }
+        if (ObserveResourceTaskReleaseConfirmation(
+                releaseWindow,
+                true,
+                5000UL))
+        {
+            return Fail("resumed resource work retained release confirmation");
         }
         return 0;
     }
@@ -437,7 +463,7 @@ namespace
 
     int TestNativeGroupCharacterCompletion()
     {
-        using KenshiAgentTelemetry::HasGroupReachedDynamicDestination;
+        using KenshiAgentTelemetry::HasGroupReachedDestination;
         using KenshiAgentTelemetry::NativeMovementPosition;
 
         std::vector<NativeMovementPosition> positions(2);
@@ -447,7 +473,7 @@ namespace
         positions[1].z = 0.0f;
         float farthestX = 0.0f;
         float farthestZ = 0.0f;
-        if (HasGroupReachedDynamicDestination(
+        if (HasGroupReachedDestination(
                 positions,
                 0.0f,
                 0.0f,
@@ -461,7 +487,7 @@ namespace
 
         positions[1].x = 6.0f;
         positions[1].z = 8.0f;
-        if (!HasGroupReachedDynamicDestination(
+        if (!HasGroupReachedDestination(
                 positions,
                 0.0f,
                 0.0f,
@@ -471,7 +497,7 @@ namespace
             return Fail("a fully arrived group did not complete");
         }
         std::vector<NativeMovementPosition> empty;
-        if (HasGroupReachedDynamicDestination(
+        if (HasGroupReachedDestination(
                 empty,
                 0.0f,
                 0.0f,
@@ -480,6 +506,23 @@ namespace
         {
             return Fail("an empty selection completed a group walk");
         }
+
+        positions[0].x = 30.0f;
+        positions[0].z = 0.0f;
+        positions[1].x = 100.0f;
+        positions[1].z = 0.0f;
+        if (HasGroupReachedDestination(
+                positions,
+                30.0f,
+                0.0f,
+                farthestX,
+                farthestZ))
+        {
+            return Fail(
+                "a member beyond another member's destination plane completed group travel");
+        }
+        if (farthestX != 100.0f || farthestZ != 0.0f)
+            return Fail("group travel stall ownership lost its distant member");
         return 0;
     }
 

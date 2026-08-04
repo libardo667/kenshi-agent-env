@@ -96,9 +96,12 @@ deliberately accept a group:
   the corresponding Kenshi task and target.
 - `produce_resource_output` adopts that exact already-running task or issues it
   once, then stays active through `Operating machine` and completes only when
-  the resource output section contains a positive quantity. A task issued by
-  the command is removed and observed gone before completion; matching work
-  that was already active is adopted without taking ownership.
+  the resource output section contains a positive quantity. An order issued by
+  the command has its visible job and underlying ordinary order queue cleared,
+  then proves both that no player order remains and that the exact operating
+  goal stays inactive through a stability window before
+  `resource_output_ready_task_released`; matching work that was already active
+  is adopted without taking ownership and retains `resource_output_ready`.
 - `open_context_inventory` re-resolves one exact resource and invokes Kenshi's
   ordinary building-inventory UI, completing only when that same handle owns
   the open contextual inventory.

@@ -291,7 +291,7 @@ class HarvestEnvironment(AgentEnvironment):
                 command_id=command.command_id,
                 command=action.kind,
                 status=NativeCommandStatus.COMPLETED,
-                reason="resource_output_ready",
+                reason="resource_output_ready_task_released",
                 target_id=TARGET_ID,
                 selected_character_ids=[ACTOR_ID],
                 based_on_telemetry_sequence=self.sequence,
@@ -575,5 +575,6 @@ def test_harvest_is_one_planner_action_with_controller_owned_transfer(
             outer_receipt.semantic.resource_harvest.status
             is ResourceHarvestStatus.HARVESTED
         )
+        assert "operating order was fully released" in outer_receipt.message
 
     asyncio.run(scenario())

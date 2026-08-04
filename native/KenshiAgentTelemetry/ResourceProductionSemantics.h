@@ -20,6 +20,14 @@ namespace KenshiAgentTelemetry
         RESOURCE_TASK_RELEASE_CONFIRMED
     };
 
+    const unsigned long RESOURCE_TASK_RELEASE_CONFIRMATION_MS = 1000UL;
+
+    struct ResourceTaskReleaseConfirmationWindow
+    {
+        bool trackingInactive;
+        unsigned long inactiveSinceMs;
+    };
+
     inline ResourceProductionState EvaluateResourceProduction(
         bool outputKnown,
         int outputQuantity,
@@ -41,15 +49,42 @@ namespace KenshiAgentTelemetry
     inline ResourceTaskReleaseState EvaluateResourceTaskRelease(
         bool issuedByCommand,
         bool releaseRequested,
-        bool exactTaskActive)
+        bool inactiveConfirmed)
     {
         if (!issuedByCommand)
             return RESOURCE_TASK_RELEASE_NOT_OWNED;
-        if (!exactTaskActive)
-            return RESOURCE_TASK_RELEASE_CONFIRMED;
         if (!releaseRequested)
             return RESOURCE_TASK_RELEASE_REQUESTED;
-        return RESOURCE_TASK_RELEASE_WAITING;
+        return inactiveConfirmed
+            ? RESOURCE_TASK_RELEASE_CONFIRMED
+            : RESOURCE_TASK_RELEASE_WAITING;
+    }
+
+    inline void ResetResourceTaskReleaseConfirmationWindow(
+        ResourceTaskReleaseConfirmationWindow& window)
+    {
+        window.trackingInactive = false;
+        window.inactiveSinceMs = 0UL;
+    }
+
+    inline bool ObserveResourceTaskReleaseConfirmation(
+        ResourceTaskReleaseConfirmationWindow& window,
+        bool releaseStillActive,
+        unsigned long nowMs)
+    {
+        if (releaseStillActive)
+        {
+            ResetResourceTaskReleaseConfirmationWindow(window);
+            return false;
+        }
+        if (!window.trackingInactive)
+        {
+            window.trackingInactive = true;
+            window.inactiveSinceMs = nowMs;
+            return false;
+        }
+        return nowMs - window.inactiveSinceMs >=
+            RESOURCE_TASK_RELEASE_CONFIRMATION_MS;
     }
 }
 
