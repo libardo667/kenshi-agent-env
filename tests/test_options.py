@@ -8,9 +8,9 @@ from operation_test_support import operation_family, operation_for
 from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.operation import (
     Action,
+    ApproachDialogueTargetAction,
     PauseAction,
     RespondToImmediateThreatAction,
-    SkillAction,
     ThreatResponseStrategy,
 )
 from kenshi_agent.core.telemetry import (
@@ -30,7 +30,6 @@ from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.env.base import AgentEnvironment
 from kenshi_agent.options import (
     OptionStatus,
-    StatefulMovementOption,
     StatefulThreatResponseOption,
 )
 
@@ -98,75 +97,6 @@ class FailingCancellationEnvironment(BlockingEnvironment):
         raise AssertionError("Failing cancellation environment unexpectedly resumed.")
 
 
-def test_movement_option_has_explicit_success_lifecycle() -> None:
-    async def scenario() -> None:
-        environment = BlockingEnvironment()
-        action = SkillAction(name="move")
-        option = StatefulMovementOption(
-            option_id="option-success",
-            action=action,
-            operation=operation_for(environment, action),
-        )
-
-        assert option.prepare(observation(1)).status is OptionStatus.PREPARED
-        task = option.start()
-        assert option.poll().status is OptionStatus.RUNNING
-        environment.release.set()
-        await task
-
-        assert option.poll().status is OptionStatus.SUCCEEDED
-        assert option.result().observation.world_revision.telemetry_sequence == 2
-
-    asyncio.run(scenario())
-
-
-def test_movement_option_cancellation_is_idempotent_and_leak_free() -> None:
-    async def scenario() -> None:
-        environment = BlockingEnvironment()
-        action = SkillAction(name="move")
-        option = StatefulMovementOption(
-            option_id="option-cancel",
-            action=action,
-            operation=operation_for(environment, action),
-        )
-        option.prepare(observation(1))
-        task = option.start()
-        await asyncio.sleep(0)
-
-        first = await option.cancel("operator interruption")
-        second = await option.cancel("duplicate interruption")
-
-        assert first.status is OptionStatus.CANCELLED
-        assert second.status is OptionStatus.CANCELLED
-        assert first.reason == second.reason == "operator interruption"
-        assert task.done()
-        assert environment.cancelled.is_set()
-
-    asyncio.run(scenario())
-
-
-def test_movement_option_surfaces_cancellation_cleanup_failure() -> None:
-    async def scenario() -> None:
-        environment = FailingCancellationEnvironment()
-        action = SkillAction(name="move")
-        option = StatefulMovementOption(
-            option_id="option-cleanup-failure",
-            action=action,
-            operation=operation_for(environment, action),
-        )
-        option.prepare(observation(1))
-        task = option.start()
-        await asyncio.sleep(0)
-
-        cancelled = await option.cancel("safety preemption")
-
-        assert cancelled.status is OptionStatus.FAILED
-        assert "re-pause confirmation failed" in cancelled.reason
-        assert task.done()
-
-    asyncio.run(scenario())
-
-
 def test_approach_can_start_from_a_running_world() -> None:
     """A paused start is a stop-motion assumption, not a safety property.
 
@@ -199,7 +129,7 @@ def test_approach_can_start_from_a_running_world() -> None:
     )
 
     strict_environment = BlockingEnvironment()
-    strict_action = SkillAction(name="mock_approach")
+    strict_action = ApproachDialogueTargetAction(target_id="entity-target")
     strict = StatefulApproachOption(
         option_id="strict",
         action=strict_action,
@@ -213,7 +143,7 @@ def test_approach_can_start_from_a_running_world() -> None:
         assert "paused" in str(exc)
 
     relaxed_environment = BlockingEnvironment()
-    relaxed_action = SkillAction(name="mock_approach")
+    relaxed_action = ApproachDialogueTargetAction(target_id="entity-target")
     relaxed = StatefulApproachOption(
         option_id="relaxed",
         action=relaxed_action,

@@ -1,1 +1,0 @@
-{"intent":"Inspect The Hub from a different anchored angle.","rationale":"One bounded orbit recenters with F, then sends E without moving Lekko.","action":{"kind":"skill","name":"orbit_camera_right","args":{}},"confidence":1.0,"continuity_operations":[]}

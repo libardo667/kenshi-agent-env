@@ -20,12 +20,12 @@ from kenshi_agent.core.operation import (
     PlanningMode,
 )
 from kenshi_agent.core.world import WorldStateRevision
-from kenshi_agent.live_dev import _telemetry_read
 from kenshi_agent.planner_context import (
     planner_affordance_digest,
     render_planner_payload,
 )
 from kenshi_agent.planners.openrouter_planner import OpenRouterPlanner
+from kenshi_agent.tooling.live_dev import _telemetry_read
 
 
 def live_observation(config: AppConfig) -> Observation:

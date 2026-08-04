@@ -13,6 +13,7 @@ from .continuity import ContinuityLedger
 from .continuity_service import ContinuityService
 from .core.continuity import MemoryRetrievalPolicy
 from .core.operation import ControlMode
+from .core.scenario import ScenarioAttestation
 from .core.telemetry import ScenarioIdentity
 from .env.base import AgentEnvironment
 from .execution.ports import OperationMechanicsPort
@@ -34,7 +35,6 @@ from .reflexes import ReflexEngine
 from .reporting import ConsoleDecisionReporter
 from .run_coordinator import RunCoordinator, RunSummary
 from .safety import OperationPolicy
-from .scenario_fixtures import ScenarioAttestation
 from .session_log import SessionLogger
 
 _WorkResult = TypeVar("_WorkResult")
@@ -89,7 +89,7 @@ class AgentRuntime:
         self.planner = planner
         self.advisor = advisor
         self.policy = policy
-        self.action_budget = ActionBudgetLedger(policy.config, policy.macros)
+        self.action_budget = ActionBudgetLedger(policy.config)
         # One cross-cutting authority, asked before scheduling and again
         # inside the input lease, so both moments share one policy.
         self.authority = OperationAuthority(policy, OPERATION_BINDING_AUTHORITY)
@@ -171,7 +171,6 @@ class AgentRuntime:
         self.operation_execution = OperationExecutionFactory(
             environment=environment,
             operation_port=self.operation_port,
-            macros=policy.macros,
             action_budget=self.action_budget,
             authority=self.authority,
             logger=logger,
@@ -194,7 +193,6 @@ class AgentRuntime:
             environment=environment,
             execute_control_pause=self.operation_port.control_pause,
             safety_config=policy.config,
-            macros=policy.macros,
             validate_safety_pause=policy.validate_safety_pause,
             reflexes=reflexes,
             logger=logger,

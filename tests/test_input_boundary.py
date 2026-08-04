@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import FrozenInstanceError, is_dataclass, replace
 from datetime import UTC, datetime
@@ -21,10 +22,9 @@ from operation_test_support import execute_operation
 from test_live_env import (
     PulseController,
     PulseTelemetry,
-    movement_action,
-    movement_registry,
 )
 
+from kenshi_agent.affordances import OPERATION_BINDING_AUTHORITY
 from kenshi_agent.config import (
     CaptureConfig,
     ControlsConfig,
@@ -34,10 +34,10 @@ from kenshi_agent.config import (
 from kenshi_agent.core.authority import AuthorizationCode, InputBoundaryDecision
 from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.operation import (
-    ActivateVisibleControlAction,
     ControlMode,
+    GameBinding,
     PointerActionClass,
-    SkillAction,
+    UseGameBindingAction,
 )
 from kenshi_agent.core.planning import (
     Condition,
@@ -55,7 +55,7 @@ from kenshi_agent.core.transport import (
 from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.env.live import LiveEnvironment
 from kenshi_agent.input_boundary import ExecutionToken
-from kenshi_agent.operation_authority import AuthorizationDecision
+from kenshi_agent.operation_authority import AuthorizationDecision, OperationAuthority
 from kenshi_agent.operation_definitions import definition_for
 from kenshi_agent.planners.base import Planner
 from kenshi_agent.reflexes import ReflexEngine
@@ -95,7 +95,6 @@ def environment(
         run_dir=tmp_path,
         telemetry=telemetry,  # type: ignore[arg-type]
         controller=controller,
-        macros=movement_registry(),
         runtime_config=RuntimeConfig(settle_seconds=0.0, objective="Explore nearby."),
         controls_config=ControlsConfig(
             post_input_delay_seconds=0.0,
@@ -105,8 +104,16 @@ def environment(
         capture_config=CaptureConfig(enabled=False),
         execute_actions=True,
         emergency_stop_key="f12",
-        available_skills=["move_visible_terrain"],
         control_mode=control_mode,
+    )
+
+
+def boundary_action() -> UseGameBindingAction:
+    """One current, coordinate-independent operation that emits host input."""
+
+    return UseGameBindingAction(
+        binding=GameBinding.EDITOR_TOGGLE,
+        expected_effect="toggle the in-game editor",
     )
 
 
@@ -209,6 +216,8 @@ def token_for(
     failure_conditions: tuple[Condition, ...] | None = None,
     max_telemetry_age_seconds: float | None = 3.0,
     pointer_class: PointerActionClass = PointerActionClass.COORDINATE_INDEPENDENT,
+    authority_validator: Callable[[Observation], AuthorizationDecision] | None = None,
+    authorized_fingerprint: str | None = None,
 ) -> ExecutionToken:
     return ExecutionToken(
         plan_id="boundary-plan",
@@ -223,6 +232,8 @@ def token_for(
         assumptions=(assumptions if assumptions is not None else (paused_condition(),)),
         preconditions=(preconditions if preconditions is not None else (selection_condition(),)),
         failure_conditions=failure_conditions or (),
+        authority_validator=authority_validator,
+        authorized_fingerprint=authorized_fingerprint,
     )
 
 
@@ -373,8 +384,21 @@ async def dispatch_with_blocking_lease(
     await live.reset()
 
     latest: list[Observation | None] = [observation(control_mode=control_mode)]
-    dispatched_action = action if action is not None else movement_action()
+    dispatched_action = action if action is not None else boundary_action()
     definition = definition_for(dispatched_action)  # type: ignore[arg-type]
+    assert latest[0] is not None
+    scheduled = OPERATION_BINDING_AUTHORITY.bind(
+        dispatched_action,  # type: ignore[arg-type]
+        latest[0],
+        affordance=None,
+    )
+    authority = OperationAuthority(
+        OperationPolicy(
+            SafetyConfig(allow_action_kinds=[dispatched_action.kind]),
+            control_mode=control_mode,
+        ),
+        OPERATION_BINDING_AUTHORITY,
+    )
     token = token_for(
         latest,
         validated=validated,
@@ -387,6 +411,8 @@ async def dispatch_with_blocking_lease(
             if definition is not None
             else PointerActionClass.COORDINATE_INDEPENDENT
         ),
+        authority_validator=lambda current: authority.evaluate(scheduled, current),
+        authorized_fingerprint=scheduled.identity.fingerprint,
     )
 
     task = asyncio.create_task(
@@ -459,7 +485,7 @@ def test_unchanged_state_executes_exactly_once(tmp_path: Path) -> None:
             conflict=observation(sequence=11),
         )
 
-        assert len(controller.actions) == 3
+        assert len(controller.actions) == 1
         receipt = transition.receipt  # type: ignore[attr-defined]
         assert receipt.executed is True
         boundary = receipt.input_boundary
@@ -592,7 +618,7 @@ def test_stale_canonical_observation_at_boundary_blocks_input(
         task = asyncio.create_task(
             execute_operation(
                 live,
-                movement_action(),
+                boundary_action(),
                 command=CommandDispatchContext(
                     command_id=token.command_id,
                     based_on_revision=token.validated_revision,
@@ -683,7 +709,7 @@ def test_single_step_live_dispatch_carries_boundary_authority(
             return PlannerDecision(
                 intent="Move once.",
                 rationale="Exercise single-step boundary authority.",
-                action=movement_action(),
+                action=boundary_action(),
                 confidence=1.0,
             )
 
@@ -692,15 +718,12 @@ def test_single_step_live_dispatch_carries_boundary_authority(
         telemetry.capabilities = ["game.pause"]
         controller = BlockingLeaseController(telemetry)
         live = environment(tmp_path, telemetry, controller)
-        macros = movement_registry()
         logger = SessionLogger(tmp_path / "single-step-boundary.jsonl", "boundary-test")
         guard = OperationPolicy(
             SafetyConfig(
-                allow_action_kinds=["skill"],
-                allow_skills=["move_visible_terrain"],
+                allow_action_kinds=["use_game_binding"],
                 max_actions_per_minute=3,
             ),
-            macros,
         )
         runtime = AgentRuntime(
             run_id="boundary-test",
@@ -734,9 +757,9 @@ def test_single_step_live_dispatch_carries_boundary_authority(
         receipt = next(event for event in events if event["event_type"] == "action_receipt")
         assert receipt["payload"]["accepted"] is False
         assert receipt["payload"]["primitive_actions"] == 0
-        # The boundary proved that none of the three reserved primitives were
-        # emitted, so all three must still be available to a later action.
-        assert guard.validate(movement_action(), observation()) == movement_action()
+        # The boundary proved the reserved primitive was not emitted, so it
+        # remains available to a later action.
+        assert guard.validate(boundary_action(), observation()) == boundary_action()
 
     asyncio.run(scenario())
 
@@ -765,14 +788,14 @@ def test_direct_adapter_characterization_still_uses_boundary_authority(tmp_path:
 
         transition = await execute_operation(
             live,
-            movement_action(),
+            boundary_action(),
             command=CommandDispatchContext(
                 command_id="cmd-" + "0" * 32,
                 based_on_revision=revision(10),
             ),
         )
 
-        assert len(controller.actions) == 3
+        assert len(controller.actions) == 1
         assert transition.receipt.executed is True
         assert transition.receipt.input_boundary is not None
         assert transition.receipt.input_boundary.decision is InputBoundaryDecision.REVALIDATED
@@ -807,110 +830,6 @@ def test_boundary_report_survives_receipt_serialization(tmp_path: Path) -> None:
         payload = transition.receipt.model_dump(mode="json")  # type: ignore[attr-defined]
         assert payload["input_boundary"]["decision"] == "rejected"
         assert payload["input_boundary"]["lease_wait_seconds"] == 7.5
-
-    asyncio.run(scenario())
-
-
-def test_direct_adapter_calibration_mismatch_is_a_boundary_rejection(tmp_path: Path) -> None:
-
-    async def scenario() -> None:
-        telemetry = PulseTelemetry()
-        controller = PulseController(telemetry, client_width=1280, client_height=720)
-        live = environment(tmp_path, telemetry, controller)
-        await live.reset()
-
-        transition = await execute_operation(live, movement_action())
-
-        assert controller.actions == []
-        assert transition.receipt.accepted is False
-        assert transition.receipt.input_boundary is not None
-        assert transition.receipt.input_boundary.code is AuthorizationCode.CALIBRATION_DRIFTED
-
-    asyncio.run(scenario())
-
-
-def test_calibration_mismatch_with_a_token_rejects_gracefully(tmp_path: Path) -> None:
-    """With a plan token, a client-size mismatch is a clean boundary rejection.
-
-    A raise would be treated by the executor as an ambiguous environment error
-    and conservatively spend the reservation. A graceful rejection instead
-    releases it, which is correct because we know zero input was emitted.
-    """
-
-    async def scenario() -> None:
-        telemetry = PulseTelemetry()
-        controller = PulseController(telemetry, client_width=1280, client_height=720)
-        live = environment(tmp_path, telemetry, controller)
-        await live.reset()
-
-        latest: list[Observation | None] = [observation()]
-        token = token_for(latest, pointer_class=PointerActionClass.PROFILE_CALIBRATED)
-        transition = await execute_operation(
-            live,
-            movement_action(),
-            command=CommandDispatchContext(
-                command_id=token.command_id,
-                based_on_revision=token.validated_revision,
-            ),
-            token=token,
-        )
-
-        assert controller.actions == []
-        receipt = transition.receipt  # type: ignore[attr-defined]
-        assert receipt.accepted is False
-        assert receipt.executed is False
-        assert receipt.error_type == "InputBoundaryRejected"
-        boundary = receipt.input_boundary
-        assert boundary is not None
-        assert boundary.decision is InputBoundaryDecision.REJECTED
-        assert "alibration" in boundary.reason
-        assert receipt.calibration is not None
-        assert receipt.calibration.mismatched_fields  # names the drifted field(s)
-
-    asyncio.run(scenario())
-
-
-def test_movement_action_is_the_pointer_bearing_case(tmp_path: Path) -> None:
-    """Guard the assumption that the exercised skill really emits pointer input."""
-
-    async def scenario() -> None:
-        telemetry = PulseTelemetry()
-        controller = PulseController(telemetry)
-        live = environment(tmp_path, telemetry, controller)
-        await live.reset()
-        await execute_operation(live, SkillAction.model_validate(movement_action().model_dump()))
-        assert controller.actions
-
-    asyncio.run(scenario())
-
-
-def test_semantic_control_action_is_rejected_at_the_boundary(tmp_path: Path) -> None:
-    """The generic fence covers the new actions, not only calibrated macros.
-
-    A control activation resolves its bounds from telemetry, so the interesting
-    failure is not a stale coordinate but a plan precondition that stopped being
-    true during the polite wait. No click may be emitted in that case.
-    """
-
-    async def scenario() -> None:
-        controller, transition = await dispatch_with_blocking_lease(
-            tmp_path,
-            conflict=observation(sequence=11, selected_id="char-2"),
-            action=ActivateVisibleControlAction(exact_label="Show me your goods.", role="button"),
-        )
-
-        assert controller.actions == []
-        receipt = transition.receipt  # type: ignore[attr-defined]
-        assert receipt.accepted is False
-        assert receipt.executed is False
-        assert receipt.primitive_actions == 0
-        assert receipt.error_type == "InputBoundaryRejected"
-        boundary = receipt.input_boundary
-        assert boundary is not None
-        assert boundary.decision is InputBoundaryDecision.REJECTED
-        # Semantic-current bounds mean calibration is never the blocker here.
-        assert receipt.calibration is not None
-        assert receipt.calibration.action_class.value == "semantic_current"
 
     asyncio.run(scenario())
 

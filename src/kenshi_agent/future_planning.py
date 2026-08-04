@@ -32,7 +32,6 @@ from .planning import (
     validate_future_plan_patch,
 )
 from .session_log import SessionLogger
-from .skills import MacroRegistry
 from .world_state import WorldStateStore
 
 ConcurrentPlanner = Callable[
@@ -90,7 +89,6 @@ class FuturePlanningPolicy:
         *,
         config: PlanningConfig,
         planner: ConcurrentPlanner | None,
-        macros: MacroRegistry,
         logger: SessionLogger,
         clock: PlanningClock,
         state_store: WorldStateStore,
@@ -99,7 +97,6 @@ class FuturePlanningPolicy:
     ) -> None:
         self.config = config
         self.planner = planner
-        self.macros = macros
         self.logger = logger
         self.clock = clock
         self.state_store = state_store
@@ -196,7 +193,6 @@ class FuturePlanningPolicy:
                 planner_observation=session.planner_observation,
                 current_observation=latest,
                 config=self.config,
-                macros=self.macros,
                 budget=scope.budget,
                 remaining_run_actions=scope.remaining_run_actions - 1,
                 protected_step_ids=set(scope.protected_step_ids),
@@ -284,7 +280,6 @@ class FuturePlanningPolicy:
                 planner_observation=staged.planner_observation,
                 current_observation=current_observation,
                 config=self.config,
-                macros=self.macros,
                 budget=budget,
                 remaining_run_actions=remaining_run_actions,
                 protected_step_ids=protected_step_ids,

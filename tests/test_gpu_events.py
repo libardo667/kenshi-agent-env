@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from kenshi_agent.gpu_events import (
+from kenshi_agent.tooling.gpu_events import (
     GpuTdrDetected,
     GpuTdrEvent,
     GpuTdrMonitor,

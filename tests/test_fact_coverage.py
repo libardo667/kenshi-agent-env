@@ -10,7 +10,7 @@ from kenshi_agent.core.telemetry import (
     UIState,
     VisibleUIControl,
 )
-from kenshi_agent.fact_coverage import FACTS, FactState, audit
+from kenshi_agent.tooling.fact_coverage import FACTS, FactState, audit
 
 
 def snapshot(

@@ -15,7 +15,6 @@ from pydantic import (
 from .base import StrictModel
 from .telemetry import (
     ContextActionKind,
-    NormalizedPointerBounds,
 )
 
 
@@ -535,30 +534,6 @@ class ActivateVisibleControlAction(StrictModel):
     window: str = Field(default="", max_length=200)
 
 
-SkillArgumentValue: TypeAlias = str | int | float | bool | None
-
-
-class SkillArgument(StrictModel):
-    name: str = Field(min_length=1, max_length=80)
-    value: SkillArgumentValue
-
-
-class SkillAction(StrictModel):
-    kind: Literal["skill"] = "skill"
-    name: str = Field(min_length=1, max_length=80)
-    args: list[SkillArgument] = Field(default_factory=list, max_length=20)
-
-    @field_validator("args", mode="before")
-    @classmethod
-    def accept_argument_mapping(cls, value: Any) -> Any:
-        if isinstance(value, dict):
-            return [{"name": name, "value": argument} for name, argument in value.items()]
-        return value
-
-    def argument_map(self) -> dict[str, SkillArgumentValue]:
-        return {argument.name: argument.value for argument in self.args}
-
-
 class EquipItemAction(StrictModel):
     """Equip one item from an exact currently selected squad-owned window.
 
@@ -988,10 +963,10 @@ InternalRuntimeOperation: TypeAlias = (
 SemanticAction: TypeAlias = RuntimeSemanticOperation | InternalRuntimeOperation
 """Every typed game/UI intention, including controller-owned phases."""
 
-RuntimeAction: TypeAlias = RuntimeControlAction | RuntimeSemanticOperation | SkillAction
+RuntimeAction: TypeAlias = RuntimeControlAction | RuntimeSemanticOperation
 """Executor operations that can appear in a continuously supervised plan."""
 
-SingleStepRuntimeAction: TypeAlias = RuntimeControlAction | AtomicRuntimeOperation | SkillAction
+SingleStepRuntimeAction: TypeAlias = RuntimeControlAction | AtomicRuntimeOperation
 """Executor operations that do not require continuous option ownership."""
 
 Action: TypeAlias = (
@@ -1010,7 +985,6 @@ Action: TypeAlias = (
     | MoveCursorAction
     | ClickAction
     | ScrollAction
-    | SkillAction
     | ApproachDialogueTargetAction
     | CommandWorldTargetAction
     | SelectSquadMemberAction
@@ -1110,15 +1084,3 @@ def is_runtime_control_action(action: Action) -> bool:
 
 def parse_action(value: Any) -> Action:
     return ACTION_ADAPTER.validate_python(value)
-
-
-class SkillSpec(StrictModel):
-    name: str = Field(min_length=1, max_length=80)
-    description: str = Field(default="", max_length=1000)
-    arguments: dict[str, str] = Field(default_factory=dict)
-    visual_precondition: str | None = Field(default=None, max_length=1000)
-    normalized_pointer_bounds: NormalizedPointerBounds | None = None
-    movement_pulse_seconds: float | None = Field(default=None, gt=0.0, le=10.0)
-    movement_pulse_min_seconds: float | None = Field(default=None, gt=0.0, le=10.0)
-    movement_pulse_max_seconds: float | None = Field(default=None, gt=0.0, le=10.0)
-    requires_native_assisted: bool = False

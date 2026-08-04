@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from kenshi_agent.dev_cli import build_parser
+from kenshi_agent.tooling.dev_cli import build_parser
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 INVOCATION_END = "__END_WINDOWS_INVOCATION__"
@@ -303,7 +303,7 @@ def test_dev_detaches_windows_processes_from_an_inherited_pty(
         [
             "-u",
             "-m",
-            "kenshi_agent.live_dev",
+            "kenshi_agent.tooling.live_dev",
             "telemetry",
             "--config",
             str(REPO_ROOT / "config" / "live.yaml"),
@@ -323,7 +323,7 @@ def test_dev_run_failure_recovers_with_the_same_canonical_config(
         [
             "-u",
             "-m",
-            "kenshi_agent.live_dev",
+            "kenshi_agent.tooling.live_dev",
             "run",
             "--config",
             str(REPO_ROOT / "config" / "live.yaml"),
@@ -331,7 +331,7 @@ def test_dev_run_failure_recovers_with_the_same_canonical_config(
         [
             "-u",
             "-m",
-            "kenshi_agent.live_dev",
+            "kenshi_agent.tooling.live_dev",
             "recover",
             "--config",
             str(REPO_ROOT / "config" / "live.yaml"),

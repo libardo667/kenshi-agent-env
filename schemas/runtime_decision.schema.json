@@ -1427,73 +1427,6 @@
       "title": "SetSpeedAction",
       "type": "object"
     },
-    "SkillAction": {
-      "additionalProperties": false,
-      "properties": {
-        "kind": {
-          "const": "skill",
-          "default": "skill",
-          "title": "Kind",
-          "type": "string"
-        },
-        "name": {
-          "maxLength": 80,
-          "minLength": 1,
-          "title": "Name",
-          "type": "string"
-        },
-        "args": {
-          "items": {
-            "$ref": "#/$defs/SkillArgument"
-          },
-          "maxItems": 20,
-          "title": "Args",
-          "type": "array"
-        }
-      },
-      "required": [
-        "name"
-      ],
-      "title": "SkillAction",
-      "type": "object"
-    },
-    "SkillArgument": {
-      "additionalProperties": false,
-      "properties": {
-        "name": {
-          "maxLength": 80,
-          "minLength": 1,
-          "title": "Name",
-          "type": "string"
-        },
-        "value": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "integer"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "title": "Value"
-        }
-      },
-      "required": [
-        "name",
-        "value"
-      ],
-      "title": "SkillArgument",
-      "type": "object"
-    },
     "StopAction": {
       "additionalProperties": false,
       "description": "End the whole run, not the current plan.\n\nThe distinction is not obvious from the name and was undocumented, so a\nplanner that had finished what it set out to do used this to say \"that\nobjective is complete\" and ended an eighty-step run on step eleven, with a\nreason that read \"resuming free play to pursue next objective\". A plan ends\nby its steps completing; this ends the agent.",
@@ -1787,9 +1720,6 @@
         },
         {
           "$ref": "#/$defs/RecoverCameraViewAction"
-        },
-        {
-          "$ref": "#/$defs/SkillAction"
         }
       ],
       "title": "Action"

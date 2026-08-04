@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from kenshi_agent.context_action_parity import (  # noqa: E402
+from kenshi_agent.tooling.context_action_parity import (  # noqa: E402
     DEFAULT_SCAN_LIMIT,
     WITNESSES_PATH,
     load_witnesses,

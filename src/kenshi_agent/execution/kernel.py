@@ -38,7 +38,6 @@ from ..planning import (
     game_elapsed_seconds,
 )
 from ..session_log import SessionLogger
-from ..skills import MacroRegistry
 from ..world_state import CommandCausalityError, WorldStateStore
 from .monitor_types import OperationMonitorPort
 from .registry import HandlerRegistry
@@ -122,7 +121,6 @@ class ExecutionKernel:
         *,
         handlers: HandlerRegistry,
         action_budget: ActionBudgetLedger,
-        macros: MacroRegistry,
         logger: SessionLogger,
         clock: PlanningClock,
         state_store: WorldStateStore,
@@ -132,7 +130,6 @@ class ExecutionKernel:
     ) -> None:
         self.handlers = handlers
         self.action_budget = action_budget
-        self.macros = macros
         self.logger = logger
         self.clock = clock
         self.state_store = state_store
@@ -210,7 +207,7 @@ class ExecutionKernel:
             )
 
         try:
-            reserved_risk = request.budget.reserve(action, self.macros)
+            reserved_risk = request.budget.reserve(action)
         except PlanBudgetError as exc:
             self.action_budget.release(action_reservation)
             return KernelResult(
@@ -435,6 +432,9 @@ class ExecutionKernel:
         dispatch = CommandDispatchContext(
             command_id=command.command_id,
             based_on_revision=revision,
+            primitive_action_bound=bound.definition.primitive_action_bound_for(
+                bound.operation
+            ),
         )
         token = ExecutionToken(
             plan_id=request.plan.plan_id,

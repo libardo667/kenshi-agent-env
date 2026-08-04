@@ -4,7 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from kenshi_agent.evals import LogMetrics, PlanLifecycle, evaluate_log, replay_plan_lifecycle
+from kenshi_agent.tooling.evals import (
+    LogMetrics,
+    PlanLifecycle,
+    evaluate_log,
+    replay_plan_lifecycle,
+)
 
 
 def test_evaluate_log_counts_events(tmp_path: Path) -> None:

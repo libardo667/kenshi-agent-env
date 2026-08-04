@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from kenshi_agent.dev_cli import export_reference
+from kenshi_agent.tooling.dev_cli import export_reference
 
 ROOT = Path(__file__).resolve().parents[1]
 

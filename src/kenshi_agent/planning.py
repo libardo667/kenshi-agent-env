@@ -10,13 +10,9 @@ from .config import PlanningConfig
 from .core.observation import Observation
 from .core.operation import (
     Action,
-    ClickAction,
     ControlMode,
     InterruptPolicy,
-    MoveCursorAction,
     PauseAction,
-    ScrollAction,
-    SkillAction,
 )
 from .core.planning import (
     ConditionEvaluation,
@@ -29,7 +25,6 @@ from .core.planning import (
 )
 from .live_plan_policy import live_plan_policy_errors
 from .operation_definitions import definition_for
-from .skills import MacroRegistry, UnknownSkillError
 
 
 class PlanValidationError(ValueError):
@@ -58,36 +53,15 @@ class SystemPlanningClock(PlanningClock):
         await asyncio.sleep(seconds)
 
 
-def _action_risk(
-    action: Action,
-    macros: MacroRegistry,
-) -> tuple[int, int, int]:
-    # A contracted action declares its own cost, so risk accounting no longer
-    # depends on expanding a macro or recognizing an exact skill name.
-    actions = [action]
-    native = 0
-    if isinstance(action, SkillAction):
-        try:
-            native = int(macros.requires_native_assisted(action.name))
-            actions = macros.expand(action)
-        except UnknownSkillError:
-            actions = [action]
-    else:
-        contract = definition_for(action)
-        if contract is not None:
-            return contract.risk_for(action).as_tuple()
-    pointer = sum(
-        isinstance(item, (ClickAction, MoveCursorAction, ScrollAction)) for item in actions
-    )
-    purchase = int(isinstance(action, SkillAction) and action.name == "buy_inspected_shop_item")
-    return pointer, purchase, native
+def _action_risk(action: Action) -> tuple[int, int, int]:
+    definition = definition_for(action)
+    return definition.risk_for(action).as_tuple() if definition is not None else (0, 0, 0)
 
 
 def validate_plan(
     plan: PlanEnvelope,
     observation: Observation,
     config: PlanningConfig,
-    macros: MacroRegistry,
 ) -> list[ConditionEvaluation]:
     errors: list[str] = []
     if observation.mode == "live":
@@ -175,7 +149,7 @@ def validate_plan(
     purchase_risk = 0
     native_risk = 0
     for step in plan.steps:
-        pointer, purchase, native = _action_risk(step.action, macros)
+        pointer, purchase, native = _action_risk(step.action)
         attempts = 1 + step.retry_budget
         pointer_risk += pointer * attempts
         purchase_risk += purchase * attempts
@@ -223,7 +197,6 @@ def validate_future_plan_patch(
     planner_observation: Observation,
     current_observation: Observation,
     config: PlanningConfig,
-    macros: MacroRegistry,
     budget: PlanBudgetLedger,
     remaining_run_actions: int,
     protected_step_ids: set[str],
@@ -334,7 +307,7 @@ def validate_future_plan_patch(
         raise PlanValidationError(
             f"replacement graph is invalid: {exc}"  # mutation: diagnostic-only
         ) from exc
-    validate_plan(candidate, current_observation, config, macros)
+    validate_plan(candidate, current_observation, config)
     return candidate
 
 
@@ -357,8 +330,8 @@ class PlanBudgetLedger:
             remaining_native_assisted_actions=(plan.risk_budget.max_native_assisted_actions),
         )
 
-    def reserve(self, action: Action, macros: MacroRegistry) -> tuple[int, int, int]:
-        pointer, purchase, native = _action_risk(action, macros)
+    def reserve(self, action: Action) -> tuple[int, int, int]:
+        pointer, purchase, native = _action_risk(action)
         if self.remaining_actions < 1:
             raise PlanBudgetError("Plan action budget is exhausted.")
         if pointer > self.remaining_pointer_actions:

@@ -25,6 +25,45 @@ from functools import partial
 from pathlib import Path
 from typing import Literal
 
+from ..application import main as application_main
+from ..config import AppConfig, ControlsConfig, load_config
+from ..control.base import InputController, PrimitiveInputAction, WindowRect
+from ..control.calibration import validate_expected_client_size
+from ..control.capture import WindowCapture
+from ..control.win32 import Win32InputController
+from ..control_ownership import (
+    ControlOwnershipEvent,
+    ControlOwnershipEventType,
+    ControlOwnershipMachine,
+    ControlOwnershipState,
+)
+from ..core.operation import (
+    ClickAction,
+    HotkeyAction,
+    KeyAction,
+)
+from ..core.scenario import MANAGED_SAVE_NAME, ScenarioFixtureManifest
+from ..core.telemetry import (
+    Disposition,
+    NormalizedPointerBounds,
+    ScenarioIdentity,
+    TelemetrySnapshot,
+    VisibleUIControl,
+    window_close_point,
+)
+from ..display_lease import (
+    DisplayLeaseError,
+    DisplayTopologyController,
+    external_display_lease,
+)
+from ..final_safe_state import FinalSafeStateStatus, ensure_final_safe_state
+from ..scenario_validation import (
+    ScenarioFixtureError,
+    attest_loaded_scenario,
+    validate_current_scenario,
+)
+from ..telemetry import TelemetryRead, TelemetryReader, TelemetryReadError
+from ..terminal_state import terminal_window_title
 from .authored_starts import (
     AuthoredGameStart,
     install_authored_starts,
@@ -33,39 +72,8 @@ from .authored_starts import (
     verify_authored_game_start_snapshot,
     verify_installed_authored_starts,
 )
-from .cli import main as agent_main
-from .config import AppConfig, ControlsConfig, load_config
-from .control.base import InputController, PrimitiveInputAction, WindowRect
-from .control.calibration import validate_expected_client_size
-from .control.capture import WindowCapture
-from .control.win32 import Win32InputController
-from .control_ownership import (
-    ControlOwnershipEvent,
-    ControlOwnershipEventType,
-    ControlOwnershipMachine,
-    ControlOwnershipState,
-)
-from .core.operation import (
-    ClickAction,
-    HotkeyAction,
-    KeyAction,
-)
-from .core.telemetry import (
-    Disposition,
-    NormalizedPointerBounds,
-    ScenarioIdentity,
-    TelemetrySnapshot,
-    VisibleUIControl,
-    window_close_point,
-)
 from .dev_cli import LIVE_CONFIG
 from .dev_cli import build_parser as build_dev_parser
-from .display_lease import (
-    DisplayLeaseError,
-    DisplayTopologyController,
-    external_display_lease,
-)
-from .final_safe_state import FinalSafeStateStatus, ensure_final_safe_state
 from .gpu_events import (
     GpuTdrDetected,
     GpuTdrEvent,
@@ -80,21 +88,24 @@ from .graphics_profile import (
     verify_graphics_profile,
 )
 from .scenario_fixtures import (
-    MANAGED_SAVE_NAME,
-    ScenarioFixtureError,
-    ScenarioFixtureManifest,
-    attest_loaded_scenario,
     capture_scenario_fixture,
     current_attestation_path,
     load_scenario_attestation,
     load_scenario_fixture,
+    load_verified_scenario_attestation,
     restore_scenario_fixture,
-    validate_current_scenario,
     verify_staged_scenario,
     write_scenario_attestation,
 )
-from .telemetry import TelemetryRead, TelemetryReader, TelemetryReadError
-from .terminal_state import terminal_window_title
+
+
+def agent_main(argv: list[str]) -> int:
+    """Enter the same application root as the public console adapter."""
+
+    return application_main(
+        argv,
+        scenario_proof_loader=load_verified_scenario_attestation,
+    )
 
 
 class LaunchInterrupted(RuntimeError):
@@ -2883,8 +2894,7 @@ def _run_agent(
                     [
                         sys.executable,
                         "-m",
-                        "kenshi_agent",
-                        "overlay",
+                        "kenshi_agent.tooling.overlay",
                         "--log",
                         str(event_log),
                         "--title",

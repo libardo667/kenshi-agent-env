@@ -52,10 +52,6 @@ from kenshi_agent.native_commands import (
     NATIVE_SQUAD_REGROUP_WIRE_COMMAND,
     NATIVE_SQUAD_SELECTION_WIRE_COMMAND,
 )
-from kenshi_agent.native_contract_export import (
-    export_gameplay_capabilities_header,
-    load_gameplay_capabilities,
-)
 from kenshi_agent.operation_definitions import (
     NATIVE_APPROACH_CAPABILITY,
     NATIVE_CONTEXT_ACTION_CAPABILITY,
@@ -68,6 +64,10 @@ from kenshi_agent.operation_definitions import (
     NATIVE_SQUAD_REGROUP_CAPABILITY,
     NATIVE_SQUAD_SELECTION_CAPABILITY,
     OPERATION_DEFINITIONS,
+)
+from kenshi_agent.tooling.native_contract_export import (
+    export_gameplay_capabilities_header,
+    load_gameplay_capabilities,
 )
 
 ROOT = Path(__file__).resolve().parents[1]

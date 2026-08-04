@@ -37,8 +37,6 @@ from ...core.operation import (
     PerformContextAction,
     ProduceResourceOutputAction,
     SetSpeedAction,
-    SkillAction,
-    SkillArgument,
     UseGameBindingAction,
 )
 from ...core.telemetry import (
@@ -655,6 +653,11 @@ class HarvestHandler:
         command = CommandDispatchContext(
             command_id=new_command_id(),
             based_on_revision=observation.world_revision,
+            primitive_action_bound=(
+                context.command.primitive_action_bound
+                if context.command is not None
+                else 0
+            ),
         )
         return command, ExecutionToken(
             plan_id=parent.plan_id,
@@ -1105,18 +1108,7 @@ class KenshiResourceMechanics:
     ) -> ActionReceipt:
         """Issue one reviewed default task on one exact observed world object."""
 
-        skill_name = self._surface.controls_config.native_approach_skill
-        if skill_name is None or not self._surface.macros.has(skill_name):
-            raise RuntimeError("Context actions require a configured native transport skill.")
-        primitive_skill = SkillAction(
-            name=skill_name,
-            args=[SkillArgument(name="target_id", value=action.target_id)],
-        )
-        pulse_seconds = self._surface.macros.resolve_movement_pulse_seconds(primitive_skill)
-        if pulse_seconds is None:
-            raise RuntimeError(
-                f"Configured native transport skill {skill_name!r} has no movement pulse."
-            )
+        pulse_seconds = self._surface.controls_config.native_movement_pulse_seconds
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
             contract_version=operations.PERFORM_CONTEXT_ACTION_DEFINITION.version,
@@ -1135,7 +1127,6 @@ class KenshiResourceMechanics:
             command,
             target_id=action.target_id,
             pulse_seconds=pulse_seconds,
-            primitive_skill=primitive_skill,
             require_vendor_role=False,
             semantic=semantic,
             continue_until_terminal=True,
@@ -1155,10 +1146,7 @@ class KenshiResourceMechanics:
     ) -> ActionReceipt:
         """Retain one exact mining job until native output proof is terminal."""
 
-        primitive_skill, pulse_seconds = self._surface.native_transport_skill(
-            target_id=action.target_id,
-            purpose="Resource production",
-        )
+        pulse_seconds = self._surface.controls_config.native_movement_pulse_seconds
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
             contract_version=operations.PRODUCE_RESOURCE_OUTPUT_DEFINITION.version,
@@ -1177,7 +1165,6 @@ class KenshiResourceMechanics:
             command,
             target_id=action.target_id,
             pulse_seconds=pulse_seconds,
-            primitive_skill=primitive_skill,
             require_vendor_role=False,
             semantic=semantic,
             continue_until_terminal=True,
@@ -1194,10 +1181,7 @@ class KenshiResourceMechanics:
     ) -> ActionReceipt:
         """Open the ordinary inventory window for one exact resource handle."""
 
-        primitive_skill, pulse_seconds = self._surface.native_transport_skill(
-            target_id=action.target_id,
-            purpose="Contextual inventory opening",
-        )
+        pulse_seconds = self._surface.controls_config.native_movement_pulse_seconds
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
             contract_version=operations.OPEN_CONTEXT_INVENTORY_DEFINITION.version,
@@ -1214,7 +1198,6 @@ class KenshiResourceMechanics:
             command,
             target_id=action.target_id,
             pulse_seconds=pulse_seconds,
-            primitive_skill=primitive_skill,
             require_vendor_role=False,
             semantic=semantic,
             wire_command=native_commands.NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND,

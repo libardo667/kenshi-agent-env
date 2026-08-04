@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from kenshi_agent.affordance_surfaces import (
+from kenshi_agent.tooling.affordance_surfaces import (
     SURFACES,
     SurfaceStatus,
     render_surface_registry,

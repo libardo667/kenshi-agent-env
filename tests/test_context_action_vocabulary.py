@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from kenshi_agent.affordance_surfaces import (
+from kenshi_agent.tooling.affordance_surfaces import (
     SURFACES,
     SurfaceStatus,
     render_surface_registry,
 )
-from kenshi_agent.context_action_vocabulary import (
+from kenshi_agent.tooling.context_action_vocabulary import (
     load_task_types,
     parse_task_type_enum,
 )

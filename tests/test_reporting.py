@@ -10,9 +10,9 @@ from kenshi_agent.core.evidence import (
 )
 from kenshi_agent.core.operation import (
     ControlMode,
+    MoveInDirectionAction,
     PauseAction,
     PurchaseItemAction,
-    SkillAction,
 )
 from kenshi_agent.core.planning import PlannerDecision
 from kenshi_agent.core.transport import ActionReceipt
@@ -36,10 +36,17 @@ class RecordingNarrator:
         self.closed = True
 
 
-def test_format_action_renders_skill_arguments_compactly() -> None:
-    action = SkillAction(name="move_visible_terrain", args={"x": 0.4, "y": 0.5})
+def test_format_action_renders_operation_arguments_compactly() -> None:
+    action = MoveInDirectionAction(
+        bearing_degrees=90,
+        distance_units=25,
+        expected_effect="Reach the road.",
+    )
 
-    assert format_action(action) == "move_visible_terrain(x=0.4, y=0.5)"
+    assert format_action(action) == (
+        "move_in_direction(bearing_degrees=90.0, distance_units=25.0, "
+        "expected_effect='Reach the road.')"
+    )
 
 
 def test_console_reporter_streams_decision_and_receipt() -> None:
@@ -168,7 +175,11 @@ def test_console_reporter_narrates_continuous_plan_and_each_action() -> None:
         narrator=narrator,
         stream=StringIO(),
     )
-    action = SkillAction(name="move_visible_terrain", args={"x": 0.4, "y": 0.5})
+    action = MoveInDirectionAction(
+        bearing_degrees=90,
+        distance_units=25,
+        expected_effect="Reach the road",
+    )
 
     reporter.plan_accepted(
         step_index=4,
@@ -180,7 +191,7 @@ def test_console_reporter_narrates_continuous_plan_and_each_action() -> None:
     spoken = [text for text, _ in narrator.utterances]
     assert spoken == [
         "My plan is to reach Squin and look for supplies.",
-        "Moving through the visible terrain.",
+        "Moving with this goal: Reach the road.",
     ]
 
 

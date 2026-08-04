@@ -14,10 +14,10 @@ from enum import StrEnum
 from pathlib import Path
 from typing import cast
 
+from ..core.telemetry import TelemetrySnapshot
 from .context_action_vocabulary import load_task_types
-from .core.telemetry import TelemetrySnapshot
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 WITNESSES_PATH = ROOT / "game_sources" / "kenshi" / "context_menu_witnesses.json"
 REPORT_NAME = "CONTEXT_ACTION_PARITY.md"
 DEFAULT_SCAN_LIMIT = 24

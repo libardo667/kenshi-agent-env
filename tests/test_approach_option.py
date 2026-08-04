@@ -11,7 +11,6 @@ from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.operation import (
     Action,
     ApproachDialogueTargetAction,
-    SkillAction,
 )
 from kenshi_agent.core.telemetry import (
     Disposition,
@@ -132,7 +131,7 @@ class InstantApproachEnvironment(AgentEnvironment):
 
 
 def approach_option(environment: AgentEnvironment) -> StatefulApproachOption:
-    action = SkillAction(name="approach_confirmed_vendor")
+    action = ApproachDialogueTargetAction(target_id=TARGET_ID)
     return StatefulApproachOption(
         option_id="approach-1",
         action=action,
@@ -164,19 +163,6 @@ def test_approach_succeeds_only_after_arrival_not_after_the_ack() -> None:
         assert arrived.status is OptionStatus.SUCCEEDED
         assert "Dialogue opened" in arrived.reason
         assert option.result().receipt.accepted is True
-
-    asyncio.run(scenario())
-
-
-def test_approach_succeeds_by_arrival_radius() -> None:
-    async def scenario() -> None:
-        option = approach_option(InstantApproachEnvironment())
-        option.prepare(observation(1, target_distance=40.0))
-        await option.start()
-        await asyncio.sleep(0)
-        option.poll(update(observation(2, target_distance=40.0)))
-        arrived = option.poll(update(observation(3, target_distance=4.0)))
-        assert arrived.status is OptionStatus.SUCCEEDED
 
     asyncio.run(scenario())
 

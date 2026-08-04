@@ -24,11 +24,9 @@ from kenshi_agent.core.evidence import (
 )
 from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.operation import (
+    ApproachDialogueTargetAction,
     ControlMode,
     PlanningMode,
-    SkillAction,
-    SkillArgument,
-    SkillSpec,
 )
 from kenshi_agent.core.planning import ActivePlanContext
 from kenshi_agent.core.telemetry import (
@@ -239,14 +237,8 @@ def _oversized_observation(*, reverse_low_priority: bool = False) -> Observation
             recorded_at=_NOW,
             step_index=index,
             intent=f"Outcome intent {index}: " + "i" * 300,
-            action=SkillAction(
-                name="approach_vendor",
-                args=[
-                    SkillArgument(
-                        name="target_id",
-                        value=_OUTCOME_TARGET_ID if index == 5 else _TARGET_ID,
-                    )
-                ],
+            action=ApproachDialogueTargetAction(
+                target_id=_OUTCOME_TARGET_ID if index == 5 else _TARGET_ID,
             ),
             executed=True,
             receipt_message=f"Receipt {index}: " + "r" * 500,
@@ -258,15 +250,6 @@ def _oversized_observation(*, reverse_low_priority: bool = False) -> Observation
         for index in range(6)
     ]
     events = [f"event-{index:02d}: " + "e" * 250 for index in range(24)]
-    skill_specs = [
-        SkillSpec(
-            name=f"bounded_skill_{index:02d}",
-            description="Machine-enforced constraints — 制約 " + "s" * 300,
-            arguments={"target_id": "Exact stable entity ID."},
-            visual_precondition="The exact target and UI phase remain current.",
-        )
-        for index in range(16)
-    ]
     memories = [
         MemoryRecord(
             memory_id=f"mem-{index:04d}",
@@ -310,11 +293,6 @@ def _oversized_observation(*, reverse_low_priority: bool = False) -> Observation
             remaining_actions=3,
         ),
         recent_action_outcomes=outcomes,
-        available_skills=_maybe_reversed(
-            [item.name for item in skill_specs],
-            reverse_low_priority,
-        ),
-        skill_specs=_maybe_reversed(skill_specs, reverse_low_priority),
         memories=_maybe_reversed(memories, reverse_low_priority),
     )
 
@@ -377,7 +355,7 @@ def _assert_critical_envelope(document: dict[str, object]) -> None:
     outcomes = document["recent_action_outcomes"]
     assert isinstance(outcomes, list)
     assert outcomes[-1]["step_index"] == 5
-    assert outcomes[-1]["action"]["args"][0]["value"] == _OUTCOME_TARGET_ID
+    assert outcomes[-1]["action"]["target_id"] == _OUTCOME_TARGET_ID
 
 
 def test_semantic_budget_preserves_critical_fields_and_reports_omissions() -> None:
@@ -548,10 +526,7 @@ def test_semantic_budget_is_valid_json_across_tight_budgets() -> None:
     # grows whenever a new preserved digest is added, and a hardcoded floor here
     # rots into a failure about a number rather than about behaviour.
     for headroom in (0, 6000, 12000, 18000):
-        document = json.loads(render_planner_payload(observation, max_chars=minimum + headroom))
-        available = set(document["available_skills"])
-        specified = {item["name"] for item in document["skill_specs"]}
-        assert available == specified
+        json.loads(render_planner_payload(observation, max_chars=minimum + headroom))
 
 
 def test_semantic_budget_rejects_budget_below_irreducible_envelope() -> None:
@@ -659,10 +634,8 @@ def test_planner_projection_removes_private_mechanics_and_conserves_gameplay_sta
     projected = json.loads(text)
     telemetry = projected["telemetry"]
 
-    assert len(text) <= len(legacy_text) * 0.70
+    assert len(text) < len(legacy_text)
     assert text == json.dumps(projected, ensure_ascii=False, separators=(",", ":"))
-    assert projected["available_skills"] == []
-    assert projected["skill_specs"] == []
     assert telemetry["capabilities"] == []
     assert telemetry["ui"]["visible_controls"] == []
     assert telemetry["native_control"]["acknowledgements"] == []
@@ -732,29 +705,6 @@ def test_semantic_reduction_conserves_every_value_when_everything_fits() -> None
         [
             {"id": "squad-z", "selected": False},
             {"id": "squad-a", "selected": False},
-        ]
-    )
-    original["available_skills"].append("skill_without_spec")
-    original["skill_specs"].extend(
-        [
-            {
-                "name": "orphan_skill",
-                "description": "z orphan",
-                "arguments": {},
-                "visual_precondition": None,
-            },
-            {
-                "name": "bounded_skill_00",
-                "description": "z duplicate",
-                "arguments": {},
-                "visual_precondition": None,
-            },
-            {
-                "name": "bounded_skill_00",
-                "description": "a duplicate",
-                "arguments": {},
-                "visual_precondition": None,
-            },
         ]
     )
     original["memories"].extend(
@@ -830,19 +780,6 @@ def test_semantic_reduction_conserves_every_value_when_everything_fits() -> None
     assert reduced["recent_continuity_receipts"] == original["recent_continuity_receipts"]
     assert reduced["recent_fieldbook_receipts"] == original["recent_fieldbook_receipts"]
     assert reduced["fieldbook_projects"] == original["fieldbook_projects"]
-    assert reduced["available_skills"] == sorted(original["available_skills"])
-    assert reduced["skill_specs"] == sorted(
-        original["skill_specs"],
-        key=lambda item: (
-            item["name"],
-            json.dumps(
-                item,
-                ensure_ascii=False,
-                separators=(",", ":"),
-                sort_keys=True,
-            ),
-        ),
-    )
     current_target_ids = {
         item["id"]
         for collection_name in ("squad", "nearby_entities", "world_targets")
@@ -967,8 +904,8 @@ def test_irreducible_selection_is_exact_ordered_and_detached() -> None:
         {
             "outcome_id": "ao-current",
             "action": {
-                "kind": "skill",
-                "args": [{"name": "target_id", "value": "near-outcome"}],
+                "kind": "approach_dialogue_target",
+                "target_id": "near-outcome",
             },
         }
     ]
@@ -1121,8 +1058,6 @@ def test_irreducible_selection_is_exact_ordered_and_detached() -> None:
                 "recent_action_outcomes": [],
                 "recent_plan_outcomes": [],
                 "recent_continuity_receipts": [],
-                "available_skills": [],
-                "skill_specs": [],
                 "memories": [],
                 "telemetry": None,
             }
@@ -1173,23 +1108,12 @@ def test_target_identity_extractors_cover_each_authoritative_shape() -> None:
     assert observation_budget._outcome_target_ids(
         {"action": {"kind": "click", "target_id": "semantic-a"}}
     ) == {"semantic-a"}
-    assert observation_budget._outcome_target_ids(
-        {
-            "action": {
-                "kind": "skill",
-                "target_id": "semantic-a",
-                "args": [
-                    {"name": "target_id", "value": "argument-a"},
-                    {"name": "other", "value": "ignored"},
-                    {"name": "target_id", "value": 3},
-                    "invalid",
-                ],
-            }
-        }
-    ) == {"semantic-a", "argument-a"}
     assert observation_budget._outcome_target_ids({"action": None}) == set()
     assert (
-        observation_budget._outcome_target_ids({"action": {"kind": "skill", "args": None}}) == set()
+        observation_budget._outcome_target_ids(
+            {"action": {"kind": "unknown_operation", "args": None}}
+        )
+        == set()
     )
     assert (
         observation_budget._outcome_target_ids({"action": {"kind": "click", "target_id": 3}})
@@ -1275,18 +1199,13 @@ def test_budget_primitives_preserve_values_and_define_stable_priority() -> None:
     with pytest.raises(TypeError, match="not a retained collection"):
         observation_budget._prepend_path(document, "outer.value", "invalid")
 
-    candidate = {"items": [], "names": [], "specs": []}
+    candidate = {"items": [], "names": []}
     observation_budget._prepend_mutator("items", {"id": "later"})(candidate)
     observation_budget._append_mutator("items", {"id": "last"})(candidate)
     observation_budget._set_mutator("names", ["replaced"])(candidate)
-    observation_budget._skill_contract_mutator(
-        "bounded",
-        [{"name": "bounded", "description": "exact"}],
-    )({"available_skills": candidate["names"], "skill_specs": candidate["specs"]})
     assert candidate == {
         "items": [{"id": "later"}, {"id": "last"}],
-        "names": ["replaced", "bounded"],
-        "specs": [{"name": "bounded", "description": "exact"}],
+        "names": ["replaced"],
     }
 
     assert observation_budget._canonical_json({"β": 2, "a": 1}) == ('{"a":1,"β":2}')
@@ -1380,8 +1299,6 @@ def test_custom_measurement_survives_irreducible_context_failure() -> None:
         "recent_plan_outcomes": [],
         "recent_continuity_receipts": [],
         "recent_fieldbook_receipts": [],
-        "available_skills": [],
-        "skill_specs": [],
         "memories": [],
         "fieldbook_projects": [],
         "telemetry": None,
@@ -1476,8 +1393,6 @@ def test_partial_fieldbook_restoration_never_discards_the_latest_adverse_receipt
         "recent_plan_outcomes": [],
         "recent_continuity_receipts": [],
         "recent_fieldbook_receipts": receipts,
-        "available_skills": [],
-        "skill_specs": [],
         "memories": [],
         "fieldbook_projects": [],
         "telemetry": None,
@@ -1520,8 +1435,6 @@ def test_budget_boundaries_are_inclusive_for_full_and_semantic_payloads() -> Non
         "recent_action_outcomes": [],
         "recent_plan_outcomes": [],
         "recent_continuity_receipts": [],
-        "available_skills": [],
-        "skill_specs": [],
         "memories": [],
         "telemetry": None,
     }

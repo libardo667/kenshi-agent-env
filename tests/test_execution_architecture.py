@@ -498,3 +498,76 @@ def test_stage_six_has_no_function_local_core_imports() -> None:
 
 def test_stage_six_production_import_graph_is_acyclic() -> None:
     assert _cyclic_components(_production_import_graph()) == []
+
+
+def test_stage_seven_tooling_is_a_one_way_outer_perimeter() -> None:
+    """Only console/tooling adapters may depend on the tooling package."""
+
+    graph = _production_import_graph()
+    outer_adapters = {
+        "kenshi_agent.__main__",
+        "kenshi_agent.cli",
+    }
+    offenders = {
+        module: sorted(
+            dependency
+            for dependency in dependencies
+            if dependency == "kenshi_agent.cli"
+            or dependency.startswith("kenshi_agent.tooling")
+        )
+        for module, dependencies in graph.items()
+        if module not in outer_adapters
+        and not module.startswith("kenshi_agent.tooling")
+    }
+    assert {
+        module: dependencies for module, dependencies in offenders.items() if dependencies
+    } == {}
+
+
+def test_stage_seven_public_cli_has_one_application_composition_root() -> None:
+    application = _tree(SOURCE / "application.py")
+    application_functions = {
+        node.name
+        for node in application.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    assert {"build_parser", "main"} <= application_functions
+
+    cli = _tree(SOURCE / "cli.py")
+    cli_functions = {
+        node.name
+        for node in cli.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    assert cli_functions == {"main"}
+    assert "argparse" not in (SOURCE / "cli.py").read_text(encoding="utf-8")
+
+    for adapter in (SOURCE / "cli.py", SOURCE / "tooling" / "live_dev.py"):
+        source = adapter.read_text(encoding="utf-8")
+        assert "application_main(" in source
+        assert "application import main as application_main" in source
+
+
+def test_stage_seven_deleted_the_macro_skill_compatibility_owner() -> None:
+    assert not any((SOURCE / "skills").glob("*.py"))
+    forbidden_symbols = {
+        "MacroConfig",
+        "MacroRegistry",
+        "SkillAction",
+        "SkillArgument",
+        "SkillSpec",
+    }
+    offenders: list[str] = []
+    for path in SOURCE.rglob("*.py"):
+        tree = _tree(path)
+        for node in ast.walk(tree):
+            symbol = (
+                node.name
+                if isinstance(node, ast.ClassDef)
+                else node.id
+                if isinstance(node, ast.Name)
+                else None
+            )
+            if symbol in forbidden_symbols:
+                offenders.append(f"{path.relative_to(ROOT)}:{node.lineno}:{symbol}")
+    assert offenders == []

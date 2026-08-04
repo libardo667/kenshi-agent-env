@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from kenshi_agent.affordance_parity import (
+from kenshi_agent.tooling.affordance_parity import (
     CONTROLS_SNAPSHOT,
     BindingStatus,
     ExemptionKind,

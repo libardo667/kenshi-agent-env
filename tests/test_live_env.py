@@ -9,7 +9,7 @@ import pytest
 from operation_test_support import execute_operation
 
 from kenshi_agent.affordances import OperationBindingError
-from kenshi_agent.config import CaptureConfig, ControlsConfig, MacroConfig, RuntimeConfig
+from kenshi_agent.config import CaptureConfig, ControlsConfig, RuntimeConfig
 from kenshi_agent.control.base import InputController, PrimitiveInputAction, WindowRect
 from kenshi_agent.core.authority import AuthorizationCode
 from kenshi_agent.core.evidence import ResourceTransferStatus
@@ -41,7 +41,6 @@ from kenshi_agent.core.operation import (
     SelectSquadMemberAction,
     SelectSquadMemberExactAction,
     SetSpeedAction,
-    SkillAction,
     ThreatResponseStrategy,
     TravelToMapDestinationAction,
     UseGameBindingAction,
@@ -73,7 +72,6 @@ from kenshi_agent.core.transport import (
 )
 from kenshi_agent.env.live import LiveEnvironment
 from kenshi_agent.execution.handlers import kenshi_surface
-from kenshi_agent.skills import MacroRegistry
 from kenshi_agent.telemetry import TelemetryRead
 
 
@@ -231,63 +229,11 @@ class ResizeInsideLeaseController(PulseController):
         yield
 
 
-def movement_registry(
-    *,
-    pulse_seconds: float = 0.01,
-    minimum: float | None = None,
-    maximum: float | None = None,
-    include_pause_skill: bool = False,
-) -> MacroRegistry:
-    macros = {
-        "move_visible_terrain": MacroConfig(
-            movement_pulse_seconds=pulse_seconds,
-            movement_pulse_min_seconds=minimum,
-            movement_pulse_max_seconds=maximum,
-            actions=[
-                {
-                    "kind": "click",
-                    "x": "{{x}}",
-                    "y": "{{y}}",
-                    "space": "normalized",
-                    "button": "right",
-                }
-            ],
-        )
-    }
-    if include_pause_skill:
-        macros["pause_game"] = MacroConfig(
-            actions=[
-                {
-                    "kind": "click",
-                    "x": 0.765,
-                    "y": 0.723,
-                    "space": "normalized",
-                    "button": "left",
-                }
-            ]
-        )
-        macros["unpause_game"] = MacroConfig(
-            actions=[
-                {
-                    "kind": "click",
-                    "x": 0.792,
-                    "y": 0.723,
-                    "space": "normalized",
-                    "button": "left",
-                }
-            ]
-        )
-    return MacroRegistry(macros)
-
-
 def live_environment(
     tmp_path: Path,
     telemetry: PulseTelemetry,
     controller: PulseController,
-    registry: MacroRegistry,
     *,
-    pause_skill: str | None = None,
-    unpause_skill: str | None = None,
     control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
     quicksave_dir: Path | None = None,
     quicksave_timeout_seconds: float = 10.0,
@@ -298,12 +244,9 @@ def live_environment(
         run_dir=tmp_path,
         telemetry=telemetry,  # type: ignore[arg-type]
         controller=controller,
-        macros=registry,
         runtime_config=RuntimeConfig(settle_seconds=0.0, objective="Explore nearby."),
         controls_config=ControlsConfig(
             post_input_delay_seconds=0.0,
-            pause_skill=pause_skill,
-            unpause_skill=unpause_skill,
             # A real live movement config declares its calibrated client size;
             # the default PulseController renders at this exact size.
             calibrated_client_width=1920,
@@ -312,25 +255,11 @@ def live_environment(
         capture_config=CaptureConfig(enabled=False),
         execute_actions=True,
         emergency_stop_key="f12",
-        available_skills=["move_visible_terrain"],
         control_mode=control_mode,
         quicksave_dir=quicksave_dir,
         quicksave_timeout_seconds=quicksave_timeout_seconds,
         quicksave_stable_seconds=quicksave_stable_seconds,
     )
-
-
-def movement_action(*, duration_seconds: float | None = None) -> SkillAction:
-    arguments = {"x": 0.5, "y": 0.5}
-    if duration_seconds is not None:
-        arguments["duration_seconds"] = duration_seconds
-    return SkillAction.model_validate(
-        {
-            "name": "move_visible_terrain",
-            "args": arguments,
-        }
-    )
-
 
 def test_semantic_hotkey_binding_dispatches_one_hotkey(tmp_path: Path) -> None:
     async def scenario() -> None:
@@ -340,7 +269,6 @@ def test_semantic_hotkey_binding_dispatches_one_hotkey(tmp_path: Path) -> None:
             tmp_path,
             telemetry,
             controller,
-            movement_registry(),
         )
         action = UseGameBindingAction(
             binding=GameBinding.EDITOR_TOGGLE,
@@ -368,7 +296,6 @@ def test_semantic_mouse_binding_dispatches_one_held_button(tmp_path: Path) -> No
             tmp_path,
             telemetry,
             controller,
-            movement_registry(),
         )
         action = UseGameBindingAction(
             binding=GameBinding.HIGHLIGHT,
@@ -411,7 +338,6 @@ def test_quicksave_waits_for_an_exact_quiescent_save_tree(tmp_path: Path) -> Non
             tmp_path,
             telemetry,
             controller,
-            movement_registry(),
             quicksave_dir=quicksave_dir,
             quicksave_timeout_seconds=0.2,
             quicksave_stable_seconds=0.01,
@@ -448,7 +374,6 @@ def test_quicksave_does_not_promote_an_input_receipt_to_completion(
             tmp_path,
             telemetry,
             controller,
-            movement_registry(),
             quicksave_dir=tmp_path / "save" / "quicksave",
             quicksave_timeout_seconds=0.03,
             quicksave_stable_seconds=0.01,
@@ -504,7 +429,6 @@ def test_live_close_causally_pauses_once_and_is_idempotent(tmp_path: Path) -> No
             tmp_path,
             telemetry,
             controller,
-            movement_registry(),
         )
 
         outcome = await environment.close()
@@ -538,7 +462,6 @@ def test_terminal_crash_invalidates_frozen_pause_and_emits_no_input(
             tmp_path,
             telemetry,
             controller,
-            movement_registry(),
         )
 
         observation = await environment.observe_without_capture()
@@ -565,7 +488,6 @@ def test_live_close_emits_no_input_without_fresh_pause_authority(
             tmp_path,
             telemetry,
             controller,
-            movement_registry(),
         )
 
         outcome = await environment.close()
@@ -591,7 +513,6 @@ def test_live_close_does_not_trust_paused_without_pause_capability(
             tmp_path,
             telemetry,
             controller,
-            movement_registry(),
         )
 
         outcome = await environment.close()
@@ -617,7 +538,6 @@ def test_live_close_reports_unverified_when_pause_has_no_causal_effect(
             tmp_path,
             telemetry,
             controller,
-            movement_registry(),
         )
         environment.final_pause_timeout_seconds = 0.01
 
@@ -645,7 +565,6 @@ def test_control_pause_remains_available_after_human_input_without_a_plan_token(
             tmp_path,
             telemetry,
             controller,
-            movement_registry(),
         )
         observation = await environment.reset()
 
@@ -666,95 +585,6 @@ def test_control_pause_remains_available_after_human_input_without_a_plan_token(
     asyncio.run(scenario())
 
 
-def test_movement_pulse_unpauses_and_guarantees_repause(tmp_path: Path) -> None:
-    async def scenario() -> None:
-        telemetry = PulseTelemetry()
-        controller = PulseController(telemetry)
-        environment = live_environment(tmp_path, telemetry, controller, movement_registry())
-
-        initial = await environment.reset()
-        transition = await execute_operation(environment, movement_action())
-
-        assert initial.objective == "Explore nearby."
-        assert initial.available_skills == ["move_visible_terrain"]
-        assert telemetry.paused is True
-        assert transition.observation.telemetry is not None
-        assert transition.observation.telemetry.game.paused is True
-        assert [action.kind for action in controller.actions] == ["click", "key", "key"]
-        assert transition.receipt.primitive_actions == 5
-        assert "confirmed re-paused state" in transition.receipt.message
-
-    asyncio.run(scenario())
-
-
-def test_pointer_skill_rejects_mismatched_calibrated_client_before_input(
-    tmp_path: Path,
-) -> None:
-    async def scenario() -> None:
-        telemetry = PulseTelemetry()
-        controller = PulseController(
-            telemetry,
-            client_width=1280,
-            client_height=720,
-        )
-        environment = live_environment(
-            tmp_path,
-            telemetry,
-            controller,
-            movement_registry(),
-        )
-        environment.controls_config = ControlsConfig(
-            post_input_delay_seconds=0.0,
-            calibrated_client_width=1920,
-            calibrated_client_height=1080,
-        )
-
-        await environment.reset()
-        transition = await execute_operation(environment, movement_action())
-
-        assert controller.actions == []
-        assert telemetry.paused is True
-        assert transition.receipt.accepted is False
-        assert transition.receipt.calibration is not None
-        assert transition.receipt.calibration.status is CalibrationStatus.MISMATCHED
-        assert transition.receipt.input_boundary is not None
-
-    asyncio.run(scenario())
-
-
-def test_pointer_skill_rechecks_calibrated_client_inside_input_lease(
-    tmp_path: Path,
-) -> None:
-    async def scenario() -> None:
-        telemetry = PulseTelemetry()
-        controller = ResizeInsideLeaseController(telemetry)
-        environment = live_environment(
-            tmp_path,
-            telemetry,
-            controller,
-            movement_registry(),
-        )
-        environment.controls_config = ControlsConfig(
-            post_input_delay_seconds=0.0,
-            calibrated_client_width=1920,
-            calibrated_client_height=1080,
-        )
-
-        await environment.reset()
-        transition = await execute_operation(environment, movement_action())
-
-        assert controller.actions == []
-        assert telemetry.paused is True
-        assert transition.receipt.accepted is False
-        assert transition.receipt.input_boundary is not None
-        assert (
-            transition.receipt.input_boundary.code
-            is AuthorizationCode.CALIBRATION_DRIFTED
-        )
-
-    asyncio.run(scenario())
-
-
 def test_live_observation_reports_human_input_and_emergency_stop(
     tmp_path: Path,
 ) -> None:
@@ -769,63 +599,12 @@ def test_live_observation_reports_human_input_and_emergency_stop(
             tmp_path,
             telemetry,
             controller,
-            movement_registry(),
         )
 
         current = await environment.reset()
 
         assert "human_input_detected" in current.events
         assert "emergency_stop_detected" in current.events
-
-    asyncio.run(scenario())
-
-
-def test_movement_pulse_can_use_click_based_pause_skill(tmp_path: Path) -> None:
-    async def scenario() -> None:
-        telemetry = PulseTelemetry()
-        controller = PulseController(telemetry)
-        environment = live_environment(
-            tmp_path,
-            telemetry,
-            controller,
-            movement_registry(include_pause_skill=True),
-            pause_skill="pause_game",
-            unpause_skill="unpause_game",
-        )
-
-        await environment.reset()
-        transition = await execute_operation(environment, movement_action())
-
-        assert telemetry.paused is True
-        assert [action.kind for action in controller.actions] == ["click", "click", "click"]
-        assert transition.receipt.primitive_actions == 9
-        assert "confirmed re-paused state" in transition.receipt.message
-
-    asyncio.run(scenario())
-
-
-def test_separate_transport_controls_are_state_specific(tmp_path: Path) -> None:
-    async def scenario() -> None:
-        telemetry = PulseTelemetry()
-        controller = PulseController(telemetry)
-        environment = live_environment(
-            tmp_path,
-            telemetry,
-            controller,
-            movement_registry(include_pause_skill=True),
-            pause_skill="pause_game",
-            unpause_skill="unpause_game",
-        )
-
-        await environment.reset()
-        await execute_operation(environment, PauseAction(paused=False))
-        await execute_operation(environment, PauseAction(paused=False))
-        await execute_operation(environment, PauseAction(paused=True))
-        await execute_operation(environment, PauseAction(paused=True))
-
-        clicks = [action for action in controller.actions if isinstance(action, ClickAction)]
-        assert [(action.x, action.y) for action in clicks] == [(0.792, 0.723), (0.765, 0.723)]
-        assert telemetry.paused is True
 
     asyncio.run(scenario())
 
@@ -848,7 +627,6 @@ def test_set_speed_owns_starting_a_paused_world(
             tmp_path,
             telemetry,
             controller,
-            movement_registry(),
         )
 
         await environment.reset()
@@ -879,7 +657,6 @@ def test_set_speed_reissues_an_idempotent_gear_after_a_dropped_key(
             tmp_path,
             telemetry,
             controller,
-            movement_registry(),
         )
 
         await environment.reset()
@@ -950,7 +727,6 @@ def test_engage_threat_intent_owns_normal_speed_playback(tmp_path: Path) -> None
             tmp_path,
             telemetry,
             controller,
-            movement_registry(),
             control_mode=ControlMode.NATIVE_ASSISTED,
         )
 
@@ -969,173 +745,6 @@ def test_engage_threat_intent_owns_normal_speed_playback(tmp_path: Path) -> None
         assert transition.receipt.action == action
         assert transition.receipt.semantic is not None
         assert transition.receipt.semantic.target_id == "entity-bark"
-
-    asyncio.run(scenario())
-
-
-def test_model_can_choose_bounded_movement_duration(tmp_path: Path) -> None:
-    async def scenario() -> None:
-        telemetry = PulseTelemetry()
-        controller = PulseController(telemetry)
-        environment = live_environment(
-            tmp_path,
-            telemetry,
-            controller,
-            movement_registry(pulse_seconds=0.01, minimum=0.005, maximum=0.03),
-        )
-        await environment.reset()
-
-        transition = await execute_operation(environment, movement_action(duration_seconds=0.02))
-
-        assert telemetry.paused is True
-        assert "Advanced Kenshi for 0.02s" in transition.receipt.message
-
-    asyncio.run(scenario())
-
-
-def test_movement_pulse_preserves_unexpected_game_auto_pause(tmp_path: Path) -> None:
-    async def scenario() -> None:
-        # Reset plus the mandatory input-boundary authority read precede the
-        # movement controller's own playback confirmation reads.
-        telemetry = PulseTelemetry(auto_pause_after_reads=4)
-        controller = PulseController(telemetry)
-        environment = live_environment(
-            tmp_path,
-            telemetry,
-            controller,
-            movement_registry(pulse_seconds=0.2),
-        )
-        await environment.reset()
-
-        transition = await execute_operation(environment, movement_action())
-
-        assert telemetry.paused is True
-        assert [action.kind for action in controller.actions] == ["click", "key"]
-        assert "auto-paused" in transition.receipt.message
-
-    asyncio.run(scenario())
-
-
-def test_emergency_stop_ends_pulse_after_repausing(tmp_path: Path) -> None:
-    async def scenario() -> None:
-        telemetry = PulseTelemetry()
-        controller = PulseController(telemetry, emergency_after=6)
-        environment = live_environment(
-            tmp_path,
-            telemetry,
-            controller,
-            movement_registry(pulse_seconds=0.2),
-        )
-        await environment.reset()
-
-        with pytest.raises(RuntimeError, match="after re-pausing"):
-            await execute_operation(environment, movement_action())
-
-        assert telemetry.paused is True
-        assert [action.kind for action in controller.actions][-2:] == ["key", "key"]
-
-    asyncio.run(scenario())
-
-
-def test_user_input_ends_pulse_after_repausing(tmp_path: Path) -> None:
-    async def scenario() -> None:
-        telemetry = PulseTelemetry()
-        controller = PulseController(telemetry, user_input_after=2)
-        environment = live_environment(
-            tmp_path,
-            telemetry,
-            controller,
-            movement_registry(pulse_seconds=0.2),
-        )
-        await environment.reset()
-
-        transition = await execute_operation(environment, movement_action())
-
-        assert telemetry.paused is True
-        assert [action.kind for action in controller.actions][-2:] == ["key", "key"]
-        assert "Human input ended the pulse" in transition.receipt.message
-        assert "yielded control" in transition.receipt.message
-        assert transition.observation.telemetry is not None
-        assert transition.observation.telemetry.game.paused is True
-
-    asyncio.run(scenario())
-
-
-def test_interface_only_environment_hides_and_rejects_native_assisted_skill(
-    tmp_path: Path,
-) -> None:
-    async def scenario() -> None:
-        telemetry = PulseTelemetry()
-        telemetry.capabilities = ["game.pause", "control.approach_vendor"]
-        telemetry.native_control = NativeControlState(
-            available=True,
-            last_command_sequence=3,
-            last_command="approach_confirmed_vendor",
-            last_result="issued",
-        )
-        controller = PulseController(telemetry)
-        registry = MacroRegistry(
-            {
-                "open_map": MacroConfig(actions=[{"kind": "key", "key": "m"}]),
-                "approach_confirmed_vendor": MacroConfig(
-                    requires_native_assisted=True,
-                    actions=[{"kind": "hotkey", "keys": ["ctrl", "shift", "f10"]}],
-                ),
-            }
-        )
-        environment = LiveEnvironment(
-            run_id="control-mode-test",
-            run_dir=tmp_path,
-            telemetry=telemetry,  # type: ignore[arg-type]
-            controller=controller,
-            macros=registry,
-            runtime_config=RuntimeConfig(settle_seconds=0.0),
-            controls_config=ControlsConfig(post_input_delay_seconds=0.0),
-            capture_config=CaptureConfig(enabled=False),
-            execute_actions=False,
-            emergency_stop_key="f12",
-            available_skills=["open_map", "approach_confirmed_vendor"],
-            control_mode=ControlMode.INTERFACE_ONLY,
-        )
-
-        observation = await environment.reset()
-
-        assert observation.control_mode == ControlMode.INTERFACE_ONLY
-        assert observation.available_skills == ["open_map"]
-        assert observation.telemetry is not None
-        assert observation.telemetry.capabilities == ["game.pause"]
-        assert not observation.telemetry.native_control.available
-        assert observation.telemetry.native_control.last_command is None
-        with pytest.raises(RuntimeError, match="requires native_assisted"):
-            await execute_operation(environment, SkillAction(name="approach_confirmed_vendor"))
-
-        native_environment = LiveEnvironment(
-            run_id="native-control-mode-test",
-            run_dir=tmp_path,
-            telemetry=telemetry,  # type: ignore[arg-type]
-            controller=controller,
-            macros=registry,
-            runtime_config=RuntimeConfig(settle_seconds=0.0),
-            controls_config=ControlsConfig(post_input_delay_seconds=0.0),
-            capture_config=CaptureConfig(enabled=False),
-            execute_actions=False,
-            emergency_stop_key="f12",
-            available_skills=["open_map", "approach_confirmed_vendor"],
-            control_mode=ControlMode.NATIVE_ASSISTED,
-        )
-        native_observation = await native_environment.reset()
-        assert native_observation.available_skills == [
-            "approach_confirmed_vendor",
-            "open_map",
-        ]
-        assert native_observation.telemetry is not None
-        assert "control.approach_vendor" in native_observation.telemetry.capabilities
-        assert native_observation.telemetry.native_control.available
-        native_transition = await execute_operation(
-            native_environment, SkillAction(name="approach_confirmed_vendor")
-        )
-        assert native_transition.receipt.control_mode == ControlMode.NATIVE_ASSISTED
-        assert native_transition.receipt.dry_run
 
     asyncio.run(scenario())
 
@@ -1540,48 +1149,26 @@ def native_vendor_environment(
         complete_map_travel_on_unpause=complete_map_travel_on_unpause,
         reason=reason,
     )
-    registry = MacroRegistry(
-        {
-            "approach_confirmed_vendor": MacroConfig(
-                requires_native_assisted=True,
-                movement_pulse_seconds=0.01,
-                movement_pulse_min_seconds=0.005,
-                movement_pulse_max_seconds=0.02,
-                actions=[
-                    {
-                        "kind": "hotkey",
-                        "keys": ["ctrl", "shift", "f10"],
-                        "hold_seconds": 0.01,
-                    }
-                ],
-            )
-        }
-    )
     environment = LiveEnvironment(
         run_id="native-command-test",
         run_dir=tmp_path,
         telemetry=telemetry,  # type: ignore[arg-type]
         controller=controller,
-        macros=registry,
         runtime_config=RuntimeConfig(settle_seconds=0.0),
-        controls_config=ControlsConfig(post_input_delay_seconds=0.0),
+        controls_config=ControlsConfig(
+            post_input_delay_seconds=0.0,
+            native_movement_pulse_seconds=0.01,
+        ),
         capture_config=CaptureConfig(enabled=False),
         execute_actions=True,
         emergency_stop_key="f12",
-        available_skills=["approach_confirmed_vendor"],
         control_mode=ControlMode.NATIVE_ASSISTED,
     )
     return environment, telemetry, controller
 
 
-def native_vendor_action(target_id: str = "entity-vendor") -> SkillAction:
-    return SkillAction(
-        name="approach_confirmed_vendor",
-        args={
-            "target_id": target_id,
-            "duration_seconds": 0.01,
-        },  # type: ignore[arg-type]
-    )
+def native_vendor_action(target_id: str = "entity-vendor") -> ApproachDialogueTargetAction:
+    return ApproachDialogueTargetAction(target_id=target_id)
 
 
 def test_world_target_command_rebinds_geometry_inside_input_lease(
@@ -1688,9 +1275,6 @@ def test_squad_member_selection_uses_exact_native_identity_without_pointer_input
                 "squad.basic",
             ]
         )
-        environment.controls_config = environment.controls_config.model_copy(
-            update={"native_approach_skill": "approach_confirmed_vendor"}
-        )
         initial = await environment.reset()
 
         transition = await execute_operation(
@@ -1732,9 +1316,6 @@ def test_exact_native_selection_collapses_a_current_squad_group(
             ]
         )
         telemetry.selected_character_ids = ["entity-selected", "entity-ruka"]
-        environment.controls_config = environment.controls_config.model_copy(
-            update={"native_approach_skill": "approach_confirmed_vendor"}
-        )
         initial = await environment.reset()
 
         transition = await execute_operation(
@@ -1765,9 +1346,6 @@ def test_native_character_movement_carries_the_complete_selected_group(
         environment, telemetry, controller = native_vendor_environment(tmp_path)
         telemetry.capabilities.extend(["control.move_to_character"])
         telemetry.selected_character_ids = ["entity-selected", "entity-ruka"]
-        environment.controls_config = environment.controls_config.model_copy(
-            update={"native_approach_skill": "approach_confirmed_vendor"}
-        )
         initial = await environment.reset()
 
         transition = await execute_operation(
@@ -1824,7 +1402,10 @@ def test_native_vendor_request_precedes_hotkey_and_matching_later_ack(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        environment, telemetry, controller = native_vendor_environment(tmp_path)
+        environment, telemetry, controller = native_vendor_environment(
+            tmp_path,
+            open_dialogue_on_hotkey=True,
+        )
         initial = await environment.reset()
         command = CommandDispatchContext(
             command_id="cmd-0123456789abcdef0123456789abcdef",
@@ -1846,11 +1427,7 @@ def test_native_vendor_request_precedes_hotkey_and_matching_later_ack(
         )
         assert controller.request.selected_character_ids == ["entity-selected"]
         assert controller.request.target_id == "entity-vendor"
-        assert [action.kind for action in controller.actions] == [
-            "hotkey",
-            "key",
-            "key",
-        ]
+        assert [action.kind for action in controller.actions] == ["hotkey"]
         assert telemetry.paused is True
         assert transition.receipt.accepted
         assert transition.receipt.executed
@@ -1859,6 +1436,7 @@ def test_native_vendor_request_precedes_hotkey_and_matching_later_ack(
         assert transition.receipt.native_acknowledgement is not None
         assert transition.receipt.native_acknowledgement.command_id == command.command_id
         assert "acknowledgement 'accepted'" in transition.receipt.message
+        assert "opened dialogue with the exact native target" in transition.receipt.message
 
     asyncio.run(scenario())
 
@@ -1867,7 +1445,10 @@ def test_native_vendor_dispatch_accepts_same_telemetry_without_capture_basis(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        environment, _, controller = native_vendor_environment(tmp_path)
+        environment, _, controller = native_vendor_environment(
+            tmp_path,
+            open_dialogue_on_hotkey=True,
+        )
         initial = await environment.reset()
         command = CommandDispatchContext(
             command_id="cmd-0123456789abcdef0123456789abcdef",
@@ -1905,7 +1486,10 @@ def test_native_vendor_dispatch_rebases_an_older_authorized_revision(
     """
 
     async def scenario() -> None:
-        environment, _, controller = native_vendor_environment(tmp_path)
+        environment, _, controller = native_vendor_environment(
+            tmp_path,
+            open_dialogue_on_hotkey=True,
+        )
         initial = await environment.reset()
         sequence = initial.world_revision.telemetry_sequence
         assert sequence is not None
@@ -2028,7 +1612,10 @@ def test_native_target_must_still_match_current_stable_observation(
         environment, telemetry, controller = native_vendor_environment(tmp_path)
         initial = await environment.reset()
 
-        with pytest.raises(RuntimeError, match="absent from current nearby"):
+        with pytest.raises(
+            OperationBindingError,
+            match="current valid dialogue target",
+        ):
             await execute_operation(
                 environment,
                 native_vendor_action("entity-replaced"),
@@ -2098,7 +1685,6 @@ def control_environment(
         tmp_path,
         telemetry,  # type: ignore[arg-type]
         controller,
-        movement_registry(),
     )
     return environment, controller
 
@@ -2210,7 +1796,6 @@ def test_visible_control_is_semantic_current_not_profile_calibrated(
             tmp_path,
             telemetry,  # type: ignore[arg-type]
             controller,
-            movement_registry(),
         )
         await environment.observe()
 
@@ -2238,7 +1823,6 @@ def test_semantic_approach_adopts_an_already_active_order_for_the_same_target(
         environment, telemetry, controller = native_vendor_environment(tmp_path)
         environment.controls_config = environment.controls_config.model_copy(
             update={
-                "native_approach_skill": "approach_confirmed_vendor",
                 "native_approach_max_seconds": 0.02,
             }
         )
@@ -2297,7 +1881,6 @@ def test_semantic_approach_issues_one_order_when_none_is_active(tmp_path: Path) 
         telemetry.selected_character_ids = ["entity-selected", "entity-ruka"]
         environment.controls_config = environment.controls_config.model_copy(
             update={
-                "native_approach_skill": "approach_confirmed_vendor",
                 "native_approach_max_seconds": 0.02,
             }
         )
@@ -2336,7 +1919,6 @@ def test_context_action_issues_exact_native_resource_task_without_world_click(
         )
         environment.controls_config = environment.controls_config.model_copy(
             update={
-                "native_approach_skill": "approach_confirmed_vendor",
                 "native_approach_max_seconds": 0.02,
             }
         )
@@ -2386,7 +1968,6 @@ def test_a_started_context_task_leaves_the_world_running(tmp_path: Path) -> None
         )
         environment.controls_config = environment.controls_config.model_copy(
             update={
-                "native_approach_skill": "approach_confirmed_vendor",
                 # The canonical live configuration; a run that plays continuously
                 # is allowed to leave the world running.
                 "require_paused_between_actions": False,
@@ -2427,7 +2008,6 @@ def test_first_aid_uses_the_same_exact_semantic_native_route(tmp_path: Path) -> 
         telemetry.first_aid_target_enabled = True
         environment.controls_config = environment.controls_config.model_copy(
             update={
-                "native_approach_skill": "approach_confirmed_vendor",
                 "native_approach_max_seconds": 0.02,
             }
         )
@@ -2469,9 +2049,6 @@ def test_resource_production_issues_exact_monitored_native_command(
             status=NativeCommandStatus.COMPLETED,
             reason="resource_output_ready",
         )
-        environment.controls_config = environment.controls_config.model_copy(
-            update={"native_approach_skill": "approach_confirmed_vendor"}
-        )
         initial = await environment.reset()
 
         transition = await execute_operation(
@@ -2506,9 +2083,6 @@ def test_context_inventory_requires_exact_native_terminal(
             tmp_path,
             status=NativeCommandStatus.COMPLETED,
             reason="exact_context_inventory_open",
-        )
-        environment.controls_config = environment.controls_config.model_copy(
-            update={"native_approach_skill": "approach_confirmed_vendor"}
         )
         initial = await environment.reset()
 
@@ -2549,7 +2123,6 @@ def test_collect_resource_output_requires_conserved_transfer(
             run_dir=tmp_path,
             telemetry=telemetry,  # type: ignore[arg-type]
             controller=controller,
-            macros=MacroRegistry({}),
             runtime_config=RuntimeConfig(settle_seconds=0.0),
             controls_config=ControlsConfig(
                 post_input_delay_seconds=0.0,
@@ -2558,7 +2131,6 @@ def test_collect_resource_output_requires_conserved_transfer(
             capture_config=CaptureConfig(enabled=False),
             execute_actions=True,
             emergency_stop_key="f12",
-            available_skills=[],
             control_mode=ControlMode.NATIVE_ASSISTED,
         )
         initial = await environment.reset()
@@ -2606,7 +2178,6 @@ def test_collect_resource_output_emits_zero_input_without_destination_window(
             run_dir=tmp_path,
             telemetry=telemetry,  # type: ignore[arg-type]
             controller=controller,
-            macros=MacroRegistry({}),
             runtime_config=RuntimeConfig(settle_seconds=0.0),
             controls_config=ControlsConfig(
                 post_input_delay_seconds=0.0,
@@ -2615,7 +2186,6 @@ def test_collect_resource_output_emits_zero_input_without_destination_window(
             capture_config=CaptureConfig(enabled=False),
             execute_actions=True,
             emergency_stop_key="f12",
-            available_skills=[],
             control_mode=ControlMode.NATIVE_ASSISTED,
         )
         initial = await environment.reset()
@@ -2659,7 +2229,6 @@ def test_collect_resource_output_emits_zero_input_when_destination_rejects_item(
             run_dir=tmp_path,
             telemetry=telemetry,  # type: ignore[arg-type]
             controller=controller,
-            macros=MacroRegistry({}),
             runtime_config=RuntimeConfig(settle_seconds=0.0),
             controls_config=ControlsConfig(
                 post_input_delay_seconds=0.0,
@@ -2668,7 +2237,6 @@ def test_collect_resource_output_emits_zero_input_when_destination_rejects_item(
             capture_config=CaptureConfig(enabled=False),
             execute_actions=True,
             emergency_stop_key="f12",
-            available_skills=[],
             control_mode=ControlMode.NATIVE_ASSISTED,
         )
         initial = await environment.reset()
@@ -2705,7 +2273,6 @@ def test_visible_nearby_dialogue_target_still_uses_native_talk_order(
         environment, telemetry, controller = native_vendor_environment(tmp_path)
         environment.controls_config = environment.controls_config.model_copy(
             update={
-                "native_approach_skill": "approach_confirmed_vendor",
                 "native_approach_max_seconds": 0.02,
             }
         )
@@ -2749,7 +2316,6 @@ def test_paused_native_talk_stops_before_movement_pulse_when_dialogue_opens(
         )
         environment.controls_config = environment.controls_config.model_copy(
             update={
-                "native_approach_skill": "approach_confirmed_vendor",
                 "native_approach_max_seconds": 0.02,
             }
         )
@@ -2784,7 +2350,6 @@ def test_direction_request_is_targetless_and_revalidates_its_own_capabilities(
         ]
         environment.controls_config = environment.controls_config.model_copy(
             update={
-                "native_approach_skill": "approach_confirmed_vendor",
                 "native_approach_max_seconds": 0.02,
             }
         )
@@ -2840,7 +2405,6 @@ def test_map_travel_issues_one_exact_order_and_establishes_five_x(
         ]
         environment.controls_config = environment.controls_config.model_copy(
             update={
-                "native_approach_skill": "approach_confirmed_vendor",
                 "require_paused_between_actions": False,
             }
         )
@@ -2891,7 +2455,6 @@ def test_map_travel_carries_the_complete_selected_squad_basis(
         ]
         environment.controls_config = environment.controls_config.model_copy(
             update={
-                "native_approach_skill": "approach_confirmed_vendor",
                 "require_paused_between_actions": False,
             }
         )
@@ -2931,7 +2494,6 @@ def test_squad_regroup_issues_one_global_exact_order_and_establishes_five_x(
         ]
         environment.controls_config = environment.controls_config.model_copy(
             update={
-                "native_approach_skill": "approach_confirmed_vendor",
                 "native_approach_max_seconds": 0.02,
                 "require_paused_between_actions": False,
             }
@@ -2994,7 +2556,6 @@ def test_map_arrival_terminal_wins_race_with_running_confirmation(
         ]
         environment.controls_config = environment.controls_config.model_copy(
             update={
-                "native_approach_skill": "approach_confirmed_vendor",
                 "require_paused_between_actions": False,
             }
         )
@@ -3049,7 +2610,6 @@ def test_building_exit_request_is_parameterless_and_requires_current_indoor_stat
         telemetry.indoors = True
         environment.controls_config = environment.controls_config.model_copy(
             update={
-                "native_approach_skill": "approach_confirmed_vendor",
                 "native_approach_max_seconds": 0.02,
             }
         )
@@ -3101,7 +2661,6 @@ def test_continuous_native_movement_starts_a_paused_world_without_repausing(
         telemetry.indoors = True
         environment.controls_config = environment.controls_config.model_copy(
             update={
-                "native_approach_skill": "approach_confirmed_vendor",
                 "require_paused_between_actions": False,
             }
         )
@@ -3129,42 +2688,9 @@ def test_continuous_native_handoff_uses_idempotent_speed_key_not_pointer_unpause
 ) -> None:
     async def scenario() -> None:
         environment, telemetry, controller = native_vendor_environment(tmp_path)
-        environment.macros = MacroRegistry(
-            {
-                "approach_confirmed_vendor": MacroConfig(
-                    requires_native_assisted=True,
-                    movement_pulse_seconds=0.01,
-                    movement_pulse_min_seconds=0.005,
-                    movement_pulse_max_seconds=0.02,
-                    actions=[
-                        {
-                            "kind": "hotkey",
-                            "keys": ["ctrl", "shift", "f10"],
-                            "hold_seconds": 0.01,
-                        }
-                    ],
-                ),
-                # This is the live profile's current relative-pointer route.
-                # Native movement must not spend its pause watchdog walking the
-                # cursor to this button after the order has been accepted.
-                "unpause_game": MacroConfig(
-                    actions=[
-                        {
-                            "kind": "click",
-                            "x": 0.792,
-                            "y": 0.723,
-                            "space": "normalized",
-                            "button": "left",
-                        }
-                    ]
-                ),
-            }
-        )
         environment.controls_config = environment.controls_config.model_copy(
             update={
-                "native_approach_skill": "approach_confirmed_vendor",
                 "require_paused_between_actions": False,
-                "unpause_skill": "unpause_game",
             }
         )
         monkeypatch.setattr(kenshi_surface, "NATIVE_DIALOGUE_SETTLE_SECONDS", 0.0)
@@ -3220,7 +2746,6 @@ def test_direction_does_not_adopt_an_active_order_for_another_vector(
         )
         environment.controls_config = environment.controls_config.model_copy(
             update={
-                "native_approach_skill": "approach_confirmed_vendor",
                 "native_approach_max_seconds": 0.02,
             }
         )

@@ -12,7 +12,7 @@ Internal-only definitions are controller phases or runtime operations;
 they still bind through this registry but are not planner-visible offers.
 
 ```text
-definitions             34
+definitions             33
 adapter operation kinds  27
 adapter routes           28
 adapters                 10
@@ -48,7 +48,6 @@ DEFINITIONS
   select_squad_member_exact           movement.select_squad_member_exact                      SelectSquadMemberExactAction [characters]
   sell_item                           trade.sell_item                                         SellItemAction [inventory]
   set_speed                           runtime.set_speed                                       SetSpeedAction [internal-only]
-  skill                               movement.skill                                          SkillAction [internal-only]
   stop                                runtime.stop                                            StopAction [runtime]
   travel_to_map_destination           movement.travel_to_map_destination                      TravelToMapDestinationAction [map]
   use_game_binding                    screens.use_game_binding                                UseGameBindingAction [characters, game_bindings]

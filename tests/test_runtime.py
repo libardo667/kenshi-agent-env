@@ -4,10 +4,8 @@ from pathlib import Path
 
 import pytest
 from operation_test_support import operation_port
-from PIL import Image
 
-from kenshi_agent.campaign import CampaignScope, CampaignScopeOrigin
-from kenshi_agent.config import MacroConfig, MockConfig, SafetyConfig
+from kenshi_agent.config import SafetyConfig
 from kenshi_agent.core.evidence import (
     CameraFrameScore,
     CameraRecoveryEvidence,
@@ -20,13 +18,11 @@ from kenshi_agent.core.operation import (
     MoveInDirectionAction,
     PauseAction,
     RecoverCameraViewAction,
-    SkillAction,
     StopAction,
 )
 from kenshi_agent.core.planning import PlannerDecision
 from kenshi_agent.core.telemetry import (
     GameState,
-    ScenarioIdentity,
     TelemetrySnapshot,
 )
 from kenshi_agent.core.transport import (
@@ -35,20 +31,16 @@ from kenshi_agent.core.transport import (
 )
 from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.env.base import AgentEnvironment
-from kenshi_agent.env.mock import MockEnvironment
 from kenshi_agent.final_safe_state import (
     FinalSafeStateOutcome,
     FinalSafeStateStatus,
 )
-from kenshi_agent.memory import MemoryStore
 from kenshi_agent.outcome_recorder import OutcomeRecorder, TelemetryChange
-from kenshi_agent.planners import HeuristicPlanner
 from kenshi_agent.planners.base import Planner
 from kenshi_agent.reflexes import ReflexEngine
 from kenshi_agent.runtime import AgentRuntime
 from kenshi_agent.safety import OperationPolicy
 from kenshi_agent.session_log import SessionLogger
-from kenshi_agent.skills import MacroRegistry
 
 
 @pytest.mark.parametrize(
@@ -142,7 +134,6 @@ def test_every_runtime_exit_has_one_durable_final_state_owner(
                     allow_action_kinds=["stop"],
                     max_actions_per_minute=500,
                 ),
-                MacroRegistry({}),
             ),
             reflexes=ReflexEngine(),
             logger=logger,
@@ -176,216 +167,6 @@ def test_every_runtime_exit_has_one_durable_final_state_owner(
         assert final_events[0]["payload"]["status"] == "pause_confirmed"
 
     asyncio.run(scenario())
-
-
-def test_full_mock_runtime_survives_one_day(tmp_path: Path) -> None:
-    async def scenario() -> None:
-        run_id = "runtime-test"
-        environment = MockEnvironment(
-            MockConfig(seed=11, random_events=False),
-            tmp_path / "frames",
-            run_id,
-        )
-        macros = MacroRegistry({"open_map": MacroConfig(actions=[{"kind": "key", "key": "m"}])})
-        safety = SafetyConfig(
-            allow_action_kinds=[
-                "noop",
-                "stop",
-                "pause",
-                "set_speed",
-                "wait",
-                "key",
-                "hotkey",
-                "click",
-                "move_cursor",
-                "skill",
-            ],
-            max_actions_per_minute=500,
-        )
-        logger = SessionLogger(tmp_path / "events.jsonl", run_id)
-        memory = MemoryStore(
-            tmp_path / "memory.sqlite3",
-            CampaignScope(
-                campaign_id="test",
-                origin=CampaignScopeOrigin.CONFIGURED,
-            ),
-        )
-        try:
-            runtime = AgentRuntime(
-                run_id=run_id,
-                environment=environment,
-                operation_port=operation_port(environment),
-                planner=HeuristicPlanner(),
-                policy=OperationPolicy(safety, macros),
-                reflexes=ReflexEngine(),
-                logger=logger,
-                memory=memory,
-                memory_limit=12,
-                minimum_memory_salience=0.0,
-                scenario=ScenarioIdentity(
-                    scenario_id="mock-hub-safe-day",
-                    save_id="mock-seed-11",
-                    environment="outdoor",
-                    danger="safe",
-                    economy="broke",
-                    party="solo",
-                    time_of_day="day",
-                ),
-            )
-            summary = await runtime.run(max_steps=30)
-            assert summary.success is True
-            assert summary.control_mode == "interface_only"
-            assert summary.steps_completed < 30
-            event_lines = (tmp_path / "events.jsonl").read_text().splitlines()
-            events = [json.loads(line) for line in event_lines]
-            decisions = [event for event in events if event["event_type"] == "decision"]
-            assert decisions
-            assert decisions[0]["payload"]["planner_latency_seconds"] >= 0.0
-            started = next(event for event in events if event["event_type"] == "run_started")
-            finished = next(event for event in events if event["event_type"] == "run_finished")
-            receipt = next(event for event in events if event["event_type"] == "action_receipt")
-            assert started["payload"]["control_mode"] == "interface_only"
-            assert started["payload"]["memory_retrieval_policy"] == "deterministic"
-            assert started["payload"]["scenario"]["scenario_id"] == "mock-hub-safe-day"
-            assert started["payload"]["scenario"]["save_id"] == "mock-seed-11"
-            assert started["payload"]["scenario_attestation"] is None
-            assert finished["payload"]["control_mode"] == "interface_only"
-            assert receipt["payload"]["control_mode"] == "interface_only"
-        finally:
-            logger.close()
-            memory.close()
-
-    asyncio.run(scenario())
-
-
-def test_runtime_carries_bounded_noop_feedback_between_decisions(
-    tmp_path: Path,
-) -> None:
-    class RepeatingPlanner(Planner):
-        def __init__(self) -> None:
-            self.observations: list[Observation] = []
-
-        async def decide(self, observation: Observation) -> PlannerDecision:
-            self.observations.append(observation)
-            return PlannerDecision(
-                intent="Try the same camera recovery.",
-                rationale="The view still looks obstructed.",
-                action=SkillAction(name="camera_recovery"),
-                confidence=0.9,
-            )
-
-    class UnchangingEnvironment(AgentEnvironment):
-        def __init__(self, screenshot_path: Path) -> None:
-            self.step_index = 0
-            self.actions: list[Action] = []
-            self.screenshot_path = screenshot_path
-
-        def observation(self) -> Observation:
-            return Observation(
-                run_id="stagnation-test",
-                step_index=self.step_index,
-                mode="mock",
-                world_revision=WorldStateRevision(
-                    frame_sequence=self.step_index,
-                ),
-                screenshot_path=self.screenshot_path,
-                screenshot_sha256="unchanged-frame",
-                available_skills=["camera_recovery"],
-            )
-
-        async def reset(self, *, seed: int | None = None) -> Observation:
-            return self.observation()
-
-        async def observe(self) -> Observation:
-            return self.observation()
-
-        async def step(self, action: Action) -> Transition:
-            self.actions.append(action)
-            self.step_index += 1
-            return Transition(
-                receipt=ActionReceipt(
-                    action=action,
-                    accepted=True,
-                    executed=True,
-                    dry_run=False,
-                ),
-                observation=self.observation(),
-            )
-
-        async def close(self) -> None:
-            return None
-
-    async def scenario() -> None:
-        run_id = "stagnation-test"
-        screenshot_path = tmp_path / "unchanged.png"
-        Image.new("RGB", (320, 180), "black").save(screenshot_path)
-        environment = UnchangingEnvironment(screenshot_path)
-        planner = RepeatingPlanner()
-        macros = MacroRegistry(
-            {"camera_recovery": MacroConfig(actions=[{"kind": "key", "key": "f"}])}
-        )
-        safety = SafetyConfig(
-            allow_action_kinds=["skill", "stop"],
-            allow_skills=["camera_recovery"],
-            max_actions_per_minute=500,
-        )
-        logger = SessionLogger(tmp_path / "stagnation-events.jsonl", run_id)
-        try:
-            runtime = AgentRuntime(
-                run_id=run_id,
-                environment=environment,
-                operation_port=operation_port(environment),
-                planner=planner,
-                policy=OperationPolicy(safety, macros),
-                reflexes=ReflexEngine(),
-                logger=logger,
-                memory=None,
-                memory_limit=0,
-                minimum_memory_salience=0.0,
-                action_outcome_limit=2,
-            )
-            summary = await runtime.run(max_steps=4)
-        finally:
-            logger.close()
-
-        assert not summary.terminated
-        assert len(environment.actions) == 4
-        assert len(planner.observations[0].recent_action_outcomes) == 0
-        assert len(planner.observations[1].recent_action_outcomes) == 1
-        assert len(planner.observations[-1].recent_action_outcomes) == 2
-        latest = planner.observations[-1].recent_action_outcomes[-1]
-        assert latest.assessment == "no_op"
-        assert latest.visual_change_fraction == 0.0
-        assert "do not repeat" in latest.feedback
-        events = [
-            json.loads(line)
-            for line in (tmp_path / "stagnation-events.jsonl").read_text().splitlines()
-        ]
-        outcomes = [event for event in events if event["event_type"] == "action_outcome"]
-        assert len(outcomes) == 4
-        assert outcomes[-1]["payload"]["assessment"] == "no_op"
-
-    asyncio.run(scenario())
-
-
-def test_interaction_requires_movement_or_dialogue_not_ambient_frame_change() -> None:
-    receipt = ActionReceipt(
-        action=SkillAction(name="interact_visible_person"),
-        accepted=True,
-        executed=True,
-        dry_run=False,
-    )
-
-    assessment, feedback = OutcomeRecorder._assess_outcome(
-        receipt,
-        None,
-        visual_change=0.5,
-        telemetry_changes=[TelemetryChange("visible entities disappeared: Nomad")],
-        movement_distance=0.0,
-    )
-
-    assert assessment == "no_op"
-    assert "opened no dialogue or trade" in feedback
 
 
 def test_telemetry_changes_report_vendor_route_progress() -> None:
@@ -432,37 +213,6 @@ def test_telemetry_changes_report_vendor_route_progress() -> None:
 
     assert "distance to Barman: 96.00 -> 82.00 (14.00 closer)" in changes
     assert "camera bearing to Barman: -70.0 -> -25.0 degrees" in changes
-
-
-def test_purchase_outcome_requires_money_and_food_confirmation() -> None:
-    receipt = ActionReceipt(
-        action=SkillAction(name="buy_inspected_shop_item"),
-        accepted=True,
-        executed=True,
-        dry_run=False,
-    )
-
-    verified = OutcomeRecorder._assess_outcome(
-        receipt,
-        TelemetrySnapshot(),
-        visual_change=0.1,
-        telemetry_changes=[
-            TelemetryChange("money: 1000 -> 351"),
-            TelemetryChange("food items: 0 -> 1"),
-        ],
-        movement_distance=0.0,
-    )
-    unverified = OutcomeRecorder._assess_outcome(
-        receipt,
-        TelemetrySnapshot(),
-        visual_change=0.1,
-        telemetry_changes=[TelemetryChange("money: 1000 -> 351")],
-        movement_distance=0.0,
-    )
-
-    assert verified[0] == "changed"
-    assert "Purchase verified" in verified[1]
-    assert unverified[0] == "no_op"
 
 
 def _camera_recovery_receipt(status: CameraRecoveryStatus) -> ActionReceipt:
@@ -756,7 +506,6 @@ def test_a_recorded_outcome_remembers_the_game_session_it_happened_in(
             planner=PausePlanner(),
             policy=OperationPolicy(
                 SafetyConfig(allow_action_kinds=["pause"], max_actions_per_minute=500),
-                MacroRegistry({}),
             ),
             reflexes=ReflexEngine(),
             logger=logger,

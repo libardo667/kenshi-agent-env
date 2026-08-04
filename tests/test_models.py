@@ -12,8 +12,6 @@ from kenshi_agent.core.operation import (
     PerformContextAction,
     PlanningMode,
     ScrollAction,
-    SkillAction,
-    SkillSpec,
     parse_action,
 )
 from kenshi_agent.core.planning import (
@@ -39,7 +37,7 @@ from kenshi_agent.core.telemetry import (
 )
 from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.planner_context import render_planner_payload
-from kenshi_agent.schema_export import export_schemas
+from kenshi_agent.tooling.schema_export import export_schemas
 
 
 def test_checked_in_jsonl_planner_examples_parse_as_current_decisions() -> None:
@@ -397,12 +395,6 @@ def test_unknown_action_field_is_rejected() -> None:
         parse_action({"kind": "wait", "seconds": 1, "surprise": True})
 
 
-def test_skill_action_accepts_legacy_argument_mapping() -> None:
-    action = SkillAction(name="click_at", args={"x": 0.2, "y": 0.3})  # type: ignore[arg-type]
-
-    assert action.argument_map() == {"x": 0.2, "y": 0.3}
-
-
 def test_observation_planner_payload_omits_screenshot_path() -> None:
     observation = Observation(
         run_id="run",
@@ -411,13 +403,6 @@ def test_observation_planner_payload_omits_screenshot_path() -> None:
         telemetry=TelemetrySnapshot(),
         screenshot_path=Path("secret-frame.png"),
         objective="Explore nearby.",
-        skill_specs=[
-            SkillSpec(
-                name="move_on_map",
-                arguments={"x": "Normalized x."},
-                visual_precondition="The map is open.",
-            )
-        ],
     )
     payload = render_planner_payload(
         observation,
@@ -426,8 +411,6 @@ def test_observation_planner_payload_omits_screenshot_path() -> None:
     document = json.loads(payload)
     assert document["run_id"] == "run"
     assert document["objective"] == "Explore nearby."
-    assert document["available_skills"] == []
-    assert document["skill_specs"] == []
 
 
 def test_reviewed_world_target_is_an_exact_attemptable_affordance() -> None:

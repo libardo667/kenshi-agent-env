@@ -10,8 +10,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import kenshi_agent.mutation_campaign as campaign
-from kenshi_agent.mutation_campaign import (
+import kenshi_agent.tooling.mutation_campaign as campaign
+from kenshi_agent.tooling.mutation_campaign import (
     MutationBatch,
     MutationSummary,
     discover_mutation_batches,
@@ -975,7 +975,7 @@ def test_empty_summary_has_no_trailing_whitespace(
 
 
 def test_repo_root_is_derived_from_the_installed_module() -> None:
-    assert campaign._repo_root() == Path(campaign.__file__).resolve().parents[2]
+    assert campaign._repo_root() == Path(campaign.__file__).resolve().parents[3]
 
 
 def test_main_lists_every_batch_and_rejects_unknown_names(

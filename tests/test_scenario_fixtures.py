@@ -5,21 +5,23 @@ from pathlib import Path
 
 import pytest
 
+from kenshi_agent.core.scenario import MANAGED_SAVE_NAME
 from kenshi_agent.core.telemetry import (
     CharacterState,
     GameState,
     ScenarioIdentity,
     TelemetrySnapshot,
 )
-from kenshi_agent.scenario_fixtures import (
-    MANAGED_SAVE_NAME,
+from kenshi_agent.scenario_validation import (
     ScenarioFixtureError,
     attest_loaded_scenario,
+    validate_current_scenario,
+    verify_scenario_snapshot,
+)
+from kenshi_agent.tooling.scenario_fixtures import (
     capture_scenario_fixture,
     load_scenario_fixture,
     restore_scenario_fixture,
-    validate_current_scenario,
-    verify_scenario_snapshot,
 )
 
 

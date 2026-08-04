@@ -18,7 +18,6 @@ from .core.operation import (
     GAME_SPEED_MULTIPLIER_BY_GEAR,
     Action,
     ControlMode,
-    SkillAction,
 )
 from .core.planning import PlannerDecision
 from .core.transport import ActionReceipt
@@ -26,11 +25,6 @@ from .speech import SpeechNarrator
 
 
 def format_action(action: Action) -> str:
-    if isinstance(action, SkillAction):
-        arguments = ", ".join(
-            f"{name}={value!r}" for name, value in action.argument_map().items()
-        )
-        return f"{action.name}({arguments})" if arguments else f"{action.name}()"
     values = action.model_dump(mode="json", exclude={"kind"})
     arguments = ", ".join(f"{name}={value!r}" for name, value in values.items())
     return f"{action.kind}({arguments})" if arguments else f"{action.kind}()"
@@ -208,13 +202,6 @@ def describe_action(action: Action) -> str:
         return "Fixing the camera view."
     if kind == "use_game_binding":
         return _spoken_sentence(cast(str, values["expected_effect"]))
-    if isinstance(action, SkillAction):
-        friendly_skills = {
-            "move_visible_terrain": "Moving through the visible terrain.",
-        }
-        if action.name in friendly_skills:
-            return friendly_skills[action.name]
-        return _spoken_sentence("Using " + action.name.replace("_", " "))
     return _spoken_sentence(kind.replace("_", " "))
 
 

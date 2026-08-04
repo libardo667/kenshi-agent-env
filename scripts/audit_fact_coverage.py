@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 from kenshi_agent.core.telemetry import TelemetrySnapshot
-from kenshi_agent.fact_coverage import audit
+from kenshi_agent.tooling.fact_coverage import audit
 
 
 def _from_log(path: Path) -> TelemetrySnapshot:

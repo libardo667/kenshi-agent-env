@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from kenshi_agent import cli
+from kenshi_agent import application as cli
 from kenshi_agent.campaign import CampaignScope, CampaignScopeOrigin
 from kenshi_agent.config import load_config
 from kenshi_agent.core.continuity import (

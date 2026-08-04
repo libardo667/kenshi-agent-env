@@ -24,7 +24,6 @@ from ..final_safe_state import (
     FinalSafeStateStatus,
     ensure_final_safe_state,
 )
-from ..skills import MacroRegistry
 from ..telemetry import TelemetryReader, TelemetryReadError
 from ..terminal_state import terminal_window_event, terminal_window_title
 from .base import AgentEnvironment
@@ -38,14 +37,12 @@ class LiveEnvironment(AgentEnvironment):
         run_dir: Path,
         telemetry: TelemetryReader,
         controller: InputController,
-        macros: MacroRegistry,
         runtime_config: RuntimeConfig,
         controls_config: ControlsConfig,
         capture_config: CaptureConfig,
         execute_actions: bool,
         emergency_stop_key: str,
         final_pause_timeout_seconds: float = 2.0,
-        available_skills: list[str] | None = None,
         control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
         quicksave_dir: Path | None = None,
         quicksave_timeout_seconds: float = 10.0,
@@ -59,7 +56,6 @@ class LiveEnvironment(AgentEnvironment):
         self.run_dir = run_dir
         self.telemetry_reader = telemetry
         self.controller = controller
-        self.macros = macros
         self.runtime_config = runtime_config
         self.controls_config = controls_config
         self.capture_config = capture_config
@@ -70,10 +66,6 @@ class LiveEnvironment(AgentEnvironment):
         self.quicksave_dir = quicksave_dir
         self.quicksave_timeout_seconds = quicksave_timeout_seconds
         self.quicksave_stable_seconds = quicksave_stable_seconds
-        self.available_skills = macros.available_names(
-            available_skills or macros.names(),
-            control_mode=control_mode,
-        )
         self._step_index = 0
         self._capture_sequence = 0
         self._last_observation: Observation | None = None
@@ -242,8 +234,6 @@ class LiveEnvironment(AgentEnvironment):
             screenshot_sha256=screenshot_hash,
             events=events,
             objective=self.runtime_config.objective,
-            available_skills=self.available_skills,
-            skill_specs=[self.macros.spec(name) for name in self.available_skills],
         )
         self._last_observation = observation
         return observation

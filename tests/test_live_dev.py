@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from kenshi_agent import live_dev
 from kenshi_agent.config import ControlsConfig, load_config
 from kenshi_agent.control.base import InputController, PrimitiveInputAction, WindowRect
 from kenshi_agent.core.operation import (
@@ -31,8 +30,10 @@ from kenshi_agent.core.telemetry import (
     WorldTarget,
 )
 from kenshi_agent.core.transport import ActionReceipt
-from kenshi_agent.dev_cli import export_reference, parse_args, render_reference
-from kenshi_agent.live_dev import (
+from kenshi_agent.telemetry import TelemetryRead
+from kenshi_agent.tooling import live_dev
+from kenshi_agent.tooling.dev_cli import export_reference, parse_args, render_reference
+from kenshi_agent.tooling.live_dev import (
     MYGUI_CLICK_HOLD_SECONDS,
     LaunchFailed,
     LaunchInterrupted,
@@ -54,7 +55,6 @@ from kenshi_agent.live_dev import (
     _validate_safe_close_snapshot,
     _wait_until,
 )
-from kenshi_agent.telemetry import TelemetryRead
 
 
 class LaunchController(InputController):

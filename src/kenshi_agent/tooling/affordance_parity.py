@@ -14,12 +14,12 @@ from enum import StrEnum
 from hashlib import sha256
 from pathlib import Path
 
-from .affordances import AFFORDANCE_ADAPTERS
-from .core.operation import GameBinding
-from .core.planning import GAME_BINDING_TERMINALS, UNWITNESSED_BINDINGS
+from ..affordances import AFFORDANCE_ADAPTERS
+from ..core.operation import GameBinding
+from ..core.planning import GAME_BINDING_TERMINALS, UNWITNESSED_BINDINGS
 
 CONTROLS_SNAPSHOT = (
-    Path(__file__).resolve().parents[2] / "game_sources" / "kenshi" / "controls.cfg"
+    Path(__file__).resolve().parents[3] / "game_sources" / "kenshi" / "controls.cfg"
 )
 
 

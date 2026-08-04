@@ -31,8 +31,8 @@ from kenshi_agent.core.operation import (
     KeyAction,
 )
 from kenshi_agent.core.telemetry import normalize_control_label
-from kenshi_agent.live_dev import _controller, _telemetry_read
 from kenshi_agent.telemetry import TelemetryReader
+from kenshi_agent.tooling.live_dev import _controller, _telemetry_read
 
 # Screens reachable from the world HUD by activating one advertised button.
 # Each entry is (label to click, human name). Escape backs out of each.

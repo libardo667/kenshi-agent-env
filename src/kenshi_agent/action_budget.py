@@ -9,9 +9,7 @@ from dataclasses import dataclass
 from .config import SafetyConfig
 from .core.authority import AuthorizationCode
 from .core.observation import Observation
-from .core.operation import SkillAction
 from .operation_definitions import BoundOperation
-from .skills import MacroRegistry
 
 
 class ActionBudgetError(RuntimeError):
@@ -33,9 +31,8 @@ class ActionBudgetReservation:
 class ActionBudgetLedger:
     """Reserve, commit, and release mutable run-level action capacity."""
 
-    def __init__(self, config: SafetyConfig, macros: MacroRegistry) -> None:
+    def __init__(self, config: SafetyConfig) -> None:
         self.config = config
-        self.macros = macros
         self._action_times: deque[float] = deque()
         self._purchase_count = 0
         self._pending_primitive_count = 0
@@ -49,17 +46,9 @@ class ActionBudgetLedger:
         observation: Observation,
     ) -> ActionBudgetReservation:
         action = bound.operation
-        if isinstance(action, SkillAction):
-            primitive_actions = (
-                self.macros.primitive_count(action) if self.macros.has(action.name) else 1
-            )
-            purchase_actions = int(
-                action.name == "buy_inspected_shop_item" and observation.mode == "live"
-            )
-        else:
-            primitive_actions = bound.definition.primitive_action_bound_for(action)
-            risk = bound.definition.risk_for(action)
-            purchase_actions = risk.purchase_actions if observation.mode == "live" else 0
+        primitive_actions = bound.definition.primitive_action_bound_for(action)
+        risk = bound.definition.risk_for(action)
+        purchase_actions = risk.purchase_actions if observation.mode == "live" else 0
 
         self._reserve_rate_budget(primitive_actions)
         if (

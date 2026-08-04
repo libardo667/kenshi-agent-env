@@ -1563,9 +1563,6 @@
               "$ref": "#/$defs/ScrollAction"
             },
             {
-              "$ref": "#/$defs/SkillAction"
-            },
-            {
               "$ref": "#/$defs/ApproachDialogueTargetAction"
             },
             {
@@ -2396,73 +2393,6 @@
         "speed"
       ],
       "title": "SetSpeedAction",
-      "type": "object"
-    },
-    "SkillAction": {
-      "additionalProperties": false,
-      "properties": {
-        "kind": {
-          "const": "skill",
-          "default": "skill",
-          "title": "Kind",
-          "type": "string"
-        },
-        "name": {
-          "maxLength": 80,
-          "minLength": 1,
-          "title": "Name",
-          "type": "string"
-        },
-        "args": {
-          "items": {
-            "$ref": "#/$defs/SkillArgument"
-          },
-          "maxItems": 20,
-          "title": "Args",
-          "type": "array"
-        }
-      },
-      "required": [
-        "name"
-      ],
-      "title": "SkillAction",
-      "type": "object"
-    },
-    "SkillArgument": {
-      "additionalProperties": false,
-      "properties": {
-        "name": {
-          "maxLength": 80,
-          "minLength": 1,
-          "title": "Name",
-          "type": "string"
-        },
-        "value": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "integer"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "title": "Value"
-        }
-      },
-      "required": [
-        "name",
-        "value"
-      ],
-      "title": "SkillArgument",
       "type": "object"
     },
     "StopAction": {

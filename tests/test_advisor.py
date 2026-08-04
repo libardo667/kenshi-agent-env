@@ -59,7 +59,6 @@ from kenshi_agent.core.transport import (
 )
 from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.env.mock import MockEnvironment, MockOperationPort
-from kenshi_agent.evals import evaluate_log
 from kenshi_agent.live_plan_policy import live_plan_policy_errors
 from kenshi_agent.planner_context import planner_nutrition_digest
 from kenshi_agent.planners.base import Planner
@@ -67,7 +66,7 @@ from kenshi_agent.reflexes import ReflexEngine
 from kenshi_agent.runtime import AgentRuntime
 from kenshi_agent.safety import OperationPolicy
 from kenshi_agent.session_log import SessionLogger
-from kenshi_agent.skills import MacroRegistry
+from kenshi_agent.tooling.evals import evaluate_log
 from kenshi_agent.world_state import WorldStateStore
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -341,7 +340,6 @@ def test_foreground_world_action_runs_while_advisor_is_still_thinking(
                     allow_action_kinds=["consult_advisor", "wait", "stop"],
                     max_actions_per_minute=500,
                 ),
-                MacroRegistry({}),
             ),
             reflexes=ReflexEngine(),
             logger=logger,
@@ -411,7 +409,6 @@ def test_run_end_cancels_a_pending_advisor_without_leaving_session_state(
                     allow_action_kinds=["consult_advisor", "wait"],
                     max_actions_per_minute=500,
                 ),
-                MacroRegistry({}),
             ),
             reflexes=ReflexEngine(),
             logger=logger,
@@ -728,7 +725,6 @@ def test_continuous_runtime_never_dispatches_consult_to_the_environment(
                     allow_action_kinds=["consult_advisor", "wait", "stop"],
                     max_actions_per_minute=500,
                 ),
-                MacroRegistry({}),
             ),
             reflexes=ReflexEngine(),
             logger=logger,
@@ -823,7 +819,6 @@ def test_advisor_handoff_rebases_context_after_telemetry_advances(
                     allow_action_kinds=["consult_advisor", "stop"],
                     max_actions_per_minute=500,
                 ),
-                MacroRegistry({}),
             ),
             reflexes=ReflexEngine(),
             logger=logger,
@@ -909,7 +904,6 @@ def test_runtime_never_shortens_the_configured_advisor_timeout(
                     allow_action_kinds=["consult_advisor", "stop"],
                     max_actions_per_minute=500,
                 ),
-                MacroRegistry({}),
             ),
             reflexes=ReflexEngine(),
             logger=logger,

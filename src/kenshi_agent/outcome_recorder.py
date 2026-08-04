@@ -34,7 +34,6 @@ from .core.operation import (
     PurchaseItemAction,
     RecoverCameraViewAction,
     SellItemAction,
-    SkillAction,
 )
 from .core.planning import (
     PlanEnvelope,
@@ -270,70 +269,6 @@ class OutcomeRecorder:
                 "without a clear anchored frame. Do not finagle camera primitives "
                 "or repeat recovery on the same evidence.",
             )
-
-        if isinstance(receipt.action, SkillAction):
-            name = receipt.action.name
-            if name in {"move_visible_terrain", "move_on_map"}:
-                if movement_distance is not None and movement_distance >= 0.5:
-                    if mechanical_only:
-                        return (
-                            ActionOutcomeAssessment.NO_OP,
-                            cls._blind_movement_feedback(movement_distance),
-                        )
-                    return (
-                        ActionOutcomeAssessment.CHANGED,
-                        f"The selected character moved {movement_distance:.2f} world units; "
-                        "use the new position "
-                        "and view to judge route progress.",
-                    )
-                return (
-                    ActionOutcomeAssessment.NO_OP,
-                    "This movement skill did not move the selected character by a measurable "
-                    "amount. Treat the "
-                    "destination as failed or blocked and choose a different grounded route.",
-                )
-            if name in {
-                "interact_visible_person",
-                "approach_confirmed_vendor",
-                "continue_confirmed_vendor_approach",
-            }:
-                active_screen = after.ui.active_screen if after is not None else None
-                interaction_opened = after is not None and (
-                    after.ui.dialogue_open is True or active_screen in {"dialogue", "trade"}
-                )
-                if interaction_opened:
-                    return (
-                        ActionOutcomeAssessment.CHANGED,
-                        "The interaction opened dialogue or trade. Inspect that UI before any "
-                        "further click.",
-                    )
-                if movement_distance is not None and movement_distance >= 0.5:
-                    return (
-                        ActionOutcomeAssessment.CHANGED,
-                        "The interaction approach moved the selected character "
-                        f"{movement_distance:.2f} world "
-                        "units but opened no dialogue or trade yet.",
-                    )
-                return (
-                    ActionOutcomeAssessment.NO_OP,
-                    "The interaction opened no dialogue or trade and did not move the "
-                    "selected character. The "
-                    "click failed to make progress; do not repeat it on the same evidence.",
-                )
-            if name == "buy_inspected_shop_item":
-                money_changed = any(label.startswith("money: ") for label in labels)
-                food_changed = any(label.startswith("food items: ") for label in labels)
-                if money_changed and food_changed:
-                    return (
-                        ActionOutcomeAssessment.CHANGED,
-                        "Purchase verified: money decreased and the selected character's "
-                        "food-item count increased.",
-                    )
-                return (
-                    ActionOutcomeAssessment.NO_OP,
-                    "Purchase was not verified by both a money decrease and food-item increase. "
-                    "Do not click another item.",
-                )
 
         if mechanical_only:
             # The screenshot cannot outvote this: walking repaints the frame

@@ -16,7 +16,6 @@ from kenshi_agent.core.operation import (
     ControlMode,
     GameBinding,
     IdempotencyPolicy,
-    SkillAction,
     UseGameBindingAction,
 )
 from kenshi_agent.core.planning import (
@@ -295,15 +294,6 @@ class TestGenericPolicyRejections:
         composed = plan([smuggled], native=0)
         errors = live_plan_policy_errors(composed)
         assert any("raw controller primitive" in error for error in errors)
-
-    def test_configured_skill_uses_the_operation_definition_path(self) -> None:
-        composed = plan(
-            [step("legacy", SkillAction(name="choose_show_goods"), success=[screen_is("trade")])],
-            native=0,
-            pointer=0,
-        )
-        errors = live_plan_policy_errors(composed)
-        assert errors == []
 
     def test_current_operation_eligibility_is_not_plan_structure(self) -> None:
         composed = plan(

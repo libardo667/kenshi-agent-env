@@ -82,7 +82,6 @@ class ReplayOperationPort:
     select_squad_member_exact = _execute
     sell_item = _execute
     set_speed = _execute
-    skill = _execute
     travel_to_map_destination = _execute
     use_game_binding = _execute
     wait = _execute

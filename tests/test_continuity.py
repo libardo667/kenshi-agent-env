@@ -2150,7 +2150,6 @@ def _single_step_runtime(
     from kenshi_agent.runtime import AgentRuntime
     from kenshi_agent.safety import OperationPolicy
     from kenshi_agent.session_log import SessionLogger
-    from kenshi_agent.skills import MacroRegistry
 
     environment = MockEnvironment(
         MockConfig(seed=11, random_events=False),
@@ -2168,7 +2167,6 @@ def _single_step_runtime(
                 allow_action_kinds=["noop", "stop", "pause", "wait"],
                 max_actions_per_minute=500,
             ),
-            MacroRegistry({}),
         ),
         reflexes=ReflexEngine(),
         logger=logger,

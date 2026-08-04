@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
@@ -8,8 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from .core.planning import PlannerDecision
-from .reporting import format_action
+from ..core.planning import PlannerDecision
+from ..reporting import format_action
 
 OverlayFeedOperation = Literal["append", "replace", "skip"]
 OverlayLayout = Literal["companion", "overlay"]
@@ -855,3 +856,27 @@ def _exclude_from_capture(window_id: int) -> bool:
         window = parent
     wda_exclude_from_capture = 0x00000011
     return bool(user32.SetWindowDisplayAffinity(window, wda_exclude_from_capture))
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="python -m kenshi_agent.tooling.overlay")
+    parser.add_argument("--log", required=True)
+    parser.add_argument("--title", default="Kenshi Agent")
+    parser.add_argument("--opacity", type=float, default=0.82)
+    parser.add_argument("--auto-close-seconds", type=float, default=0.0)
+    parser.add_argument("--owner-pid", type=int)
+    parser.add_argument("--layout", choices=["companion", "overlay"], default="companion")
+    args = parser.parse_args(argv)
+    show_overlay(
+        Path(args.log).expanduser().resolve(),
+        title=args.title,
+        opacity=args.opacity,
+        auto_close_seconds=args.auto_close_seconds,
+        layout=args.layout,
+        owner_pid=args.owner_pid,
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

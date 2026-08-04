@@ -14,7 +14,7 @@ from hashlib import sha256
 from pathlib import Path
 
 TASK_TYPES_SNAPSHOT = (
-    Path(__file__).resolve().parents[2]
+    Path(__file__).resolve().parents[3]
     / "game_sources"
     / "kenshi"
     / "TaskType.h"

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from kenshi_agent.overlay import (
+from kenshi_agent.tooling.overlay import (
     OverlayFeedState,
     WindowRect,
     companion_layout,
@@ -29,9 +29,8 @@ def test_format_event_renders_decision_for_overlay() -> None:
                     "intent": "Scout the nearby road.",
                     "rationale": "It is visible and close to The Hub.",
                     "action": {
-                        "kind": "skill",
-                        "name": "move_visible_terrain",
-                        "args": {"x": 0.45, "y": 0.5},
+                        "kind": "wait",
+                        "seconds": 2.0,
                     },
                     "confidence": 0.75,
                     "continuity_operations": [],
@@ -43,7 +42,7 @@ def test_format_event_renders_decision_for_overlay() -> None:
     assert rendered is not None
     assert "step 04 | DECIDE 1.23s | planner" in rendered
     assert "WHY     It is visible and close to The Hub." in rendered
-    assert "ACTION  move_visible_terrain(x=0.45, y=0.5)" in rendered
+    assert "ACTION  wait(seconds=2.0)" in rendered
 
 
 def test_format_event_ignores_observations() -> None:
@@ -73,7 +72,7 @@ def test_format_event_labels_control_mode_in_run_lifecycle() -> None:
 
 
 def test_run_finished_safety_is_prominent_and_failure_is_a_safety_event() -> None:
-    from kenshi_agent.overlay import event_category
+    from kenshi_agent.tooling.overlay import event_category
 
     confirmed = {
         "event_type": "run_finished_safety",
@@ -264,7 +263,7 @@ def test_the_overlay_narrates_continuous_mode() -> None:
 
 
 def test_events_are_colour_coded_by_what_the_operator_must_notice() -> None:
-    from kenshi_agent.overlay import EVENT_COLOURS, event_category
+    from kenshi_agent.tooling.overlay import EVENT_COLOURS, event_category
 
     assert event_category({"event_type": "plan_proposed"}) == "goal"
     assert event_category({"event_type": "plan_completed"}) == "progress"

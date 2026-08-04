@@ -10,12 +10,9 @@ from kenshi_agent.config import (
 )
 from kenshi_agent.core.continuity import MemoryRetrievalPolicy
 from kenshi_agent.core.operation import (
-    ClickAction,
     ControlMode,
     PlanningMode,
-    SkillAction,
 )
-from kenshi_agent.skills import MacroRegistry
 
 
 def test_default_config_loads_and_resolves_paths(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -29,7 +26,6 @@ def test_default_config_loads_and_resolves_paths(monkeypatch: pytest.MonkeyPatch
     assert config.planning.max_plan_steps == 4
     assert config.planning.max_actions_per_plan == 8
     assert config.planning.max_native_assisted_actions_per_plan == 0
-    assert config.planning.stateful_movement_options_enabled
     assert config.planning.concurrent_option_planning_enabled
     assert config.planning.concurrent_option_planning_delay_seconds == 20.0
     assert config.memory.retrieval_policy is MemoryRetrievalPolicy.DETERMINISTIC
@@ -107,19 +103,13 @@ def test_canonical_live_config_keeps_calibrated_host_and_input_invariants(
     assert config.control.mode == ControlMode.NATIVE_ASSISTED
     assert config.planning.mode is PlanningMode.CONTINUOUS
     assert config.control.native_assisted_actions_enabled
-    assert config.safety.require_cli_execute_flag
+    assert "require_cli_execute_flag" not in type(config.safety).model_fields
     assert not set(config.safety.allow_action_kinds) & {
         "click",
         "key",
         "hotkey",
         "move_cursor",
         "scroll",
-    }
-    assert set(config.safety.allow_skills) == {
-        "pause_game",
-        "recenter_camera",
-        "close_overlay",
-        "approach_confirmed_vendor",
     }
     assert config.runtime.max_steps == 30
     assert config.planner.reasoning_effort == "low"
@@ -130,8 +120,6 @@ def test_canonical_live_config_keeps_calibrated_host_and_input_invariants(
     assert config.planner.model == "gpt-5.6-luna"
     assert config.planner.openrouter_provider_sort == "latency"
     assert config.controls.alt_tab_after_input
-    assert config.controls.pause_skill == "pause_game"
-    assert config.controls.unpause_skill == "unpause_game"
     assert config.controls.speed_keys == {1: "f2", 2: "f3", 3: "f4"}
     assert config.controls.pointer_mode == "relative"
     assert config.controls.relative_pointer_max_step_pixels == 12
@@ -157,87 +145,6 @@ def test_canonical_live_config_keeps_calibrated_host_and_input_invariants(
     assert config.safety.supervisor_max_sequence_stalls == 3
     assert config.safety.supervisor_sequence_stall_min_age_seconds == 1.0
     assert config.safety.supervisor_pause_timeout_seconds == 2.0
-    fine_bounds = config.macros["move_visible_terrain"].normalized_pointer_bounds
-    map_bounds = config.macros["move_on_map"].normalized_pointer_bounds
-    assert fine_bounds is not None and fine_bounds.contains(0.5, 0.5)
-    assert map_bounds is not None and map_bounds.contains(0.5, 0.5)
-    assert not map_bounds.contains(0.2, 0.5)
-    assert config.macros["move_visible_terrain"].movement_pulse_seconds == 0.75
-    assert config.macros["move_visible_terrain"].movement_pulse_min_seconds == 0.35
-    assert config.macros["move_visible_terrain"].movement_pulse_max_seconds == 3.0
-    assert config.macros["move_on_map"].movement_pulse_seconds == 2.0
-    assert config.macros["move_on_map"].movement_pulse_min_seconds == 1.0
-    assert config.macros["move_on_map"].movement_pulse_max_seconds == 8.0
-    assert len(config.macros["move_on_map"].actions) == 2
-    registry = MacroRegistry(config.macros)
-    fine_move = registry.expand(
-        SkillAction(name="move_visible_terrain", args={"x": 0.5, "y": 0.5})  # type: ignore[arg-type]
-    )[0]
-    map_move = registry.expand(
-        SkillAction(name="move_on_map", args={"x": 0.5, "y": 0.5})  # type: ignore[arg-type]
-    )[0]
-    interact = registry.expand(
-        SkillAction(name="interact_visible_person", args={"x": 0.5, "y": 0.5})  # type: ignore[arg-type]
-    )[0]
-    assert isinstance(fine_move, ClickAction)
-    assert isinstance(map_move, ClickAction)
-    assert isinstance(interact, ClickAction)
-    assert fine_move.hold_seconds == map_move.hold_seconds == interact.hold_seconds == 0.12
-    recenter_actions = config.macros["recenter_camera"].parsed_actions()
-    assert [action.kind for action in recenter_actions] == ["key"]
-    assert recenter_actions[0].key == "f"
-    assert recenter_actions[0].hold_seconds == 0.04
-    clear_highlights = config.macros["clear_item_highlights"].parsed_actions()
-    assert len(clear_highlights) == 1
-    assert clear_highlights[0].kind == "key"
-    assert clear_highlights[0].key == "alt"
-    assert config.macros["interact_visible_person"].movement_pulse_max_seconds == 6.0
-    assert config.macros["approach_confirmed_vendor"].movement_pulse_max_seconds == 8.0
-    assert config.macros["approach_confirmed_vendor"].requires_native_assisted
-    approach_vendor = config.macros["approach_confirmed_vendor"].parsed_actions()
-    assert len(approach_vendor) == 1
-    assert approach_vendor[0].kind == "hotkey"
-    assert approach_vendor[0].keys == ["ctrl", "shift", "f10"]
-    continue_vendor = config.macros["continue_confirmed_vendor_approach"]
-    assert continue_vendor.requires_native_assisted
-    assert continue_vendor.movement_pulse_max_seconds == 8.0
-    assert continue_vendor.parsed_actions() == []
-    show_goods = config.macros["choose_show_goods"].parsed_actions()
-    assert len(show_goods) == 1
-    assert isinstance(show_goods[0], ClickAction)
-    assert show_goods[0].x == 0.50
-    assert show_goods[0].y == 0.812
-    inspect_item = registry.expand(
-        SkillAction(name="inspect_shop_item", args={"x": 0.316, "y": 0.357})  # type: ignore[arg-type]
-    )
-    assert len(inspect_item) == 1
-    assert inspect_item[0].kind == "move_cursor"
-    buy_item = registry.expand(
-        SkillAction(  # type: ignore[arg-type]
-            name="buy_inspected_shop_item",
-            args={"x": 0.316, "y": 0.357, "expected_price": 649},
-        )
-    )
-    assert len(buy_item) == 1
-    assert isinstance(buy_item[0], ClickAction)
-    assert buy_item[0].button.value == "right"
-    zoom_in = config.macros["zoom_map_in"].parsed_actions()[0]
-    assert zoom_in.kind == "scroll"
-    assert zoom_in.x == 0.534
-    assert zoom_in.y == 0.505
-    assert zoom_in.notches == 1
-    pan_left = config.macros["pan_camera_left"].parsed_actions()
-    assert [action.kind for action in pan_left] == ["key", "key"]
-    assert pan_left[0].key == "f"
-    assert pan_left[0].hold_seconds == 0.04
-    assert pan_left[1].key == "a"
-    assert pan_left[1].hold_seconds == 0.08
-    orbit_right = config.macros["orbit_camera_right"].parsed_actions()
-    assert [action.kind for action in orbit_right] == ["key", "key"]
-    assert orbit_right[0].key == "f"
-    assert orbit_right[0].hold_seconds == 0.04
-    assert orbit_right[1].key == "e"
-    assert orbit_right[1].hold_seconds == 0.25
 
 
 def test_real_env_file_is_ignored_but_template_is_trackable() -> None:
@@ -267,7 +174,7 @@ def test_canonical_live_config_authorizes_semantic_actions_not_raw_input(
     assert config.planning.mode is PlanningMode.CONTINUOUS
     # Both live gates are still required before any input is emitted.
     assert config.safety.live_actions_enabled
-    assert config.safety.require_cli_execute_flag
+    assert "require_cli_execute_flag" not in type(config.safety).model_fields
     assert config.safety.emergency_stop_key == "f12"
 
     kinds = set(config.safety.allow_action_kinds)
@@ -275,15 +182,9 @@ def test_canonical_live_config_authorizes_semantic_actions_not_raw_input(
     # Raw controller primitives are never live-allowlisted.
     assert not kinds & {"click", "key", "hotkey", "move_cursor", "scroll"}
 
-    # The approach macro survives only to supply the audited native primitives.
-    assert config.controls.native_approach_skill == "approach_confirmed_vendor"
-    assert "approach_confirmed_vendor" in config.safety.allow_skills
-    # The calibrated Barman recipe macros are not authorized here.
-    assert not {
-        "choose_show_goods",
-        "inspect_shop_item",
-        "buy_inspected_shop_item",
-    } & set(config.safety.allow_skills)
+    assert "skill" not in kinds
+    assert "allow_skills" not in type(config.safety).model_fields
+    assert "macros" not in type(config).model_fields
 
 
 def test_canonical_live_config_allowlists_every_affordance_operation(

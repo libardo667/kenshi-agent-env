@@ -9,7 +9,7 @@ from openai.lib._pydantic import to_strict_json_schema
 from pydantic import ValidationError
 
 from kenshi_agent.condition_evaluation import evaluate_condition
-from kenshi_agent.config import MacroConfig, PlanningConfig
+from kenshi_agent.config import PlanningConfig
 from kenshi_agent.core.evidence import (
     ActionOutcome,
     ActionOutcomeAssessment,
@@ -25,7 +25,6 @@ from kenshi_agent.core.operation import (
     PlanningMode,
     PurchaseItemAction,
     SetSpeedAction,
-    SkillAction,
     StopAction,
 )
 from kenshi_agent.core.planning import (
@@ -62,7 +61,6 @@ from kenshi_agent.planning import (
     validate_future_plan_patch,
     validate_plan,
 )
-from kenshi_agent.skills import MacroRegistry
 
 
 def revision(sequence: int, *, capability_epoch: int = 1) -> WorldStateRevision:
@@ -944,14 +942,12 @@ def test_plan_rejects_retry_for_at_most_once_step() -> None:
 def test_plan_policy_rejects_excessive_horizon_budget_and_stale_basis() -> None:
     current = observation(sequence=5)
     plan = plan_for(revision(5))
-    macros = MacroRegistry({})
 
     with pytest.raises(PlanValidationError, match="steps"):
         validate_plan(
             plan,
             current,
             PlanningConfig(max_plan_steps=1),
-            macros,
         )
 
     with pytest.raises(PlanValidationError, match="max_actions"):
@@ -959,7 +955,6 @@ def test_plan_policy_rejects_excessive_horizon_budget_and_stale_basis() -> None:
             plan.model_copy(update={"max_actions": 3}),
             current,
             PlanningConfig(max_actions_per_plan=2),
-            macros,
         )
 
     with pytest.raises(PlanValidationError, match="stale"):
@@ -967,14 +962,12 @@ def test_plan_policy_rejects_excessive_horizon_budget_and_stale_basis() -> None:
             plan_for(revision(4)),
             current,
             PlanningConfig(),
-            macros,
         )
 
 
 def test_plan_validation_fails_closed_for_every_outer_authority_boundary() -> None:
     valid_observation = observation(sequence=5)
     valid_plan = plan_for(valid_observation.world_revision)
-    macros = MacroRegistry({})
 
     no_revision = valid_observation.world_revision.model_copy(
         update={"telemetry_sequence": None, "frame_sequence": None}
@@ -1115,7 +1108,7 @@ def test_plan_validation_fails_closed_for_every_outer_authority_boundary() -> No
 
     for plan, current, config in invalid_cases:
         with pytest.raises(PlanValidationError):
-            validate_plan(plan, current, config, macros)
+            validate_plan(plan, current, config)
 
 
 def test_live_plan_policy_receives_the_exact_plan_and_configured_bound(
@@ -1144,7 +1137,6 @@ def test_live_plan_policy_receives_the_exact_plan_and_configured_bound(
         plan,
         current,
         PlanningConfig(),
-        MacroRegistry({}),
     )
 
     assert calls == [(plan, 4)]
@@ -1167,7 +1159,6 @@ def test_plan_validation_accepts_every_configured_boundary_at_equality() -> None
             max_purchase_actions_per_plan=plan.risk_budget.max_purchase_actions,
             max_native_assisted_actions_per_plan=(plan.risk_budget.max_native_assisted_actions),
         ),
-        MacroRegistry({}),
     )
 
     assert [item.result for item in results] == [ConditionResult.TRUE]
@@ -1187,7 +1178,6 @@ def test_plan_validation_accepts_every_configured_boundary_at_equality() -> None
             one_channel_plan,
             one_channel_observation,
             PlanningConfig(),
-            MacroRegistry({}),
         )
 
 
@@ -1252,7 +1242,7 @@ def test_plan_structure_does_not_restate_the_affordance_non_progress_barrier() -
         }
     )
 
-    results = validate_plan(plan, current, PlanningConfig(), MacroRegistry({}))
+    results = validate_plan(plan, current, PlanningConfig())
     assert [item.result for item in results] == [ConditionResult.TRUE]
 
 
@@ -1278,7 +1268,7 @@ def test_plan_risk_validation_conserves_cost_across_all_steps_and_retries() -> N
     )
 
     with pytest.raises(PlanValidationError):
-        validate_plan(over_budget, current, PlanningConfig(), MacroRegistry({}))
+        validate_plan(over_budget, current, PlanningConfig())
 
     retrying_purchase = purchase_step("purchase").model_copy(
         update={
@@ -1307,7 +1297,6 @@ def test_plan_risk_validation_conserves_cost_across_all_steps_and_retries() -> N
             max_pointer_actions_per_plan=2,
             max_purchase_actions_per_plan=2,
         ),
-        MacroRegistry({}),
     )
 
     pointer_steps = [
@@ -1352,7 +1341,6 @@ def test_plan_risk_validation_conserves_cost_across_all_steps_and_retries() -> N
             pointer_plan,
             current,
             PlanningConfig(max_pointer_actions_per_plan=2),
-            MacroRegistry({}),
         )
 
     native_current = current.model_copy(update={"control_mode": ControlMode.NATIVE_ASSISTED})
@@ -1393,11 +1381,10 @@ def test_plan_risk_validation_conserves_cost_across_all_steps_and_retries() -> N
             native_plan,
             native_current,
             PlanningConfig(max_native_assisted_actions_per_plan=2),
-            MacroRegistry({}),
         )
 
 
-def test_budget_ledger_uses_contract_macro_and_legacy_skill_risk_sources() -> None:
+def test_budget_ledger_uses_operation_definition_risk() -> None:
     contract_plan = plan_for(revision(1)).model_copy(
         update={
             "risk_budget": RiskBudget(
@@ -1417,7 +1404,6 @@ def test_budget_ledger_uses_contract_macro_and_legacy_skill_risk_sources() -> No
             window="Trader",
             seller_id="seller",
         ),
-        MacroRegistry({}),
     ) == (1, 1, 0)
     ledger.release((1, 1, 0))
     quantity_ledger = PlanBudgetLedger(
@@ -1435,39 +1421,10 @@ def test_budget_ledger_uses_contract_macro_and_legacy_skill_risk_sources() -> No
             window="Trader",
             seller_id="seller",
         ),
-        MacroRegistry({}),
     ) == (3, 3, 0)
     assert ledger.reserve(
         ApproachDialogueTargetAction(target_id="target"),
-        MacroRegistry({}),
     ) == (0, 0, 1)
-
-    legacy_registry = MacroRegistry(
-        {
-            "native_click": MacroConfig(
-                requires_native_assisted=True,
-                actions=[{"kind": "click", "x": 0.25, "y": 0.75}],
-            )
-        }
-    )
-    legacy_ledger = PlanBudgetLedger(
-        remaining_actions=3,
-        remaining_pointer_actions=1,
-        remaining_purchase_actions=1,
-        remaining_native_assisted_actions=1,
-    )
-    assert legacy_ledger.reserve(
-        SkillAction(name="native_click"),
-        legacy_registry,
-    ) == (1, 0, 1)
-    assert legacy_ledger.reserve(
-        SkillAction(name="buy_inspected_shop_item"),
-        MacroRegistry({}),
-    ) == (0, 1, 0)
-    assert legacy_ledger.reserve(
-        SkillAction(name="unknown"),
-        MacroRegistry({}),
-    ) == (0, 0, 0)
 
 
 def test_plan_patch_carries_optimistic_concurrency_basis() -> None:
@@ -1502,7 +1459,7 @@ def test_future_patch_rebases_to_current_state_and_cannot_restart_protected_step
     current = observation(sequence=7)
     active_plan = plan_for(current.world_revision)
     ledger = PlanBudgetLedger.from_plan(active_plan)
-    ledger.reserve(PauseAction(paused=False), MacroRegistry({}))
+    ledger.reserve(PauseAction(paused=False))
     ledger.commit()
     patch = PlanPatch(
         schema_version="1.0",
@@ -1519,7 +1476,6 @@ def test_future_patch_rebases_to_current_state_and_cannot_restart_protected_step
         planner_observation=current,
         current_observation=current,
         config=PlanningConfig(),
-        macros=MacroRegistry({}),
         budget=ledger,
         remaining_run_actions=1,
         protected_step_ids={"resume"},
@@ -1535,7 +1491,6 @@ def test_future_patch_rebases_to_current_state_and_cannot_restart_protected_step
         planner_observation=current,
         current_observation=observation(sequence=8),
         config=PlanningConfig(),
-        macros=MacroRegistry({}),
         budget=ledger,
         remaining_run_actions=1,
         protected_step_ids={"resume"},
@@ -1550,7 +1505,6 @@ def test_future_patch_rebases_to_current_state_and_cannot_restart_protected_step
             planner_observation=current,
             current_observation=current,
             config=PlanningConfig(),
-            macros=MacroRegistry({}),
             budget=ledger,
             remaining_run_actions=1,
             protected_step_ids={"resume"},
@@ -1576,7 +1530,6 @@ def test_future_patch_rebase_leaves_latest_entry_authority_to_submission() -> No
         planner_observation=planner_observation,
         current_observation=current,
         config=PlanningConfig(),
-        macros=MacroRegistry({}),
         budget=PlanBudgetLedger.from_plan(active_plan),
         remaining_run_actions=1,
         protected_step_ids=set(),
@@ -1597,7 +1550,7 @@ def test_interrupt_patch_requires_exact_opt_in_and_a_pause_handoff() -> None:
         max_actions=3,
     )
     ledger = PlanBudgetLedger.from_plan(active_plan)
-    ledger.reserve(active_plan.steps[0].action, MacroRegistry({}))
+    ledger.reserve(active_plan.steps[0].action)
     ledger.commit()
     planner_observation = current.model_copy(
         update={
@@ -1628,7 +1581,6 @@ def test_interrupt_patch_requires_exact_opt_in_and_a_pause_handoff() -> None:
             planner_observation=planner_observation,
             current_observation=current,
             config=PlanningConfig(),
-            macros=MacroRegistry({}),
             budget=ledger,
             remaining_run_actions=2,
             protected_step_ids={"resume"},
@@ -1647,7 +1599,6 @@ def test_interrupt_patch_requires_exact_opt_in_and_a_pause_handoff() -> None:
             planner_observation=planner_observation,
             current_observation=current,
             config=PlanningConfig(),
-            macros=MacroRegistry({}),
             budget=ledger,
             remaining_run_actions=2,
             protected_step_ids={"resume"},
@@ -1671,7 +1622,6 @@ def test_interrupt_patch_requires_exact_opt_in_and_a_pause_handoff() -> None:
             planner_observation=planner_observation,
             current_observation=current,
             config=PlanningConfig(),
-            macros=MacroRegistry({}),
             budget=ledger,
             remaining_run_actions=2,
             protected_step_ids={"resume"},
@@ -1683,7 +1633,6 @@ def test_interrupt_patch_requires_exact_opt_in_and_a_pause_handoff() -> None:
         planner_observation=planner_observation,
         current_observation=current,
         config=PlanningConfig(),
-        macros=MacroRegistry({}),
         budget=ledger,
         remaining_run_actions=2,
         protected_step_ids={"resume"},
@@ -1776,7 +1725,6 @@ def test_future_patch_rejects_wrong_identity_protected_steps_and_empty_budget() 
                 planner_observation=planner_observation,
                 current_observation=current_observation,
                 config=PlanningConfig(),
-                macros=MacroRegistry({}),
                 budget=budget,
                 remaining_run_actions=remaining_run_actions,
                 protected_step_ids=protected,
@@ -1788,7 +1736,6 @@ def test_future_patch_rejects_wrong_identity_protected_steps_and_empty_budget() 
         planner_observation=current,
         current_observation=observation(sequence=8),
         config=PlanningConfig(),
-        macros=MacroRegistry({}),
         budget=ledger,
         remaining_run_actions=1,
         protected_step_ids=set(),
@@ -1871,62 +1818,10 @@ def test_interrupt_patch_requires_every_fact_in_the_pause_handoff() -> None:
                 planner_observation=snapshot,
                 current_observation=current,
                 config=PlanningConfig(),
-                macros=MacroRegistry({}),
                 budget=ledger,
                 remaining_run_actions=2,
                 protected_step_ids=set(),
             )
-
-
-def test_future_patch_validates_replacement_risk_with_the_supplied_registry() -> None:
-    current = observation()
-    active_plan = plan_for(current.world_revision).model_copy(
-        update={
-            "risk_budget": RiskBudget(
-                max_pointer_actions=1,
-                max_purchase_actions=0,
-                max_native_assisted_actions=0,
-            )
-        }
-    )
-    registry = MacroRegistry(
-        {"click_once": MacroConfig(actions=[{"kind": "click", "x": 0.25, "y": 0.75}])}
-    )
-    replacement = PlanStep(
-        step_id="click",
-        action=SkillAction(name="click_once"),
-        preconditions=[fresh_condition()],
-        success_conditions=[
-            field_condition(
-                "telemetry.game.paused",
-                True,
-                required_capabilities=["game.pause"],
-            )
-        ],
-        timeout_seconds=1.0,
-    )
-    patch = PlanPatch(
-        schema_version="1.0",
-        plan_id=active_plan.plan_id,
-        based_on_plan_version=active_plan.plan_version,
-        based_on_revision=current.world_revision,
-        replace_future_steps=[replacement],
-        rationale="Use the registry-bound pointer action.",
-    )
-
-    candidate = validate_future_plan_patch(
-        patch,
-        active_plan=active_plan,
-        planner_observation=current,
-        current_observation=current,
-        config=PlanningConfig(max_pointer_actions_per_plan=1),
-        macros=registry,
-        budget=PlanBudgetLedger.from_plan(active_plan),
-        remaining_run_actions=1,
-        protected_step_ids=set(),
-    )
-
-    assert candidate.steps == [replacement]
 
 
 def test_future_patch_labels_an_invalid_replacement_graph() -> None:
@@ -1948,7 +1843,6 @@ def test_future_patch_labels_an_invalid_replacement_graph() -> None:
             planner_observation=current,
             current_observation=current,
             config=PlanningConfig(),
-            macros=MacroRegistry({}),
             budget=PlanBudgetLedger.from_plan(active_plan),
             remaining_run_actions=2,
             protected_step_ids=set(),
@@ -1958,15 +1852,14 @@ def test_future_patch_labels_an_invalid_replacement_graph() -> None:
 def test_plan_budget_reservations_release_or_commit_transactionally() -> None:
     plan = plan_for(revision(1))
     ledger = PlanBudgetLedger.from_plan(plan)
-    macros = MacroRegistry({})
 
-    risk = ledger.reserve(PauseAction(paused=False), macros)
+    risk = ledger.reserve(PauseAction(paused=False))
     assert ledger.remaining_actions == 1
     ledger.release(risk)
     assert ledger.remaining_actions == 2
     assert ledger.released_actions == 1
 
-    ledger.reserve(PauseAction(paused=False), macros)
+    ledger.reserve(PauseAction(paused=False))
     ledger.commit()
     assert ledger.remaining_actions == 1
     assert ledger.committed_actions == 1

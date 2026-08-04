@@ -30,19 +30,12 @@ from ...core.observation import Observation
 from ...core.operation import (
     GAME_SPEED_MULTIPLIER_BY_GEAR,
     Action,
-    ClickAction,
     ControlMode,
     HotkeyAction,
     KeyAction,
-    MouseButtonAction,
-    MouseDragAction,
-    MoveCursorAction,
     PauseAction,
     PointerActionClass,
-    ScrollAction,
     SetSpeedAction,
-    SkillAction,
-    SkillArgument,
 )
 from ...core.telemetry import (
     ContextActionKind,
@@ -58,13 +51,16 @@ from ...core.transport import (
     Transition,
 )
 from ...input_boundary import ExecutionToken
-from ...skills import MacroRegistry
 from ...telemetry import TelemetryReader, TelemetryReadError
 
 NATIVE_COMMAND_REQUEST_FILE = "native_command.request.json"
 NATIVE_COMMAND_ACK_TIMEOUT_SECONDS = 2.0
 NATIVE_COMMAND_POLL_SECONDS = 0.025
 NATIVE_DIALOGUE_SETTLE_SECONDS = 1.0
+NATIVE_COMMAND_TRIGGER = HotkeyAction(
+    keys=["ctrl", "shift", "f10"],
+    hold_seconds=0.08,
+)
 
 class LiveCapturePort(Protocol):
     def capture(self, sequence: int) -> CapturedFrame: ...
@@ -75,7 +71,6 @@ class LiveExternalPort(Protocol):
 
     controller: InputController
     telemetry_reader: TelemetryReader
-    macros: MacroRegistry
     runtime_config: RuntimeConfig
     controls_config: ControlsConfig
     capture_config: CaptureConfig
@@ -86,7 +81,6 @@ class LiveExternalPort(Protocol):
     quicksave_timeout_seconds: float
     run_id: str
     control_mode: ControlMode
-    available_skills: list[str]
     _step_index: int
     _capture_sequence: int
     _capability_epoch: int
@@ -130,10 +124,6 @@ class KenshiControlSurface:
     @property
     def telemetry_reader(self) -> TelemetryReader:
         return self._port.telemetry_reader
-
-    @property
-    def macros(self) -> MacroRegistry:
-        return self._port.macros
 
     @property
     def runtime_config(self) -> RuntimeConfig:
@@ -199,7 +189,7 @@ class KenshiControlSurface:
                 dry_run=True,
                 started_at=started,
                 finished_at=datetime.now(UTC),
-                primitive_actions=self.macros.primitive_count(action),
+                primitive_actions=command.primitive_action_bound,
                 message="Live action withheld by the dry-run safety gate.",
             )
         else:
@@ -383,58 +373,29 @@ class KenshiControlSurface:
             raise RuntimeError("Native command execution requires caller-owned command context.")
         return command
 
-    async def run_skill_primitives(self, action: SkillAction) -> tuple[int, list[str]]:
-        primitives = self.macros.expand(action)
+    async def run_primitives(
+        self,
+        primitives: tuple[PrimitiveInputAction, ...],
+    ) -> tuple[int, list[str]]:
         primitive_count = 0
         messages: list[str] = []
-        for macro_primitive in primitives:
+        for primitive in primitives:
             if self.controller.user_input_detected():
-                raise RuntimeError("User input resumed during macro execution; yielding control.")
-            if self.controller.emergency_stop_pressed(self._port.emergency_stop_key):
-                raise RuntimeError("Emergency stop pressed during macro execution.")
-            if not isinstance(
-                macro_primitive,
-                (
-                    KeyAction,
-                    HotkeyAction,
-                    MouseButtonAction,
-                    MouseDragAction,
-                    MoveCursorAction,
-                    ClickAction,
-                    ScrollAction,
-                ),
-            ):
-                raise TypeError(
-                    f"Live macro {action.name!r} contains unsupported primitive "
-                    f"{macro_primitive.kind!r}."
+                raise RuntimeError(
+                    "User input resumed during operation delivery; yielding control."
                 )
-            primitive_receipt = await self.controller.execute(macro_primitive)
+            if self.controller.emergency_stop_pressed(self._port.emergency_stop_key):
+                raise RuntimeError("Emergency stop pressed during operation delivery.")
+            primitive_receipt = await self.controller.execute(primitive)
             primitive_count += primitive_receipt.primitive_actions
             messages.append(primitive_receipt.message)
         return primitive_count, messages
 
     def pause_primitives(self, paused: bool) -> tuple[list[PrimitiveInputAction], str]:
-        skill_name = (
-            self.controls_config.pause_skill
-            if paused
-            else self.controls_config.unpause_skill or self.controls_config.pause_skill
+        del paused
+        return [KeyAction(key=self.controls_config.pause_key)], (
+            f"pause key {self.controls_config.pause_key!r}"
         )
-        if skill_name is None:
-            return [KeyAction(key=self.controls_config.pause_key)], (
-                f"pause key {self.controls_config.pause_key!r}"
-            )
-        primitives = self.macros.expand(SkillAction(name=skill_name))
-        if not primitives or not all(
-            isinstance(item, (KeyAction, ClickAction)) for item in primitives
-        ):
-            raise RuntimeError(
-                f"Configured pause control {skill_name!r} must contain only key or click actions."
-            )
-        pause_primitives: list[PrimitiveInputAction] = []
-        pause_primitives.extend(
-            item for item in primitives if isinstance(item, (KeyAction, ClickAction))
-        )
-        return pause_primitives, f"pause control {skill_name!r}"
 
     async def apply_pause_request(
         self,
@@ -610,7 +571,7 @@ class KenshiControlSurface:
 
     async def run_movement_pulse(
         self,
-        action: SkillAction,
+        action: Action,
         started: datetime,
         *,
         pulse_seconds: float,
@@ -623,11 +584,13 @@ class KenshiControlSurface:
         )
         if self.controls_config.require_paused_between_actions and paused is not True:
             raise RuntimeError(
-                f"Movement pulse {action.name!r} requires confirmed paused live state."
+                f"Movement pulse {action.kind!r} requires confirmed paused live state."
             )
 
+        primitive_count: int
+        messages: list[str]
         if prepared_primitives is None:
-            primitive_count, messages = await self.run_skill_primitives(action)
+            primitive_count, messages = 0, []
         else:
             primitive_count, messages = prepared_primitives
         unpause_sent = False
@@ -688,28 +651,8 @@ class KenshiControlSurface:
             started_at=started,
             finished_at=datetime.now(UTC),
             primitive_actions=primitive_count,
-            message=(f"Executed skill {action.name!r}. {outcome} " + " ".join(messages)),
+            message=(f"Executed {action.kind!r}. {outcome} " + " ".join(messages)),
         )
-
-    def native_transport_skill(
-        self,
-        *,
-        target_id: str,
-        purpose: str,
-    ) -> tuple[SkillAction, float]:
-        skill_name = self.controls_config.native_approach_skill
-        if skill_name is None or not self.macros.has(skill_name):
-            raise RuntimeError(f"{purpose} requires a configured native transport skill.")
-        primitive_skill = SkillAction(
-            name=skill_name,
-            args=[SkillArgument(name="target_id", value=target_id)],
-        )
-        pulse_seconds = self.macros.resolve_movement_pulse_seconds(primitive_skill)
-        if pulse_seconds is None:
-            raise RuntimeError(
-                f"Configured native transport skill {skill_name!r} has no movement pulse."
-            )
-        return primitive_skill, pulse_seconds
 
     @staticmethod
     def _accepted_native_terminal_receipt(
@@ -750,7 +693,6 @@ class KenshiControlSurface:
         *,
         target_id: str,
         pulse_seconds: float,
-        primitive_skill: SkillAction,
         require_vendor_role: bool,
         wire_command: Literal[
             "approach_confirmed_vendor",
@@ -825,7 +767,7 @@ class KenshiControlSurface:
             )
             request_path = self.telemetry_reader.path.parent / NATIVE_COMMAND_REQUEST_FILE
             native_commands.write_native_command_request_atomic(request_path, request)
-            primitive_count, messages = await self.run_skill_primitives(primitive_skill)
+            primitive_count, messages = await self.run_primitives((NATIVE_COMMAND_TRIGGER,))
             acknowledgement = await self._wait_for_native_acknowledgement(request)
         acknowledgement_message = (
             f"Native acknowledgement {acknowledgement.status.value!r} "
@@ -922,14 +864,14 @@ class KenshiControlSurface:
                 running_speed_gear=running_speed_gear,
             )
         receipt = await self.run_movement_pulse(
-            primitive_skill,
+            action,
             started,
             pulse_seconds=pulse_seconds,
             prepared_primitives=(primitive_count, messages),
         )
         if not continue_until_terminal:
-            # The legacy macro's contract is exactly one bounded pulse; the
-            # planner was responsible for asking to continue.
+            # This operation owns exactly one bounded pulse; the planner is
+            # responsible for asking to continue.
             return receipt.model_copy(
                 update={
                     "action": action,
@@ -941,7 +883,6 @@ class KenshiControlSurface:
         return await self._continue_native_approach(
             action=action,
             started=started,
-            primitive_skill=primitive_skill,
             pulse_seconds=pulse_seconds,
             acknowledgement=acknowledgement,
             receipt=receipt,
@@ -1043,7 +984,6 @@ class KenshiControlSurface:
         *,
         action: Action,
         started: datetime,
-        primitive_skill: SkillAction,
         pulse_seconds: float,
         acknowledgement: NativeCommandAcknowledgement,
         receipt: ActionReceipt,
@@ -1072,7 +1012,7 @@ class KenshiControlSurface:
             if remaining <= 0.0:
                 break
             receipt = await self.run_movement_pulse(
-                primitive_skill,
+                action,
                 started,
                 pulse_seconds=remaining,
                 prepared_primitives=(0, []),
@@ -1195,8 +1135,8 @@ class KenshiControlSurface:
     ) -> NativeCommandRequest:
         """Build the native pathing request for one exact stable target.
 
-        `require_vendor_role` is what separates the legacy vendor macro from the
-        generic dialogue-target action. The generic action asks only for the
+        `require_vendor_role` separates a vendor-only request from the generic
+        dialogue-target action. The generic action asks only for the
         authorization fact it actually needs — a conscious, non-hostile,
         non-animal person with dialogue — because approaching and talking is not
         a commerce affordance.

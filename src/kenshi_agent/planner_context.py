@@ -58,8 +58,6 @@ def _planner_json(value: Any) -> str:
 def _project_planner_payload(payload: dict[str, Any]) -> dict[str, Any]:
     """Remove deterministic runtime mechanics from the playing-model view."""
 
-    payload["available_skills"] = []
-    payload["skill_specs"] = []
     telemetry = payload.get("telemetry")
     if not isinstance(telemetry, dict):
         return payload

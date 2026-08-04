@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from functools import partial
 from typing import Any, Protocol, cast
 
@@ -16,7 +16,6 @@ from ...core.observation import Observation
 from ...core.operation import (
     Action,
     ClickAction,
-    ControlMode,
     ExitCurrentBuildingAction,
     MouseButton,
     MoveInDirectionAction,
@@ -27,8 +26,6 @@ from ...core.operation import (
     SelectSquadMemberAction,
     SelectSquadMemberExactAction,
     SetSpeedAction,
-    SkillAction,
-    SkillArgument,
     ThreatResponseStrategy,
     TravelToMapDestinationAction,
 )
@@ -43,12 +40,9 @@ from ...options import (
     NativeMovementAction,
     OptionLifecycleError,
     OptionStatus,
-    StatefulApproachOption,
-    StatefulMovementOption,
     StatefulNativeMovementOption,
     StatefulThreatResponseOption,
 )
-from ...skills import MacroRegistry
 from ..monitor_types import (
     MonitoredOperation,
     MonitoredOperationResult,
@@ -97,10 +91,6 @@ class MovementMechanicsPort(Protocol):
     ) -> Transition: ...
 
     async def respond_to_immediate_threat(
-        self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
-    ) -> Transition: ...
-
-    async def skill(
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
     ) -> Transition: ...
 
@@ -240,71 +230,6 @@ class ThreatResponseHandler:
         return _cancelled(active, context)
 
 
-@dataclass(frozen=True, slots=True)
-class SkillHandler:
-    operation: MovementOperation
-    planning_config: PlanningConfig
-    macros: MacroRegistry
-
-    async def execute(
-        self,
-        bound: BoundOperation,
-        context: OperationContext,
-    ) -> OperationResult:
-        observation = context.world.latest
-        if observation is None:
-            raise RuntimeError("No current observation is available for skill execution.")
-        action = cast(SkillAction, bound.operation)
-        if (
-            self.planning_config.stateful_movement_options_enabled
-            and self.macros.is_stateful_movement(action)
-        ):
-            option = StatefulMovementOption(
-                option_id=(
-                    f"option-{context.scope.plan_id}-"
-                    f"{context.scope.plan_version}-{context.scope.step_id}"
-                ),
-                action=action,
-                operation=partial(self.operation, action),
-                require_paused_start=(self.planning_config.require_paused_between_actions),
-            )
-            return await run_prepared_option(option, observation, context)
-        if (
-            self.planning_config.stateful_approach_options_enabled
-            and self.macros.is_approach_option(action)
-        ):
-            params = self.macros.approach_option_params(action)
-            if params is None:
-                raise RuntimeError("Approach skill has no current option parameters.")
-            approach_option = StatefulApproachOption(
-                option_id=(
-                    f"approach-{context.scope.plan_id}-"
-                    f"{context.scope.plan_version}-{context.scope.step_id}"
-                ),
-                action=action,
-                operation=partial(self.operation, action),
-                target_id=params.target_id,
-                arrival_distance=params.arrival_distance,
-                threat_distance=params.threat_distance,
-                require_paused_start=(self.planning_config.require_paused_between_actions),
-            )
-            return await run_prepared_option(approach_option, observation, context)
-        transition = await _execute(self.operation, action, context)
-        accepted = transition.receipt.accepted or transition.receipt.executed
-        return _transition_result(
-            transition,
-            status=(OperationStatus.SUCCEEDED if accepted else OperationStatus.REJECTED),
-            reason=transition.receipt.message,
-        )
-
-    async def cancel(
-        self,
-        active: ActiveOperation,
-        context: OperationContext,
-    ) -> OperationResult:
-        return _cancelled(active, context)
-
-
 async def run_prepared_option(
     option: MonitoredOperation,
     observation: Observation,
@@ -411,7 +336,6 @@ def _cancelled(
 def movement_handlers(
     port: MovementMechanicsPort,
     planning_config: PlanningConfig,
-    macros: MacroRegistry,
 ) -> dict[str, OperationHandler]:
     return {
         "movement.select_squad_member": AtomicMovementHandler(port.select_squad_member),
@@ -439,31 +363,16 @@ def movement_handlers(
             port.move_in_direction,
             port.pause,
         ),
-        "movement.skill": SkillHandler(port.skill, planning_config, macros),
     }
 
 
 class KenshiMovementMechanics:
-    """Selection, native movement, threat response, and skill mechanics."""
+    """Selection, native movement, and threat-response mechanics."""
 
     _surface: KenshiControlSurface
 
     def __init__(self, surface: KenshiControlSurface) -> None:
         self._surface = surface
-
-    async def skill(
-        self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
-    ) -> Transition:
-        typed = cast(SkillAction, action)
-        if (
-            self._surface.macros.has(typed.name)
-            and self._surface.macros.requires_native_assisted(typed.name)
-            and self._surface.port.control_mode is not ControlMode.NATIVE_ASSISTED
-        ):
-            raise RuntimeError(f"Skill {typed.name!r} requires native_assisted control mode.")
-        return await self._surface.run_exact(
-            action, command=command, token=token, receipt=self._execute_runtime_skill
-        )
 
     async def respond_to_immediate_threat(
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
@@ -525,35 +434,6 @@ class KenshiMovementMechanics:
         return await self._surface.run_exact(
             action, command=command, token=token, receipt=self._execute_move_operation
         )
-
-    async def _execute_runtime_skill(
-        self, action: Action, started: datetime, command: CommandDispatchContext | None
-    ) -> ActionReceipt:
-        typed = cast(SkillAction, action)
-        pulse_seconds = self._surface.macros.resolve_movement_pulse_seconds(typed)
-        if pulse_seconds is None:
-            return await self._execute_skill(typed, started)
-        if (
-            self._surface.macros.requires_native_assisted(typed.name)
-            and typed.name == "approach_confirmed_vendor"
-        ):
-            if command is None:
-                raise RuntimeError(
-                    "Native command execution requires caller-owned command context."
-                )
-            target_id = typed.argument_map().get("target_id")
-            if not isinstance(target_id, str) or not target_id:
-                raise RuntimeError("Native vendor approach requires an exact target_id.")
-            return await self._surface.run_native_order(
-                typed,
-                started,
-                command,
-                target_id=target_id,
-                pulse_seconds=pulse_seconds,
-                primitive_skill=typed,
-                require_vendor_role=True,
-            )
-        return await self._surface.run_movement_pulse(typed, started, pulse_seconds=pulse_seconds)
 
     async def _execute_runtime_threat(
         self, action: Action, started: datetime, command: CommandDispatchContext | None
@@ -649,19 +529,6 @@ class KenshiMovementMechanics:
             await self._surface.require_command(command),
         )
 
-    async def _execute_skill(self, action: SkillAction, started: datetime) -> ActionReceipt:
-        primitive_count, messages = await self._surface.run_skill_primitives(action)
-        return ActionReceipt(
-            action=action,
-            accepted=True,
-            executed=True,
-            dry_run=False,
-            started_at=started,
-            finished_at=datetime.now(UTC),
-            primitive_actions=primitive_count,
-            message=f"Executed skill {action.name!r}. " + " ".join(messages),
-        )
-
     async def _execute_select_squad_member(
         self,
         action: SelectSquadMemberAction,
@@ -717,20 +584,7 @@ class KenshiMovementMechanics:
     ) -> ActionReceipt:
         """Select and verify one exact squad identity through native code."""
 
-        skill_name = self._surface.controls_config.native_approach_skill
-        if skill_name is None or not self._surface.macros.has(skill_name):
-            raise RuntimeError(
-                "Exact squad selection requires a configured native transport skill."
-            )
-        primitive_skill = SkillAction(
-            name=skill_name,
-            args=[SkillArgument(name="target_id", value=action.target_id)],
-        )
-        pulse_seconds = self._surface.macros.resolve_movement_pulse_seconds(primitive_skill)
-        if pulse_seconds is None:
-            raise RuntimeError(
-                f"Configured native approach skill {skill_name!r} has no movement pulse."
-            )
+        pulse_seconds = self._surface.controls_config.native_movement_pulse_seconds
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
             contract_version=operations.SELECT_SQUAD_MEMBER_EXACT_DEFINITION.version,
@@ -747,7 +601,6 @@ class KenshiMovementMechanics:
             command,
             target_id=action.target_id,
             pulse_seconds=pulse_seconds,
-            primitive_skill=primitive_skill,
             require_vendor_role=False,
             semantic=semantic,
             wire_command=native_commands.NATIVE_SQUAD_SELECTION_WIRE_COMMAND,
@@ -768,21 +621,7 @@ class KenshiMovementMechanics:
         primitives, the acknowledgement, the monitored walk - is the approach's.
         """
 
-        skill_name = self._surface.controls_config.native_approach_skill
-        if skill_name is None or not self._surface.macros.has(skill_name):
-            raise RuntimeError(
-                "Directional movement requires a configured native approach skill "
-                "to supply its bounded primitives."
-            )
-        primitive_skill = SkillAction(
-            name=skill_name,
-            args=[SkillArgument(name="target_id", value="")],
-        )
-        pulse_seconds = self._surface.macros.resolve_movement_pulse_seconds(primitive_skill)
-        if pulse_seconds is None:
-            raise RuntimeError(
-                f"Configured native approach skill {skill_name!r} has no movement pulse."
-            )
+        pulse_seconds = self._surface.controls_config.native_movement_pulse_seconds
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
             contract_version=operations.MOVE_IN_DIRECTION_DEFINITION.version,
@@ -799,7 +638,6 @@ class KenshiMovementMechanics:
             command,
             target_id="",
             pulse_seconds=pulse_seconds,
-            primitive_skill=primitive_skill,
             require_vendor_role=False,
             semantic=semantic,
             continue_until_terminal=True,
@@ -817,26 +655,7 @@ class KenshiMovementMechanics:
     ) -> ActionReceipt:
         """Issue one exact long-distance order to a discovered settlement."""
 
-        skill_name = self._surface.controls_config.native_approach_skill
-        if skill_name is None or not self._surface.macros.has(skill_name):
-            raise RuntimeError(
-                "Map travel requires a configured native approach skill to "
-                "supply its bounded transport primitive."
-            )
-        primitive_skill = SkillAction(
-            name=skill_name,
-            args=[
-                SkillArgument(
-                    name="target_id",
-                    value=action.destination_id,
-                )
-            ],
-        )
-        pulse_seconds = self._surface.macros.resolve_movement_pulse_seconds(primitive_skill)
-        if pulse_seconds is None:
-            raise RuntimeError(
-                f"Configured native approach skill {skill_name!r} has no movement pulse."
-            )
+        pulse_seconds = self._surface.controls_config.native_movement_pulse_seconds
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
             contract_version=operations.TRAVEL_TO_MAP_DESTINATION_DEFINITION.version,
@@ -853,7 +672,6 @@ class KenshiMovementMechanics:
             command,
             target_id=action.destination_id,
             pulse_seconds=pulse_seconds,
-            primitive_skill=primitive_skill,
             require_vendor_role=False,
             semantic=semantic,
             continue_until_terminal=True,
@@ -870,21 +688,7 @@ class KenshiMovementMechanics:
     ) -> ActionReceipt:
         """Issue one global, exact order from the selected actor to a squadmate."""
 
-        skill_name = self._surface.controls_config.native_approach_skill
-        if skill_name is None or not self._surface.macros.has(skill_name):
-            raise RuntimeError(
-                "Squad regrouping requires a configured native approach skill to "
-                "supply its bounded transport primitive."
-            )
-        primitive_skill = SkillAction(
-            name=skill_name,
-            args=[SkillArgument(name="target_id", value=action.target_id)],
-        )
-        pulse_seconds = self._surface.macros.resolve_movement_pulse_seconds(primitive_skill)
-        if pulse_seconds is None:
-            raise RuntimeError(
-                f"Configured native approach skill {skill_name!r} has no movement pulse."
-            )
+        pulse_seconds = self._surface.controls_config.native_movement_pulse_seconds
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
             contract_version=operations.REGROUP_WITH_SQUAD_MEMBER_DEFINITION.version,
@@ -901,7 +705,6 @@ class KenshiMovementMechanics:
             command,
             target_id=action.target_id,
             pulse_seconds=pulse_seconds,
-            primitive_skill=primitive_skill,
             require_vendor_role=False,
             semantic=semantic,
             continue_until_terminal=True,
@@ -919,21 +722,7 @@ class KenshiMovementMechanics:
     ) -> ActionReceipt:
         """Ask native code to resolve and traverse the current building's door."""
 
-        skill_name = self._surface.controls_config.native_approach_skill
-        if skill_name is None or not self._surface.macros.has(skill_name):
-            raise RuntimeError(
-                "Building exit requires a configured native approach skill to "
-                "supply its bounded transport primitive."
-            )
-        primitive_skill = SkillAction(
-            name=skill_name,
-            args=[SkillArgument(name="target_id", value="")],
-        )
-        pulse_seconds = self._surface.macros.resolve_movement_pulse_seconds(primitive_skill)
-        if pulse_seconds is None:
-            raise RuntimeError(
-                f"Configured native approach skill {skill_name!r} has no movement pulse."
-            )
+        pulse_seconds = self._surface.controls_config.native_movement_pulse_seconds
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
             contract_version=operations.EXIT_CURRENT_BUILDING_DEFINITION.version,
@@ -949,7 +738,6 @@ class KenshiMovementMechanics:
             command,
             target_id="",
             pulse_seconds=pulse_seconds,
-            primitive_skill=primitive_skill,
             require_vendor_role=False,
             semantic=semantic,
             continue_until_terminal=True,
@@ -971,21 +759,7 @@ class KenshiMovementMechanics:
         arriving starts no conversation.
         """
 
-        skill_name = self._surface.controls_config.native_approach_skill
-        if skill_name is None or not self._surface.macros.has(skill_name):
-            raise RuntimeError(
-                "Semantic move requires a configured native approach skill to "
-                "supply its bounded primitives."
-            )
-        primitive_skill = SkillAction(
-            name=skill_name,
-            args=[SkillArgument(name="target_id", value=action.target_id)],
-        )
-        pulse_seconds = self._surface.macros.resolve_movement_pulse_seconds(primitive_skill)
-        if pulse_seconds is None:
-            raise RuntimeError(
-                f"Configured native approach skill {skill_name!r} has no movement pulse."
-            )
+        pulse_seconds = self._surface.controls_config.native_movement_pulse_seconds
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
             contract_version=operations.MOVE_TO_CHARACTER_DEFINITION.version,
@@ -1002,7 +776,6 @@ class KenshiMovementMechanics:
             command,
             target_id=action.target_id,
             pulse_seconds=pulse_seconds,
-            primitive_skill=primitive_skill,
             require_vendor_role=False,
             semantic=semantic,
             continue_until_terminal=True,

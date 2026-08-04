@@ -20,9 +20,9 @@ from datetime import UTC, datetime, tzinfo
 from enum import StrEnum
 from pathlib import Path
 
-from ..campaign import CampaignScope, CampaignScopeOrigin
-from ..continuity import ContinuityAuthority, ContinuityLedger
-from ..core.continuity import (
+from ...campaign import CampaignScope, CampaignScopeOrigin
+from ...continuity import ContinuityAuthority, ContinuityLedger
+from ...core.continuity import (
     AppendFieldbookEntryOperation,
     ContinuityOperationReceipt,
     ContinuityOperationStatus,
@@ -43,7 +43,7 @@ from ..core.continuity import (
     MemoryStatus,
     ResolveMemoryOperation,
 )
-from ..core.evidence import (
+from ...core.evidence import (
     ActionOutcome,
     ActionOutcomeAssessment,
     ActionOutcomeEvidence,
@@ -51,14 +51,14 @@ from ..core.evidence import (
     PlanDisposition,
     ResourceTransferStatus,
 )
-from ..core.observation import Observation
-from ..core.operation import (
+from ...core.observation import Observation
+from ...core.operation import (
     CollectResourceOutputAction,
     NoopAction,
     WaitAction,
 )
-from ..core.planner_context import AuthoredPlannerContext
-from ..core.telemetry import (
+from ...core.planner_context import AuthoredPlannerContext
+from ...core.telemetry import (
     CharacterState,
     GameState,
     InventoryItem,
@@ -68,14 +68,14 @@ from ..core.telemetry import (
     UIState,
     VisibleUIControl,
 )
-from ..core.world import WorldStateRevision
-from ..env.replay import ReplayEnvironment
-from ..fieldbook_authority import FieldbookAuthority
-from ..memory import MemoryStore, RecallBudget, TieredRecall
-from ..planner_context import render_planner_payload
-from ..planners.base import planner_context_manifest
-from ..resource_transfer import evaluate_resource_transfer
-from ..runtime_continuity import build_fieldbook_read_receipt
+from ...core.world import WorldStateRevision
+from ...env.replay import ReplayEnvironment
+from ...fieldbook_authority import FieldbookAuthority
+from ...memory import MemoryStore, RecallBudget, TieredRecall
+from ...planner_context import render_planner_payload
+from ...planners.base import planner_context_manifest
+from ...resource_transfer import evaluate_resource_transfer
+from ...runtime_continuity import build_fieldbook_read_receipt
 
 CAMPAIGN_ID = "ladle-restart-eval"
 OTHER_CAMPAIGN_ID = "not-ladle-restart-eval"
@@ -1360,7 +1360,7 @@ def _invoke_worker(
     command = [
         python_executable,
         "-m",
-        "kenshi_agent.evals.restart_continuity",
+        "kenshi_agent.tooling.evals.restart_continuity",
         "--worker-phase",
         phase,
         "--treatment",
@@ -1606,7 +1606,9 @@ def run_restart_evaluation(
 # acceptance-tested through parsed argv, including both failure branches.
 # pragma: no mutate start
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="python -m kenshi_agent.evals.restart_continuity")
+    parser = argparse.ArgumentParser(
+        prog="python -m kenshi_agent.tooling.evals.restart_continuity"
+    )
     parser.add_argument(
         "--output",
         type=Path,

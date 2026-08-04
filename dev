@@ -15,7 +15,7 @@ from typing import NoReturn
 REPO_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(REPO_DIR / "src"))
 
-from kenshi_agent.dev_cli import LIVE_CONFIG, build_parser  # noqa: E402
+from kenshi_agent.tooling.dev_cli import LIVE_CONFIG, build_parser  # noqa: E402
 
 RUNTIME_OVERRIDES = (
     "KENSHI_AGENT_OPENROUTER_MODEL",
@@ -99,7 +99,7 @@ def _windows_argv(raw_argv: list[str]) -> list[str]:
     return [
         "-u",
         "-m",
-        "kenshi_agent.live_dev",
+        "kenshi_agent.tooling.live_dev",
         raw_argv[0],
         "--config",
         _to_windows_path(LIVE_CONFIG),
@@ -184,7 +184,7 @@ def main(argv: list[str] | None = None) -> int:
     recovery_argv = [
         "-u",
         "-m",
-        "kenshi_agent.live_dev",
+        "kenshi_agent.tooling.live_dev",
         "recover",
         "--config",
         windows_argv[windows_argv.index("--config") + 1],

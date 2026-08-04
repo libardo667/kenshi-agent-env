@@ -13,12 +13,7 @@ from kenshi_agent.core.authority import AuthorizationCode
 from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.operation import (
     Action,
-    ClickAction,
-    MoveCursorAction,
     PauseAction,
-    PointerActionClass,
-    ScrollAction,
-    SkillAction,
 )
 from kenshi_agent.core.transport import (
     CommandDispatchContext,
@@ -62,7 +57,6 @@ _EXACT_METHODS = frozenset(
         "select_squad_member_exact",
         "sell_item",
         "set_speed",
-        "skill",
         "travel_to_map_destination",
         "use_game_binding",
         "wait",
@@ -162,18 +156,6 @@ async def _token_for(
     scheduled = OPERATION_BINDING_AUTHORITY.bind(action, observation, affordance=None)
     max_age_seconds = environment.input_boundary_max_telemetry_age_seconds()
     pointer_class = scheduled.definition.pointer_class
-    controls = getattr(environment, "controls_config", None)
-    macros = getattr(environment, "macros", None)
-    if isinstance(action, SkillAction) and controls is not None and macros is not None:
-        if action.name in controls.semantic_pointer_skills:
-            pointer_class = PointerActionClass.SEMANTIC_CURRENT
-        elif not macros.has(action.name):
-            pointer_class = PointerActionClass.UNSUPPORTED
-        elif not any(
-            isinstance(primitive, (ClickAction, MoveCursorAction, ScrollAction))
-            for primitive in macros.expand(action)
-        ):
-            pointer_class = PointerActionClass.COORDINATE_INDEPENDENT
 
     def authorize(current: Observation) -> AuthorizationDecision:
         try:
@@ -284,8 +266,7 @@ def plan_executor(
     factory = OperationExecutionFactory(
         environment=environment,
         operation_port=operation_port,
-        macros=policy.macros,
-        action_budget=ActionBudgetLedger(policy.config, policy.macros),
+        action_budget=ActionBudgetLedger(policy.config),
         authority=OperationAuthority(policy, OPERATION_BINDING_AUTHORITY),
         logger=logger,
         clock=clock,

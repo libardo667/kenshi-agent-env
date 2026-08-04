@@ -8,7 +8,6 @@ control:
 planning:
   mode: single_step
   observation_pump_enabled: true
-  stateful_movement_options_enabled: true
   concurrent_option_planning_enabled: true
   concurrent_option_planning_delay_seconds: 20
   observation_pump_seconds: 0.1
@@ -35,8 +34,6 @@ runtime:
   max_steps: 32
   settle_seconds: 0.15
   observation_memory_limit: 12
-  # Compatibility field; current runtime termination does not read it.
-  stop_when_terminated: true
 
 planner:
   kind: heuristic
@@ -44,7 +41,7 @@ planner:
   reasoning_effort: ${KENSHI_AGENT_REASONING_EFFORT:-low}
   openrouter_model: ${KENSHI_AGENT_OPENROUTER_MODEL:-openai/gpt-5.6-luna}
   openrouter_provider_sort: ${KENSHI_AGENT_OPENROUTER_SORT:-latency}
-  # Parsed but not sent by the current hosted planner adapters.
+  # Used when this config is switched to the OpenRouter planner.
   temperature: 0.2
   timeout_seconds: 90
   max_output_tokens_base: 4096
@@ -76,8 +73,6 @@ capture:
   window_title_contains: Kenshi
   image_format: png
   jpeg_quality: 90
-  # Compatibility field; current capture already always uses the client area.
-  crop_client_area: true
 
 controls:
   pause_key: space
@@ -115,8 +110,6 @@ controls:
 
 safety:
   live_actions_enabled: false
-  # Compatibility field; the CLI execution flag is currently unconditional.
-  require_cli_execute_flag: true
   emergency_stop_key: f12
   supervisor_enabled: true
   supervisor_max_sequence_stalls: 3
@@ -140,16 +133,9 @@ safety:
     - hotkey
     - click
     - move_cursor
-    - skill
     - recover_camera_view
     - recall_memory
     - read_fieldbook
-  allow_skills:
-    - pause_game
-    - open_map
-    - open_inventory
-    - focus_selected
-
 memory:
   enabled: true
   retrieval_policy: deterministic
@@ -165,35 +151,3 @@ memory:
   max_hypothesis_memories: 2
   max_fieldbook_projects: 8
   minimum_salience: 0.15
-
-macros:
-  pause_game:
-    description: Toggle pause through the normal interface.
-    actions:
-      - kind: key
-        key: space
-  open_map:
-    description: Open or close the map using the configured Kenshi key binding.
-    actions:
-      - kind: key
-        key: m
-  open_inventory:
-    description: Open or close inventory using the configured Kenshi key binding.
-    actions:
-      - kind: key
-        key: i
-  focus_selected:
-    description: Select and center the first squad member by double-clicking the first squad portrait.
-    visual_precondition: The normal world HUD is visible and the first squad portrait occupies its calibrated bottom portrait slot.
-    normalized_pointer_bounds:
-      min_x: 0.31
-      max_x: 0.39
-      min_y: 0.84
-      max_y: 0.97
-    actions:
-      - kind: click
-        x: 0.349
-        y: 0.906
-        space: normalized
-        button: left
-        clicks: 2

@@ -57,6 +57,7 @@ from .core.planning import (
     PlanStep,
     RiskBudget,
 )
+from .core.scenario import ScenarioAttestation
 from .core.telemetry import ScenarioIdentity
 from .core.transport import (
     CommandDispatchContext,
@@ -86,9 +87,7 @@ from .reflexes import ReflexEngine
 from .reporting import ConsoleDecisionReporter
 from .safety import SafetyViolation
 from .safety_supervisor import SafetyCause, SafetyPreemption, SafetySupervisor
-from .scenario_fixtures import ScenarioAttestation
 from .session_log import SessionLogger
-from .skills import MacroRegistry
 from .world_state import (
     CommandCausalityError,
     ObservationPump,
@@ -147,7 +146,6 @@ class RunCoordinator:
         environment: AgentEnvironment,
         execute_control_pause: ControlPauseExecutor,
         safety_config: SafetyConfig,
-        macros: MacroRegistry,
         validate_safety_pause: SafetyPauseValidator,
         reflexes: ReflexEngine,
         logger: SessionLogger,
@@ -173,7 +171,6 @@ class RunCoordinator:
         self.environment = environment
         self.execute_control_pause = execute_control_pause
         self.safety_config = safety_config
-        self.macros = macros
         self.validate_safety_pause = validate_safety_pause
         self.reflexes = reflexes
         self.logger = logger
@@ -760,7 +757,6 @@ class RunCoordinator:
                         plan,
                         observation,
                         self.planning_config,
-                        self.macros,
                     )
                 except PlanValidationError as exc:
                     # A rejected plan is one bad plan, not a reason to end the

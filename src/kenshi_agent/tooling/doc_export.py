@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..affordances import AFFORDANCE_ADAPTERS
 from .affordance_parity import audit_binding_parity
 from .affordance_surfaces import render_surface_registry
-from .affordances import AFFORDANCE_ADAPTERS
 from .context_action_parity import (
     WITNESSES_PATH,
     load_witnesses,

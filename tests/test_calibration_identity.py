@@ -1,42 +1,22 @@
-"""Versioned calibration identity as a hard pointer-action gate (P4).
+"""Versioned calibration identity as a hard pointer-action gate.
 
 The exact client-size brake was only an emergency calibration check. A
-profile-calibrated pointer click actually depends on client size, window mode,
-UI scale, DPI transform, keymap, and the calibrated macro set. This gate makes
+profile-calibrated pointer click depends on the declared host identity. This gate makes
 every one of those an explicit, observed fact: a value that cannot be read is
 `unknown` and blocks input, never a silent match.
 """
 
 from __future__ import annotations
 
-import asyncio
-from contextlib import asynccontextmanager
-from pathlib import Path
-
-from operation_test_support import execute_operation
-from test_input_boundary import observation, paused_condition, selection_condition
-from test_live_env import PulseController, PulseTelemetry, movement_action, movement_registry
-
-from kenshi_agent.affordances import OPERATION_BINDING_AUTHORITY
-from kenshi_agent.config import CaptureConfig, ControlsConfig, RuntimeConfig, SafetyConfig
 from kenshi_agent.control.calibration import (
     calibration_allows_input,
     evaluate_calibration_identity,
 )
-from kenshi_agent.core.authority import InputBoundaryDecision
-from kenshi_agent.core.operation import (
-    ControlMode,
-    PointerActionClass,
-)
+from kenshi_agent.core.operation import PointerActionClass
 from kenshi_agent.core.transport import (
     CalibrationIdentity,
     CalibrationStatus,
-    CommandDispatchContext,
 )
-from kenshi_agent.core.world import WorldStateRevision
-from kenshi_agent.env.live import LiveEnvironment
-from kenshi_agent.input_boundary import ExecutionToken
-from kenshi_agent.safety import OperationPolicy
 
 
 def full_identity(**overrides: object) -> CalibrationIdentity:
@@ -193,192 +173,3 @@ def test_mismatched_reason_names_expected_and_observed() -> None:
     )
     assert "profile_version" in report.reason
     assert "3" in report.reason and "9" in report.reason
-
-
-# --- Live-environment integration ---------------------------------------
-
-
-class ScaledController(PulseController):
-    """A controller that can report a full observed identity and drift on lease."""
-
-    def __init__(
-        self,
-        telemetry: PulseTelemetry,
-        *,
-        ui_scale: float = 1.0,
-        ui_scale_in_lease: float | None = None,
-    ) -> None:
-        super().__init__(telemetry)
-        self.ui_scale = ui_scale
-        self.ui_scale_in_lease = ui_scale_in_lease
-
-    def observed_calibration_identity(self) -> CalibrationIdentity:
-        return CalibrationIdentity(
-            client_width=self.client_width,
-            client_height=self.client_height,
-            ui_scale=self.ui_scale,
-        )
-
-    @asynccontextmanager
-    async def input_lease(self, *, alt_tab_on_restore: bool = False):
-        del alt_tab_on_restore
-        if self.ui_scale_in_lease is not None:
-            # The display changed while the agent waited for a quiet turn.
-            self.ui_scale = self.ui_scale_in_lease
-        yield
-
-
-def scaled_environment(
-    tmp_path: Path,
-    telemetry: PulseTelemetry,
-    controller: PulseController,
-    *,
-    expected_ui_scale: float | None = 1.0,
-    semantic_skills: list[str] | None = None,
-) -> LiveEnvironment:
-    return LiveEnvironment(
-        run_id="calib-test",
-        run_dir=tmp_path,
-        telemetry=telemetry,  # type: ignore[arg-type]
-        controller=controller,
-        macros=movement_registry(),
-        runtime_config=RuntimeConfig(settle_seconds=0.0, objective="Explore nearby."),
-        controls_config=ControlsConfig(
-            post_input_delay_seconds=0.0,
-            calibrated_client_width=1920,
-            calibrated_client_height=1080,
-            calibrated_ui_scale=expected_ui_scale,
-            semantic_pointer_skills=semantic_skills or [],
-        ),
-        capture_config=CaptureConfig(enabled=False),
-        execute_actions=True,
-        emergency_stop_key="f12",
-        available_skills=["move_visible_terrain"],
-    )
-
-
-def test_ui_scale_mismatch_blocks_pointer_input_before_dispatch(tmp_path: Path) -> None:
-    async def scenario() -> None:
-        telemetry = PulseTelemetry()
-        controller = ScaledController(telemetry, ui_scale=1.25)
-        env = scaled_environment(tmp_path, telemetry, controller, expected_ui_scale=1.0)
-        await env.reset()
-
-        transition = await execute_operation(env, movement_action())
-
-        assert controller.actions == []
-        assert transition.receipt.accepted is False
-        assert transition.receipt.calibration is not None
-        assert "ui_scale" in transition.receipt.calibration.mismatched_fields
-
-    asyncio.run(scenario())
-
-
-def test_matching_ui_scale_executes_the_pointer_action(tmp_path: Path) -> None:
-    async def scenario() -> None:
-        telemetry = PulseTelemetry()
-        controller = ScaledController(telemetry, ui_scale=1.0)
-        env = scaled_environment(tmp_path, telemetry, controller, expected_ui_scale=1.0)
-        await env.reset()
-
-        transition = await execute_operation(env, movement_action())
-
-        assert controller.actions  # the click plus its bounded pause keys
-        report = transition.receipt.calibration
-        assert report is not None
-        assert report.status is CalibrationStatus.MATCHED
-        assert report.action_class is PointerActionClass.PROFILE_CALIBRATED
-
-    asyncio.run(scenario())
-
-
-def test_semantic_skill_ignores_calibration_mismatch(tmp_path: Path) -> None:
-    async def scenario() -> None:
-        telemetry = PulseTelemetry()
-        controller = ScaledController(telemetry, ui_scale=1.25)
-        env = scaled_environment(
-            tmp_path,
-            telemetry,
-            controller,
-            expected_ui_scale=1.0,
-            semantic_skills=["move_visible_terrain"],
-        )
-        await env.reset()
-
-        transition = await execute_operation(env, movement_action())
-
-        assert controller.actions
-        report = transition.receipt.calibration
-        assert report is not None
-        assert report.action_class is PointerActionClass.SEMANTIC_CURRENT
-        assert report.status is CalibrationStatus.NOT_REQUIRED
-
-    asyncio.run(scenario())
-
-
-def test_operation_policy_owns_compatibility_skill_pointer_class(tmp_path: Path) -> None:
-    telemetry = PulseTelemetry()
-    controller = ScaledController(telemetry)
-    env = scaled_environment(
-        tmp_path, telemetry, controller, semantic_skills=["move_visible_terrain"]
-    )
-    observation = env.input_boundary_observation()
-    action = movement_action()
-    bound = OPERATION_BINDING_AUTHORITY.bind(action, observation, affordance=None)
-    config = SafetyConfig(allow_action_kinds=["skill"], allow_skills=[action.name])
-    semantic = OperationPolicy(
-        config,
-        env.macros,
-        semantic_pointer_skills=[action.name],
-    )
-    plain = OperationPolicy(config, env.macros)
-    assert semantic.pointer_class_for(bound) is PointerActionClass.SEMANTIC_CURRENT
-    assert plain.pointer_class_for(bound) is PointerActionClass.PROFILE_CALIBRATED
-
-
-def test_calibration_drift_inside_lease_is_caught_by_the_boundary(tmp_path: Path) -> None:
-    async def scenario() -> None:
-        telemetry = PulseTelemetry()
-        # Matches before the lease, drifts to 1.25 once the lease is acquired.
-        controller = ScaledController(telemetry, ui_scale=1.0, ui_scale_in_lease=1.25)
-        env = scaled_environment(tmp_path, telemetry, controller, expected_ui_scale=1.0)
-        await env.reset()
-
-        latest = [observation()]
-        token = ExecutionToken(
-            plan_id="calib-plan",
-            plan_version=1,
-            step_id="approach",
-            command_id="cmd-" + "0" * 32,
-            control_mode=ControlMode.INTERFACE_ONLY,
-            validated_revision=WorldStateRevision(
-                telemetry_sequence=10,
-                capability_epoch=1,
-                observed_at_monotonic=10.0,
-            ),
-            latest_observation=lambda: latest[0],
-            max_telemetry_age_seconds=3.0,
-            pointer_class=PointerActionClass.PROFILE_CALIBRATED,
-            assumptions=(paused_condition(),),
-            preconditions=(selection_condition(),),
-        )
-
-        transition = await execute_operation(
-            env,
-            movement_action(),
-            command=CommandDispatchContext(
-                command_id=token.command_id,
-                based_on_revision=token.validated_revision,
-            ),
-            token=token,
-        )
-
-        # Even though every typed condition still holds, the lease-time scale
-        # change means the coordinates are no longer meaningful.
-        assert controller.actions == []
-        boundary = transition.receipt.input_boundary
-        assert boundary is not None
-        assert boundary.decision is InputBoundaryDecision.REJECTED
-        assert "alibration" in boundary.reason
-
-    asyncio.run(scenario())

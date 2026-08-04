@@ -7,7 +7,7 @@ next?" offline.
 
 from __future__ import annotations
 
-from kenshi_agent.ui_affordances import audit
+from kenshi_agent.tooling.ui_affordances import audit
 
 
 def main() -> int:

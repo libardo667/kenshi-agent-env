@@ -10,7 +10,6 @@ control:
 planning:
   mode: continuous
   observation_pump_enabled: true
-  stateful_movement_options_enabled: true
   # The contracted semantic approach always runs as a monitored option; these
   # are its arrival/threat radii, not a feature flag.
   semantic_approach_arrival_distance: 5.0
@@ -51,8 +50,6 @@ runtime:
   max_steps: 30
   settle_seconds: 0.75
   observation_memory_limit: 16
-  # Compatibility field; current runtime termination does not read it.
-  stop_when_terminated: true
   decision_stream: true
   objective: >-
     You're playing Kenshi. Decide a goal for yourself and work your way
@@ -70,7 +67,6 @@ runtime:
 
 planner:
   kind: openrouter
-  model: ${KENSHI_AGENT_MODEL:-gpt-5.6-luna}
   reasoning_effort: ${KENSHI_AGENT_REASONING_EFFORT:-low}
   openrouter_model: ${KENSHI_AGENT_OPENROUTER_MODEL:-google/gemini-3.1-flash-lite}
   openrouter_provider_sort: ${KENSHI_AGENT_OPENROUTER_SORT:-latency}
@@ -119,9 +115,6 @@ capture:
   enabled: true
   window_title_contains: Kenshi 1.0.
   image_format: png
-  jpeg_quality: 90
-  # Compatibility field; current capture already always uses the client area.
-  crop_client_area: true
 
 launch:
   # Steam being open is insufficient: fail before launch unless its own
@@ -149,8 +142,6 @@ launch:
 
 controls:
   pause_key: space
-  pause_skill: pause_game
-  unpause_skill: unpause_game
   speed_keys:
     1: f2
     2: f3
@@ -190,12 +181,10 @@ controls:
     - Load
   startup_save_control_labels:
     - autosave1
-  # Supplies the audited native approach hotkey and its calibrated pulse for
-  # the semantic approach action.
-  native_approach_skill: approach_confirmed_vendor
   # One pathing order, then up to this much bounded walking, re-pausing after
   # every pulse so the operator always has a stopping point.
   native_approach_max_seconds: 40.0
+  native_movement_pulse_seconds: 2.0
   # The world runs; the character just walks.
   require_paused_between_actions: false
   # One model request owns no gestures. The controller follows the selected
@@ -213,8 +202,6 @@ safety:
   # receive --execute-live-actions plus the native-assisted and continuous-live
   # acknowledgements before any input is sent.
   live_actions_enabled: true
-  # Compatibility field; the CLI execution flag is currently unconditional.
-  require_cli_execute_flag: true
   emergency_stop_key: f12
   supervisor_enabled: true
   supervisor_max_sequence_stalls: 3
@@ -232,7 +219,7 @@ safety:
   takeover_countdown_seconds: 5.0
   takeover_poll_seconds: 0.1
   max_primitive_actions_per_step: 4
-  # Does not loosen the four-primitive cap for ordinary macros.
+  # Does not loosen the four-primitive cap for ordinary operations.
   max_controller_verified_primitive_actions_per_step: 45
   max_actions_per_minute: 120
   max_wait_seconds: 8.0
@@ -250,7 +237,6 @@ safety:
     - pause
     - set_speed
     - wait
-    - skill
     - perform_context_action
     - approach_dialogue_target
     - command_world_target
@@ -279,14 +265,6 @@ safety:
     - consult_advisor
     - recall_memory
     - read_fieldbook
-  # These macros are private runtime mechanics. They are never affordances and
-  # cannot be selected by the playing model.
-  allow_skills:
-    - pause_game
-    - recenter_camera
-    - close_overlay
-    - approach_confirmed_vendor
-
 memory:
   enabled: true
   retrieval_policy: deterministic
@@ -301,301 +279,3 @@ memory:
   max_hypothesis_memories: 2
   max_fieldbook_projects: 8
   minimum_salience: 0.2
-
-macros:
-  pause_game:
-    description: Click Kenshi's visible Pause transport button.
-    visual_precondition: The normal bottom HUD is visible and its transport controls are unobstructed.
-    normalized_pointer_bounds:
-      min_x: 0.75
-      max_x: 0.78
-      min_y: 0.70
-      max_y: 0.75
-    actions:
-      - kind: click
-        x: 0.765
-        y: 0.723
-        space: normalized
-        button: left
-  unpause_game:
-    description: Click Kenshi's visible Play transport button.
-    visual_precondition: The normal bottom HUD is visible and its transport controls are unobstructed.
-    normalized_pointer_bounds:
-      min_x: 0.78
-      max_x: 0.805
-      min_y: 0.70
-      max_y: 0.75
-    actions:
-      - kind: click
-        x: 0.792
-        y: 0.723
-        space: normalized
-        button: left
-  open_map:
-    description: Open or close the map.
-    actions:
-      - kind: key
-        key: m
-  zoom_map_in:
-    description: Zoom the open map in one bounded wheel step at the demonstrated safe canvas point.
-    visual_precondition: The map is visibly open and the target below its town-information card is unobstructed.
-    normalized_pointer_bounds:
-      min_x: 0.51
-      max_x: 0.56
-      min_y: 0.49
-      max_y: 0.53
-    actions:
-      - kind: scroll
-        x: 0.534
-        y: 0.505
-        space: normalized
-        notches: 1
-  zoom_map_out:
-    description: Zoom the open map out one bounded wheel step at the demonstrated safe canvas point.
-    visual_precondition: The map is visibly open and the target below its town-information card is unobstructed.
-    normalized_pointer_bounds:
-      min_x: 0.51
-      max_x: 0.56
-      min_y: 0.49
-      max_y: 0.53
-    actions:
-      - kind: scroll
-        x: 0.534
-        y: 0.505
-        space: normalized
-        notches: -1
-  open_inventory:
-    description: Open or close inventory.
-    actions:
-      - kind: key
-        key: i
-  recenter_camera:
-    description: Recenter the fixed-distance follow camera on the currently selected squad member with Kenshi's F binding.
-    visual_precondition: The normal 3D world HUD is visible, exactly one safe squad member is selected, and no modal overlay is open.
-    actions:
-      - kind: key
-        key: f
-        hold_seconds: 0.04
-  close_overlay:
-    description: Close the currently visible map, inventory, or other dismissible overlay.
-    actions:
-      - kind: key
-        key: escape
-  clear_item_highlights:
-    description: Clear a stuck world-item highlight state with one complete Left Alt press and release.
-    visual_precondition: The normal 3D world HUD is visible and item-name labels remain visible even though Alt is not physically held.
-    actions:
-      - kind: key
-        key: alt
-        hold_seconds: 0.04
-  pan_camera_forward:
-    description: Recenter on the selected squad member with F, then pan the paused fixed-distance camera forward one bounded step with W.
-    visual_precondition: The normal 3D world HUD is visible, exactly one safe squad member is selected, and no modal overlay is open.
-    actions:
-      - kind: key
-        key: f
-        hold_seconds: 0.04
-      - kind: key
-        key: w
-        hold_seconds: 0.08
-  pan_camera_backward:
-    description: Recenter on the selected squad member with F, then pan the paused fixed-distance camera backward one bounded step with S.
-    visual_precondition: The normal 3D world HUD is visible, exactly one safe squad member is selected, and no modal overlay is open.
-    actions:
-      - kind: key
-        key: f
-        hold_seconds: 0.04
-      - kind: key
-        key: s
-        hold_seconds: 0.08
-  pan_camera_left:
-    description: Recenter on the selected squad member with F, then pan the paused fixed-distance camera left one bounded step with A.
-    visual_precondition: The normal 3D world HUD is visible, exactly one safe squad member is selected, and no modal overlay is open.
-    actions:
-      - kind: key
-        key: f
-        hold_seconds: 0.04
-      - kind: key
-        key: a
-        hold_seconds: 0.08
-  pan_camera_right:
-    description: Recenter on the selected squad member with F, then pan the paused fixed-distance camera right one bounded step with D.
-    visual_precondition: The normal 3D world HUD is visible, exactly one safe squad member is selected, and no modal overlay is open.
-    actions:
-      - kind: key
-        key: f
-        hold_seconds: 0.04
-      - kind: key
-        key: d
-        hold_seconds: 0.08
-  orbit_camera_left:
-    description: Recenter on the selected squad member with F, then orbit the paused fixed-distance camera left about 14 degrees with Q.
-    visual_precondition: The normal 3D world HUD is visible, exactly one safe squad member is selected, and no modal overlay is open.
-    actions:
-      - kind: key
-        key: f
-        hold_seconds: 0.04
-      - kind: key
-        key: q
-        hold_seconds: 0.25
-  orbit_camera_right:
-    description: Recenter on the selected squad member with F, then orbit the paused fixed-distance camera right about 14 degrees with E.
-    visual_precondition: The normal 3D world HUD is visible, exactly one safe squad member is selected, and no modal overlay is open.
-    actions:
-      - kind: key
-        key: f
-        hold_seconds: 0.04
-      - kind: key
-        key: e
-        hold_seconds: 0.25
-  move_visible_terrain:
-    description: Fine movement by right-clicking nearby visible terrain, advancing briefly, and returning paused.
-    arguments:
-      x: Normalized horizontal coordinate in the current Kenshi client screenshot.
-      y: Normalized vertical coordinate in the current Kenshi client screenshot.
-      duration_seconds: Movement time from 0.35 to 3.0 seconds; use shorter pulses near obstacles.
-    visual_precondition: The map and other overlays are closed, and the target is visibly unobstructed terrain in the 3D world viewport.
-    normalized_pointer_bounds:
-      min_x: 0.15
-      max_x: 0.85
-      min_y: 0.15
-      max_y: 0.65
-    movement_pulse_seconds: 0.75
-    movement_pulse_min_seconds: 0.35
-    movement_pulse_max_seconds: 3.0
-    actions:
-      - kind: click
-        x: "{{x}}"
-        y: "{{y}}"
-        space: normalized
-        button: right
-        hold_seconds: 0.12
-  move_on_map:
-    description: Gross movement by right-clicking the open map, closing it, advancing briefly, and returning paused.
-    arguments:
-      x: Normalized horizontal coordinate in the current Kenshi client screenshot.
-      y: Normalized vertical coordinate in the current Kenshi client screenshot.
-      duration_seconds: Movement time from 1.0 to 8.0 seconds; reserve long pulses for clear gross travel.
-    visual_precondition: The map is visibly open, and the target is inside its map canvas rather than its tabs, frame, or scrollbars.
-    normalized_pointer_bounds:
-      min_x: 0.30
-      max_x: 0.68
-      min_y: 0.16
-      max_y: 0.69
-    movement_pulse_seconds: 2.0
-    movement_pulse_min_seconds: 1.0
-    movement_pulse_max_seconds: 8.0
-    actions:
-      - kind: click
-        x: "{{x}}"
-        y: "{{y}}"
-        space: normalized
-        button: right
-        hold_seconds: 0.12
-      - kind: key
-        key: m
-  interact_visible_person:
-    description: Right-click one clearly non-hostile visible person to talk or approach for dialogue, advance briefly, and return paused.
-    arguments:
-      x: Normalized horizontal coordinate of the visible person's body in the 3D viewport.
-      y: Normalized vertical coordinate of the visible person's body in the 3D viewport.
-      duration_seconds: Approach time from 0.5 to 6.0 seconds; keep it short when already nearby.
-    visual_precondition: The 3D world is visible with overlays closed, and the target is clearly a non-hostile shopkeeper or person with a talk affordance. Never use on an ambiguous or hostile target because right-click may attack.
-    normalized_pointer_bounds:
-      min_x: 0.10
-      max_x: 0.90
-      min_y: 0.12
-      max_y: 0.70
-    movement_pulse_seconds: 2.0
-    movement_pulse_min_seconds: 0.5
-    movement_pulse_max_seconds: 6.0
-    actions:
-      - kind: click
-        x: "{{x}}"
-        y: "{{y}}"
-        space: normalized
-        button: right
-        hold_seconds: 0.12
-  approach_confirmed_vendor:
-    description: Ask the native plugin to issue Kenshi's own PLAYER_TALK_TO order for one exact stable-ID non-hostile humanoid vendor with a vendor list, leader role, and dialogue, then advance for a bounded approach pulse.
-    requires_native_assisted: true
-    arguments:
-      target_id: Exact stable ID of the currently observed confirmed vendor.
-      duration_seconds: Approach time from 0.5 to 8.0 seconds; use a short pulse first and judge the vendor-distance delta.
-    visual_precondition: The world HUD is visible, exactly one safe squad member is selected, telemetry identifies a confirmed vendor candidate, and no modal overlay is open.
-    movement_pulse_seconds: 2.0
-    movement_pulse_min_seconds: 0.5
-    movement_pulse_max_seconds: 8.0
-    actions:
-      - kind: hotkey
-        keys:
-          - ctrl
-          - shift
-          - f10
-        hold_seconds: 0.08
-  continue_confirmed_vendor_approach:
-    description: Continue one already accepted native PLAYER_TALK_TO order for the exact same selected character and vendor without issuing a duplicate native command.
-    requires_native_assisted: true
-    arguments:
-      target_id: Exact stable vendor ID on the active accepted native command.
-      duration_seconds: Continuation time from 0.5 to 8.0 seconds; use a short pulse and re-check dialogue.
-    visual_precondition: The game is paused on the world screen and telemetry reports one active accepted approach command bound to the exact selected character and vendor.
-    movement_pulse_seconds: 2.0
-    movement_pulse_min_seconds: 0.5
-    movement_pulse_max_seconds: 8.0
-    actions: []
-  choose_show_goods:
-    description: Select the first calibrated Barman dialogue option, Show me your goods.
-    arguments:
-      target_id: Exact stable ID of the dialogue-bound vendor; policy validation requires it to match the approach target.
-    visual_precondition: The Barman dialogue panel is visibly open and its first option reads Show me your goods.
-    normalized_pointer_bounds:
-      min_x: 0.43
-      max_x: 0.58
-      min_y: 0.79
-      max_y: 0.84
-    actions:
-      - kind: click
-        x: 0.50
-        y: 0.812
-        space: normalized
-        button: left
-        hold_seconds: 0.12
-  inspect_shop_item:
-    description: Hover one item in the calibrated Barman inventory grid so its tooltip can be read before any purchase.
-    arguments:
-      target_id: Exact stable ID of the shop owner whose current inventory window owns the inspected cell.
-      x: Normalized horizontal coordinate of the candidate item inside the Barman inventory grid.
-      y: Normalized vertical coordinate of the candidate item inside the Barman inventory grid.
-    visual_precondition: The exact Barman trade window is open and telemetry reports him as shop_inventory_owner.
-    normalized_pointer_bounds:
-      min_x: 0.30
-      max_x: 0.55
-      min_y: 0.13
-      max_y: 0.54
-    actions:
-      - kind: move_cursor
-        x: "{{x}}"
-        y: "{{y}}"
-        space: normalized
-  buy_inspected_shop_item:
-    description: Right-click one previously inspected and visibly confirmed affordable food item in the calibrated Barman inventory grid.
-    arguments:
-      target_id: Exact stable ID of the one active shop owner.
-      item_name: Exact item name in the currently visible authoritative tooltip.
-      x: Normalized horizontal coordinate of the confirmed food item inside the Barman inventory grid.
-      y: Normalized vertical coordinate of the confirmed food item inside the Barman inventory grid.
-      expected_price: Exact visible tooltip value in cats; the safety guard rejects a mismatch with its spending limits.
-    visual_precondition: The exact Barman trade window is open, the current tooltip marks this item as Food, its value is affordable, and telemetry reports Barman as shop_inventory_owner.
-    normalized_pointer_bounds:
-      min_x: 0.30
-      max_x: 0.55
-      min_y: 0.13
-      max_y: 0.54
-    actions:
-      - kind: click
-        x: "{{x}}"
-        y: "{{y}}"
-        space: normalized
-        button: right
-        hold_seconds: 0.12

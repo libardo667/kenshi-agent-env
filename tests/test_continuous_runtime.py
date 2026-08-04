@@ -18,10 +18,9 @@ from kenshi_agent.affordances import (
     offered_affordances,
 )
 from kenshi_agent.campaign import CampaignScope, CampaignScopeOrigin
-from kenshi_agent.config import MacroConfig, PlanningConfig, SafetyConfig
+from kenshi_agent.config import PlanningConfig, SafetyConfig
 from kenshi_agent.core.authority import InputBoundaryDecision
 from kenshi_agent.core.continuity import (
-    CreateFieldbookProjectOperation,
     FieldbookEntryKind,
     FieldbookProjectKind,
 )
@@ -43,8 +42,6 @@ from kenshi_agent.core.operation import (
     RespondToImmediateThreatAction,
     SelectSquadMemberExactAction,
     SetSpeedAction,
-    SkillAction,
-    SkillArgument,
     StopAction,
     ThreatResponseStrategy,
     UseGameBindingAction,
@@ -82,7 +79,6 @@ from kenshi_agent.core.transport import (
 )
 from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.env.base import AgentEnvironment
-from kenshi_agent.evals import evaluate_log, replay_plan_lifecycle
 from kenshi_agent.input_boundary import ExecutionToken
 from kenshi_agent.memory import MemoryStore, RecallBudget
 from kenshi_agent.operation_definitions import (
@@ -104,7 +100,7 @@ from kenshi_agent.run_coordinator import RunCoordinator
 from kenshi_agent.runtime import AgentRuntime
 from kenshi_agent.safety import OperationPolicy
 from kenshi_agent.session_log import SessionLogger
-from kenshi_agent.skills import MacroRegistry
+from kenshi_agent.tooling.evals import evaluate_log, replay_plan_lifecycle
 
 COMMAND_ID_PATTERN = re.compile(r"^cmd-[0-9a-f]{32}$")
 
@@ -357,74 +353,6 @@ def two_step_plan(
     )
 
 
-def patchable_movement_plan(observation: Observation) -> PlanEnvelope:
-    return PlanEnvelope(
-        schema_version="1.0",
-        plan_id="patchable-movement",
-        plan_version=1,
-        objective="Move, then choose the latest safe speed.",
-        control_mode=observation.control_mode,
-        based_on_revision=observation.world_revision,
-        assumptions=[fresh()],
-        steps=[
-            PlanStep(
-                step_id="move",
-                action=SkillAction(name="mock_move"),
-                preconditions=[
-                    condition(
-                        "telemetry.game.paused",
-                        True,
-                        "game.pause",
-                    )
-                ],
-                success_conditions=[
-                    condition(
-                        "telemetry.game.paused",
-                        True,
-                        "game.pause",
-                    )
-                ],
-                failure_conditions=[],
-                timeout_seconds=3.0,
-                retry_budget=0,
-                idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-                on_success="old-speed",
-            ),
-            PlanStep(
-                step_id="old-speed",
-                action=SetSpeedAction(speed=2),
-                preconditions=[
-                    condition(
-                        "telemetry.game.paused",
-                        True,
-                        "game.pause",
-                    )
-                ],
-                success_conditions=[
-                    condition(
-                        "telemetry.game.speed_multiplier",
-                        2.0,
-                        "game.speed",
-                    )
-                ],
-                failure_conditions=[],
-                timeout_seconds=1.0,
-                retry_budget=0,
-                idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-            ),
-        ],
-        entry_step_id="move",
-        max_actions=2,
-        max_wall_seconds=5.0,
-        max_game_seconds=5.0,
-        risk_budget=RiskBudget(
-            max_pointer_actions=0,
-            max_purchase_actions=0,
-            max_native_assisted_actions=0,
-        ),
-    )
-
-
 class PlanThenStopPlanner(Planner):
     def __init__(
         self,
@@ -516,35 +444,17 @@ def runtime_for(
     automatic_takeover_enabled: bool = False,
     concurrent_option_planning_enabled: bool = True,
     concurrent_option_planning_delay_seconds: float = 0.0,
-    stateful_approach_options_enabled: bool = False,
     control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
     max_native_assisted_actions_per_plan: int = 0,
     max_actions_per_minute: int = 500,
     memory: MemoryStore | None = None,
     reporter: ConsoleDecisionReporter | None = None,
 ) -> tuple[AgentRuntime, SessionLogger]:
-    macros = MacroRegistry(
-        {
-            "unused": MacroConfig(actions=[{"kind": "key", "key": "u"}]),
-            "mock_move": MacroConfig(
-                actions=[],
-                movement_pulse_seconds=0.5,
-                movement_pulse_min_seconds=0.1,
-                movement_pulse_max_seconds=1.0,
-            ),
-            "mock_approach": MacroConfig(
-                actions=[],
-                approach_arrival_distance=5.0,
-                approach_threat_distance=15.0,
-            ),
-        }
-    )
     safety = SafetyConfig(
         allow_action_kinds=[
             "pause",
             "set_speed",
             "use_game_binding",
-            "skill",
             "stop",
             "approach_dialogue_target",
             "move_in_direction",
@@ -564,7 +474,7 @@ def runtime_for(
         environment=environment,
         operation_port=operation_port(environment),
         planner=planner,
-        policy=OperationPolicy(safety, macros, control_mode=control_mode),
+        policy=OperationPolicy(safety, control_mode=control_mode),
         reflexes=ReflexEngine(),
         logger=logger,
         memory=memory,
@@ -579,7 +489,6 @@ def runtime_for(
             observation_pump_enabled=observation_pump_enabled,
             concurrent_option_planning_enabled=concurrent_option_planning_enabled,
             concurrent_option_planning_delay_seconds=(concurrent_option_planning_delay_seconds),
-            stateful_approach_options_enabled=stateful_approach_options_enabled,
             max_native_assisted_actions_per_plan=max_native_assisted_actions_per_plan,
         ),
         planning_clock=clock,
@@ -2020,806 +1929,6 @@ def test_host_terminal_never_relabels_frozen_paused_telemetry_as_safe(
     asyncio.run(scenario())
 
 
-def test_supervisor_cancels_blocked_plan_then_replans_from_automated_pause(
-    tmp_path: Path,
-) -> None:
-    class BlockingMovementEnvironment(RevisionEnvironment):
-        def __init__(self, *, clock: FakeClock) -> None:
-            super().__init__(clock=clock)
-            self.movement_started = asyncio.Event()
-            self.movement_cancelled = asyncio.Event()
-            self.unsafe = False
-
-        def observation(self) -> Observation:
-            current = super().observation()
-            if not self.unsafe or current.telemetry is None:
-                return current
-            return current.model_copy(
-                update={
-                    "telemetry": current.telemetry.model_copy(
-                        update={
-                            "squad": [
-                                CharacterState(
-                                    id="entity-bark",
-                                    name="Bark",
-                                    alive=True,
-                                    conscious=True,
-                                    getting_eaten=True,
-                                )
-                            ]
-                        }
-                    )
-                }
-            )
-
-        async def observe_without_capture(self) -> Observation:
-            self.sequence += 1
-            self.unsafe = True
-            return self.observation()
-
-        async def step(self, action: Action) -> Transition:
-            if isinstance(action, SkillAction):
-                self.actions.append(action)
-                self.paused = False
-                self.sequence += 1
-                self.movement_started.set()
-                try:
-                    await asyncio.Event().wait()
-                except asyncio.CancelledError:
-                    self.movement_cancelled.set()
-                    raise
-                raise AssertionError("Blocked movement unexpectedly resumed.")
-            return await super().step(action)
-
-    class MovementPlanner(Planner):
-        def __init__(self) -> None:
-            self.observations: list[Observation] = []
-
-        async def decide(self, current: Observation) -> PlannerOutput:
-            self.observations.append(current)
-            if len(self.observations) > 1:
-                return PlannerDecision(
-                    intent="Stop after proving cancelled-plan replanning.",
-                    rationale="The interrupted movement plan must never resume.",
-                    action=StopAction(reason="Cancelled-plan replan proof complete."),
-                    confidence=1.0,
-                )
-            return PlanEnvelope(
-                schema_version="1.0",
-                plan_id="blocked-movement",
-                plan_version=1,
-                objective="Exercise cancellable movement supervision.",
-                control_mode=current.control_mode,
-                based_on_revision=current.world_revision,
-                assumptions=[fresh()],
-                steps=[
-                    PlanStep(
-                        step_id="move",
-                        action=SkillAction(name="mock_move"),
-                        preconditions=[
-                            condition(
-                                "telemetry.game.paused",
-                                True,
-                                "game.pause",
-                            )
-                        ],
-                        success_conditions=[
-                            condition(
-                                "telemetry.game.paused",
-                                True,
-                                "game.pause",
-                            )
-                        ],
-                        failure_conditions=[],
-                        timeout_seconds=3.0,
-                        retry_budget=0,
-                        idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-                    )
-                ],
-                entry_step_id="move",
-                max_actions=1,
-                max_wall_seconds=4.0,
-                max_game_seconds=5.0,
-                risk_budget=RiskBudget(
-                    max_pointer_actions=0,
-                    max_purchase_actions=0,
-                    max_native_assisted_actions=0,
-                ),
-            )
-
-    async def scenario() -> None:
-        plan_clock = FakeClock()
-        pump_clock = ManualPumpClock()
-        environment = BlockingMovementEnvironment(clock=plan_clock)
-        planner = MovementPlanner()
-        runtime, logger = runtime_for(
-            tmp_path,
-            environment,
-            planner,
-            plan_clock,
-            observation_pump_enabled=True,
-            observation_clock=pump_clock,
-        )
-        try:
-            run = asyncio.create_task(runtime.run(max_steps=3))
-            await asyncio.wait_for(environment.movement_started.wait(), timeout=1.0)
-            pump_clock.advance(0.1)
-            summary = await asyncio.wait_for(run, timeout=1.0)
-        finally:
-            logger.close()
-
-        assert environment.movement_cancelled.is_set()
-        assert summary.terminated
-        assert summary.stop_reason == "Cancelled-plan replan proof complete."
-        # The one-action plan has no future authority to revise. Safety cancels
-        # it, then exactly one fresh strategic call replans from the pause.
-        assert len(planner.observations) == 2
-        replanning_observation = planner.observations[-1]
-        assert replanning_observation.planner_feedback is not None
-        assert "do not resume the cancelled plan" in replanning_observation.planner_feedback
-        assert len(replanning_observation.recent_plan_outcomes) == 1
-        interrupted_outcome = replanning_observation.recent_plan_outcomes[0]
-        assert interrupted_outcome.plan_id == "blocked-movement"
-        assert interrupted_outcome.disposition.value == "abandoned"
-        assert "Safety preempted the plan (reflex)" in interrupted_outcome.reason
-        assert environment.paused is True
-        assert (
-            len([action for action in environment.actions if isinstance(action, SkillAction)]) == 1
-        )
-        assert [
-            action.paused for action in environment.actions if isinstance(action, PauseAction)
-        ] == [True]
-        events = read_events(tmp_path / "events.jsonl")
-        assert sum(event["event_type"] == "plan_execution_cancelled" for event in events) == 1
-        assert (
-            sum(
-                event["event_type"] == "world_state_event"
-                and event["payload"]["event_type"] == "command_inconclusive"
-                for event in events
-            )
-            == 1
-        )
-        assert sum(event["event_type"] == "safety_cleanup_completed" for event in events) == 1
-        preemption = next(
-            event for event in events if event["event_type"] == "safety_supervisor_preempted"
-        )
-        assert preemption["payload"]["cause"] == "reflex"
-        assert (
-            sum(event["event_type"] == "safety_supervisor_replan_requested" for event in events)
-            == 1
-        )
-        assert sum(event["event_type"] == "safety_supervisor_terminal" for event in events) == 0
-        assert sum(event["event_type"] == "option_prepared" for event in events) == 1
-        assert sum(event["event_type"] == "option_started" for event in events) == 1
-        assert sum(event["event_type"] == "option_cancelled" for event in events) == 1
-        assert not [
-            task
-            for task in asyncio.all_tasks()
-            if task is not asyncio.current_task()
-            and task.get_name().startswith("kenshi-agent-option-")
-        ]
-        metrics = evaluate_log(tmp_path / "events.jsonl")
-        assert metrics.plan_execution_cancellations == 1
-
-    asyncio.run(scenario())
-
-
-def test_human_handoff_countdown_replans_instead_of_resuming_cancelled_plan(
-    tmp_path: Path,
-) -> None:
-    class OneHumanInterruptionEnvironment(RevisionEnvironment):
-        def __init__(self, *, clock: FakeClock) -> None:
-            super().__init__(clock=clock)
-            self.movement_started = asyncio.Event()
-            self.movement_cancelled = asyncio.Event()
-            self.reported_human_input = False
-
-        async def observe_without_capture(self) -> Observation:
-            self.sequence += 1
-            events: list[str] = []
-            if not self.reported_human_input:
-                self.reported_human_input = True
-                events.append("human_input_detected")
-            return self.observation().model_copy(update={"events": events})
-
-        async def step(self, action: Action) -> Transition:
-            if isinstance(action, SkillAction):
-                self.actions.append(action)
-                self.paused = False
-                self.sequence += 1
-                self.movement_started.set()
-                try:
-                    await asyncio.Event().wait()
-                except asyncio.CancelledError:
-                    self.movement_cancelled.set()
-                    raise
-                raise AssertionError("Cancelled movement unexpectedly resumed.")
-            return await super().step(action)
-
-    class ReplanningMovementPlanner(Planner):
-        def __init__(self) -> None:
-            self.calls = 0
-
-        async def decide(self, current: Observation) -> PlannerOutput:
-            self.calls += 1
-            if self.calls > 1:
-                return PlannerDecision(
-                    intent="Stop after proving fresh post-handoff replanning.",
-                    rationale="The cancelled movement plan must never resume.",
-                    action=StopAction(reason="Handoff replan proof complete."),
-                    confidence=1.0,
-                )
-            return PlanEnvelope(
-                schema_version="1.0",
-                plan_id="handoff-cancelled-plan",
-                plan_version=1,
-                objective="Exercise human handoff cancellation.",
-                control_mode=current.control_mode,
-                based_on_revision=current.world_revision,
-                assumptions=[fresh()],
-                steps=[
-                    PlanStep(
-                        step_id="move",
-                        action=SkillAction(name="mock_move"),
-                        preconditions=[
-                            condition(
-                                "telemetry.game.paused",
-                                True,
-                                "game.pause",
-                            )
-                        ],
-                        success_conditions=[
-                            condition(
-                                "telemetry.game.paused",
-                                True,
-                                "game.pause",
-                            )
-                        ],
-                        failure_conditions=[],
-                        timeout_seconds=3.0,
-                        retry_budget=0,
-                        idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-                    )
-                ],
-                entry_step_id="move",
-                max_actions=1,
-                max_wall_seconds=4.0,
-                max_game_seconds=5.0,
-                risk_budget=RiskBudget(
-                    max_pointer_actions=0,
-                    max_purchase_actions=0,
-                    max_native_assisted_actions=0,
-                ),
-            )
-
-    async def scenario() -> None:
-        plan_clock = FakeClock()
-        pump_clock = ManualPumpClock()
-        environment = OneHumanInterruptionEnvironment(clock=plan_clock)
-        planner = ReplanningMovementPlanner()
-        runtime, logger = runtime_for(
-            tmp_path,
-            environment,
-            planner,
-            plan_clock,
-            observation_pump_enabled=True,
-            observation_clock=pump_clock,
-            automatic_takeover_enabled=True,
-            concurrent_option_planning_enabled=False,
-        )
-        try:
-            run = asyncio.create_task(runtime.run(max_steps=3))
-            await asyncio.wait_for(environment.movement_started.wait(), timeout=1.0)
-            pump_clock.advance(0.1)
-            summary = await asyncio.wait_for(run, timeout=1.0)
-        finally:
-            logger.close()
-
-        assert environment.movement_cancelled.is_set()
-        assert planner.calls == 2
-        assert summary.terminated
-        assert environment.paused is True
-        assert (
-            len([action for action in environment.actions if isinstance(action, SkillAction)]) == 1
-        )
-        events = read_events(tmp_path / "events.jsonl")
-        ownership = [
-            event
-            for event in events
-            if event["event_type"]
-            in {
-                "control_ownership_changed",
-                "agent_takeover_countdown",
-                "agent_takeover_ready",
-            }
-        ]
-        assert [
-            event["payload"]["state"]
-            for event in ownership
-            if event["event_type"] == "control_ownership_changed"
-        ] == ["human_control", "takeover_pending", "agent_active"]
-        assert any(event["event_type"] == "agent_takeover_countdown" for event in ownership)
-        assert any(event["event_type"] == "agent_takeover_ready" for event in ownership)
-        assert sum(event["event_type"] == "safety_supervisor_finished" for event in events) == 2
-
-    asyncio.run(scenario())
-
-
-def test_human_input_during_a_confirmed_safety_pause_yields_then_replans(
-    tmp_path: Path,
-) -> None:
-    class PausedHandoffEnvironment(RevisionEnvironment):
-        def __init__(self, *, clock: PlanningClock) -> None:
-            super().__init__(clock=clock)
-            self.movement_started = asyncio.Event()
-            self.movement_cancelled = asyncio.Event()
-            self.emit_catastrophe = False
-            self.emit_human_input = False
-            self.unsafe = False
-
-        def observation(self) -> Observation:
-            current = super().observation()
-            if not self.unsafe or current.telemetry is None:
-                return current
-            return current.model_copy(
-                update={
-                    "telemetry": current.telemetry.model_copy(
-                        update={
-                            "squad": [
-                                CharacterState(
-                                    id="entity-bark",
-                                    name="Bark",
-                                    alive=True,
-                                    conscious=True,
-                                    getting_eaten=True,
-                                )
-                            ]
-                        }
-                    )
-                }
-            )
-
-        async def observe_without_capture(self) -> Observation:
-            self.sequence += 1
-            events: list[str] = []
-            if self.emit_catastrophe:
-                self.emit_catastrophe = False
-                self.unsafe = True
-            if self.emit_human_input:
-                self.emit_human_input = False
-                events.append("human_input_detected")
-            return self.observation().model_copy(update={"events": events})
-
-        async def step(self, action: Action) -> Transition:
-            if not isinstance(action, SkillAction):
-                return await super().step(action)
-            self.actions.append(action)
-            self.paused = False
-            self.sequence += 1
-            self.movement_started.set()
-            try:
-                await asyncio.Event().wait()
-            except asyncio.CancelledError:
-                self.movement_cancelled.set()
-                raise
-            raise AssertionError("Cancelled movement unexpectedly resumed.")
-
-    class PausedHandoffPlanner(Planner):
-        def __init__(self) -> None:
-            self.calls = 0
-            self.safety_replan_started = asyncio.Event()
-            self.safety_replan_cancelled = asyncio.Event()
-
-        async def decide(self, current: Observation) -> PlannerOutput:
-            self.calls += 1
-            if self.calls == 1:
-                plan = patchable_movement_plan(current)
-                movement = plan.steps[0].model_copy(update={"on_success": None})
-                return plan.model_copy(
-                    update={"steps": [movement], "max_actions": 1},
-                    deep=True,
-                )
-            if self.calls == 2:
-                self.safety_replan_started.set()
-                try:
-                    await asyncio.Event().wait()
-                except asyncio.CancelledError:
-                    self.safety_replan_cancelled.set()
-                    raise
-                raise AssertionError("Safety replan unexpectedly resumed.")
-            return PlannerDecision(
-                intent="Stop after proving the paused human handoff.",
-                rationale="Fresh planning resumed only after control returned.",
-                action=StopAction(reason="Paused handoff proof complete."),
-                confidence=1.0,
-            )
-
-    async def scenario() -> None:
-        plan_clock = ManualPumpClock()
-        pump_clock = ManualPumpClock()
-        environment = PausedHandoffEnvironment(clock=plan_clock)
-        planner = PausedHandoffPlanner()
-        runtime, logger = runtime_for(
-            tmp_path,
-            environment,
-            planner,
-            plan_clock,
-            observation_pump_enabled=True,
-            observation_clock=pump_clock,
-            automatic_takeover_enabled=True,
-        )
-        try:
-            run = asyncio.create_task(runtime.run(max_steps=4))
-            await asyncio.wait_for(environment.movement_started.wait(), timeout=1.0)
-            environment.emit_catastrophe = True
-            pump_clock.advance(0.1)
-            await asyncio.wait_for(planner.safety_replan_started.wait(), timeout=1.0)
-
-            environment.emit_human_input = True
-            pump_clock.advance(0.1)
-            await asyncio.wait_for(planner.safety_replan_cancelled.wait(), timeout=1.0)
-            for _ in range(5):
-                await asyncio.sleep(0)
-
-            # Give handback revalidation a causally later paused observation,
-            # then complete the visible quiet interval and countdown.
-            pump_clock.advance(0.1)
-            for _ in range(5):
-                await asyncio.sleep(0)
-            plan_clock.advance(0.1)
-            for _ in range(5):
-                await asyncio.sleep(0)
-            plan_clock.advance(0.3)
-            summary = await asyncio.wait_for(run, timeout=1.0)
-        finally:
-            logger.close()
-
-        assert environment.movement_cancelled.is_set()
-        assert summary.terminated
-        assert summary.stop_reason == "Paused handoff proof complete."
-        assert planner.calls == 3
-        assert [
-            action.paused for action in environment.actions if isinstance(action, PauseAction)
-        ] == [True]
-        events = read_events(tmp_path / "events.jsonl")
-        human_preemption = next(
-            event
-            for event in events
-            if event["event_type"] == "safety_supervisor_preempted"
-            and event["payload"]["cause"] == "human_input"
-        )
-        assert human_preemption["payload"]["decision"]["action"] == {
-            "kind": "pause",
-            "paused": True,
-        }
-        assert sum(event["event_type"] == "safety_pause_already_confirmed" for event in events) == 1
-        assert not any(
-            event["event_type"] == "safety_supervisor_terminal"
-            and event["payload"]["cause"] == "human_input"
-            for event in events
-        )
-        ownership_states = [
-            event["payload"]["state"]
-            for event in events
-            if event["event_type"] == "control_ownership_changed"
-        ]
-        assert ownership_states[-3:] == [
-            "human_control",
-            "takeover_pending",
-            "agent_active",
-        ]
-
-    asyncio.run(scenario())
-
-
-def test_movement_option_overlaps_and_applies_a_valid_future_patch(
-    tmp_path: Path,
-) -> None:
-    class PatchableMovementEnvironment(RevisionEnvironment):
-        def __init__(self, *, clock: FakeClock) -> None:
-            super().__init__(clock=clock)
-            self.movement_started = asyncio.Event()
-            self.release_movement = asyncio.Event()
-
-        async def observe_without_capture(self) -> Observation:
-            self.sequence += 1
-            return self.observation()
-
-        async def step(self, action: Action) -> Transition:
-            if not isinstance(action, SkillAction):
-                return await super().step(action)
-            self.actions.append(action)
-            self.movement_started.set()
-            await self.release_movement.wait()
-            self.step_index += 1
-            self.sequence += 1
-            return Transition(
-                receipt=ActionReceipt(
-                    action=action,
-                    control_mode=ControlMode.INTERFACE_ONLY,
-                    accepted=True,
-                    executed=True,
-                    dry_run=False,
-                    primitive_actions=2,
-                    message="fake movement completed and remained paused",
-                ),
-                observation=self.observation(),
-            )
-
-    class PatchingPlanner(Planner):
-        def __init__(self) -> None:
-            self.calls = 0
-            self.advisory_returned = asyncio.Event()
-
-        async def decide(self, current: Observation) -> PlannerOutput:
-            self.calls += 1
-            if self.calls == 1:
-                return patchable_movement_plan(current)
-            assert current.active_plan is not None
-            assert current.active_plan.active_step_id == "move"
-            self.advisory_returned.set()
-            return PlanPatch(
-                schema_version="1.0",
-                plan_id=current.active_plan.plan_id,
-                based_on_plan_version=current.active_plan.plan_version,
-                based_on_revision=current.world_revision,
-                replace_future_steps=[
-                    PlanStep(
-                        step_id="patched-speed",
-                        action=SetSpeedAction(speed=3),
-                        preconditions=[
-                            condition(
-                                "telemetry.game.paused",
-                                True,
-                                "game.pause",
-                            )
-                        ],
-                        success_conditions=[
-                            condition(
-                                "telemetry.game.speed_multiplier",
-                                3.0,
-                                "game.speed",
-                            )
-                        ],
-                        failure_conditions=[],
-                        timeout_seconds=1.0,
-                        retry_budget=0,
-                        idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-                    )
-                ],
-                rationale="The future speed choice can be updated without restarting movement.",
-            )
-
-    async def scenario() -> None:
-        clock = FakeClock()
-        pump_clock = ManualPumpClock()
-        environment = PatchableMovementEnvironment(clock=clock)
-        planner = PatchingPlanner()
-        runtime, logger = runtime_for(
-            tmp_path,
-            environment,
-            planner,
-            clock,
-            observation_pump_enabled=True,
-            observation_clock=pump_clock,
-        )
-        try:
-            run = asyncio.create_task(runtime.run(max_steps=2))
-            await asyncio.wait_for(environment.movement_started.wait(), timeout=1.0)
-            await asyncio.wait_for(planner.advisory_returned.wait(), timeout=1.0)
-            for _ in range(5):
-                await asyncio.sleep(0)
-                if any(
-                    event["event_type"] == "plan_patch_staged"
-                    for event in read_events(tmp_path / "events.jsonl")
-                ):
-                    break
-            assert any(
-                event["event_type"] == "plan_patch_staged"
-                for event in read_events(tmp_path / "events.jsonl")
-            )
-            assert not any(isinstance(action, SetSpeedAction) for action in environment.actions)
-            pump_clock.advance(0.1)
-            await asyncio.sleep(0)
-            environment.release_movement.set()
-            summary = await asyncio.wait_for(run, timeout=1.0)
-        finally:
-            logger.close()
-
-        assert summary.steps_completed == 2
-        assert planner.calls == 2
-        assert [type(action) for action in environment.actions] == [
-            SkillAction,
-            SetSpeedAction,
-        ]
-        assert isinstance(environment.actions[1], SetSpeedAction)
-        assert environment.actions[1].speed == 3
-        events = read_events(tmp_path / "events.jsonl")
-        assert sum(event["event_type"] == "option_prepared" for event in events) == 1
-        assert sum(event["event_type"] == "option_started" for event in events) == 1
-        assert sum(event["event_type"] == "option_progress" for event in events) >= 1
-        assert sum(event["event_type"] == "option_succeeded" for event in events) == 1
-        staged_index = next(
-            index
-            for index, event in enumerate(events)
-            if event["event_type"] == "plan_patch_staged"
-        )
-        succeeded_index = next(
-            index for index, event in enumerate(events) if event["event_type"] == "option_succeeded"
-        )
-        patched_index = next(
-            index for index, event in enumerate(events) if event["event_type"] == "plan_patched"
-        )
-        assert staged_index < succeeded_index < patched_index
-        assert sum(event["event_type"] == "plan_patch_rejected" for event in events) == 0
-        metrics = evaluate_log(tmp_path / "events.jsonl")
-        assert metrics.strategic_planner_calls == 2
-        assert metrics.plan_patches_staged == 1
-        assert metrics.plan_patches_applied == 1
-        assert metrics.plan_patches_rejected == 0
-        assert metrics.option_progress_updates >= 1
-        assert metrics.options_succeeded == 1
-        assert metrics.option_success_percentage == 100.0
-        replayed = replay_plan_lifecycle(tmp_path / "events.jsonl")
-        assert replayed["patchable-movement"].plan_version == 2
-        assert replayed["patchable-movement"].status == "completed"
-        assert replayed["patchable-movement"].succeeded_step_ids == [
-            "move",
-            "patched-speed",
-        ]
-
-    asyncio.run(scenario())
-
-
-def test_short_option_finishes_before_concurrent_planner_holdoff(
-    tmp_path: Path,
-) -> None:
-    class ShortMovementEnvironment(RevisionEnvironment):
-        def __init__(self, *, clock: FakeClock) -> None:
-            super().__init__(clock=clock)
-            self.movement_started = asyncio.Event()
-            self.release_movement = asyncio.Event()
-
-        async def observe_without_capture(self) -> Observation:
-            self.sequence += 1
-            return self.observation()
-
-        async def step(self, action: Action) -> Transition:
-            if not isinstance(action, SkillAction):
-                return await super().step(action)
-            self.actions.append(action)
-            self.movement_started.set()
-            await self.release_movement.wait()
-            self.step_index += 1
-            self.sequence += 1
-            return Transition(
-                receipt=ActionReceipt(
-                    action=action,
-                    control_mode=ControlMode.INTERFACE_ONLY,
-                    accepted=True,
-                    executed=True,
-                    dry_run=False,
-                    primitive_actions=2,
-                ),
-                observation=self.observation(),
-            )
-
-    class CountingPlanner(Planner):
-        def __init__(self) -> None:
-            self.calls = 0
-
-        async def decide(self, current: Observation) -> PlannerOutput:
-            self.calls += 1
-            if self.calls == 1:
-                return patchable_movement_plan(current)
-            raise AssertionError("short movement must not start a concurrent planner call")
-
-    async def scenario() -> None:
-        environment_clock = FakeClock()
-        planning_clock = ManualPumpClock()
-        pump_clock = ManualPumpClock()
-        environment = ShortMovementEnvironment(clock=environment_clock)
-        planner = CountingPlanner()
-        runtime, logger = runtime_for(
-            tmp_path,
-            environment,
-            planner,
-            planning_clock,
-            observation_pump_enabled=True,
-            observation_clock=pump_clock,
-            concurrent_option_planning_delay_seconds=20.0,
-        )
-        try:
-            run = asyncio.create_task(runtime.run(max_steps=2))
-            await asyncio.wait_for(environment.movement_started.wait(), timeout=1.0)
-            for _ in range(5):
-                await asyncio.sleep(0)
-            pump_clock.advance(0.1)
-            await asyncio.sleep(0)
-            environment.release_movement.set()
-            summary = await asyncio.wait_for(run, timeout=1.0)
-        finally:
-            logger.close()
-
-        assert summary.steps_completed == 2
-        assert planner.calls == 1
-        events = read_events(tmp_path / "events.jsonl")
-        assert not any(event["event_type"] == "concurrent_planner_discarded" for event in events)
-
-    asyncio.run(scenario())
-
-
-def test_single_action_plan_never_starts_a_concurrent_planner_call(
-    tmp_path: Path,
-) -> None:
-    class BlockingMovementEnvironment(RevisionEnvironment):
-        def __init__(self, *, clock: FakeClock) -> None:
-            super().__init__(clock=clock)
-            self.movement_started = asyncio.Event()
-            self.release_movement = asyncio.Event()
-
-        async def step(self, action: Action) -> Transition:
-            if not isinstance(action, SkillAction):
-                return await super().step(action)
-            self.actions.append(action)
-            self.movement_started.set()
-            await self.release_movement.wait()
-            self.step_index += 1
-            self.sequence += 1
-            return Transition(
-                receipt=ActionReceipt(
-                    action=action,
-                    control_mode=ControlMode.INTERFACE_ONLY,
-                    accepted=True,
-                    executed=True,
-                    dry_run=False,
-                    primitive_actions=2,
-                ),
-                observation=self.observation(),
-            )
-
-    class CountingPlanner(Planner):
-        def __init__(self) -> None:
-            self.calls = 0
-
-        async def decide(self, current: Observation) -> PlannerOutput:
-            self.calls += 1
-            if self.calls != 1:
-                raise AssertionError("a spent plan has no future authority to revise")
-            plan = patchable_movement_plan(current)
-            movement = plan.steps[0].model_copy(update={"on_success": None})
-            return plan.model_copy(
-                update={"steps": [movement], "max_actions": 1},
-                deep=True,
-            )
-
-    async def scenario() -> None:
-        clock = FakeClock()
-        environment = BlockingMovementEnvironment(clock=clock)
-        planner = CountingPlanner()
-        runtime, logger = runtime_for(tmp_path, environment, planner, clock)
-        try:
-            run = asyncio.create_task(runtime.run(max_steps=1))
-            await asyncio.wait_for(environment.movement_started.wait(), timeout=1.0)
-            for _ in range(5):
-                await asyncio.sleep(0)
-            environment.release_movement.set()
-            summary = await asyncio.wait_for(run, timeout=1.0)
-        finally:
-            logger.close()
-
-        assert summary.steps_completed == 1
-        assert planner.calls == 1
-        events = read_events(tmp_path / "events.jsonl")
-        assert not any(
-            event["event_type"] == "strategic_planner_call"
-            and event["payload"].get("source") == "concurrent_option"
-            for event in events
-        )
-
-    asyncio.run(scenario())
-
-
 def approach_plan(observation: Observation) -> PlanEnvelope:
     return PlanEnvelope(
         schema_version="1.0",
@@ -2832,10 +1941,7 @@ def approach_plan(observation: Observation) -> PlanEnvelope:
         steps=[
             PlanStep(
                 step_id="approach",
-                action=SkillAction(
-                    name="mock_approach",
-                    args=[SkillArgument(name="target_id", value="entity-barman")],
-                ),
+                action=ApproachDialogueTargetAction(target_id="entity-barman"),
                 preconditions=[condition("telemetry.game.paused", True, "game.pause")],
                 success_conditions=[condition("telemetry.ui.dialogue_open", True, "ui.dialogue")],
                 failure_conditions=[],
@@ -2851,7 +1957,7 @@ def approach_plan(observation: Observation) -> PlanEnvelope:
         risk_budget=RiskBudget(
             max_pointer_actions=0,
             max_purchase_actions=0,
-            max_native_assisted_actions=0,
+            max_native_assisted_actions=1,
         ),
     )
 
@@ -2860,7 +1966,7 @@ class ApproachEnvironment(RevisionEnvironment):
     """The Barman closes distance across pump updates, then dialogue opens."""
 
     def __init__(self, *, clock: FakeClock) -> None:
-        super().__init__(clock=clock)
+        super().__init__(clock=clock, control_mode=ControlMode.NATIVE_ASSISTED)
         self.barman_distance = 40.0
         self.dispatched = asyncio.Event()
         self._closes = [18.0, 3.0]
@@ -2906,14 +2012,17 @@ class ApproachEnvironment(RevisionEnvironment):
         return self.observation()
 
     async def step(self, action: Action) -> Transition:
-        if isinstance(action, SkillAction) and action.name == "mock_approach":
+        if (
+            isinstance(action, ApproachDialogueTargetAction)
+            and action.target_id == "entity-barman"
+        ):
             self.actions.append(action)
             self.dispatched.set()
             self.sequence += 1
             return Transition(
                 receipt=ActionReceipt(
                     action=action,
-                    control_mode=ControlMode.INTERFACE_ONLY,
+                    control_mode=ControlMode.NATIVE_ASSISTED,
                     accepted=True,
                     executed=True,
                     dry_run=False,
@@ -2956,7 +2065,8 @@ def test_approach_option_reaches_success_by_closing_distance_and_dialogue(
             observation_pump_enabled=True,
             observation_clock=pump_clock,
             concurrent_option_planning_enabled=False,
-            stateful_approach_options_enabled=True,
+            control_mode=ControlMode.NATIVE_ASSISTED,
+            max_native_assisted_actions_per_plan=1,
         )
         try:
             run = asyncio.create_task(runtime.run(max_steps=2))
@@ -2983,9 +2093,11 @@ def test_approach_option_reaches_success_by_closing_distance_and_dialogue(
         assert sum(e["event_type"] == "option_succeeded" for e in events) == 1
         assert sum(e["event_type"] == "option_failed" for e in events) == 0
         # The approach order was issued exactly once (no duplicate on arrival).
-        assert [a.name for a in environment.actions if isinstance(a, SkillAction)] == [
-            "mock_approach"
-        ]
+        assert [
+            a.target_id
+            for a in environment.actions
+            if isinstance(a, ApproachDialogueTargetAction)
+        ] == ["entity-barman"]
 
     asyncio.run(scenario())
 
@@ -3541,137 +2653,6 @@ def test_native_move_timeout_pauses_before_the_planner_can_run_again(
         failed = [event for event in events if event["event_type"] == "option_failed"]
         assert len(failed) == 1
         assert "timed out" in str(failed[0]["payload"]).lower()
-
-    asyncio.run(scenario())
-
-
-def test_concurrent_future_patch_revalidates_after_unrelated_world_advance(
-    tmp_path: Path,
-) -> None:
-    class AdvancingMovementEnvironment(RevisionEnvironment):
-        def __init__(self, *, clock: FakeClock) -> None:
-            super().__init__(clock=clock)
-            self.movement_started = asyncio.Event()
-            self.release_movement = asyncio.Event()
-
-        async def observe_without_capture(self) -> Observation:
-            self.sequence += 1
-            return self.observation()
-
-        async def step(self, action: Action) -> Transition:
-            if not isinstance(action, SkillAction):
-                return await super().step(action)
-            self.actions.append(action)
-            self.movement_started.set()
-            await self.release_movement.wait()
-            self.step_index += 1
-            self.sequence += 1
-            return Transition(
-                receipt=ActionReceipt(
-                    action=action,
-                    control_mode=ControlMode.INTERFACE_ONLY,
-                    accepted=True,
-                    executed=True,
-                    dry_run=False,
-                    primitive_actions=2,
-                ),
-                observation=self.observation(),
-            )
-
-    class RebasingPatchPlanner(Planner):
-        def __init__(self) -> None:
-            self.calls = 0
-            self.advisory_returned = asyncio.Event()
-            self.advisory_started = asyncio.Event()
-            self.release_advisory = asyncio.Event()
-
-        async def decide(self, current: Observation) -> PlannerOutput:
-            self.calls += 1
-            if self.calls == 1:
-                return patchable_movement_plan(current)
-            assert current.active_plan is not None
-            self.advisory_started.set()
-            await self.release_advisory.wait()
-            self.advisory_returned.set()
-            return PlanPatch(
-                schema_version="1.0",
-                plan_id=current.active_plan.plan_id,
-                based_on_plan_version=current.active_plan.plan_version,
-                based_on_revision=current.world_revision,
-                replace_future_steps=[
-                    PlanStep(
-                        step_id="rebased-speed",
-                        action=SetSpeedAction(speed=3),
-                        preconditions=[
-                            condition(
-                                "telemetry.game.paused",
-                                True,
-                                "game.pause",
-                            )
-                        ],
-                        success_conditions=[
-                            condition(
-                                "telemetry.game.speed_multiplier",
-                                3.0,
-                                "game.speed",
-                            )
-                        ],
-                        failure_conditions=[],
-                        timeout_seconds=1.0,
-                        retry_budget=0,
-                        idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-                    )
-                ],
-                rationale="Future intent remains valid after unrelated movement updates.",
-            )
-
-    async def scenario() -> None:
-        plan_clock = FakeClock()
-        pump_clock = ManualPumpClock()
-        environment = AdvancingMovementEnvironment(clock=plan_clock)
-        planner = RebasingPatchPlanner()
-        stream = StringIO()
-        reporter = ConsoleDecisionReporter(
-            run_id="continuous",
-            planner_name="scripted",
-            model_name=None,
-            stream=stream,
-        )
-        runtime, logger = runtime_for(
-            tmp_path,
-            environment,
-            planner,
-            plan_clock,
-            observation_pump_enabled=True,
-            observation_clock=pump_clock,
-            reporter=reporter,
-        )
-        try:
-            run = asyncio.create_task(runtime.run(max_steps=2))
-            await asyncio.wait_for(environment.movement_started.wait(), timeout=1.0)
-            await asyncio.wait_for(planner.advisory_started.wait(), timeout=1.0)
-            pump_clock.advance(0.1)
-            await asyncio.sleep(0)
-            planner.release_advisory.set()
-            await asyncio.wait_for(planner.advisory_returned.wait(), timeout=1.0)
-            await asyncio.sleep(0)
-            environment.release_movement.set()
-            summary = await asyncio.wait_for(run, timeout=1.0)
-        finally:
-            logger.close()
-
-        assert summary.steps_completed == 2
-        assert isinstance(environment.actions[1], SetSpeedAction)
-        assert environment.actions[1].speed == 3
-        events = read_events(tmp_path / "events.jsonl")
-        assert sum(event["event_type"] == "plan_patch_staged" for event in events) == 1
-        assert sum(event["event_type"] == "plan_patched" for event in events) == 1
-        assert sum(event["event_type"] == "plan_patch_rejected" for event in events) == 0
-        metrics = evaluate_log(tmp_path / "events.jsonl")
-        assert metrics.plan_patches_staged == 1
-        assert metrics.plan_patches_applied == 1
-        assert metrics.plan_patches_rejected == 0
-        assert "!!! PLAN PATCH REJECTED !!!" not in stream.getvalue()
 
     asyncio.run(scenario())
 
@@ -4733,245 +3714,6 @@ def test_a_handback_does_not_disturb_a_world_already_running() -> None:
         telemetry=TelemetrySnapshot(sequence=1, game=GameState(loaded=True, paused=False)),
     )
     assert asyncio.run(runtime._restore_running_world(None, already)) is already
-
-
-def _keep_a_route_lesson() -> object:
-    """One grounded keep, cited against the observation the patch was written on."""
-
-    from kenshi_agent.core.continuity import (
-        KeepMemoryOperation,
-        MemoryKind,
-    )
-    from kenshi_agent.core.evidence import CurrentObservationEvidence
-
-    return KeepMemoryOperation(
-        kind=MemoryKind.FACT,
-        content="The speed change had to be revised mid-option.",
-        salience=0.8,
-        references=[CurrentObservationEvidence()],
-    )
-
-
-class _PatchMemoryEnvironment(RevisionEnvironment):
-    def __init__(self, *, clock: FakeClock) -> None:
-        super().__init__(clock=clock)
-        self.movement_started = asyncio.Event()
-        self.release_movement = asyncio.Event()
-
-    async def observe_without_capture(self) -> Observation:
-        self.sequence += 1
-        return self.observation()
-
-    async def step(self, action: Action) -> Transition:
-        if not isinstance(action, SkillAction):
-            return await super().step(action)
-        self.actions.append(action)
-        self.movement_started.set()
-        await self.release_movement.wait()
-        self.step_index += 1
-        self.sequence += 1
-        return Transition(
-            receipt=ActionReceipt(
-                action=action,
-                control_mode=ControlMode.INTERFACE_ONLY,
-                accepted=True,
-                executed=True,
-                dry_run=False,
-                primitive_actions=2,
-                message="fake movement completed and remained paused",
-            ),
-            observation=self.observation(),
-        )
-
-
-def _future_speed_patch(current: Observation, step_id: str) -> PlanPatch:
-    assert current.active_plan is not None
-    return PlanPatch(
-        schema_version="1.0",
-        plan_id=current.active_plan.plan_id,
-        based_on_plan_version=current.active_plan.plan_version,
-        based_on_revision=current.world_revision,
-        replace_future_steps=[
-            PlanStep(
-                step_id=step_id,
-                action=SetSpeedAction(speed=3),
-                preconditions=[condition("telemetry.game.paused", True, "game.pause")],
-                success_conditions=[
-                    condition("telemetry.game.speed_multiplier", 3.0, "game.speed")
-                ],
-                failure_conditions=[],
-                timeout_seconds=1.0,
-                retry_budget=0,
-                idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-            )
-        ],
-        rationale="The future speed choice can be updated without restarting movement.",
-        continuity_operations=[_keep_a_route_lesson()],  # type: ignore[list-item]
-        fieldbook_operations=[
-            CreateFieldbookProjectOperation(
-                kind=FieldbookProjectKind.ROUTE_ATLAS,
-                title="Revised movement route",
-                summary="The movement option required a mid-route revision.",
-            )
-        ],
-    )
-
-
-def test_an_applied_patch_commits_its_continuity_exactly_once(tmp_path: Path) -> None:
-    """A patch's continuity was in the schema and was committed nowhere."""
-
-    class PatchingPlanner(Planner):
-        def __init__(self) -> None:
-            self.calls = 0
-            self.advisory_returned = asyncio.Event()
-
-        async def decide(self, current: Observation) -> PlannerOutput:
-            self.calls += 1
-            if self.calls == 1:
-                return patchable_movement_plan(current)
-            self.advisory_returned.set()
-            return _future_speed_patch(current, "patched-speed")
-
-    async def scenario() -> None:
-        clock = FakeClock()
-        pump_clock = ManualPumpClock()
-        environment = _PatchMemoryEnvironment(clock=clock)
-        planner = PatchingPlanner()
-        store = MemoryStore(
-            tmp_path / "memory.sqlite3",
-            CampaignScope(campaign_id="patched", origin=CampaignScopeOrigin.CONFIGURED),
-        )
-        runtime, logger = runtime_for(
-            tmp_path,
-            environment,
-            planner,
-            clock,
-            observation_pump_enabled=True,
-            observation_clock=pump_clock,
-            memory=store,
-        )
-        try:
-            run = asyncio.create_task(runtime.run(max_steps=2))
-            await asyncio.wait_for(environment.movement_started.wait(), timeout=1.0)
-            await asyncio.wait_for(planner.advisory_returned.wait(), timeout=1.0)
-            for _ in range(5):
-                await asyncio.sleep(0)
-            pump_clock.advance(0.1)
-            await asyncio.sleep(0)
-            environment.release_movement.set()
-            await asyncio.wait_for(run, timeout=1.0)
-            kept = [record.content for record in store.recall(limit=8)]
-            projects = store.fieldbook.list_projects()
-        finally:
-            store.close()
-            logger.close()
-
-        events = read_events(tmp_path / "events.jsonl")
-        assert sum(event["event_type"] == "plan_patched" for event in events) == 1
-        assert kept == ["The speed change had to be revised mid-option."]
-        assert [project.title for project in projects] == ["Revised movement route"]
-        receipts = [
-            event["payload"] for event in events if event["event_type"] == "continuity_receipt"
-        ]
-        contexts = [
-            event["payload"]
-            for event in events
-            if event["event_type"] == "planner_context_prepared"
-        ]
-        assert [receipt["origin"] for receipt in receipts] == ["patch"]
-        assert receipts[0]["status"] == "accepted"
-        assert receipts[0]["authored_context_id"] == contexts[1]["context_id"]
-        assert receipts[0]["authored_revision"] == contexts[1]["authored_revision"]
-        assert receipts[0]["commit_revision"] != receipts[0]["authored_revision"]
-        fieldbook_receipts = [
-            event["payload"] for event in events if event["event_type"] == "fieldbook_receipt"
-        ]
-        assert [receipt["origin"] for receipt in fieldbook_receipts] == ["patch"]
-        assert fieldbook_receipts[0]["status"] == "accepted"
-        assert fieldbook_receipts[0]["authored_context_id"] == (contexts[1]["context_id"])
-
-    asyncio.run(scenario())
-
-
-def test_a_rejected_patch_with_mismatched_authored_basis_writes_nothing_durable(
-    tmp_path: Path,
-) -> None:
-    """The patch that never took effect must leave no trace in memory."""
-
-    class MismatchedBasisPatchPlanner(Planner):
-        def __init__(self) -> None:
-            self.calls = 0
-            self.advisory_returned = asyncio.Event()
-            self.advisory_started = asyncio.Event()
-            self.release_advisory = asyncio.Event()
-
-        async def decide(self, current: Observation) -> PlannerOutput:
-            self.calls += 1
-            if self.calls == 1:
-                return patchable_movement_plan(current)
-            self.advisory_started.set()
-            await self.release_advisory.wait()
-            self.advisory_returned.set()
-            patch = _future_speed_patch(current, "mismatched-basis-speed")
-            sequence = patch.based_on_revision.telemetry_sequence or 0
-            return patch.model_copy(
-                update={
-                    "based_on_revision": patch.based_on_revision.model_copy(
-                        update={"telemetry_sequence": sequence + 100}
-                    )
-                },
-                deep=True,
-            )
-
-    async def scenario() -> None:
-        plan_clock = FakeClock()
-        pump_clock = ManualPumpClock()
-        environment = _PatchMemoryEnvironment(clock=plan_clock)
-        planner = MismatchedBasisPatchPlanner()
-        store = MemoryStore(
-            tmp_path / "memory.sqlite3",
-            CampaignScope(
-                campaign_id="mismatched-basis",
-                origin=CampaignScopeOrigin.CONFIGURED,
-            ),
-        )
-        runtime, logger = runtime_for(
-            tmp_path,
-            environment,
-            planner,
-            plan_clock,
-            observation_pump_enabled=True,
-            observation_clock=pump_clock,
-            memory=store,
-        )
-        try:
-            run = asyncio.create_task(runtime.run(max_steps=2))
-            await asyncio.wait_for(environment.movement_started.wait(), timeout=1.0)
-            await asyncio.wait_for(planner.advisory_started.wait(), timeout=1.0)
-            pump_clock.advance(0.1)
-            await asyncio.sleep(0)
-            planner.release_advisory.set()
-            await asyncio.wait_for(planner.advisory_returned.wait(), timeout=1.0)
-            await asyncio.sleep(0)
-            environment.release_movement.set()
-            await asyncio.wait_for(run, timeout=1.0)
-            kept = store.recall(limit=8)
-            projects = store.fieldbook.list_projects()
-        finally:
-            store.close()
-            logger.close()
-
-        events = read_events(tmp_path / "events.jsonl")
-        rejected = [event for event in events if event["event_type"] == "plan_patch_rejected"]
-        assert len(rejected) == 1
-        assert "immutable planner snapshot" in str(rejected[0]["payload"])
-        assert sum(event["event_type"] == "plan_patched" for event in events) == 0
-        assert kept == []
-        assert projects == []
-        assert not any(event["event_type"] == "continuity_receipt" for event in events)
-        assert not any(event["event_type"] == "fieldbook_receipt" for event in events)
-
-    asyncio.run(scenario())
 
 
 def test_a_continuous_fieldbook_read_reaches_the_replacing_planner_without_game_input(

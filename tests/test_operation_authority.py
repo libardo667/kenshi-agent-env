@@ -27,7 +27,6 @@ from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.operation_authority import OperationAuthority
 from kenshi_agent.operation_definitions import BoundOperation
 from kenshi_agent.safety import OperationPolicy
-from kenshi_agent.skills import MacroRegistry
 
 
 def _bounds(x: float) -> NormalizedPointerBounds:
@@ -78,11 +77,9 @@ def _policy(*, allow: bool = True) -> OperationPolicy:
     return OperationPolicy(
         SafetyConfig(
             allow_action_kinds=["activate_visible_control"] if allow else [],
-            allow_skills=[],
             max_wait_seconds=3.0,
             max_actions_per_minute=100,
         ),
-        MacroRegistry({}),
         control_mode=ControlMode.INTERFACE_ONLY,
     )
 
@@ -186,11 +183,9 @@ def test_capability_and_selection_refusals_remain_distinct() -> None:
     policy = OperationPolicy(
         SafetyConfig(
             allow_action_kinds=["approach_dialogue_target"],
-            allow_skills=[],
             max_wait_seconds=3.0,
             max_actions_per_minute=100,
         ),
-        MacroRegistry({}),
         control_mode=ControlMode.NATIVE_ASSISTED,
     )
     scheduled = OPERATION_BINDING_AUTHORITY.bind(

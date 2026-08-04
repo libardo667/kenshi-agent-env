@@ -327,10 +327,6 @@ class KenshiCameraMechanics:
             screenshot_path=frame.path,
             screenshot_sha256=frame.sha256,
             objective=self._surface.runtime_config.objective,
-            available_skills=self._surface.port.available_skills,
-            skill_specs=[
-                self._surface.macros.spec(name) for name in self._surface.port.available_skills
-            ],
         )
         rebound = OPERATION_BINDING_AUTHORITY.bind(
             action,

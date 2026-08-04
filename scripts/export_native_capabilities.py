@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from kenshi_agent.native_contract_export import export_gameplay_capabilities_header
+from kenshi_agent.tooling.native_contract_export import export_gameplay_capabilities_header
 
 if __name__ == "__main__":
     root = Path(__file__).resolve().parents[1]

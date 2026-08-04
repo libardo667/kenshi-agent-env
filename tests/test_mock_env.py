@@ -9,7 +9,7 @@ from kenshi_agent.core.operation import (
     PauseAction,
     RecoverCameraViewAction,
     SetSpeedAction,
-    SkillAction,
+    WaitAction,
 )
 from kenshi_agent.env.mock import MockEnvironment
 
@@ -23,10 +23,10 @@ def test_mock_environment_state_transitions(tmp_path: Path) -> None:
 
         await execute_operation(environment, PauseAction(paused=False))
         await execute_operation(environment, SetSpeedAction(speed=3))
-        transition = await execute_operation(environment, SkillAction(name="work_for_cats"))
+        transition = await execute_operation(environment, WaitAction(seconds=10))
         assert transition.observation.telemetry is not None
-        assert transition.observation.telemetry.game.money == 300
-        assert transition.observation.telemetry.game.elapsed_minutes == 300
+        assert transition.observation.telemetry.game.money == 180
+        assert transition.observation.telemetry.game.elapsed_minutes == 50
         assert transition.observation.screenshot_path is not None
         assert transition.observation.screenshot_path.exists()
 

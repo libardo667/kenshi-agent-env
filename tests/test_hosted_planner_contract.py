@@ -1384,7 +1384,6 @@ def test_hosted_schemas_contain_only_affordance_choice_not_operation_unions() ->
         "PurchaseItemAction",
         "ActivateVisibleControlAction",
         "UseGameBindingAction",
-        "SkillAction",
         "expected_outcomes",
     ):
         assert superseded not in blob

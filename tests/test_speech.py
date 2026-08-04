@@ -151,6 +151,47 @@ def test_piper_hands_synthesized_audio_to_its_owned_wave_player(
     assert played == [wave_bytes]
 
 
+def test_piper_defers_cleanup_while_windows_still_owns_the_wave(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    home = _piper_home(tmp_path)
+    playback_started = Event()
+    release_playback = Event()
+    synthesized_directory: Path | None = None
+
+    def synthesize(command: list[Any], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        nonlocal synthesized_directory
+        output_index = command.index("--output_file") + 1
+        wave_path = Path(command[output_index])
+        synthesized_directory = wave_path.parent
+        wave_path.write_bytes(b"RIFF-owned-wave-player")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    def play(_path: Path) -> None:
+        playback_started.set()
+        assert release_playback.wait(2.0)
+
+    monkeypatch.setattr("kenshi_agent.speech.subprocess.run", synthesize)
+    speaker = PiperSpeaker(
+        home / "piper" / "piper.exe",
+        home / "en_US-lessac-medium.onnx",
+        player=play,
+    )
+    worker = Thread(target=lambda: speaker.speak("Still playing."), daemon=True)
+    worker.start()
+    assert playback_started.wait(1.0)
+
+    speaker.close()
+
+    assert synthesized_directory is not None
+    assert synthesized_directory.exists()
+    release_playback.set()
+    worker.join(timeout=2.0)
+    assert not worker.is_alive()
+    assert not synthesized_directory.exists()
+
+
 def test_piper_narration_keeps_only_the_latest_pending_update(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

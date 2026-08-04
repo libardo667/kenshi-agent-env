@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 
-from .affordances import AFFORDANCE_ADAPTERS
-from .operation_definitions import OPERATION_DEFINITION_LIST, OPERATION_DEFINITIONS
+from ..affordances import AFFORDANCE_ADAPTERS
+from ..operation_definitions import OPERATION_DEFINITION_LIST, OPERATION_DEFINITIONS
 
 
 @dataclass(frozen=True, slots=True)

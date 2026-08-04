@@ -3,21 +3,21 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .affordances import AffordanceSelection
-from .core.affordance import AffordanceReceipt
-from .core.observation import Observation
-from .core.operation import ACTION_ADAPTER
-from .core.planning import (
+from ..affordances import AffordanceSelection
+from ..core.affordance import AffordanceReceipt
+from ..core.observation import Observation
+from ..core.operation import ACTION_ADAPTER
+from ..core.planning import (
     PlanEnvelope,
     PlannerDecision,
     PlanPatch,
 )
-from .core.telemetry import TelemetrySnapshot
-from .core.transport import (
+from ..core.telemetry import TelemetrySnapshot
+from ..core.transport import (
     ActionReceipt,
     NativeCommandRequest,
 )
-from .planners.plan_proposal import DecisionProposal, PlanProposal
+from ..planners.plan_proposal import DecisionProposal, PlanProposal
 
 
 def export_schemas(output_dir: Path) -> list[Path]:

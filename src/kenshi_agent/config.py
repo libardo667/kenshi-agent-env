@@ -10,14 +10,12 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from .core.continuity import MemoryRetrievalPolicy
 from .core.operation import (
-    Action,
     ControlMode,
     PlanningMode,
-    parse_action,
 )
+from .core.scenario import ScenarioAttestation
 from .core.telemetry import ScenarioIdentity
 from .core.transport import CalibrationIdentity
-from .scenario_fixtures import ScenarioAttestation
 
 _ENV_DEFAULT_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*):-([^}]*)\}")
 
@@ -36,8 +34,6 @@ class RuntimeConfig(ConfigModel):
     max_steps: int = Field(default=32, ge=1, le=100000)
     settle_seconds: float = Field(default=0.25, ge=0.0, le=60.0)
     observation_memory_limit: int = Field(default=12, ge=0, le=100)
-    # Compatibility field: current runtime termination behavior does not read it.
-    stop_when_terminated: bool = True
     objective: str | None = Field(default=None, max_length=1000)
     decision_stream: bool = False
     # Explicit experimental context. Absent means this run cannot support a
@@ -60,8 +56,6 @@ class ControlConfig(ConfigModel):
 class PlanningConfig(ConfigModel):
     mode: PlanningMode = PlanningMode.SINGLE_STEP
     observation_pump_enabled: bool = True
-    stateful_movement_options_enabled: bool = True
-    stateful_approach_options_enabled: bool = False
     # Arrival/threat radii for the contracted semantic approach. The monitored
     # option is not optional for that action, so these are thresholds, not a
     # feature flag.
@@ -185,8 +179,6 @@ class CaptureConfig(ConfigModel):
     window_title_contains: str = "Kenshi"
     image_format: Literal["png", "jpeg"] = "png"
     jpeg_quality: int = Field(default=90, ge=20, le=100)
-    # Compatibility field: current capture path always captures the client area.
-    crop_client_area: bool = True
 
 
 class LaunchConfig(ConfigModel):
@@ -248,8 +240,6 @@ class CameraRecoveryConfig(ConfigModel):
 
 class ControlsConfig(ConfigModel):
     pause_key: str = "space"
-    pause_skill: str | None = Field(default=None, min_length=1, max_length=80)
-    unpause_skill: str | None = Field(default=None, min_length=1, max_length=80)
     speed_keys: dict[int, str] = Field(default_factory=lambda: {1: "f2", 2: "f3", 3: "f4"})
     focus_before_input: bool = True
     post_input_delay_seconds: float = Field(default=0.08, ge=0.0, le=2.0)
@@ -275,34 +265,21 @@ class ControlsConfig(ConfigModel):
     relative_pointer_warp_offset_pixels: int = Field(default=6, ge=1, le=100)
     calibrated_client_width: int | None = Field(default=None, gt=0)
     calibrated_client_height: int | None = Field(default=None, gt=0)
-    # Additional expected calibration-identity facts. Each stays None until the
-    # profile actually asserts it; a null is never treated as a match.
-    calibrated_window_mode: str | None = Field(default=None, min_length=1, max_length=32)
-    calibrated_ui_scale: float | None = Field(default=None, gt=0.0, le=8.0)
-    calibrated_dpi_scale: float | None = Field(default=None, gt=0.0, le=8.0)
-    calibrated_keymap_id: str | None = Field(default=None, min_length=1, max_length=64)
-    calibration_profile_id: str | None = Field(default=None, min_length=1, max_length=80)
-    calibration_profile_version: int | None = Field(default=None, ge=1)
-    calibrated_macro_set_hash: str | None = Field(default=None, min_length=1, max_length=64)
-    # Skills whose pointer coordinates come from live semantic bounds that are
-    # re-read inside the input lease, so they do not need a calibrated profile.
-    semantic_pointer_skills: list[str] = Field(default_factory=list, max_length=64)
-    # The bounded macro supplying the native approach hotkey and its calibrated
-    # movement pulse. The semantic approach action reuses those proven
-    # primitives; it does not inherit the macro's vendor-specific authorization.
-    native_approach_skill: str | None = Field(default=None, min_length=1, max_length=80)
     # Total wall time the semantic approach may advance across bounded pulses
     # before giving up. The pathing order is issued once; this budgets how long
     # the option is allowed to keep walking toward it.
     native_approach_max_seconds: float = Field(default=30.0, gt=0.0, le=120.0)
+    # One bounded interval between issuing a native movement order and reading
+    # its next terminal evidence. This absorbs the proven two-second macro
+    # pulse into the typed native-operation adapter.
+    native_movement_pulse_seconds: float = Field(default=2.0, gt=0.0, le=10.0)
     # Mirrors safety.require_paused_between_actions for the live environment.
     # With the world already running, a movement "pulse" - unpause, wait,
     # re-pause - is neither possible nor wanted: the character simply walks.
     require_paused_between_actions: bool = True
     # Kenshi's MyGUI ignores a zero-duration press: an instantaneous down/up
-    # moves the cursor but activates nothing. The calibrated dialogue macros
-    # used 0.12s, so semantic control activation inherits that proven hold
-    # rather than rediscovering it.
+    # moves the cursor but activates nothing. Keep the proven semantic-control
+    # hold time as an ordinary controller knob.
     control_activation_hold_seconds: float = Field(default=0.12, ge=0.0, le=1.0)
     # An inventory or shop cell resolves what it holds from the hovered widget,
     # so the pointer has to land and be seen there before the button goes down.
@@ -320,13 +297,6 @@ class ControlsConfig(ConfigModel):
         return CalibrationIdentity(
             client_width=self.calibrated_client_width,
             client_height=self.calibrated_client_height,
-            window_mode=self.calibrated_window_mode,
-            ui_scale=self.calibrated_ui_scale,
-            dpi_scale=self.calibrated_dpi_scale,
-            keymap_id=self.calibrated_keymap_id,
-            profile_id=self.calibration_profile_id,
-            profile_version=self.calibration_profile_version,
-            macro_set_hash=self.calibrated_macro_set_hash,
         )
     startup_continue_control_labels: list[str] = Field(
         default_factory=lambda: ["Continue"],
@@ -406,8 +376,6 @@ class ControlsConfig(ConfigModel):
 
 class SafetyConfig(ConfigModel):
     live_actions_enabled: bool = False
-    # Compatibility field: the CLI execution flag is currently unconditional.
-    require_cli_execute_flag: bool = True
     emergency_stop_key: str = "f12"
     supervisor_enabled: bool = True
     supervisor_max_sequence_stalls: int = Field(default=3, ge=1, le=100)
@@ -429,7 +397,7 @@ class SafetyConfig(ConfigModel):
     max_primitive_actions_per_step: int = Field(default=12, ge=1, le=100)
     # Controller-verified transactions own their full bounded sequence and
     # terminal evidence. Keeping their ceiling separate avoids loosening the
-    # primitive allowance for ordinary macros merely to admit camera recovery.
+    # ordinary primitive allowance merely to admit camera recovery.
     max_controller_verified_primitive_actions_per_step: int = Field(
         default=15, ge=1, le=100
     )
@@ -451,7 +419,6 @@ class SafetyConfig(ConfigModel):
     # contract itself stays indifferent to what an item is.
     required_purchase_tooltip_markers: list[str] = Field(default_factory=list, max_length=8)
     allow_action_kinds: list[str] = Field(default_factory=list)
-    allow_skills: list[str] = Field(default_factory=list)
 
 
 class MemoryConfig(ConfigModel):
@@ -484,59 +451,6 @@ class MemoryConfig(ConfigModel):
     minimum_salience: float = Field(default=0.15, ge=0.0, le=1.0)
 
 
-class NormalizedPointerBoundsConfig(ConfigModel):
-    min_x: float = Field(ge=0.0, le=1.0)
-    max_x: float = Field(ge=0.0, le=1.0)
-    min_y: float = Field(ge=0.0, le=1.0)
-    max_y: float = Field(ge=0.0, le=1.0)
-
-    @model_validator(mode="after")
-    def ordered_bounds(self) -> NormalizedPointerBoundsConfig:
-        if self.min_x > self.max_x:
-            raise ValueError("min_x must not exceed max_x")
-        if self.min_y > self.max_y:
-            raise ValueError("min_y must not exceed max_y")
-        return self
-
-    def contains(self, x: float, y: float) -> bool:
-        return self.min_x <= x <= self.max_x and self.min_y <= y <= self.max_y
-
-
-class MacroConfig(ConfigModel):
-    description: str = ""
-    arguments: dict[str, str] = Field(default_factory=dict)
-    visual_precondition: str | None = None
-    normalized_pointer_bounds: NormalizedPointerBoundsConfig | None = None
-    movement_pulse_seconds: float | None = Field(default=None, gt=0.0, le=10.0)
-    movement_pulse_min_seconds: float | None = Field(default=None, gt=0.0, le=10.0)
-    movement_pulse_max_seconds: float | None = Field(default=None, gt=0.0, le=10.0)
-    # A non-null arrival distance designates this skill as a long monitored
-    # approach option (mirroring how movement_pulse_seconds designates movement).
-    approach_arrival_distance: float | None = Field(default=None, gt=0.0, le=100.0)
-    approach_threat_distance: float = Field(default=15.0, gt=0.0, le=500.0)
-    approach_target_arg: str = "target_id"
-    requires_native_assisted: bool = False
-    actions: list[dict[str, Any]] = Field(default_factory=list)
-
-    @model_validator(mode="after")
-    def valid_movement_pulse_bounds(self) -> MacroConfig:
-        if self.movement_pulse_seconds is None:
-            if (
-                self.movement_pulse_min_seconds is not None
-                or self.movement_pulse_max_seconds is not None
-            ):
-                raise ValueError("movement pulse bounds require movement_pulse_seconds")
-            return self
-        minimum = self.movement_pulse_min_seconds or self.movement_pulse_seconds
-        maximum = self.movement_pulse_max_seconds or self.movement_pulse_seconds
-        if minimum > self.movement_pulse_seconds or self.movement_pulse_seconds > maximum:
-            raise ValueError("movement pulse duration must satisfy min <= default <= max")
-        return self
-
-    def parsed_actions(self) -> list[Action]:
-        return [parse_action(item) for item in self.actions]
-
-
 class AppConfig(ConfigModel):
     version: int = 1
     mode: Literal["mock", "live", "replay"] = "mock"
@@ -553,7 +467,6 @@ class AppConfig(ConfigModel):
     controls: ControlsConfig = Field(default_factory=ControlsConfig)
     safety: SafetyConfig = Field(default_factory=SafetyConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
-    macros: dict[str, MacroConfig] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def planning_risk_matches_control_mode(self) -> AppConfig:

@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from kenshi_agent.evals import restart_continuity as restart_eval
-from kenshi_agent.evals.restart_continuity import (
+from kenshi_agent.tooling.evals import restart_continuity as restart_eval
+from kenshi_agent.tooling.evals.restart_continuity import (
     BACKGROUND_COMMITMENT,
     CAMPAIGN_ID,
     COMMITMENT_CONTENT,
@@ -1079,7 +1079,7 @@ def test_worker_invocation_rejects_failed_or_mislabeled_evidence(
             [
                 "python-exact",
                 "-m",
-                "kenshi_agent.evals.restart_continuity",
+                "kenshi_agent.tooling.evals.restart_continuity",
                 "--worker-phase",
                 "one",
                 "--treatment",

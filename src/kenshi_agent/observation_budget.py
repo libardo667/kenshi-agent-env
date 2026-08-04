@@ -14,8 +14,6 @@ _ROOT_COLLECTION_PATHS = (
     "recent_plan_outcomes",
     "recent_continuity_receipts",
     "recent_fieldbook_receipts",
-    "available_skills",
-    "skill_specs",
     "memories",
     "fieldbook_projects",
 )
@@ -211,25 +209,6 @@ def budget_observation_payload(
             )
         )
 
-    sorted_skill_specs = sorted(
-        original["skill_specs"],
-        key=lambda item: (item["name"], _canonical_json(item)),
-    )
-    specs_by_name: dict[str, list[JsonObject]] = {}
-    for skill_spec in sorted_skill_specs:
-        specs_by_name.setdefault(str(skill_spec["name"]), []).append(skill_spec)
-    available_names = set(original["available_skills"])
-    for skill_name in sorted(available_names):
-        attempt(
-            _skill_contract_mutator(
-                skill_name,
-                specs_by_name.get(skill_name, []),
-            )
-        )
-    for skill_spec in sorted_skill_specs:
-        if skill_spec["name"] not in available_names:
-            attempt(_append_mutator("skill_specs", skill_spec))
-
     older_outcomes = original["recent_action_outcomes"][:-1]
     for outcome in reversed(older_outcomes):
         attempt(
@@ -395,8 +374,6 @@ def irreducible_payload(
             else []
         )
     )
-    retained["available_skills"] = []
-    retained["skill_specs"] = []
     current_target_ids = _current_memory_target_ids(original)
     retained["memories"] = (
         sorted(
@@ -699,18 +676,6 @@ def _prepend_mutator(path: str, value: Any) -> Callable[[JsonObject], None]:
     return mutate
 
 
-def _skill_contract_mutator(
-    skill_name: str,
-    skill_specs: list[JsonObject],
-) -> Callable[[JsonObject], None]:
-    def mutate(candidate: JsonObject) -> None:
-        _append_path(candidate, "available_skills", skill_name)
-        for skill_spec in skill_specs:
-            _append_path(candidate, "skill_specs", skill_spec)
-
-    return mutate
-
-
 def _outcome_target_ids(outcome: JsonObject) -> set[str]:
     action = outcome.get("action")
     if not isinstance(action, dict):
@@ -719,18 +684,6 @@ def _outcome_target_ids(outcome: JsonObject) -> set[str]:
     semantic_target = action.get("target_id")
     if isinstance(semantic_target, str) and semantic_target:
         ids.add(semantic_target)
-    if action.get("kind") != "skill":
-        return ids
-    arguments = action.get("args")
-    if not isinstance(arguments, list):
-        return ids
-    ids.update(
-        str(argument["value"])
-        for argument in arguments
-        if isinstance(argument, dict)
-        and argument.get("name") == "target_id"
-        and isinstance(argument.get("value"), str)
-    )
     return ids
 
 

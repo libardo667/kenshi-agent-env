@@ -270,6 +270,8 @@ class PiperSpeaker:
         self._lock = Lock()
         self._directory = TemporaryDirectory(prefix="kenshi-agent-piper-")
         self._utterance = 0
+        self._speaking = False
+        self._directory_cleaned = False
 
     def speak(self, text: str) -> None:
         with self._lock:
@@ -280,36 +282,55 @@ class PiperSpeaker:
             # with "used by another process" mid-run.
             self._utterance += 1
             wave_path = Path(self._directory.name) / f"utterance-{self._utterance}.wav"
+            self._speaking = True
         try:
-            subprocess.run(
-                [
-                    str(self._executable),
-                    "--model",
-                    str(self._model),
-                    "--length_scale",
-                    "0.70",
-                    "--output_file",
-                    str(wave_path),
-                ],
-                input=text,
-                text=True,
-                capture_output=True,
-                check=True,
-                timeout=60,
-            )
-        except (OSError, subprocess.SubprocessError) as exc:
-            raise RuntimeError(f"Piper synthesis failed: {exc}") from exc
-        try:
-            self._player(wave_path)
-        except (OSError, RuntimeError, ValueError) as exc:
-            raise RuntimeError(f"Piper playback failed: {exc}") from exc
+            try:
+                subprocess.run(
+                    [
+                        str(self._executable),
+                        "--model",
+                        str(self._model),
+                        "--length_scale",
+                        "0.70",
+                        "--output_file",
+                        str(wave_path),
+                    ],
+                    input=text,
+                    text=True,
+                    capture_output=True,
+                    check=True,
+                    timeout=60,
+                )
+            except (OSError, subprocess.SubprocessError) as exc:
+                raise RuntimeError(f"Piper synthesis failed: {exc}") from exc
+            try:
+                self._player(wave_path)
+            except (OSError, RuntimeError, ValueError) as exc:
+                raise RuntimeError(f"Piper playback failed: {exc}") from exc
+        finally:
+            with self._lock:
+                self._speaking = False
+                cleanup = self._closed
+            if cleanup:
+                self._cleanup_directory()
 
     def close(self) -> None:
         with self._lock:
             if self._closed:
                 return
             self._closed = True
-        self._directory.cleanup()
+            cleanup = not self._speaking
+        if cleanup:
+            self._cleanup_directory()
+
+    def _cleanup_directory(self) -> None:
+        """Remove synthesized audio only after its synchronous player returns."""
+
+        with self._lock:
+            if self._directory_cleaned:
+                return
+            self._directory.cleanup()
+            self._directory_cleaned = True
 
 def windows_sapi_narrator() -> QueuedSpeechNarrator:
     """Build the supported offline narration mode for Windows or WSL."""

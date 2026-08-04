@@ -490,7 +490,7 @@ def _print_summary(batch: MutationBatch, summary: MutationSummary) -> None:
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
+    return Path(__file__).resolve().parents[3]
 
 
 # Argparse's declarative grammar is acceptance-tested through main. Mutating help

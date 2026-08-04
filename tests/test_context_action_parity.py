@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from kenshi_agent.context_action_parity import (
+from kenshi_agent.tooling.context_action_parity import (
     CONTEXT_ACTION_DECISIONS,
     WITNESSES_PATH,
     ContextActionExemptionReason,

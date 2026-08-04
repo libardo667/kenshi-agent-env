@@ -60,7 +60,6 @@ from .core.operation import (
     SelectSquadMemberExactAction,
     SellItemAction,
     SetSpeedAction,
-    SkillAction,
     StopAction,
     ThreatResponseStrategy,
     TravelToMapDestinationAction,
@@ -2679,7 +2678,6 @@ _RUNTIME_CONTROL_ACTION_TYPES = (
     PauseAction,
     SetSpeedAction,
     WaitAction,
-    SkillAction,
 )
 
 
@@ -2701,7 +2699,7 @@ def bind_runtime_control(
     action: Action,
     observation: Observation,
 ) -> EmptyBinding | BindingFailure:
-    """Bind runtime playback, waiting, or a configured compatibility skill."""
+    """Bind runtime playback or waiting to the current observation revision."""
 
     if not isinstance(action, _RUNTIME_CONTROL_ACTION_TYPES):
         return _unbound("Action is not a runtime-control operation.")
@@ -2837,16 +2835,6 @@ WAIT_DEFINITION = _runtime_control_definition(
     summary="Observe for one bounded interval without sending input.",
     handler_key="runtime.wait",
 )
-SKILL_DEFINITION = _runtime_control_definition(
-    kind="skill",
-    operation_type=SkillAction,
-    summary="Execute one configured compatibility macro through its bounded handler.",
-    handler_key="movement.skill",
-    execution=OperationExecution.MONITORED_OPTION,
-    pointer_class=PointerActionClass.PROFILE_CALIBRATED,
-)
-
-
 APPROACH_DIALOGUE_TARGET_DEFINITION = OperationDefinition(
     kind="approach_dialogue_target",
     version="1.0",
@@ -3871,7 +3859,6 @@ OPERATION_DEFINITION_LIST: tuple[OperationDefinition, ...] = (
     PAUSE_DEFINITION,
     SET_SPEED_DEFINITION,
     WAIT_DEFINITION,
-    SKILL_DEFINITION,
     APPROACH_DIALOGUE_TARGET_DEFINITION,
     OPEN_SCREEN_DEFINITION,
     COMMAND_WORLD_TARGET_DEFINITION,

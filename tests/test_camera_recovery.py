@@ -46,7 +46,6 @@ from kenshi_agent.core.transport import ActionReceipt
 from kenshi_agent.env.live import LiveEnvironment
 from kenshi_agent.operation_definitions import RECOVER_CAMERA_VIEW_DEFINITION
 from kenshi_agent.safety import OperationPolicy, SafetyViolation
-from kenshi_agent.skills import MacroRegistry
 from kenshi_agent.telemetry import TelemetryRead
 
 
@@ -280,7 +279,6 @@ def camera_environment(
         run_dir=tmp_path,
         telemetry=telemetry,  # type: ignore[arg-type]
         controller=controller,
-        macros=MacroRegistry({}),
         runtime_config=RuntimeConfig(settle_seconds=0.0, objective="Test camera recovery."),
         controls_config=ControlsConfig(
             post_input_delay_seconds=0.0,
@@ -358,7 +356,6 @@ def test_controller_transaction_limit_does_not_loosen_ordinary_primitive_limit(
                 max_controller_verified_primitive_actions_per_step=15,
                 max_actions_per_minute=100,
             ),
-            MacroRegistry({}),
             control_mode=ControlMode.INTERFACE_ONLY,
         )
         assert guard.validate(action, observation) == action
@@ -370,7 +367,6 @@ def test_controller_transaction_limit_does_not_loosen_ordinary_primitive_limit(
                 max_controller_verified_primitive_actions_per_step=14,
                 max_actions_per_minute=100,
             ),
-            MacroRegistry({}),
             control_mode=ControlMode.INTERFACE_ONLY,
         )
         with pytest.raises(SafetyViolation, match="maximum is 14"):

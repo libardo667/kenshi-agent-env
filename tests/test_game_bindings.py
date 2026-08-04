@@ -11,12 +11,6 @@ from datetime import UTC, datetime
 
 import pytest
 
-from kenshi_agent.affordance_parity import (
-    AffordanceRoute,
-    BindingDecision,
-    BindingStatus,
-    audit_binding_parity,
-)
 from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.operation import (
     GAME_BINDING_KEYS,
@@ -51,6 +45,12 @@ from kenshi_agent.operation_definitions import (
     TerminalOwner,
 )
 from kenshi_agent.planner_context import render_planner_payload
+from kenshi_agent.tooling.affordance_parity import (
+    AffordanceRoute,
+    BindingDecision,
+    BindingStatus,
+    audit_binding_parity,
+)
 
 
 def observation(*, loaded: bool = True, stale: bool = False) -> Observation:
@@ -1653,7 +1653,6 @@ def test_a_running_world_does_not_block_a_purchase_by_default() -> None:
     from kenshi_agent.config import SafetyConfig
     from kenshi_agent.core.operation import PurchaseItemAction
     from kenshi_agent.safety import OperationPolicy, SafetyViolation
-    from kenshi_agent.skills import MacroRegistry
 
     action = PurchaseItemAction(
         cell_label="Dried Meat",
@@ -1664,13 +1663,11 @@ def test_a_running_world_does_not_block_a_purchase_by_default() -> None:
     )
     running = _purchase_guard_state(paused=False)
 
-    macros = MacroRegistry({})
     lenient = OperationPolicy(
         SafetyConfig(
             require_paused_between_actions=False,
             allow_action_kinds=["purchase_item"],
         ),
-        macros,
     )
     lenient.validate(action, running)  # must not raise
 
@@ -1679,7 +1676,6 @@ def test_a_running_world_does_not_block_a_purchase_by_default() -> None:
             require_paused_between_actions=True,
             allow_action_kinds=["purchase_item"],
         ),
-        macros,
     )
     with pytest.raises(SafetyViolation, match="require_paused_between_actions"):
         strict.validate(action, running)

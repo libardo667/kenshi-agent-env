@@ -25,11 +25,11 @@ from kenshi_agent.core.telemetry import (
     TelemetrySnapshot,
 )
 from kenshi_agent.core.transport import ActionReceipt
-from kenshi_agent.evals import evaluate_log
 from kenshi_agent.memory import MemoryStore, RecallBudget, _partition_target_ids
 from kenshi_agent.planner_context import PlannerContextAssembler
 from kenshi_agent.runtime import AgentRuntime
 from kenshi_agent.session_log import SessionLogger
+from kenshi_agent.tooling.evals import evaluate_log
 
 
 def open_store(path: Path, campaign_id: str = "test") -> MemoryStore:

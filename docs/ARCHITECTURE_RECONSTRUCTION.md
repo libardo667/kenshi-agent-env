@@ -1090,6 +1090,47 @@ At stage exit:
 - Portable gates pass.
 - Native setup and build documentation still works.
 
+**Closed 2026-08-04.** `application.py` is the one public composition root;
+`cli.py` and the supported live-development launcher are outer adapters that
+enter it. Development orchestration, scenario fixture storage, evaluations,
+overlay, graphics setup, mutation campaigns, registry audits, and generated
+document/schema logic now live under `kenshi_agent.tooling`. Fitness tests
+require the inward production graph to import neither that perimeter nor the
+CLI, require the public adapters to resolve through the application root, and
+retain the Stage 6 acyclic import-graph gate.
+
+The generic `SkillAction`, macro registry, configured macro schemas, name-based
+macro policy, and their old tests/examples are deleted. Proven native talk and
+movement behavior now arrives as typed operation definitions; the fixed native
+command trigger and bounded movement pulse are ordinary adapter mechanics. The
+external protocol's optional `CalibrationIdentity.macro_set_hash` remains
+parseable so the unchanged native plug-in stays compatible, but Python has no
+macro execution owner. Mock and replay remain environment adapters on the same
+coordinator/kernel path and expose no skill operation.
+
+The canonical configs lost unread compatibility fields and historical macro
+identity/configuration. `config/live.yaml` was reduced to its actual OpenRouter,
+PNG capture, control, launch, safety, and continuity knobs. Obsolete blocker and
+mutation ledgers, their generated reports, dead CLI commands, calibration and
+planner-macro examples, missing package-document references, and compatibility
+re-exports are gone. Every surviving modeled config field has a production
+consumer. `ARCHITECTURE.md` now describes the implemented dependency graph,
+run and operation lifecycles, authority/evidence owners, adapters, persistence,
+and tooling boundary directly; no accepted ADR set survives to contradict it.
+
+The full portable gate passed after generated schemas and documents were
+refreshed: pytest, Ruff, strict mypy across 142 source files, deterministic
+schema/document export, and diff hygiene. The native and game-source trees were
+unchanged. The public live proof then passed: `./dev launch` reached a loaded,
+paused world; run `stage7-tooling-live-proof-20260804c` observed, planned, bound,
+executed, and confirmed one typed screen transition through the application
+root and finalized paused at telemetry sequence 910; `./dev recover` confirmed
+pause, no unresolved modal, and no display lease; and `./dev stop` closed Kenshi
+from a fresh paused idle state. An earlier successful operation exposed a Piper
+WAV cleanup race at wrapper exit; cleanup now waits for the synchronous player
+to release ownership, its concurrency regression test passes, and the clean run
+was repeated after the complete portable gate.
+
 ### Live proof
 
 Run launch, short run, recover, and stop through the public `./dev` commands to prove that moving the composition root did not break operator workflow.

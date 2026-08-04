@@ -32,7 +32,6 @@ from .evidence import (
 from .operation import (
     ControlMode,
     PlanningMode,
-    SkillSpec,
 )
 from .planning import ActivePlanContext
 from .telemetry import (
@@ -105,8 +104,6 @@ class Observation(StrictModel):
     # "completed" while changing nothing, replanned from observations that
     # looked identical to the ones before them.
     recent_changes: list[StateChange] = Field(default_factory=list, max_length=40)
-    available_skills: list[str] = Field(default_factory=list)
-    skill_specs: list[SkillSpec] = Field(default_factory=list)
     memories: list[MemoryRecord] = Field(default_factory=list)
     # What automatic recall left out, so "nothing else" and "more, not shown"
     # are distinguishable.

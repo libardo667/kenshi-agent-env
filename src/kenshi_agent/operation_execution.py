@@ -50,7 +50,6 @@ from .operation_authority import OperationAuthority
 from .plan_events import PlanEventReporter
 from .planning import PlanBudgetLedger, PlanningClock
 from .session_log import SessionLogger
-from .skills import MacroRegistry
 from .world_state import WorldStateStore
 
 
@@ -189,7 +188,6 @@ class OperationExecutionFactory:
         *,
         environment: AgentEnvironment,
         operation_port: OperationMechanicsPort,
-        macros: MacroRegistry,
         action_budget: ActionBudgetLedger,
         authority: OperationAuthority,
         logger: SessionLogger,
@@ -204,7 +202,6 @@ class OperationExecutionFactory:
     ) -> None:
         self.environment = environment
         self.operation_port = operation_port
-        self.macros = macros
         self.action_budget = action_budget
         self.authority = authority
         self.logger = logger
@@ -232,11 +229,7 @@ class OperationExecutionFactory:
             **inventory_handlers(self.operation_port),
             **camera_handlers(self.operation_port),
             **dialogue_handlers(self.operation_port, planning_config),
-            **movement_handlers(
-                self.operation_port,
-                planning_config,
-                self.macros,
-            ),
+            **movement_handlers(self.operation_port, planning_config),
             **resource_handlers(
                 self.operation_port,
                 self.authority,
@@ -254,7 +247,6 @@ class OperationExecutionFactory:
         kernel = ExecutionKernel(
             handlers=HandlerRegistry(handlers),
             action_budget=self.action_budget,
-            macros=self.macros,
             logger=self.logger,
             clock=self.clock,
             state_store=state_store,
@@ -273,7 +265,6 @@ class OperationExecutionFactory:
         future_planning = FuturePlanningPolicy(
             config=planning_config,
             planner=self.concurrent_planner if concurrent_planning else None,
-            macros=self.macros,
             logger=self.logger,
             clock=self.clock,
             state_store=state_store,

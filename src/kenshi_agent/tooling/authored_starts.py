@@ -10,11 +10,11 @@ from uuid import uuid4
 
 from pydantic import Field, model_validator
 
-from .core.base import StrictModel
-from .core.telemetry import TelemetrySnapshot
+from ..core.base import StrictModel
+from ..core.telemetry import TelemetrySnapshot
 
 _BUNDLE_DIR = (
-    Path(__file__).resolve().parents[2]
+    Path(__file__).resolve().parents[3]
     / "scenarios"
     / "KenshiAgentScenarios"
 )

@@ -28,7 +28,6 @@ from ..core.operation import (
     PauseAction,
     RecoverCameraViewAction,
     SetSpeedAction,
-    SkillAction,
     WaitAction,
 )
 from ..core.telemetry import (
@@ -150,21 +149,6 @@ class MockOperationPort:
             typed,
             command,
             message=f"Advanced mock time by {typed.seconds:.2f} minutes.",
-        )
-
-    async def skill(
-        self,
-        action: Action,
-        *,
-        command: CommandDispatchContext,
-        token: ExecutionToken | None,
-    ) -> Transition:
-        del token
-        typed = cast(SkillAction, action)
-        return await self._finish(
-            typed,
-            command,
-            message=self._environment._apply_skill(typed),
         )
 
     async def approach_dialogue_target(
@@ -517,14 +501,6 @@ class MockEnvironment(AgentEnvironment):
             screenshot_path=screenshot,
             screenshot_sha256=screenshot_hash,
             events=events,
-            available_skills=[
-                "buy_food",
-                "eat_food",
-                "first_aid",
-                "work_for_cats",
-                "seek_safety",
-                "travel_toward_squin",
-            ],
         )
         self._last_observation = observation
         return observation
@@ -633,63 +609,6 @@ class MockEnvironment(AgentEnvironment):
             f"Mock {action.kind} resolved its reference: {binding.reason}",
             semantic,
         )
-
-    def _apply_skill(self, action: SkillAction) -> str:
-        name = action.name
-        if name == "buy_food":
-            if self.world.location not in {"The Hub", "Squin"}:
-                return "No shop is available at the current mock location."
-            if self.world.cats < 50:
-                return "Not enough cats to buy food."
-            self.world.cats -= 50
-            self.world.food_items += 1
-            self._advance_time(10)
-            self._events.append("Bought one food item for 50 cats.")
-            return "Bought food."
-        if name == "eat_food":
-            if self.world.food_items <= 0:
-                return "No food item was available."
-            self.world.food_items -= 1
-            self.world.hunger = min(3.0, self.world.hunger + 0.95)
-            self._events.append("Ate one food item.")
-            return "Ate food."
-        if name == "first_aid":
-            if self.world.first_aid_kits <= 0:
-                return "No first-aid kit was available."
-            if self.world.bleeding_rate <= 0:
-                return "No bleeding required treatment."
-            self.world.bleeding_rate = 0.0
-            self.world.treated_injuries += 1
-            self._advance_time(5)
-            self._events.append("Treated the mock injury.")
-            return "Applied first aid."
-        if name == "work_for_cats":
-            if self.world.hostile_nearby:
-                return "Working is unsafe while a hostile is nearby."
-            self._advance_time(60)
-            self.world.cats += 120
-            self._events.append("Completed one hour of mock labor for 120 cats.")
-            return "Earned 120 cats."
-        if name == "seek_safety":
-            self.world.hostile_nearby = False
-            self.world.distance_to_hostile = None
-            self.world.location = "The Hub"
-            self._advance_time(20)
-            self._events.append("Reached the mock safety of The Hub.")
-            return "Returned to safety."
-        if name == "travel_toward_squin":
-            if self.world.hostile_nearby:
-                return "Travel cannot proceed safely while a hostile is nearby."
-            self.world.location = "Road to Squin"
-            self.world.travel_progress += 20.0
-            self._advance_time(90)
-            if self.world.travel_progress >= 100.0:
-                self.world.location = "Squin"
-                self._events.append("Arrived at mock Squin.")
-            else:
-                self._events.append("Made progress toward mock Squin.")
-            return "Travelled toward Squin."
-        return f"Unknown mock skill: {name}."
 
     def _advance_time(self, minutes: float) -> None:
         if self.world.paused:

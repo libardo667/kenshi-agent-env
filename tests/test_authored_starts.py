@@ -6,7 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from kenshi_agent.authored_starts import (
+from kenshi_agent.core.telemetry import (
+    CharacterState,
+    GameState,
+    TelemetrySnapshot,
+)
+from kenshi_agent.tooling.authored_starts import (
     AuthoredGameStart,
     AuthoredStartsBundle,
     AuthoredStartsError,
@@ -17,11 +22,6 @@ from kenshi_agent.authored_starts import (
     resolve_authored_game_start,
     verify_authored_game_start_snapshot,
     verify_installed_authored_starts,
-)
-from kenshi_agent.core.telemetry import (
-    CharacterState,
-    GameState,
-    TelemetrySnapshot,
 )
 
 

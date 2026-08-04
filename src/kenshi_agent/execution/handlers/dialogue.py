@@ -17,8 +17,6 @@ from ...core.operation import (
     ClickAction,
     CommandWorldTargetAction,
     MouseButton,
-    SkillAction,
-    SkillArgument,
 )
 from ...core.transport import (
     ActionReceipt,
@@ -213,21 +211,7 @@ class KenshiDialogueMechanics:
         actually necessary.
         """
 
-        skill_name = self._surface.controls_config.native_approach_skill
-        if skill_name is None or not self._surface.macros.has(skill_name):
-            raise RuntimeError(
-                "Semantic approach requires a configured native approach skill to "
-                "supply its bounded primitives."
-            )
-        primitive_skill = SkillAction(
-            name=skill_name,
-            args=[SkillArgument(name="target_id", value=action.target_id)],
-        )
-        pulse_seconds = self._surface.macros.resolve_movement_pulse_seconds(primitive_skill)
-        if pulse_seconds is None:
-            raise RuntimeError(
-                f"Configured native approach skill {skill_name!r} has no movement pulse."
-            )
+        pulse_seconds = self._surface.controls_config.native_movement_pulse_seconds
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
             contract_version=operations.APPROACH_DIALOGUE_TARGET_DEFINITION.version,
@@ -244,7 +228,6 @@ class KenshiDialogueMechanics:
             command,
             target_id=action.target_id,
             pulse_seconds=pulse_seconds,
-            primitive_skill=primitive_skill,
             require_vendor_role=False,
             semantic=semantic,
             continue_until_terminal=True,

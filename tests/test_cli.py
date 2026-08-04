@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from kenshi_agent import cli
+from kenshi_agent import application as cli
 from kenshi_agent.config import load_config
 from kenshi_agent.core.operation import (
     ControlMode,
@@ -21,6 +21,7 @@ from kenshi_agent.final_safe_state import (
     FinalSafeStateStatus,
 )
 from kenshi_agent.telemetry import write_snapshot_atomic
+from kenshi_agent.tooling.scenario_fixtures import load_scenario_attestation
 
 
 def test_project_env_loads_openai_key_from_current_repo_root(
@@ -268,6 +269,7 @@ def test_run_uses_fixture_attestation_as_scenario_source(
             planning_mode=None,
             scenario_attestation=str(attestation),
         ),
+        scenario_proof_loader=load_scenario_attestation,
     )
 
     assert overridden.runtime.scenario is not None

@@ -81,6 +81,7 @@ def new_command_id() -> str:
 class CommandDispatchContext(StrictModel):
     command_id: str = Field(pattern=r"^cmd-[0-9a-f]{32}$")
     based_on_revision: WorldStateRevision
+    primitive_action_bound: int = Field(default=0, ge=0, le=100)
 
 
 class NativeCommandRequest(StrictModel):

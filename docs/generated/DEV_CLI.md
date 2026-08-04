@@ -1,6 +1,6 @@
 # `./dev` command reference
 
-Generated from `kenshi_agent.dev_cli`; do not edit by hand.
+Generated from `kenshi_agent.tooling.dev_cli`; do not edit by hand.
 Regenerate with `python scripts/export_dev_cli.py`.
 
 ## `./dev`

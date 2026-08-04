@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from kenshi_agent.config import load_config
-from kenshi_agent.graphics_profile import (
+from kenshi_agent.tooling.graphics_profile import (
     GraphicsProfile,
     RendererProfile,
     apply_graphics_profile,
@@ -259,7 +259,7 @@ def test_bundle_apply_restores_first_file_when_second_replace_fails(
             raise OSError("simulated renderer replace failure")
         real_replace(source, destination)
 
-    monkeypatch.setattr("kenshi_agent.graphics_profile.os.replace", fail_renderer_replace)
+    monkeypatch.setattr("kenshi_agent.tooling.graphics_profile.os.replace", fail_renderer_replace)
 
     with pytest.raises(OSError, match="renderer replace failure"):
         apply_graphics_profile(settings, expected, renderer_path=renderer)

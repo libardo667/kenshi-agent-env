@@ -402,8 +402,6 @@ class WorldStateStore:
             "continuity_writes_degraded_reason",
             "continuity_reads_degraded_reason",
             "planner_feedback",
-            "available_skills",
-            "skill_specs",
             "memories",
             "memory_recall",
             "memory_search",
@@ -445,8 +443,6 @@ class WorldStateStore:
                         "planning_mode",
                         "objective",
                         "recent_action_outcomes",
-                        "available_skills",
-                        "skill_specs",
                         "memories",
                         "advisor",
                     )

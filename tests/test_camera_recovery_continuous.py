@@ -61,7 +61,6 @@ from kenshi_agent.planning import PlanningClock
 from kenshi_agent.reflexes import ReflexEngine
 from kenshi_agent.safety import OperationPolicy
 from kenshi_agent.session_log import SessionLogger
-from kenshi_agent.skills import MacroRegistry
 from kenshi_agent.world_state import WorldStateStore
 
 
@@ -558,7 +557,6 @@ def test_continuous_executor_uses_controller_verdict_without_postconditions(
                     allow_action_kinds=["recover_camera_view"],
                     max_actions_per_minute=100,
                 ),
-                MacroRegistry({}),
                 control_mode=ControlMode.INTERFACE_ONLY,
             ),
             reflexes=ReflexEngine(),

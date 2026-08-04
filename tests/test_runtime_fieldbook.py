@@ -35,7 +35,6 @@ from kenshi_agent.reflexes import ReflexEngine
 from kenshi_agent.runtime import AgentRuntime
 from kenshi_agent.safety import OperationPolicy
 from kenshi_agent.session_log import SessionLogger
-from kenshi_agent.skills import MacroRegistry
 
 
 def runtime_for(
@@ -63,7 +62,6 @@ def runtime_for(
                 ],
                 max_actions_per_minute=500,
             ),
-            MacroRegistry({}),
         ),
         reflexes=ReflexEngine(),
         logger=logger,

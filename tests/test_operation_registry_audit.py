@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from kenshi_agent.affordances import AFFORDANCE_ADAPTERS
 from kenshi_agent.operation_definitions import OPERATION_DEFINITIONS
-from kenshi_agent.operation_registry_audit import (
+from kenshi_agent.tooling.operation_registry_audit import (
     audit_operation_registry,
     render_operation_registry_report,
 )

@@ -61,7 +61,6 @@ from kenshi_agent.planning import PlanningClock
 from kenshi_agent.reflexes import ReflexEngine
 from kenshi_agent.safety import OperationPolicy
 from kenshi_agent.session_log import SessionLogger
-from kenshi_agent.skills import MacroRegistry
 from kenshi_agent.telemetry import TelemetryRead
 from kenshi_agent.world_state import WorldStateStore
 
@@ -325,7 +324,6 @@ def purchase_environment(
         run_dir=tmp_path,
         telemetry=telemetry,  # type: ignore[arg-type]
         controller=controller,
-        macros=MacroRegistry({}),
         runtime_config=RuntimeConfig(settle_seconds=0.0, objective="Buy supplies."),
         controls_config=ControlsConfig(
             post_input_delay_seconds=0.0,
@@ -640,7 +638,6 @@ def test_continuous_executor_completes_only_the_full_purchase_terminal(
                     allow_action_kinds=["purchase_item"],
                     max_actions_per_minute=100,
                 ),
-                MacroRegistry({}),
                 control_mode=ControlMode.NATIVE_ASSISTED,
             ),
             reflexes=ReflexEngine(),
@@ -759,7 +756,6 @@ def test_operation_binding_rechecks_no_op_barrier_between_plan_steps(
                     allow_action_kinds=["purchase_item"],
                     max_actions_per_minute=100,
                 ),
-                MacroRegistry({}),
                 control_mode=ControlMode.NATIVE_ASSISTED,
             ),
             reflexes=ReflexEngine(),

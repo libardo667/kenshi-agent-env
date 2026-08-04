@@ -63,7 +63,6 @@ from kenshi_agent.planning import PlanningClock
 from kenshi_agent.reflexes import ReflexEngine
 from kenshi_agent.safety import OperationPolicy
 from kenshi_agent.session_log import SessionLogger
-from kenshi_agent.skills import MacroRegistry
 from kenshi_agent.world_state import WorldStateStore
 
 RUN_ID = "resource-harvest-option"
@@ -511,7 +510,6 @@ def test_harvest_is_one_planner_action_with_controller_owned_transfer(
                     max_actions_per_minute=100,
                     max_controller_verified_primitive_actions_per_step=45,
                 ),
-                MacroRegistry({}),
                 control_mode=ControlMode.NATIVE_ASSISTED,
             ),
             reflexes=ReflexEngine(),
