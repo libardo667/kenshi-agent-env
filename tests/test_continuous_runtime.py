@@ -81,6 +81,9 @@ from kenshi_agent.operation_definitions import (
     ACTIVATE_VISIBLE_CONTROL_DEFINITION,
     NATIVE_WALK_DESTINATION_REACHED_RESULT,
 )
+from kenshi_agent.planner_service import (
+    PLANNER_ERROR_LOG_MAX_CHARS,
+)
 from kenshi_agent.planners.base import (
     HostedPlannerCallDiagnostics,
     HostedPlannerResponseError,
@@ -1591,7 +1594,7 @@ def test_long_planner_validation_error_stops_without_masking_original_failure(
         assert payload["error_type"] == "ValueError"
         assert payload["message_characters"] > 20_000
         assert payload["message_truncated"] is True
-        assert len(payload["message"]) == AgentRuntime._PLANNER_ERROR_LOG_MAX_CHARS
+        assert len(payload["message"]) == PLANNER_ERROR_LOG_MAX_CHARS
         planner_call = next(
             event for event in events if event["event_type"] == "strategic_planner_call"
         )

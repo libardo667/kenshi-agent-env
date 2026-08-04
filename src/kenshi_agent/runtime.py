@@ -47,7 +47,6 @@ from .models import (
     AffordanceExecution,
     AffordanceLifecycleStatus,
     AuthoredPlannerContext,
-    AuthoredPlannerOutput,
     CameraRecoveryStatus,
     CharacterState,
     CommandDispatchContext,
@@ -86,9 +85,13 @@ from .non_progress import retry_state_fingerprint
 from .nutrition import nutrition_reserve_change
 from .operation_authority import AuthorizationDecision, OperationAuthority
 from .operation_definitions import definition_for
+from .planner_service import (
+    PLANNER_ERROR_RATIONALE_MAX_CHARS,
+    PlannerService,
+    bounded_text,
+)
 from .planners import Planner
 from .planners.base import (
-    HostedPlannerCallDiagnostics,
     HostedPlannerResponseError,
 )
 from .planning import PlanningClock, PlanValidationError, SystemPlanningClock, validate_plan
@@ -96,7 +99,6 @@ from .reflexes import ReflexEngine
 from .reporting import ConsoleDecisionReporter
 from .runtime_continuity import (
     recall_for_observation,
-    record_planner_delivery,
 )
 from .safety import ActionGuard, SafetyViolation
 from .safety_supervisor import SafetyCause, SafetyPreemption, SafetySupervisor
@@ -172,8 +174,6 @@ class _RunSession:
 
 class AgentRuntime:
     _MATERIAL_VISUAL_CHANGE_FRACTION = 0.01
-    _PLANNER_ERROR_LOG_MAX_CHARS = 8_000
-    _PLANNER_ERROR_RATIONALE_MAX_CHARS = 1_500
     _IDENTICAL_REPLAN_FAILURE_LIMIT = 3
 
     def __init__(
@@ -247,7 +247,6 @@ class AgentRuntime:
         self._advisor_brief_ids: set[str] = set()
         self._advisor_task: asyncio.Task[None] | None = None
         self._advisor_result_ready = False
-        self._planner_contexts_issued = 0
         self.continuity = ContinuityService(
             run_id=run_id,
             store=memory,
@@ -255,6 +254,12 @@ class AgentRuntime:
             logger=logger,
             control_mode=control_mode,
             advisor_brief_ids=lambda: self._advisor_brief_ids,
+        )
+        self.planner_service = PlannerService(
+            planner=planner,
+            logger=logger,
+            continuity=self.continuity,
+            control_mode_value=control_mode.value,
         )
         self.reporter = reporter
         self.planning_config = planning_config or PlanningConfig()
@@ -281,69 +286,6 @@ class AgentRuntime:
             "observation",
             step_index=observation.step_index,
             payload=payload,
-        )
-
-    @staticmethod
-    def _bounded_text(value: str, max_chars: int) -> str:
-        suffix = " ... [truncated]"
-        if len(value) <= max_chars:
-            return value
-        return value[: max_chars - len(suffix)] + suffix
-
-    @staticmethod
-    def _planner_failure_signature(exc: Exception) -> str:
-        if isinstance(exc, HostedPlannerResponseError):
-            return exc.failure_signature
-        return str(exc)
-
-    def _planner_retry_feedback(self, exc: Exception) -> str:
-        if isinstance(exc, HostedPlannerResponseError):
-            return self._bounded_text(exc.retry_feedback, 1_200)
-        return (
-            "Your previous response could not be used. Fix exactly this and "
-            "return the schema again: " + self._bounded_text(str(exc), 900)
-        )
-
-    def _planner_failure_decision(
-        self,
-        exc: Exception,
-        *,
-        step_index: int,
-    ) -> PlannerDecision:
-        message = f"Planner raised {type(exc).__name__}: {exc}"
-        payload: dict[str, Any] = {
-            "control_mode": self.control_mode.value,
-            "error_type": type(exc).__name__,
-            "message": self._bounded_text(
-                message,
-                self._PLANNER_ERROR_LOG_MAX_CHARS,
-            ),
-            "message_characters": len(message),
-            "message_truncated": len(message) > self._PLANNER_ERROR_LOG_MAX_CHARS,
-        }
-        if isinstance(exc, HostedPlannerResponseError):
-            payload.update(
-                {
-                    "failure_category": exc.category,
-                    "failure_detail": exc.detail,
-                    "response_excerpt": exc.response_excerpt,
-                    "failure_signature": exc.failure_signature,
-                    "finish_reason": exc.diagnostics.finish_reason,
-                }
-            )
-        self.logger.write(
-            "planner_error",
-            step_index=step_index,
-            payload=payload,
-        )
-        return PlannerDecision(
-            intent="Stop after planner failure.",
-            rationale=self._bounded_text(
-                message,
-                self._PLANNER_ERROR_RATIONALE_MAX_CHARS,
-            ),
-            action=StopAction(reason="Planner failure."),
-            confidence=1.0,
         )
 
     def _action_authority(
@@ -378,7 +320,6 @@ class AgentRuntime:
 
         self._ledger.reset()
         self._advisor_brief_ids.clear()
-        self._planner_contexts_issued = 0
         self.continuity.reset()
         observation = self._with_memories(await self.environment.reset(seed=seed))
         self.logger.write(
@@ -477,7 +418,7 @@ class AgentRuntime:
 
         def identical_failure_limit_reached(reason: str) -> bool:
             nonlocal last_replan_failure, identical_replan_failures
-            signature = self._bounded_text(reason, 1_500)
+            signature = bounded_text(reason, 1_500)
             if signature == last_replan_failure:
                 identical_replan_failures += 1
             else:
@@ -572,7 +513,7 @@ class AgentRuntime:
                 planner_source = "planner"
                 try:
                     authored_output, preemption = await self._race_with_safety_supervisor(
-                        self._decide(planner_observation),
+                        self.planner_service.decide(planner_observation),
                         safety_supervisor,
                     )
                     if preemption is not None:
@@ -634,9 +575,9 @@ class AgentRuntime:
                     # Tell the next attempt what was wrong with this one. Without
                     # it a deterministic mistake is remade every retry until the
                     # replan limit ends the run.
-                    planner_feedback = self._planner_retry_feedback(exc)
-                    failure_signature = self._planner_failure_signature(exc)
-                    self._planner_failure_decision(
+                    planner_feedback = self.planner_service.retry_feedback(exc)
+                    failure_signature = self.planner_service.failure_signature(exc)
+                    self.planner_service.failure_decision(
                         exc,
                         step_index=observation.step_index,
                     )
@@ -664,14 +605,14 @@ class AgentRuntime:
                             "Stopped: the planner returned "
                             f"{identical_replan_failures} unusable responses in a "
                             "row because the same failure repeated: "
-                            + self._bounded_text(str(exc), self._PLANNER_ERROR_RATIONALE_MAX_CHARS)
+                            + bounded_text(str(exc), PLANNER_ERROR_RATIONALE_MAX_CHARS)
                         )
                         terminated = True
                     elif consecutive_replans > self.planning_config.max_consecutive_replans:
                         stop_reason = (
                             f"Stopped: the planner returned {consecutive_replans} "
                             "unusable responses in a row. The last was: "
-                            + self._bounded_text(str(exc), self._PLANNER_ERROR_RATIONALE_MAX_CHARS)
+                            + bounded_text(str(exc), PLANNER_ERROR_RATIONALE_MAX_CHARS)
                         )
                         terminated = True
                     continue
@@ -845,7 +786,7 @@ class AgentRuntime:
                             "Your previous plan was rejected because its references "
                             "no longer matched the world by the time it arrived. "
                             "Re-read the observation and bind to what is there now: "
-                            + self._bounded_text("; ".join(rebase_errors), 900)
+                            + bounded_text("; ".join(rebase_errors), 900)
                         )
                         self._plan_event(
                             "plan_rejected",
@@ -923,7 +864,7 @@ class AgentRuntime:
                     stop_reason = f"Plan rejected before execution: {exc}"
                     planner_feedback = (
                         "Your previous plan was rejected. Fix exactly this and "
-                        "return the schema again: " + self._bounded_text(str(exc), 900)
+                        "return the schema again: " + bounded_text(str(exc), 900)
                     )
                     self._plan_event(
                         "plan_rejected",
@@ -990,7 +931,7 @@ class AgentRuntime:
                     state_store=state_store,
                     observe_transition=self._observe_plan_transition,
                     planning_config=self.planning_config,
-                    concurrent_planner=self._decide,
+                    concurrent_planner=self.planner_service.decide,
                     consult_advisor=self._execute_advisor_action,
                     apply_patch_continuity=self.continuity.apply_patch,
                     read_memory=self.continuity.read_memory,
@@ -1093,7 +1034,7 @@ class AgentRuntime:
                 planner_feedback = (
                     "Your previous accepted plan could not make progress. Do not "
                     "repeat the same action shape; fix exactly this: "
-                    + self._bounded_text(result.reason, 900)
+                    + bounded_text(result.reason, 900)
                 )
                 if result.reflex_decision is not None:
                     # The next scheduler pass executes the deterministic reflex
@@ -1367,7 +1308,7 @@ class AgentRuntime:
         planner_feedback = (
             "An automated safety intervention cancelled the previous work and "
             f"paused Kenshi ({preemption.cause.value}): "
-            f"{self._bounded_text(preemption.reason, 700)}. The paused state is "
+            f"{bounded_text(preemption.reason, 700)}. The paused state is "
             "fresh and confirmed. Reassess the current observation and author a "
             "new plan; do not resume the cancelled plan."
         )
@@ -2707,7 +2648,7 @@ class AgentRuntime:
                 payload={
                     "task": task.get_name(),
                     "error_type": type(exc).__name__,
-                    "reason": self._bounded_text(str(exc), 1_000),
+                    "reason": bounded_text(str(exc), 1_000),
                 },
             )
         finally:
@@ -2729,7 +2670,7 @@ class AgentRuntime:
                 payload={
                     "task": task.get_name(),
                     "error_type": type(exc).__name__,
-                    "reason": self._bounded_text(str(exc), 1_000),
+                    "reason": bounded_text(str(exc), 1_000),
                 },
             )
         finally:
@@ -2781,7 +2722,7 @@ class AgentRuntime:
             plan_version=plan.plan_version,
             objective=plan.objective,
             disposition=disposition,
-            reason=self._bounded_text(reason, 1000),
+            reason=bounded_text(reason, 1000),
             completed_step_ids=completed_step_ids,
             actions_completed=actions_completed,
             terminal_revision=observation.world_revision,
@@ -2793,84 +2734,6 @@ class AgentRuntime:
             step_index=observation.step_index,
             payload=outcome,
         )
-
-    def _record_planner_transport(
-        self,
-        diagnostics: HostedPlannerCallDiagnostics,
-        observation: Observation,
-        *,
-        structured_output_accepted: bool,
-    ) -> None:
-        self.logger.write(
-            "planner_transport",
-            step_index=observation.step_index,
-            payload={
-                **diagnostics.event_payload(),
-                "structured_output_accepted": structured_output_accepted,
-                "world_revision": observation.world_revision.model_dump(mode="json"),
-                "control_mode": observation.control_mode.value,
-            },
-        )
-
-    async def _decide(self, observation: Observation) -> AuthoredPlannerOutput:
-        """Assemble a planner payload, marking exactly what it carried.
-
-        Delivery is recorded here and only here: this is the one place a
-        memory actually reaches a planner. It is a diagnostic - no ordering
-        reads it - so a memory cannot become important by being read.
-
-        A requested read is consumed here too. It answers exactly the planner
-        call that asked for it, and is not left lying around to be re-read as
-        if it were fresh.
-        """
-
-        self._planner_contexts_issued += 1
-        prepared = self.planner.prepare_input(
-            observation,
-            context_id=f"pc-{self._planner_contexts_issued}",
-        )
-        manifest = prepared.context.manifest
-        self.logger.write(
-            "planner_context_prepared",
-            step_index=observation.step_index,
-            payload=manifest.model_dump(mode="json"),
-        )
-        if self.memory is not None:
-            failure = record_planner_delivery(
-                self.memory,
-                self.continuity.authority,
-                run_id=self.run_id,
-                memory_ids=manifest.memory_ids,
-            )
-            if failure is not None:
-                self.logger.write(
-                    "continuity_store_failed",
-                    step_index=observation.step_index,
-                    payload={
-                        "boundary": failure.boundary,
-                        "reason": failure.reason,
-                    },
-                )
-        self.continuity.clear_pending_reads()
-        try:
-            output = await self.planner.decide_prepared(prepared)
-        except Exception:
-            diagnostics = self.planner.take_call_diagnostics()
-            if diagnostics is not None:
-                self._record_planner_transport(
-                    diagnostics,
-                    observation,
-                    structured_output_accepted=False,
-                )
-            raise
-        diagnostics = self.planner.take_call_diagnostics()
-        if diagnostics is not None:
-            self._record_planner_transport(
-                diagnostics,
-                observation,
-                structured_output_accepted=True,
-            )
-        return AuthoredPlannerOutput(output=output, context=prepared.context)
 
     def _record_action_outcome(
         self,

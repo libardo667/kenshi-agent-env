@@ -46,6 +46,7 @@ from .runtime_continuity import (
     build_fieldbook_read_receipt,
     build_memory_read_receipt,
     continuity_receipt_digests,
+    record_planner_delivery,
     search_durable_memory,
 )
 from .session_log import SessionLogger
@@ -70,6 +71,7 @@ class ContinuityService:
         advisor_brief_ids: Callable[[], set[str]],
         authority: ContinuityAuthority | None = None,
     ) -> None:
+        self._run_id = run_id
         self._store = store
         self._ledger = ledger
         self._logger = logger
@@ -138,6 +140,33 @@ class ContinuityService:
         self._fieldbook_receipts.extend(
             receipt.digest() for receipt in receipts  # type: ignore[attr-defined]
         )
+
+    def record_delivery(
+        self,
+        *,
+        memory_ids: Sequence[str],
+        observation: Observation,
+    ) -> None:
+        """Note that these memories actually reached a planner.
+
+        Purely diagnostic: nothing orders or ranks on it, so a memory cannot
+        become important merely by having been read.
+        """
+
+        if self._store is None:
+            return
+        failure = record_planner_delivery(
+            self._store,
+            self._authority,
+            run_id=self._run_id,
+            memory_ids=list(memory_ids),
+        )
+        if failure is not None:
+            self._logger.write(
+                "continuity_store_failed",
+                step_index=observation.step_index,
+                payload={"boundary": failure.boundary, "reason": failure.reason},
+            )
 
     # --- commits -----------------------------------------------------------
 
