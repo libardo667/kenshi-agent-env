@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -7,6 +8,8 @@ from typing import Literal
 import pytest
 from operation_test_support import execute_operation
 
+from kenshi_agent.affordances import OperationBindingError
+from kenshi_agent.authorization import AuthorizationCode
 from kenshi_agent.config import CaptureConfig, ControlsConfig, MacroConfig, RuntimeConfig
 from kenshi_agent.control.base import InputController, PrimitiveInputAction, WindowRect
 from kenshi_agent.env.live import LiveEnvironment
@@ -340,10 +343,9 @@ def test_semantic_hotkey_binding_dispatches_one_hotkey(tmp_path: Path) -> None:
             expected_effect="toggle the in-game editor",
         )
 
-        receipt = await environment.operation_mechanics._execute_game_binding(  # noqa: SLF001
-            action,
-            datetime.now(UTC),
-        )
+        await environment.reset()
+        transition = await execute_operation(environment, action)
+        receipt = transition.receipt
 
         assert controller.actions == [HotkeyAction(keys=["shift", "f12"])]
         assert receipt.action == action
@@ -369,10 +371,9 @@ def test_semantic_mouse_binding_dispatches_one_held_button(tmp_path: Path) -> No
             expected_effect="highlight world items while the binding is held",
         )
 
-        receipt = await environment.operation_mechanics._execute_game_binding(  # noqa: SLF001
-            action,
-            datetime.now(UTC),
-        )
+        await environment.reset()
+        transition = await execute_operation(environment, action)
+        receipt = transition.receipt
 
         assert controller.actions == [MouseButtonAction(button=MouseButton.X2, hold_seconds=0.25)]
         assert receipt.action == action
@@ -628,6 +629,39 @@ def test_live_close_reports_unverified_when_pause_has_no_causal_effect(
     asyncio.run(scenario())
 
 
+def test_control_pause_remains_available_after_human_input_without_a_plan_token(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        telemetry = PulseTelemetry()
+        telemetry.paused = False
+        telemetry.capabilities = ["game.pause"]
+        controller = PulseController(telemetry, continuous_user_input=True)
+        environment = live_environment(
+            tmp_path,
+            telemetry,
+            controller,
+            movement_registry(),
+        )
+        observation = await environment.reset()
+
+        transition = await environment.operation_mechanics.control_pause(
+            PauseAction(paused=True),
+            command=CommandDispatchContext(
+                command_id="cmd-" + "0" * 32,
+                based_on_revision=observation.world_revision,
+            ),
+        )
+
+        assert telemetry.paused is True
+        assert controller.actions == [KeyAction(key="space")]
+        assert transition.receipt.executed
+        assert transition.receipt.causal_revision_advanced is True
+        assert "human_input_detected" in transition.observation.events
+
+    asyncio.run(scenario())
+
+
 def test_movement_pulse_unpauses_and_guarantees_repause(tmp_path: Path) -> None:
     async def scenario() -> None:
         telemetry = PulseTelemetry()
@@ -672,11 +706,14 @@ def test_pointer_skill_rejects_mismatched_calibrated_client_before_input(
         )
 
         await environment.reset()
-        with pytest.raises(RuntimeError, match=r"1280x720.*1920x1080"):
-            await execute_operation(environment, movement_action())
+        transition = await execute_operation(environment, movement_action())
 
         assert controller.actions == []
         assert telemetry.paused is True
+        assert transition.receipt.accepted is False
+        assert transition.receipt.calibration is not None
+        assert transition.receipt.calibration.status is CalibrationStatus.MISMATCHED
+        assert transition.receipt.input_boundary is not None
 
     asyncio.run(scenario())
 
@@ -700,11 +737,16 @@ def test_pointer_skill_rechecks_calibrated_client_inside_input_lease(
         )
 
         await environment.reset()
-        with pytest.raises(RuntimeError, match=r"1280x720.*1920x1080"):
-            await execute_operation(environment, movement_action())
+        transition = await execute_operation(environment, movement_action())
 
         assert controller.actions == []
         assert telemetry.paused is True
+        assert transition.receipt.accepted is False
+        assert transition.receipt.input_boundary is not None
+        assert (
+            transition.receipt.input_boundary.code
+            is AuthorizationCode.CALIBRATION_DRIFTED
+        )
 
     asyncio.run(scenario())
 
@@ -852,8 +894,53 @@ def test_set_speed_reissues_an_idempotent_gear_after_a_dropped_key(
 
 def test_engage_threat_intent_owns_normal_speed_playback(tmp_path: Path) -> None:
     async def scenario() -> None:
-        telemetry = PulseTelemetry()
-        telemetry.capabilities = ["game.pause", "game.speed"]
+        class ThreatTelemetry(PulseTelemetry):
+            def read(self) -> TelemetryRead:
+                result = super().read()
+                return replace(
+                    result,
+                    snapshot=result.snapshot.model_copy(
+                        update={
+                            "capabilities": [
+                                "game.pause",
+                                "game.speed",
+                                "nearby.visible_entities",
+                                "squad.health",
+                                "control.move_in_direction",
+                            ],
+                            "ui": UIState(
+                                selected_character_id="entity-bark",
+                                selected_character_ids=["entity-bark"],
+                            ),
+                            "squad": [
+                                CharacterState(
+                                    id="entity-bark",
+                                    name="Bark",
+                                    selected=True,
+                                    alive=True,
+                                    conscious=True,
+                                    down=False,
+                                    getting_eaten=False,
+                                    blood=100.0,
+                                    position=Vec3(x=0.0, y=0.0, z=0.0),
+                                )
+                            ],
+                            "nearby_entities": [
+                                NearbyEntity(
+                                    id="hostile-1",
+                                    name="Bandit",
+                                    disposition=Disposition.HOSTILE,
+                                    visible=True,
+                                    conscious=True,
+                                    distance=10.0,
+                                    position=Vec3(x=10.0, y=0.0, z=0.0),
+                                )
+                            ],
+                        }
+                    ),
+                )
+
+        telemetry = ThreatTelemetry()
         controller = PulseController(telemetry)
         environment = live_environment(
             tmp_path,
@@ -904,7 +991,9 @@ def test_model_can_choose_bounded_movement_duration(tmp_path: Path) -> None:
 
 def test_movement_pulse_preserves_unexpected_game_auto_pause(tmp_path: Path) -> None:
     async def scenario() -> None:
-        telemetry = PulseTelemetry(auto_pause_after_reads=3)
+        # Reset plus the mandatory input-boundary authority read precede the
+        # movement controller's own playback confirmation reads.
+        telemetry = PulseTelemetry(auto_pause_after_reads=4)
         controller = PulseController(telemetry)
         environment = live_environment(
             tmp_path,
@@ -926,7 +1015,7 @@ def test_movement_pulse_preserves_unexpected_game_auto_pause(tmp_path: Path) -> 
 def test_emergency_stop_ends_pulse_after_repausing(tmp_path: Path) -> None:
     async def scenario() -> None:
         telemetry = PulseTelemetry()
-        controller = PulseController(telemetry, emergency_after=4)
+        controller = PulseController(telemetry, emergency_after=6)
         environment = live_environment(
             tmp_path,
             telemetry,
@@ -1707,19 +1796,21 @@ def test_world_target_command_emits_nothing_when_geometry_disappears(
         initial = await environment.reset()
         telemetry.world_target_screen_position = None
 
-        with pytest.raises(RuntimeError, match="no current on-screen command geometry"):
-            await execute_operation(
-                environment,
-                CommandWorldTargetAction(
-                    target_id="entity-copper",
-                    context_action=ContextActionKind.OPERATE,
-                ),
-                command=CommandDispatchContext(
-                    command_id="cmd-" + "f" * 32,
-                    based_on_revision=initial.world_revision,
-                ),
-            )
+        transition = await execute_operation(
+            environment,
+            CommandWorldTargetAction(
+                target_id="entity-copper",
+                context_action=ContextActionKind.OPERATE,
+            ),
+            command=CommandDispatchContext(
+                command_id="cmd-" + "f" * 32,
+                based_on_revision=initial.world_revision,
+            ),
+        )
 
+        assert not transition.receipt.executed
+        assert transition.receipt.input_boundary is not None
+        assert transition.receipt.input_boundary.code.value == "binding_absent"
         assert controller.actions == []
 
     asyncio.run(scenario())
@@ -1872,9 +1963,7 @@ def test_old_native_ack_cannot_satisfy_new_command(
             tmp_path,
             acknowledgement_command_id=("cmd-ffffffffffffffffffffffffffffffff"),
         )
-        monkeypatch.setattr(
-            kenshi_surface, "NATIVE_COMMAND_ACK_TIMEOUT_SECONDS", 0.03
-        )
+        monkeypatch.setattr(kenshi_surface, "NATIVE_COMMAND_ACK_TIMEOUT_SECONDS", 0.03)
         monkeypatch.setattr(kenshi_surface, "NATIVE_COMMAND_POLL_SECONDS", 0.005)
         initial = await environment.reset()
 
@@ -2071,12 +2160,14 @@ def test_control_that_disappears_inside_the_lease_emits_zero_input(
         environment, controller = control_environment(tmp_path, telemetry)
         await environment.observe()
 
-        with pytest.raises(RuntimeError, match="No input was sent"):
-            await execute_operation(
-                environment,
-                ActivateVisibleControlAction(exact_label="Show me your goods.", role="button"),
-            )
+        transition = await execute_operation(
+            environment,
+            ActivateVisibleControlAction(exact_label="Show me your goods.", role="button"),
+        )
 
+        assert not transition.receipt.executed
+        assert transition.receipt.input_boundary is not None
+        assert transition.receipt.input_boundary.code.value == "binding_absent"
         assert not [a for a in controller.actions if isinstance(a, ClickAction)]
 
     asyncio.run(scenario())
@@ -2091,11 +2182,13 @@ def test_control_that_becomes_ambiguous_inside_the_lease_emits_zero_input(
         environment, controller = control_environment(tmp_path, telemetry)
         await environment.observe()
 
-        with pytest.raises(RuntimeError, match="ambiguous"):
-            await execute_operation(
-                environment, ActivateVisibleControlAction(exact_label="Trade", role="button")
-            )
+        transition = await execute_operation(
+            environment, ActivateVisibleControlAction(exact_label="Trade", role="button")
+        )
 
+        assert not transition.receipt.executed
+        assert transition.receipt.input_boundary is not None
+        assert transition.receipt.input_boundary.code.value == "binding_ambiguous"
         assert not [a for a in controller.actions if isinstance(a, ClickAction)]
 
     asyncio.run(scenario())
@@ -2118,14 +2211,10 @@ def test_visible_control_is_semantic_current_not_profile_calibrated(
         await environment.observe()
 
         action = ActivateVisibleControlAction(exact_label="Show me your goods.", role="button")
-        assert (
-            environment.control_surface.classify_pointer_action(action)
-            is PointerActionClass.SEMANTIC_CURRENT
-        )
-
         transition = await execute_operation(environment, action)
         assert transition.receipt.executed
         assert transition.receipt.calibration is not None
+        assert transition.receipt.calibration.action_class is PointerActionClass.SEMANTIC_CURRENT
         assert transition.receipt.calibration.status is CalibrationStatus.NOT_REQUIRED
 
     asyncio.run(scenario())
@@ -2527,7 +2616,10 @@ def test_collect_resource_output_emits_zero_input_without_destination_window(
         )
         initial = await environment.reset()
 
-        with pytest.raises(RuntimeError, match="selected character.*inventory"):
+        with pytest.raises(
+            OperationBindingError,
+            match="selected character.*inventory",
+        ) as rejected:
             await execute_operation(
                 environment,
                 CollectResourceOutputAction(
@@ -2543,6 +2635,7 @@ def test_collect_resource_output_emits_zero_input_without_destination_window(
                 ),
             )
 
+        assert rejected.value.code is AuthorizationCode.BINDING_ABSENT
         assert controller.actions == []
 
     asyncio.run(scenario())
@@ -2576,7 +2669,10 @@ def test_collect_resource_output_emits_zero_input_when_destination_rejects_item(
         )
         initial = await environment.reset()
 
-        with pytest.raises(RuntimeError, match="does not explicitly accept"):
+        with pytest.raises(
+            OperationBindingError,
+            match="does not explicitly accept",
+        ) as rejected:
             await execute_operation(
                 environment,
                 CollectResourceOutputAction(
@@ -2592,6 +2688,7 @@ def test_collect_resource_output_emits_zero_input_when_destination_rejects_item(
                 ),
             )
 
+        assert rejected.value.code is AuthorizationCode.BINDING_ABSENT
         assert controller.actions == []
 
     asyncio.run(scenario())
@@ -2885,11 +2982,11 @@ def test_map_arrival_terminal_wins_race_with_running_confirmation(
             "squad.health",
         ]
         telemetry.known_map_destinations = [
-            KnownMapDestination(
-                id="entity-known-town",
-                name="The Hub",
-                distance=5.0,
-            )
+                KnownMapDestination(
+                    id="entity-known-town",
+                    name="The Hub",
+                    distance=75.0,
+                )
         ]
         environment.controls_config = environment.controls_config.model_copy(
             update={
@@ -2972,7 +3069,7 @@ def test_building_exit_request_is_parameterless_and_requires_current_indoor_stat
 
         telemetry.indoors = False
         later = await environment.observe_without_capture()
-        with pytest.raises(RuntimeError, match="confirmed indoors"):
+        with pytest.raises(OperationBindingError, match="not confirmed inside") as rejected:
             await execute_operation(
                 environment,
                 ExitCurrentBuildingAction(),
@@ -2981,6 +3078,7 @@ def test_building_exit_request_is_parameterless_and_requires_current_indoor_stat
                     based_on_revision=later.world_revision,
                 ),
             )
+        assert rejected.value.code is AuthorizationCode.BINDING_ABSENT
 
     asyncio.run(scenario())
 

@@ -17,7 +17,6 @@ from .models import (
     PlanStep,
     StopAction,
 )
-from .non_progress import unchanged_definitive_no_op_reason
 from .operation_execution import OperationExecutionService
 from .plan_events import PlanEventReporter
 from .planning import (
@@ -275,22 +274,6 @@ class ContinuousPlanExecutor:
                     evidence={"failure_conditions": self._evaluations_json(failure_conditions)},
                 )
 
-            unchanged_retry = unchanged_definitive_no_op_reason(
-                step.action,
-                observation,
-            )
-            if unchanged_retry is not None:
-                return self._abort(
-                    plan,
-                    step,
-                    observation,
-                    actions_completed,
-                    (f"Step rejected before dispatch because its action {unchanged_retry}."),
-                    evidence={
-                        "non_progress_barrier": unchanged_retry,
-                    },
-                )
-
             self._event(
                 "plan_step_ready",
                 plan,
@@ -480,7 +463,11 @@ class ContinuousPlanExecutor:
                         step_result.reason,
                     )
 
-                if retries_remaining > 0 and not step_result.terminated:
+                if (
+                    retries_remaining > 0
+                    and step_result.retry_authorized
+                    and not step_result.terminated
+                ):
                     retries_remaining -= 1
                     self._event(
                         "plan_step_progress",

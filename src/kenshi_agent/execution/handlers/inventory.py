@@ -31,6 +31,7 @@ from ..types import (
     OperationResult,
     OperationStatus,
 )
+from .input_binding import authorized_input_binding
 from .kenshi_surface import KenshiControlSurface
 
 
@@ -174,19 +175,29 @@ class KenshiInventoryMechanics:
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
     ) -> Transition:
         return await self._surface.run_exact(
-            action, command=command, token=token, receipt=self._execute_equip_operation
+            action,
+            command=command,
+            token=token,
+            receipt=lambda current, started, dispatch: self._execute_equip_operation(
+                current, started, dispatch, token
+            ),
         )
 
     async def _execute_equip_operation(
-        self, action: Action, started: datetime, command: CommandDispatchContext | None
+        self,
+        action: Action,
+        started: datetime,
+        command: CommandDispatchContext | None,
+        token: ExecutionToken | None,
     ) -> ActionReceipt:
         del command
-        return await self._execute_equip_item(cast(EquipItemAction, action), started)
+        return await self._execute_equip_item(cast(EquipItemAction, action), started, token)
 
     async def _execute_equip_item(
         self,
         action: EquipItemAction,
         started: datetime,
+        token: ExecutionToken | None,
     ) -> ActionReceipt:
         """Right-click one of our own cells to equip it, with no trade open.
 
@@ -196,9 +207,9 @@ class KenshiInventoryMechanics:
         turn this equip into a sale.
         """
 
-        binding, observation = self._surface.rebind_in_lease(
-            operations.EQUIP_ITEM_DEFINITION,
+        binding, observation = authorized_input_binding(
             action,
+            token,
             operations.BoundEquipmentCell,
         )
         bounds = binding.resolved_bounds

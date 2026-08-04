@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from functools import partial
 from typing import Any, Protocol, cast
 
+from ... import native_commands
 from ... import operation_definitions as operations
 from ...config import PlanningConfig
 from ...input_boundary import ExecutionToken
@@ -58,6 +59,7 @@ from ..types import (
     OperationResult,
     OperationStatus,
 )
+from .input_binding import authorized_input_binding
 from .kenshi_surface import KenshiControlSurface
 
 MovementOperation = Callable[..., Coroutine[Any, Any, Transition]]
@@ -472,7 +474,12 @@ class KenshiMovementMechanics:
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
     ) -> Transition:
         return await self._surface.run_exact(
-            action, command=command, token=token, receipt=self._execute_select_operation
+            action,
+            command=command,
+            token=token,
+            receipt=lambda current, started, dispatch: self._execute_select_operation(
+                current, started, dispatch, token
+            ),
         )
 
     async def select_squad_member_exact(
@@ -575,11 +582,15 @@ class KenshiMovementMechanics:
         )
 
     async def _execute_select_operation(
-        self, action: Action, started: datetime, command: CommandDispatchContext | None
+        self,
+        action: Action,
+        started: datetime,
+        command: CommandDispatchContext | None,
+        token: ExecutionToken | None,
     ) -> ActionReceipt:
         del command
         return await self._execute_select_squad_member(
-            cast(SelectSquadMemberAction, action), started
+            cast(SelectSquadMemberAction, action), started, token
         )
 
     async def _execute_select_exact_operation(
@@ -653,15 +664,13 @@ class KenshiMovementMechanics:
         self,
         action: SelectSquadMemberAction,
         started: datetime,
+        token: ExecutionToken | None,
     ) -> ActionReceipt:
         """Left-click one exact squad portrait after in-lease revalidation."""
 
-        result = self._surface.telemetry_reader.read()
-        if result.stale:
-            raise RuntimeError("No input was sent: telemetry became stale inside the input lease.")
-        observation = self._surface.port._observation_from_snapshot(result.snapshot)
-        binding = operations.require_bound(
-            operations.SELECT_SQUAD_MEMBER_DEFINITION.bind(action, observation),
+        binding, observation = authorized_input_binding(
+            action,
+            token,
             operations.BoundVisibleTarget,
         )
         bounds = binding.resolved_bounds
@@ -739,7 +748,7 @@ class KenshiMovementMechanics:
             primitive_skill=primitive_skill,
             require_vendor_role=False,
             semantic=semantic,
-            wire_command=operations.NATIVE_SQUAD_SELECTION_WIRE_COMMAND,
+            wire_command=native_commands.NATIVE_SQUAD_SELECTION_WIRE_COMMAND,
             require_dialogue_target=False,
             accepted_is_terminal_error=True,
         )
@@ -792,7 +801,7 @@ class KenshiMovementMechanics:
             require_vendor_role=False,
             semantic=semantic,
             continue_until_terminal=True,
-            wire_command=operations.NATIVE_DIRECTION_WIRE_COMMAND,
+            wire_command=native_commands.NATIVE_DIRECTION_WIRE_COMMAND,
             require_dialogue_target=False,
             bearing_degrees=action.bearing_degrees,
             distance_units=action.distance_units,
@@ -846,7 +855,7 @@ class KenshiMovementMechanics:
             require_vendor_role=False,
             semantic=semantic,
             continue_until_terminal=True,
-            wire_command=operations.NATIVE_MAP_TRAVEL_WIRE_COMMAND,
+            wire_command=native_commands.NATIVE_MAP_TRAVEL_WIRE_COMMAND,
             require_dialogue_target=False,
             running_speed_gear=3,
         )
@@ -894,7 +903,7 @@ class KenshiMovementMechanics:
             require_vendor_role=False,
             semantic=semantic,
             continue_until_terminal=True,
-            wire_command=operations.NATIVE_SQUAD_REGROUP_WIRE_COMMAND,
+            wire_command=native_commands.NATIVE_SQUAD_REGROUP_WIRE_COMMAND,
             require_dialogue_target=False,
             running_speed_gear=3,
             expected_actor_id=action.actor_id,
@@ -942,7 +951,7 @@ class KenshiMovementMechanics:
             require_vendor_role=False,
             semantic=semantic,
             continue_until_terminal=True,
-            wire_command=operations.NATIVE_EXIT_BUILDING_WIRE_COMMAND,
+            wire_command=native_commands.NATIVE_EXIT_BUILDING_WIRE_COMMAND,
             require_dialogue_target=False,
         )
 
@@ -995,6 +1004,6 @@ class KenshiMovementMechanics:
             require_vendor_role=False,
             semantic=semantic,
             continue_until_terminal=True,
-            wire_command=operations.NATIVE_MOVE_WIRE_COMMAND,
+            wire_command=native_commands.NATIVE_MOVE_WIRE_COMMAND,
             require_dialogue_target=False,
         )

@@ -1,0 +1,117 @@
+"""Mutable run-level rate and transaction accounting, separate from policy."""
+
+from __future__ import annotations
+
+import time
+from collections import deque
+from dataclasses import dataclass
+
+from .authorization import AuthorizationCode
+from .config import SafetyConfig
+from .models import Observation, SkillAction
+from .operation_definitions import BoundOperation
+from .skills import MacroRegistry
+
+
+class ActionBudgetError(RuntimeError):
+    """A mutable run budget cannot reserve the requested transaction."""
+
+    code = AuthorizationCode.TRANSACTION_BUDGET_UNAVAILABLE
+
+
+@dataclass(frozen=True, slots=True)
+class ActionBudgetReservation:
+    """Exact pending run capacity for one already-authorized operation."""
+
+    bound: BoundOperation
+    primitive_actions: int
+    purchase_actions: int
+    token: int
+
+
+class ActionBudgetLedger:
+    """Reserve, commit, and release mutable run-level action capacity."""
+
+    def __init__(self, config: SafetyConfig, macros: MacroRegistry) -> None:
+        self.config = config
+        self.macros = macros
+        self._action_times: deque[float] = deque()
+        self._purchase_count = 0
+        self._pending_primitive_count = 0
+        self._pending_purchase_count = 0
+        self._next_reservation_token = 1
+        self._reservations: dict[int, ActionBudgetReservation] = {}
+
+    def reserve(
+        self,
+        bound: BoundOperation,
+        observation: Observation,
+    ) -> ActionBudgetReservation:
+        action = bound.operation
+        if isinstance(action, SkillAction):
+            primitive_actions = (
+                self.macros.primitive_count(action) if self.macros.has(action.name) else 1
+            )
+            purchase_actions = int(
+                action.name == "buy_inspected_shop_item" and observation.mode == "live"
+            )
+        else:
+            primitive_actions = bound.definition.primitive_action_bound_for(action)
+            risk = bound.definition.risk_for(action)
+            purchase_actions = risk.purchase_actions if observation.mode == "live" else 0
+
+        self._reserve_rate_budget(primitive_actions)
+        if (
+            self.config.max_purchases_per_run is not None
+            and self._purchase_count + self._pending_purchase_count + purchase_actions
+            > self.config.max_purchases_per_run
+        ):
+            self._pending_primitive_count -= primitive_actions
+            raise ActionBudgetError(
+                "Requested transaction exceeds the remaining per-run purchase limit."
+            )
+        self._pending_purchase_count += purchase_actions
+        token = self._next_reservation_token
+        self._next_reservation_token += 1
+        reservation = ActionBudgetReservation(
+            bound=bound,
+            primitive_actions=primitive_actions,
+            purchase_actions=purchase_actions,
+            token=token,
+        )
+        self._reservations[token] = reservation
+        return reservation
+
+    def commit(self, reservation: ActionBudgetReservation) -> None:
+        self._take_reservation(reservation)
+        self._pending_primitive_count -= reservation.primitive_actions
+        self._pending_purchase_count -= reservation.purchase_actions
+        self._purchase_count += reservation.purchase_actions
+        now = time.monotonic()
+        self._prune_rate_budget(now)
+        self._action_times.extend([now] * reservation.primitive_actions)
+
+    def release(self, reservation: ActionBudgetReservation) -> None:
+        self._take_reservation(reservation)
+        self._pending_primitive_count -= reservation.primitive_actions
+        self._pending_purchase_count -= reservation.purchase_actions
+
+    def _take_reservation(self, reservation: ActionBudgetReservation) -> None:
+        active = self._reservations.pop(reservation.token, None)
+        if active is not reservation:
+            raise RuntimeError("Action budget reservation is foreign or already finalized.")
+
+    def _prune_rate_budget(self, now: float) -> None:
+        cutoff = now - 60.0
+        while self._action_times and self._action_times[0] < cutoff:
+            self._action_times.popleft()
+
+    def _reserve_rate_budget(self, count: int) -> None:
+        now = time.monotonic()
+        self._prune_rate_budget(now)
+        if (
+            len(self._action_times) + self._pending_primitive_count + count
+            > self.config.max_actions_per_minute
+        ):
+            raise ActionBudgetError("Per-minute primitive action rate limit would be exceeded.")
+        self._pending_primitive_count += count

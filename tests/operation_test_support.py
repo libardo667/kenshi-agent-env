@@ -5,17 +5,32 @@ from __future__ import annotations
 from typing import Any
 from uuid import uuid4
 
+from kenshi_agent.action_budget import ActionBudgetLedger
+from kenshi_agent.affordances import OPERATION_BINDING_AUTHORITY, OperationBindingError
+from kenshi_agent.authorization import AuthorizationCode
 from kenshi_agent.config import PlanningConfig
 from kenshi_agent.continuous_executor import ContinuousPlanExecutor
 from kenshi_agent.input_boundary import ExecutionToken
-from kenshi_agent.models import Action, CommandDispatchContext, Transition
-from kenshi_agent.operation_authority import OperationAuthority
+from kenshi_agent.models import (
+    Action,
+    ClickAction,
+    CommandDispatchContext,
+    MoveCursorAction,
+    Observation,
+    PauseAction,
+    PointerActionClass,
+    ScrollAction,
+    SkillAction,
+    Transition,
+)
+from kenshi_agent.operation_authority import AuthorizationDecision, OperationAuthority
+from kenshi_agent.operation_definitions import BoundOperation
 from kenshi_agent.operation_execution import OperationExecutionFactory
 from kenshi_agent.options import TransitionOperation
 from kenshi_agent.plan_events import PlanEventRecorder
 from kenshi_agent.planning import PlanningClock
 from kenshi_agent.reflexes import ReflexEngine
-from kenshi_agent.safety import ActionGuard
+from kenshi_agent.safety import OperationPolicy
 from kenshi_agent.session_log import SessionLogger
 from kenshi_agent.world_state import WorldStateStore
 
@@ -66,7 +81,8 @@ def operation_for(
         operation = getattr(mechanics, action.kind, None)
         if operation is not None:
             authority = command or await _command_for(environment)
-            return await operation(action, command=authority, token=token)
+            execution_token = token or await _token_for(environment, action, authority)
+            return await operation(action, command=authority, token=execution_token)
         return await _scripted_transition(
             environment,
             action,
@@ -88,7 +104,8 @@ def operation_family(environment: Any) -> TransitionOperation:
         operation = getattr(mechanics, action.kind, None)
         if operation is not None:
             authority = command or await _command_for(environment)
-            return await operation(action, command=authority, token=token)
+            execution_token = token or await _token_for(environment, action, authority)
+            return await operation(action, command=authority, token=execution_token)
         return await _scripted_transition(
             environment,
             action,
@@ -120,6 +137,80 @@ async def _command_for(environment: Any) -> CommandDispatchContext:
     return CommandDispatchContext(
         command_id=f"cmd-{uuid4().hex}",
         based_on_revision=observation.world_revision,
+    )
+
+
+async def _current_observation(environment: Any) -> Observation:
+    observation = getattr(environment, "_last_observation", None)
+    if observation is None:
+        observation = environment.input_boundary_observation()
+    if observation is None:
+        observation = await environment.observe()
+    return observation
+
+
+async def _token_for(
+    environment: Any,
+    action: Action,
+    command: CommandDispatchContext,
+) -> ExecutionToken:
+    """Carry a real fresh binding through direct adapter characterization tests."""
+
+    observation = await _current_observation(environment)
+    scheduled = OPERATION_BINDING_AUTHORITY.bind(action, observation, affordance=None)
+    max_age_seconds = environment.input_boundary_max_telemetry_age_seconds()
+    pointer_class = scheduled.definition.pointer_class
+    controls = getattr(environment, "controls_config", None)
+    macros = getattr(environment, "macros", None)
+    if isinstance(action, SkillAction) and controls is not None and macros is not None:
+        if action.name in controls.semantic_pointer_skills:
+            pointer_class = PointerActionClass.SEMANTIC_CURRENT
+        elif not macros.has(action.name):
+            pointer_class = PointerActionClass.UNSUPPORTED
+        elif not any(
+            isinstance(primitive, (ClickAction, MoveCursorAction, ScrollAction))
+            for primitive in macros.expand(action)
+        ):
+            pointer_class = PointerActionClass.COORDINATE_INDEPENDENT
+
+    def authorize(current: Observation) -> AuthorizationDecision:
+        try:
+            rebound: BoundOperation | None = OPERATION_BINDING_AUTHORITY.rebind(scheduled, current)
+        except OperationBindingError as exc:
+            return AuthorizationDecision(
+                allowed=False,
+                code=exc.code,
+                based_on_revision=current.world_revision,
+                operation_fingerprint=scheduled.identity.fingerprint,
+                details={"violation": str(exc)},
+            )
+        if rebound.identity != scheduled.identity:
+            return AuthorizationDecision(
+                allowed=False,
+                code=AuthorizationCode.STALE_BOUND_IDENTITY,
+                based_on_revision=current.world_revision,
+                operation_fingerprint=rebound.identity.fingerprint,
+            )
+        return AuthorizationDecision(
+            allowed=True,
+            code=AuthorizationCode.ALLOWED,
+            based_on_revision=current.world_revision,
+            operation_fingerprint=scheduled.identity.fingerprint,
+            bound_operation=rebound,
+        )
+
+    return ExecutionToken(
+        plan_id="adapter-characterization",
+        plan_version=1,
+        step_id=action.kind,
+        command_id=command.command_id,
+        control_mode=observation.control_mode,
+        validated_revision=observation.world_revision,
+        latest_observation=environment.input_boundary_observation,
+        max_telemetry_age_seconds=max_age_seconds,
+        pointer_class=pointer_class,
+        authority_validator=authorize,
+        authorized_fingerprint=scheduled.identity.fingerprint,
     )
 
 
@@ -160,6 +251,14 @@ class ScriptedOperationPort:
             raise AttributeError(name)
         return self._operation
 
+    async def control_pause(
+        self,
+        action: PauseAction,
+        *,
+        command: CommandDispatchContext,
+    ) -> Transition:
+        return await self._operation(action, command=command, token=None)
+
 
 def operation_port(environment: Any) -> ScriptedOperationPort:
     return ScriptedOperationPort(environment)
@@ -169,7 +268,7 @@ def plan_executor(
     *,
     environment: Any,
     operation_port: Any,
-    guard: ActionGuard,
+    policy: OperationPolicy,
     reflexes: ReflexEngine,
     logger: SessionLogger,
     clock: PlanningClock,
@@ -183,8 +282,9 @@ def plan_executor(
     factory = OperationExecutionFactory(
         environment=environment,
         operation_port=operation_port,
-        guard=guard,
-        authority=OperationAuthority(guard),
+        macros=policy.macros,
+        action_budget=ActionBudgetLedger(policy.config, policy.macros),
+        authority=OperationAuthority(policy, OPERATION_BINDING_AUTHORITY),
         logger=logger,
         clock=clock,
         observe_transition=observe_transition,

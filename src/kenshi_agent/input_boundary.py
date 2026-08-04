@@ -24,9 +24,11 @@ from .models import (
     ControlMode,
     InputBoundaryReport,
     Observation,
+    PointerActionClass,
     WorldStateRevision,
 )
 from .operation_authority import AuthorizationDecision
+from .operation_definitions import BoundOperation
 from .planning import evaluate_conditions
 from .terminal_state import TERMINAL_WINDOW_EVENT_PREFIX
 
@@ -49,6 +51,7 @@ class _ExecutionTokenState:
     validated_revision: WorldStateRevision
     latest_observation: Callable[[], Observation | None]
     max_telemetry_age_seconds: float | None
+    pointer_class: PointerActionClass = PointerActionClass.COORDINATE_INDEPENDENT
     authority_validator: Callable[[Observation], AuthorizationDecision] | None = None
     # The operation this token was authorized for. A boundary verdict about
     # any other operation is not a revalidation of this one.
@@ -57,6 +60,8 @@ class _ExecutionTokenState:
     preconditions: tuple[Condition, ...] = ()
     failure_conditions: tuple[Condition, ...] = ()
     _reports: list[InputBoundaryReport] = field(default_factory=list, compare=False)
+    _authorized_bounds: list[BoundOperation] = field(default_factory=list, compare=False)
+    _authorized_observations: list[Observation] = field(default_factory=list, compare=False)
 
 
 class ExecutionToken(_ExecutionTokenState):
@@ -70,6 +75,18 @@ class ExecutionToken(_ExecutionTokenState):
         return tuple(self._reports)
 
     reports = property(_get_reports)
+
+    @property
+    def authorized_bound(self) -> BoundOperation | None:
+        """The fresh operation binding produced by the latest allowed check."""
+
+        return self._authorized_bounds[-1] if self._authorized_bounds else None
+
+    @property
+    def authorized_observation(self) -> Observation | None:
+        """The exact fresh observation that produced ``authorized_bound``."""
+
+        return self._authorized_observations[-1] if self._authorized_observations else None
 
     def revalidate(
         self,
@@ -213,8 +230,7 @@ class ExecutionToken(_ExecutionTokenState):
         blocking = [
             event
             for event in observation.events
-            if event in _BLOCKING_EVENTS
-            or event.startswith(TERMINAL_WINDOW_EVENT_PREFIX)
+            if event in _BLOCKING_EVENTS or event.startswith(TERMINAL_WINDOW_EVENT_PREFIX)
         ]
         if blocking:
             return self._reject(
@@ -227,6 +243,15 @@ class ExecutionToken(_ExecutionTokenState):
 
         if self.authority_validator is not None:
             decision = self.authority_validator(observation)
+            if not decision.allowed:
+                violation = decision.details.get("violation", decision.code.value)
+                return self._reject(
+                    decision.code,
+                    "The operation is no longer authorized "
+                    f"at the input boundary: {violation}",
+                    lease_wait_seconds=lease_wait_seconds,
+                    boundary_revision=boundary_revision,
+                )
             if (
                 self.authorized_fingerprint is not None
                 and decision.operation_fingerprint != self.authorized_fingerprint
@@ -239,27 +264,16 @@ class ExecutionToken(_ExecutionTokenState):
                     lease_wait_seconds=lease_wait_seconds,
                     boundary_revision=boundary_revision,
                 )
-            if not decision.allowed:
-                violation = decision.details.get("violation", decision.code.value)
-                return self._reject(
-                    decision.code,
-                    "The action no longer passes its safety "  # mutation: diagnostic-only
-                    "and reference checks "  # mutation: diagnostic-only
-                    f"at the input boundary: {violation}",  # mutation: diagnostic-only
-                    lease_wait_seconds=lease_wait_seconds,
-                    boundary_revision=boundary_revision,
-                )
+            if decision.bound_operation is not None:
+                self._authorized_bounds.append(decision.bound_operation)
+                self._authorized_observations.append(observation)
 
         evaluations = evaluate_conditions(
             [*self.assumptions, *self.preconditions],
             observation,
         )
         blocked = next(
-            (
-                evaluation
-                for evaluation in evaluations
-                if evaluation.result != ConditionResult.TRUE
-            ),
+            (evaluation for evaluation in evaluations if evaluation.result != ConditionResult.TRUE),
             None,
         )
         if blocked is not None:

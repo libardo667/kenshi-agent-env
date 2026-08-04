@@ -39,7 +39,7 @@ from kenshi_agent.planners import HeuristicPlanner
 from kenshi_agent.planners.base import Planner
 from kenshi_agent.reflexes import ReflexEngine
 from kenshi_agent.runtime import AgentRuntime
-from kenshi_agent.safety import ActionGuard
+from kenshi_agent.safety import OperationPolicy
 from kenshi_agent.session_log import SessionLogger
 from kenshi_agent.skills import MacroRegistry
 
@@ -130,7 +130,7 @@ def test_every_runtime_exit_has_one_durable_final_state_owner(
             environment=environment,
             operation_port=operation_port(environment),
             planner=planner,
-            guard=ActionGuard(
+            policy=OperationPolicy(
                 SafetyConfig(
                     allow_action_kinds=["stop"],
                     max_actions_per_minute=500,
@@ -209,7 +209,7 @@ def test_full_mock_runtime_survives_one_day(tmp_path: Path) -> None:
                 environment=environment,
                 operation_port=operation_port(environment),
                 planner=HeuristicPlanner(),
-                guard=ActionGuard(safety, macros),
+                policy=OperationPolicy(safety, macros),
                 reflexes=ReflexEngine(),
                 logger=logger,
                 memory=memory,
@@ -329,7 +329,7 @@ def test_runtime_carries_bounded_noop_feedback_between_decisions(
                 environment=environment,
                 operation_port=operation_port(environment),
                 planner=planner,
-                guard=ActionGuard(safety, macros),
+                policy=OperationPolicy(safety, macros),
                 reflexes=ReflexEngine(),
                 logger=logger,
                 memory=None,
@@ -747,7 +747,7 @@ def test_a_recorded_outcome_remembers_the_game_session_it_happened_in(
             environment=environment,
             operation_port=operation_port(environment),
             planner=PausePlanner(),
-            guard=ActionGuard(
+            policy=OperationPolicy(
                 SafetyConfig(allow_action_kinds=["pause"], max_actions_per_minute=500),
                 MacroRegistry({}),
             ),

@@ -18,19 +18,15 @@ from .models import (
     ControlMode,
     InterruptPolicy,
     MoveCursorAction,
-    NoopAction,
     Observation,
     PauseAction,
     PlanEnvelope,
     PlanPatch,
     RiskBudget,
     ScrollAction,
-    SetSpeedAction,
     SkillAction,
-    WaitAction,
     WorldStateRevision,
 )
-from .non_progress import unchanged_definitive_no_op_reason
 from .operation_definitions import definition_for
 from .skills import MacroRegistry, UnknownSkillError
 
@@ -539,7 +535,6 @@ def validate_plan(
         errors.extend(
             live_plan_policy_errors(
                 plan,
-                observation,
                 max_steps=config.max_plan_steps,
             )
         )
@@ -622,27 +617,10 @@ def validate_plan(
     native_risk = 0
     for step in plan.steps:
         pointer, purchase, native = _action_risk(step.action, macros)
-        # Every action allowed to retry below has zero pointer, purchase, and
-        # native risk. Unsupported retries already invalidate the plan, so
-        # multiplying their costs only changes redundant error prose.
-        pointer_risk += pointer
-        purchase_risk += purchase
-        native_risk += native
-        unchanged_retry = unchanged_definitive_no_op_reason(
-            step.action,
-            observation,
-        )
-        if unchanged_retry is not None:
-            errors.append(f"step {step.step_id!r} {unchanged_retry}")
-        if step.retry_budget and not isinstance(
-            step.action,
-            (NoopAction, WaitAction, PauseAction, SetSpeedAction),
-        ):
-            errors.append(
-                f"step {step.step_id!r} sets retry_budget on "  # mutation: diagnostic-only
-                f"{step.action.kind!r}, which is not retryable; omit "
-                "retry_budget, or use it only on noop, wait, pause or set_speed"
-            )
+        attempts = 1 + step.retry_budget
+        pointer_risk += pointer * attempts
+        purchase_risk += purchase * attempts
+        native_risk += native * attempts
     if pointer_risk > plan.risk_budget.max_pointer_actions:
         errors.append(
             f"plan steps cost {pointer_risk} pointer actions but "  # mutation: diagnostic-only

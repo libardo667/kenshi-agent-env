@@ -87,6 +87,14 @@ class ReplayOperationPort:
     use_game_binding = _execute
     wait = _execute
 
+    async def control_pause(
+        self,
+        action: Action,
+        *,
+        command: CommandDispatchContext,
+    ) -> Transition:
+        return await self._execute(action, command=command, token=None)
+
 
 class ReplayEnvironment(AgentEnvironment):
     def __init__(self, log_path: Path) -> None:

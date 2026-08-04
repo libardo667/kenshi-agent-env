@@ -6,40 +6,23 @@ native primitive. A polite lease can wait an unbounded interval, so the second
 answer must come from fresh state - but it must come from the *same* policy, and
 it must provably concern the *same* operation.
 
-This owns that. Domain prerequisites stay on the operation definition; budget
-accounting stays with the guard. What lives here is the typed verdict both
+This owns that. Domain prerequisites stay on the operation definition; mutable
+accounting stays with the action-budget ledger. What lives here is the typed verdict both
 moments share, and the fingerprint that proves they judged one operation.
 """
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from hashlib import sha256
 
 from pydantic import JsonValue
 
+from .affordances import OperationBindingAuthority, OperationBindingError
 from .authorization import AuthorizationCode
-from .models import Action, Observation, WorldStateRevision
-from .safety import ActionGuard, SafetyViolation
-
-
-def operation_fingerprint(action: Action) -> str:
-    """Identify one exact operation and its arguments, stably across moments.
-
-    Plan-time and input-time decisions are only comparable if they name the same
-    operation, so this hashes the typed action rather than its object identity:
-    the same request rebuilt from the same evidence fingerprints the same, and a
-    changed argument does not.
-    """
-
-    payload = json.dumps(
-        action.model_dump(mode="json"),
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return f"op-{sha256(payload.encode('utf-8')).hexdigest()[:20]}"
+from .models import Observation, PointerActionClass, WorldStateRevision
+from .operation_definitions import BoundOperation
+from .safety import OperationPolicy, SafetyViolation
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +34,7 @@ class AuthorizationDecision:
     based_on_revision: WorldStateRevision
     operation_fingerprint: str
     details: Mapping[str, JsonValue] = field(default_factory=dict)
+    bound_operation: BoundOperation | None = field(default=None, repr=False, compare=False)
 
     def concerns_same_operation_as(self, other: AuthorizationDecision) -> bool:
         """Did these two verdicts judge the same operation?
@@ -65,10 +49,22 @@ class AuthorizationDecision:
 class OperationAuthority:
     """Evaluate one operation's cross-cutting authority against current state."""
 
-    def __init__(self, guard: ActionGuard) -> None:
-        self._guard = guard
+    def __init__(
+        self,
+        policy: OperationPolicy,
+        binding: OperationBindingAuthority,
+    ) -> None:
+        self._policy = policy
+        self._binding = binding
 
-    def evaluate(self, action: Action, observation: Observation) -> AuthorizationDecision:
+    def pointer_class_for(self, bound: BoundOperation) -> PointerActionClass:
+        return self._policy.pointer_class_for(bound)
+
+    def evaluate(
+        self,
+        bound: BoundOperation,
+        observation: Observation,
+    ) -> AuthorizationDecision:
         """Answer whether this operation may act on this observation.
 
         Deliberately free of side effects: budget is reserved separately, so the
@@ -76,21 +72,47 @@ class OperationAuthority:
         the scheduling check already accounted for.
         """
 
-        fingerprint = operation_fingerprint(action)
+        fingerprint = bound.identity.fingerprint
         try:
-            self._guard.revalidate(action, observation)
+            rebound = self._binding.rebind(bound, observation)
+        except OperationBindingError as exc:
+            return AuthorizationDecision(
+                allowed=False,
+                code=exc.code,
+                based_on_revision=observation.world_revision,
+                operation_fingerprint=fingerprint,
+                details={"violation": str(exc), "operation_kind": bound.operation.kind},
+            )
+        if rebound.identity != bound.identity:
+            return AuthorizationDecision(
+                allowed=False,
+                code=AuthorizationCode.STALE_BOUND_IDENTITY,
+                based_on_revision=observation.world_revision,
+                operation_fingerprint=rebound.identity.fingerprint,
+                details={
+                    "violation": "Fresh binding resolved to a different operation identity.",
+                    "operation_kind": bound.operation.kind,
+                    "scheduled_fingerprint": fingerprint,
+                },
+            )
+        try:
+            self._policy.revalidate_bound(rebound, observation)
         except SafetyViolation as exc:
             return AuthorizationDecision(
                 allowed=False,
-                code=AuthorizationCode.OPERATION_UNAUTHORIZED,
+                code=exc.code,
                 based_on_revision=observation.world_revision,
                 operation_fingerprint=fingerprint,
-                details={"violation": str(exc), "operation_kind": action.kind},
+                details={"violation": str(exc), "operation_kind": bound.operation.kind},
             )
         return AuthorizationDecision(
             allowed=True,
             code=AuthorizationCode.ALLOWED,
             based_on_revision=observation.world_revision,
             operation_fingerprint=fingerprint,
-            details={"operation_kind": action.kind},
+            details={
+                "operation_kind": bound.operation.kind,
+                "binding_revision": observation.world_revision.model_dump(mode="json"),
+            },
+            bound_operation=rebound,
         )

@@ -24,6 +24,7 @@ from pydantic import (
     ValidationError,
 )
 
+from .authorization import AuthorizationCode
 from .models import (
     TIME_GAME_BINDINGS,
     Action,
@@ -57,11 +58,29 @@ from .operation_definitions import (
     OperationExecution,
     TerminalOwner,
     definition_for,
+    operation_identity,
 )
 
 
 class _StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+
+class OperationBindingError(ValueError):
+    """One typed failure from the sole fresh-binding authority."""
+
+    def __init__(self, message: str, *, code: AuthorizationCode) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+def _operation_binding_error(reason: str) -> OperationBindingError:
+    code = (
+        AuthorizationCode.BINDING_AMBIGUOUS
+        if "ambiguous" in reason.lower()
+        else AuthorizationCode.BINDING_ABSENT
+    )
+    return OperationBindingError(reason, code=code)
 
 
 class AffordanceParameterKind(StrEnum):
@@ -88,7 +107,7 @@ SEMANTICALLY_ADAPTED_GAME_BINDINGS: frozenset[GameBinding] = frozenset(
 # character identity. Keep them as actuator coverage, but do not offer them to
 # the playing model when the native exact-identity route is available. The
 # semantic route may itself be temporarily blocked by a modal; that is a reason
-# to close the modal, not to resurrect an opaque guard bypass.
+# to close the modal, not to resurrect an opaque policy bypass.
 OPAQUE_CHARACTER_SELECTION_GAME_BINDINGS: frozenset[GameBinding] = frozenset(
     {
         GameBinding.CHARACTER_NEXT,
@@ -324,17 +343,13 @@ def _game_binding_offers(observation: Observation) -> Iterable[AffordanceOffer]:
         and "control.select_squad_member" in telemetry.capabilities
         and "identity.stable_handles" in telemetry.capabilities
         and telemetry.ui.selected_character_id is not None
-        and telemetry.ui.selected_character_id
-        in telemetry.ui.selected_character_ids
+        and telemetry.ui.selected_character_id in telemetry.ui.selected_character_ids
     )
     for binding in GameBinding:
         if (
             binding in TIME_GAME_BINDINGS
             or binding in SEMANTICALLY_ADAPTED_GAME_BINDINGS
-            or (
-                exact_identity_selection
-                and binding in OPAQUE_CHARACTER_SELECTION_GAME_BINDINGS
-            )
+            or (exact_identity_selection and binding in OPAQUE_CHARACTER_SELECTION_GAME_BINDINGS)
         ):
             continue
         yield _offer(
@@ -446,15 +461,13 @@ def _visible_control_offers(observation: Observation) -> Iterable[AffordanceOffe
     ):
         return
     dialogue_labels = {
-        normalize_control_label(label)
-        for label in (telemetry.ui.dialogue_options or [])
+        normalize_control_label(label) for label in (telemetry.ui.dialogue_options or [])
     }
     for control in telemetry.ui.visible_controls:
         if is_runtime_owned_visible_control(control) or control.role == "item":
             continue
         if control.role == "text" and not (
-            telemetry.ui.dialogue_open
-            and normalize_control_label(control.label) in dialogue_labels
+            telemetry.ui.dialogue_open and normalize_control_label(control.label) in dialogue_labels
         ):
             continue
         source = (
@@ -500,9 +513,7 @@ def _context_order_offers(observation: Observation) -> Iterable[AffordanceOffer]
             )
             if not native_order and target.screen_position is None:
                 continue
-            operation_kind = (
-                "perform_context_action" if native_order else "command_world_target"
-            )
+            operation_kind = "perform_context_action" if native_order else "command_world_target"
             yield _offer(
                 observation,
                 source=AffordanceSource.CONTEXT_ORDER,
@@ -529,8 +540,7 @@ def _dialogue_target_offers(observation: Observation) -> Iterable[AffordanceOffe
         "nearby.roles",
     }
     if not required <= capabilities or not (
-        {"control.approach_dialogue_target", "control.approach_vendor"}
-        & capabilities
+        {"control.approach_dialogue_target", "control.approach_vendor"} & capabilities
     ):
         return
     for target in observation.dialogue_target_digest():
@@ -561,15 +571,10 @@ def _inventory_offers(observation: Observation) -> Iterable[AffordanceOffer]:
     open_vendor_ids = {
         str(owner["seller_id"])
         for caption in observation.open_window_captions()
-        if (owner := owners.get(normalize_control_label(caption), {})).get(
-            "belongs_to"
-        )
-        == "vendor"
+        if (owner := owners.get(normalize_control_label(caption), {})).get("belongs_to") == "vendor"
         and owner.get("seller_id")
     }
-    paired_vendor_id = (
-        next(iter(open_vendor_ids)) if len(open_vendor_ids) == 1 else None
-    )
+    paired_vendor_id = next(iter(open_vendor_ids)) if len(open_vendor_ids) == 1 else None
     for control in telemetry.ui.visible_controls:
         if control.role != "item" or not control.item_name:
             continue
@@ -586,14 +591,10 @@ def _inventory_offers(observation: Observation) -> Iterable[AffordanceOffer]:
             "window": control.window,
         }
         cell_quantity = (
-            str(control.item_quantity)
-            if control.item_quantity is not None
-            else "unknown"
+            str(control.item_quantity) if control.item_quantity is not None else "unknown"
         )
         cell_quantity_max = (
-            min(5, control.item_quantity)
-            if control.item_quantity is not None
-            else 5
+            min(5, control.item_quantity) if control.item_quantity is not None else 5
         )
         purchase_quantity_max = cell_quantity_max
         if telemetry.game.money is not None and control.item_base_value:
@@ -633,10 +634,7 @@ def _inventory_offers(observation: Observation) -> Iterable[AffordanceOffer]:
                 },
             )
         if owner.get("belongs_to") == "you":
-            if (
-                paired_vendor_id
-                and cell_quantity_max >= 1
-            ):
+            if paired_vendor_id and cell_quantity_max >= 1:
                 yield _offer(
                     observation,
                     source=AffordanceSource.INVENTORY,
@@ -675,8 +673,7 @@ def _character_offers(observation: Observation) -> Iterable[AffordanceOffer]:
         and "control.select_squad_member" in capabilities
         and "identity.stable_handles" in capabilities
         and telemetry.ui.selected_character_id is not None
-        and telemetry.ui.selected_character_id
-        in telemetry.ui.selected_character_ids
+        and telemetry.ui.selected_character_id in telemetry.ui.selected_character_ids
     )
     for member in telemetry.squad:
         target = AffordanceTarget(
@@ -694,9 +691,7 @@ def _character_offers(observation: Observation) -> Iterable[AffordanceOffer]:
                     "deselecting every other party member."
                 ),
                 operation_kind=(
-                    "select_squad_member_exact"
-                    if exact_selection
-                    else "select_squad_member"
+                    "select_squad_member_exact" if exact_selection else "select_squad_member"
                 ),
                 target=target,
                 arguments={"target_id": member.id},
@@ -725,9 +720,7 @@ def _character_offers(observation: Observation) -> Iterable[AffordanceOffer]:
             operation_kind="use_game_binding",
             arguments={
                 "binding": GameBinding.SELECT_ALL.value,
-                "expected_effect": (
-                    f"select all {len(telemetry.squad)} current party members"
-                ),
+                "expected_effect": (f"select all {len(telemetry.squad)} current party members"),
             },
         )
     if (
@@ -748,6 +741,7 @@ def _character_offers(observation: Observation) -> Iterable[AffordanceOffer]:
             )
         ]
         if candidates:
+
             def reunion_distance_key(member: CharacterState) -> tuple[float, str]:
                 assert selected.position is not None
                 assert member.position is not None
@@ -833,10 +827,13 @@ def _map_offers(observation: Observation) -> Iterable[AffordanceOffer]:
     if telemetry is None:
         return
     capabilities = set(telemetry.capabilities)
-    if not {
-        "control.travel_to_map_destination",
-        "world.known_map_destinations",
-    } <= capabilities:
+    if (
+        not {
+            "control.travel_to_map_destination",
+            "world.known_map_destinations",
+        }
+        <= capabilities
+    ):
         return
     selected = [member for member in telemetry.squad if member.selected]
     if not selected:
@@ -1032,9 +1029,7 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
     ),
     AffordanceAdapter(
         name="screens",
-        sources=frozenset(
-            {AffordanceSource.GAME_BINDING, AffordanceSource.VISIBLE_CONTROL}
-        ),
+        sources=frozenset({AffordanceSource.GAME_BINDING, AffordanceSource.VISIBLE_CONTROL}),
         operation_kinds=frozenset({"open_screen", "dismiss_screen"}),
         denominator="Observable named-screen states and currently open window captions.",
         completeness_boundary=(
@@ -1046,9 +1041,7 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
     ),
     AffordanceAdapter(
         name="visible_controls",
-        sources=frozenset(
-            {AffordanceSource.VISIBLE_CONTROL, AffordanceSource.DIALOGUE}
-        ),
+        sources=frozenset({AffordanceSource.VISIBLE_CONTROL, AffordanceSource.DIALOGUE}),
         operation_kinds=frozenset({"activate_visible_control"}),
         denominator="Every current non-item, non-runtime-owned visible control.",
         completeness_boundary=(
@@ -1060,9 +1053,7 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
     AffordanceAdapter(
         name="context_orders",
         sources=frozenset({AffordanceSource.CONTEXT_ORDER}),
-        operation_kinds=frozenset(
-            {"perform_context_action", "command_world_target"}
-        ),
+        operation_kinds=frozenset({"perform_context_action", "command_world_target"}),
         denominator="Every exact world-target/order pair advertised by current telemetry.",
         completeness_boundary=(
             "Native execution proves the reviewed natural-resource operate and "
@@ -1153,11 +1144,7 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
 
 
 def affordance_operation_kinds() -> frozenset[str]:
-    return frozenset(
-        kind
-        for adapter in AFFORDANCE_ADAPTERS
-        for kind in adapter.operation_kinds
-    )
+    return frozenset(kind for adapter in AFFORDANCE_ADAPTERS for kind in adapter.operation_kinds)
 
 
 def _sample_parameters(offer: AffordanceOffer) -> dict[str, JsonValue]:
@@ -1203,9 +1190,7 @@ def _offer_binds_now(offer: AffordanceOffer, observation: Observation) -> bool:
             return False
     definition = definition_for(operation)
     if definition is None:
-        raise RuntimeError(
-            f"adapter emitted {operation.kind!r} without an operation definition"
-        )
+        raise RuntimeError(f"adapter emitted {operation.kind!r} without an operation definition")
     telemetry = observation.telemetry
     capabilities = set(telemetry.capabilities if telemetry is not None else [])
     if (
@@ -1224,10 +1209,7 @@ def _offer_binds_now(offer: AffordanceOffer, observation: Observation) -> bool:
     )
     if completion.owner is TerminalOwner.STEP_CONDITIONS:
         raise RuntimeError("an offered affordance delegated completion to its caller")
-    return not (
-        completion.owner is TerminalOwner.RUNTIME_CONDITIONS
-        and not completion.conditions
-    )
+    return not (completion.owner is TerminalOwner.RUNTIME_CONDITIONS and not completion.conditions)
 
 
 def offered_affordances(observation: Observation) -> tuple[AffordanceOffer, ...]:
@@ -1245,8 +1227,7 @@ def offered_affordances(observation: Observation) -> tuple[AffordanceOffer, ...]
         (adapter, offer)
         for adapter in AFFORDANCE_ADAPTERS
         for offer in adapter.enumerate(observation)
-        if interface_clear
-        or offer.operation_kind in INTERFACE_SCOPED_OPERATION_KINDS
+        if interface_clear or offer.operation_kind in INTERFACE_SCOPED_OPERATION_KINDS
     )
     offers_by_id: dict[str, AffordanceOffer] = {}
     for adapter, offer in enumerated:
@@ -1256,8 +1237,7 @@ def offered_affordances(observation: Observation) -> tuple[AffordanceOffer, ...]
             )
         if offer.operation_kind not in adapter.operation_kinds:
             raise RuntimeError(
-                f"adapter {adapter.name!r} emitted undeclared operation "
-                f"{offer.operation_kind!r}"
+                f"adapter {adapter.name!r} emitted undeclared operation {offer.operation_kind!r}"
             )
         if not _offer_binds_now(offer, observation):
             continue
@@ -1269,9 +1249,7 @@ def offered_affordances(observation: Observation) -> tuple[AffordanceOffer, ...]
             raise RuntimeError("source adapters generated a colliding affordance ID")
     offers = tuple(offers_by_id.values())
     if any(
-        len(spec.choices) != len(set(spec.choices))
-        for offer in offers
-        for spec in offer.parameters
+        len(spec.choices) != len(set(spec.choices)) for offer in offers for spec in offer.parameters
     ):
         raise RuntimeError("source adapter generated duplicate parameter choices")
     return tuple(sorted(offers, key=lambda offer: offer.affordance_id))
@@ -1303,9 +1281,7 @@ def _validated_parameters(
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"parameter {name!r} must be non-empty text")
         elif not isinstance(value, str) or value not in spec.choices:
-            raise ValueError(
-                f"parameter {name!r} must be one of {', '.join(spec.choices)}"
-            )
+            raise ValueError(f"parameter {name!r} must be one of {', '.join(spec.choices)}")
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             if spec.minimum is not None and value < spec.minimum:
                 raise ValueError(f"parameter {name!r} is below its offered minimum")
@@ -1358,10 +1334,7 @@ def _bind_adapter_selection(
         offer
         for offer in adapter.enumerate(observation)
         if offer.affordance_id == selection.affordance_id
-        and (
-            interface_clear
-            or offer.operation_kind in INTERFACE_SCOPED_OPERATION_KINDS
-        )
+        and (interface_clear or offer.operation_kind in INTERFACE_SCOPED_OPERATION_KINDS)
         and _offer_binds_now(offer, observation)
     ]
     if len(matches) != 1:
@@ -1380,12 +1353,14 @@ def _bind_adapter_selection(
     binding = definition.bind(operation, observation)
     if isinstance(binding, BindingFailure):
         raise ValueError(f"affordance no longer binds: {binding.reason}")
+    affordance = _bound_affordance(offer, selection, definition)
     return BoundOperation(
         definition=definition,
         operation=operation,
         binding=binding,
-        affordance=_bound_affordance(offer, selection, definition),
+        affordance=affordance,
         based_on_revision=observation.world_revision,
+        identity=operation_identity(definition, operation, binding, affordance),
     )
 
 
@@ -1414,32 +1389,7 @@ def bound_affordance(bound: BoundOperation) -> BoundAffordance:
     return bound.affordance
 
 
-def bind_runtime_operation(
-    operation: Action,
-    observation: Observation,
-    *,
-    affordance: BoundAffordance | None,
-) -> BoundOperation:
-    """Bind planner provenance or explicit runtime authority to current state."""
-
-    if affordance is not None:
-        return rebind_affordance_operation(operation, affordance, observation)
-    definition = definition_for(operation)
-    if definition is None:
-        raise ValueError(f"Operation {operation.kind!r} has no definition.")
-    binding = definition.bind(operation, observation)
-    if isinstance(binding, BindingFailure):
-        raise ValueError(f"Runtime operation no longer binds: {binding.reason}")
-    return BoundOperation(
-        definition=definition,
-        operation=operation,
-        binding=binding,
-        affordance=None,
-        based_on_revision=observation.world_revision,
-    )
-
-
-def rebind_affordance_operation(
+def _rebind_affordance_operation(
     operation: Action,
     affordance: BoundAffordance,
     observation: Observation,
@@ -1483,8 +1433,16 @@ def rebind_affordance_operation(
             continue
         if candidate.operation == operation:
             rebounds.append(candidate)
-    if len(rebounds) != 1:
-        raise ValueError("affordance is absent or ambiguous in the current observation")
+    if not rebounds:
+        raise OperationBindingError(
+            "Affordance is absent from the current observation.",
+            code=AuthorizationCode.BINDING_ABSENT,
+        )
+    if len(rebounds) > 1:
+        raise OperationBindingError(
+            "Affordance is ambiguous in the current observation.",
+            code=AuthorizationCode.BINDING_AMBIGUOUS,
+        )
     rebound = rebounds[0]
     return BoundOperation(
         definition=rebound.definition,
@@ -1492,6 +1450,87 @@ def rebind_affordance_operation(
         binding=rebound.binding,
         affordance=affordance,
         based_on_revision=rebound.based_on_revision,
+        identity=operation_identity(
+            rebound.definition,
+            rebound.operation,
+            rebound.binding,
+            affordance,
+        ),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class OperationBindingAuthority:
+    """The sole fresh-binding implementation for executable operations."""
+
+    def bind(
+        self,
+        operation: Action,
+        observation: Observation,
+        *,
+        affordance: BoundAffordance | None,
+    ) -> BoundOperation:
+        """Bind planner provenance or explicit runtime authority to current state."""
+
+        if affordance is not None:
+            return _rebind_affordance_operation(operation, affordance, observation)
+        from .non_progress import unchanged_definitive_no_op_reason
+
+        non_progress_reason = unchanged_definitive_no_op_reason(operation, observation)
+        if non_progress_reason is not None:
+            raise OperationBindingError(
+                f"Runtime operation is not currently eligible: {non_progress_reason}.",
+                code=AuthorizationCode.POLICY_DISALLOWED,
+            )
+        definition = definition_for(operation)
+        if definition is None:
+            raise OperationBindingError(
+                f"Operation {operation.kind!r} has no definition.",
+                code=AuthorizationCode.BINDING_ABSENT,
+            )
+        binding = definition.bind(operation, observation)
+        if isinstance(binding, BindingFailure):
+            raise _operation_binding_error(
+                f"Runtime operation no longer binds: {binding.reason}"
+            )
+        return BoundOperation(
+            definition=definition,
+            operation=operation,
+            binding=binding,
+            affordance=None,
+            based_on_revision=observation.world_revision,
+            identity=operation_identity(definition, operation, binding, None),
+        )
+
+    def rebind(
+        self,
+        bound: BoundOperation,
+        observation: Observation,
+    ) -> BoundOperation:
+        """Resolve one already-selected operation against a fresh observation."""
+
+        return self.bind(
+            bound.operation,
+            observation,
+            affordance=bound.affordance,
+        )
+
+
+OPERATION_BINDING_AUTHORITY = OperationBindingAuthority()
+
+
+def bind_runtime_operation(
+    operation: Action,
+    observation: Observation,
+    *,
+    affordance: BoundAffordance | None,
+) -> BoundOperation:
+    """Bind through the process-wide operation binding authority."""
+
+    return OPERATION_BINDING_AUTHORITY.bind(
+        operation,
+        observation,
+        affordance=affordance,
     )
 
 
@@ -1564,7 +1603,6 @@ def selection_for(
         affordance_id=offer.affordance_id,
         target_id=offer.target.target_id if offer.target else None,
         parameters=[
-            AffordanceParameter(name=name, value=value)
-            for name, value in parameters.items()
+            AffordanceParameter(name=name, value=value) for name, value in parameters.items()
         ],
     )

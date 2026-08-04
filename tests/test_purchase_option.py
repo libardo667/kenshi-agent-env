@@ -51,7 +51,7 @@ from kenshi_agent.models import (
 from kenshi_agent.non_progress import retry_state_fingerprint
 from kenshi_agent.planning import PlanningClock
 from kenshi_agent.reflexes import ReflexEngine
-from kenshi_agent.safety import ActionGuard
+from kenshi_agent.safety import OperationPolicy
 from kenshi_agent.session_log import SessionLogger
 from kenshi_agent.skills import MacroRegistry
 from kenshi_agent.telemetry import TelemetryRead
@@ -603,7 +603,7 @@ def test_continuous_executor_completes_only_the_full_purchase_terminal(
             environment._PURCHASE_OBSERVATION_TIMEOUT_SECONDS = 0.02
         observation = await environment.reset()
         plan = _purchase_plan(observation, action)
-        assert live_plan_policy_errors(plan, observation) == []
+        assert live_plan_policy_errors(plan) == []
 
         store = WorldStateStore(clock=clock)
         store.publish(observation)
@@ -627,7 +627,7 @@ def test_continuous_executor_completes_only_the_full_purchase_terminal(
         executor = plan_executor(
             environment=environment,
             operation_port=operation_port(environment),
-            guard=ActionGuard(
+            policy=OperationPolicy(
                 SafetyConfig(
                     allow_action_kinds=["purchase_item"],
                     max_actions_per_minute=100,
@@ -667,7 +667,7 @@ def test_continuous_executor_completes_only_the_full_purchase_terminal(
     asyncio.run(scenario())
 
 
-def test_continuous_executor_rechecks_no_op_barrier_between_plan_steps(
+def test_operation_binding_rechecks_no_op_barrier_between_plan_steps(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
@@ -746,7 +746,7 @@ def test_continuous_executor_rechecks_no_op_barrier_between_plan_steps(
         executor = plan_executor(
             environment=environment,
             operation_port=operation_port(environment),
-            guard=ActionGuard(
+            policy=OperationPolicy(
                 SafetyConfig(
                     allow_action_kinds=["purchase_item"],
                     max_actions_per_minute=100,

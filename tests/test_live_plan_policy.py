@@ -7,8 +7,6 @@ chain work" test and still have failed this milestone.
 
 from __future__ import annotations
 
-import pytest
-
 from kenshi_agent.live_plan_policy import (
     live_plan_policy_errors,
     live_plan_rebase_errors,
@@ -31,11 +29,9 @@ from kenshi_agent.models import (
     NearbyEntity,
     NormalizedPointerBounds,
     Observation,
-    PauseAction,
     PlanEnvelope,
     PlanStep,
     RiskBudget,
-    SetSpeedAction,
     SkillAction,
     TelemetrySnapshot,
     UIState,
@@ -208,46 +204,7 @@ class TestGenericComposition:
             pointer=0,
             native=0,
         )
-        state = observation()
-        assert state.telemetry is not None
-        state = state.model_copy(
-            update={
-                "telemetry": state.telemetry.model_copy(
-                    update={
-                        "ui": state.telemetry.ui.model_copy(
-                            update={"open_inventory_windows": 0}
-                        )
-                    }
-                )
-            }
-        )
-
-        assert not live_plan_policy_errors(composed, state)
-
-    def test_ambiguous_completion_still_fails_closed_without_a_condition(self) -> None:
-        composed = plan(
-            [
-                PlanStep(
-                    step_id="choose",
-                    action=ActivateVisibleControlAction(
-                        exact_label="Goodbye.",
-                        role="button",
-                    ),
-                    preconditions=[freshness()],
-                    success_conditions=[],
-                    timeout_seconds=30.0,
-                )
-            ],
-            pointer=1,
-            native=0,
-        )
-
-        errors = live_plan_policy_errors(
-            composed,
-            observation(controls=TRADE_CONTROLS),
-        )
-
-        assert any("no causal success condition" in error for error in errors)
+        assert not live_plan_policy_errors(composed)
 
     def test_approach_then_activate_is_accepted(self) -> None:
         composed = plan(
@@ -267,9 +224,7 @@ class TestGenericComposition:
             ],
             pointer=2,
         )
-        assert live_plan_policy_errors(
-            composed, observation(controls=TRADE_CONTROLS)
-        ) == []
+        assert live_plan_policy_errors(composed) == []
 
     def test_a_different_order_is_equally_acceptable(self) -> None:
         """The policy prescribes no sequence."""
@@ -286,18 +241,14 @@ class TestGenericComposition:
             ],
             pointer=2,
         )
-        assert live_plan_policy_errors(
-            composed, observation(controls=TRADE_CONTROLS)
-        ) == []
+        assert live_plan_policy_errors(composed) == []
 
     def test_a_single_action_plan_is_acceptable(self) -> None:
         composed = plan(
             [step("approach", ApproachDialogueTargetAction(target_id=CIVILIAN_ID))],
             pointer=1,
         )
-        assert live_plan_policy_errors(
-            composed, observation(controls=TRADE_CONTROLS)
-        ) == []
+        assert live_plan_policy_errors(composed) == []
 
     def test_the_same_approach_action_accepts_a_non_vendor(self) -> None:
         composed = plan(
@@ -310,38 +261,10 @@ class TestGenericComposition:
             ],
             pointer=1,
         )
-        assert live_plan_policy_errors(
-            composed, observation(controls=TRADE_CONTROLS)
-        ) == []
+        assert live_plan_policy_errors(composed) == []
 
 
 class TestGenericPolicyRejections:
-    def test_entry_failure_condition_must_start_definitively_false(self) -> None:
-        composed = plan(
-            [
-                PlanStep(
-                    step_id="open-inventory",
-                    action=UseGameBindingAction(
-                        binding=GameBinding.TOGGLE_INVENTORY,
-                        expected_effect="open inventory",
-                    ),
-                    preconditions=[freshness()],
-                    success_conditions=[],
-                    failure_conditions=[freshness()],
-                    timeout_seconds=30.0,
-                )
-            ],
-            pointer=0,
-            native=0,
-        )
-
-        errors = live_plan_policy_errors(composed, observation())
-
-        assert any(
-            "failure condition is already true before dispatch" in error
-            for error in errors
-        )
-
     def test_a_raw_primitive_is_absent_from_the_hosted_selection_schema(self) -> None:
         """A raw coordinate carries no evidence of what it would activate.
 
@@ -368,9 +291,7 @@ class TestGenericPolicyRejections:
             retry_budget=0,
         )
         composed = plan([smuggled], native=0)
-        errors = live_plan_policy_errors(
-            composed, observation(controls=TRADE_CONTROLS)
-        )
+        errors = live_plan_policy_errors(composed)
         assert any("raw controller primitive" in error for error in errors)
 
     def test_configured_skill_uses_the_operation_definition_path(self) -> None:
@@ -379,12 +300,10 @@ class TestGenericPolicyRejections:
             native=0,
             pointer=0,
         )
-        errors = live_plan_policy_errors(
-            composed, observation(controls=TRADE_CONTROLS)
-        )
+        errors = live_plan_policy_errors(composed)
         assert errors == []
 
-    def test_unbound_control_label_is_rejected(self) -> None:
+    def test_current_operation_eligibility_is_not_plan_structure(self) -> None:
         composed = plan(
             [
                 step(
@@ -395,69 +314,8 @@ class TestGenericPolicyRejections:
             ],
             native=0,
         )
-        errors = live_plan_policy_errors(
-            composed, observation(controls=TRADE_CONTROLS)
-        )
-        assert any("does not bind to current state" in error for error in errors)
-
-    def test_ambiguous_control_label_is_rejected(self) -> None:
-        duplicated = [
-            VisibleUIControl(label="Trade", role="button", bounds=bounds(0.5)),
-            VisibleUIControl(label="Trade", role="button", bounds=bounds(0.7)),
-        ]
-        composed = plan(
-            [
-                step(
-                    "activate",
-                    ActivateVisibleControlAction(exact_label="Trade", role="button"),
-                    success=[screen_is("trade")],
-                )
-            ],
-            native=0,
-        )
-        errors = live_plan_policy_errors(composed, observation(controls=duplicated))
-        assert any("ambiguous" in error for error in errors)
-
-    def test_unknown_target_is_rejected(self) -> None:
-        composed = plan(
-            [step("approach", ApproachDialogueTargetAction(target_id="entity-ghost"))],
-            pointer=0,
-        )
-        errors = live_plan_policy_errors(
-            composed, observation(controls=TRADE_CONTROLS)
-        )
-        assert any("does not bind to current state" in error for error in errors)
-
-    def test_native_action_is_rejected_in_interface_only(self) -> None:
-        composed = plan(
-            [step("approach", ApproachDialogueTargetAction(target_id=VENDOR_ID))],
-            pointer=0,
-            control_mode=ControlMode.INTERFACE_ONLY,
-        )
-        errors = live_plan_policy_errors(
-            composed,
-            observation(controls=TRADE_CONTROLS, control_mode=ControlMode.INTERFACE_ONLY),
-        )
-        assert any("not permitted in control mode" in error for error in errors)
-
-    def test_missing_capability_is_rejected(self) -> None:
-        composed = plan(
-            [
-                step(
-                    "activate",
-                    ActivateVisibleControlAction(
-                        exact_label="Show me your goods.", role="button"
-                    ),
-                    success=[screen_is("trade")],
-                )
-            ],
-            native=0,
-        )
-        errors = live_plan_policy_errors(
-            composed,
-            observation(controls=TRADE_CONTROLS, capabilities=["game.time", "ui.dialogue"]),
-        )
-        assert any("unavailable capabilities" in error for error in errors)
+        errors = live_plan_policy_errors(composed)
+        assert errors == []
 
     def test_underdeclared_native_budget_is_rejected(self) -> None:
         composed = plan(
@@ -465,9 +323,7 @@ class TestGenericPolicyRejections:
             native=0,
             pointer=0,
         )
-        errors = live_plan_policy_errors(
-            composed, observation(controls=TRADE_CONTROLS)
-        )
+        errors = live_plan_policy_errors(composed)
         assert any("native-assisted cost" in error for error in errors)
 
     def test_underdeclared_pointer_budget_is_rejected(self) -> None:
@@ -484,31 +340,8 @@ class TestGenericPolicyRejections:
             native=0,
             pointer=0,
         )
-        errors = live_plan_policy_errors(
-            composed, observation(controls=TRADE_CONTROLS)
-        )
+        errors = live_plan_policy_errors(composed)
         assert any("pointer cost" in error for error in errors)
-
-    def test_retrying_an_at_most_once_action_is_rejected(self) -> None:
-        composed = plan(
-            [
-                step(
-                    "activate",
-                    ActivateVisibleControlAction(
-                        exact_label="Show me your goods.", role="button"
-                    ),
-                    success=[screen_is("trade")],
-                    idempotency=IdempotencyPolicy.SAFE_TO_RETRY,
-                    retry_budget=1,
-                )
-            ],
-            native=0,
-            pointer=2,
-        )
-        errors = live_plan_policy_errors(
-            composed, observation(controls=TRADE_CONTROLS)
-        )
-        assert any("retries an at-most-once action" in error for error in errors)
 
     def test_non_causal_success_condition_is_rejected(self) -> None:
         control_mode_only = Condition(
@@ -531,28 +364,16 @@ class TestGenericPolicyRejections:
             ],
             pointer=1,
         )
-        errors = live_plan_policy_errors(
-            composed, observation(controls=TRADE_CONTROLS)
-        )
-        assert any("no causal success condition" in error for error in errors)
-
-    def test_stale_telemetry_is_rejected(self) -> None:
-        state = observation(controls=TRADE_CONTROLS)
-        stale = state.model_copy(update={"telemetry_stale": True}, deep=True)
-        composed = plan(
-            [step("approach", ApproachDialogueTargetAction(target_id=VENDOR_ID))],
-            pointer=0,
-        )
-        errors = live_plan_policy_errors(composed, stale)
-        assert any("fresh telemetry" in error for error in errors)
+        errors = live_plan_policy_errors(composed)
+        assert any("none witness a causal world change" in error for error in errors)
 
 
 # ---------------------------------------------------------------------------
 # Rebasing a plan that aged during a slow strategic call.
 #
 # The sequence number always moves during a ~25s hosted call, so the question
-# that decides safety is whether the plan's references still bind — not whether
-# the counter changed.
+# that belongs here is whether the plan's own basis, assumptions, and input
+# ownership still hold — not whether current operation eligibility changed.
 # ---------------------------------------------------------------------------
 
 
@@ -602,7 +423,7 @@ class TestRebaseAcrossPlannerLatency:
         errors = live_plan_rebase_errors(chain_plan(), planner_view, planner_view)
         assert any("causally later" in error for error in errors)
 
-    def test_a_target_that_left_the_valid_set_refuses(self) -> None:
+    def test_operation_eligibility_changes_do_not_belong_to_rebase_policy(self) -> None:
         planner_view = observation(controls=TRADE_CONTROLS)
         current = later(planner_view)
         telemetry = current.telemetry
@@ -615,83 +436,15 @@ class TestRebaseAcrossPlannerLatency:
             for entity in telemetry.nearby_entities
         ]
         current = current.model_copy(
-            update={"telemetry": telemetry.model_copy(update={"nearby_entities": entities})},
-            deep=True,
-        )
-        errors = live_plan_rebase_errors(chain_plan(), planner_view, current)
-        assert any("changed while the planner was thinking" in error for error in errors)
-
-    def test_a_control_that_became_ambiguous_refuses(self) -> None:
-        planner_view = observation(controls=TRADE_CONTROLS)
-        current = later(planner_view)
-        telemetry = current.telemetry
-        assert telemetry is not None
-        duplicated = [*TRADE_CONTROLS, VisibleUIControl(
-            label="Show me your goods.", role="button", bounds=bounds(0.8)
-        )]
-        current = current.model_copy(
             update={
+                "control_mode": ControlMode.INTERFACE_ONLY,
                 "telemetry": telemetry.model_copy(
-                    update={"ui": telemetry.ui.model_copy(update={"visible_controls": duplicated})}
-                )
+                    update={"nearby_entities": entities, "capabilities": []}
+                ),
             },
             deep=True,
         )
-        control_first = plan(
-            [
-                step(
-                    "activate",
-                    ActivateVisibleControlAction(
-                        exact_label="Show me your goods.", role="button"
-                    ),
-                    success=[screen_is("trade")],
-                )
-            ],
-            native=0,
-        )
-        errors = live_plan_rebase_errors(control_first, planner_view, current)
-        assert any("ambiguous" in error for error in errors)
-
-    def test_a_control_that_disappeared_refuses(self) -> None:
-        planner_view = observation(controls=TRADE_CONTROLS)
-        current = later(planner_view)
-        telemetry = current.telemetry
-        assert telemetry is not None
-        current = current.model_copy(
-            update={
-                "telemetry": telemetry.model_copy(
-                    update={"ui": telemetry.ui.model_copy(update={"visible_controls": []})}
-                )
-            },
-            deep=True,
-        )
-        control_first = plan(
-            [
-                step(
-                    "activate",
-                    ActivateVisibleControlAction(
-                        exact_label="Show me your goods.", role="button"
-                    ),
-                    success=[screen_is("trade")],
-                )
-            ],
-            native=0,
-        )
-        errors = live_plan_rebase_errors(control_first, planner_view, current)
-        assert any("changed while the planner was thinking" in error for error in errors)
-
-    def test_withdrawn_capability_refuses(self) -> None:
-        planner_view = observation(controls=TRADE_CONTROLS)
-        current = later(planner_view)
-        telemetry = current.telemetry
-        assert telemetry is not None
-        reduced = [c for c in telemetry.capabilities if c != "ui.visible_controls"]
-        current = current.model_copy(
-            update={"telemetry": telemetry.model_copy(update={"capabilities": reduced})},
-            deep=True,
-        )
-        errors = live_plan_rebase_errors(chain_plan(), planner_view, current)
-        assert any("withdrawn" in error for error in errors)
+        assert live_plan_rebase_errors(chain_plan(), planner_view, current) == []
 
     def test_human_input_during_planning_refuses(self) -> None:
         planner_view = observation(controls=TRADE_CONTROLS)
@@ -700,20 +453,6 @@ class TestRebaseAcrossPlannerLatency:
         )
         errors = live_plan_rebase_errors(chain_plan(), planner_view, current)
         assert any("input authority was withdrawn" in error for error in errors)
-
-    def test_control_mode_change_refuses(self) -> None:
-        planner_view = observation(controls=TRADE_CONTROLS)
-        current = later(planner_view).model_copy(
-            update={"control_mode": ControlMode.INTERFACE_ONLY}, deep=True
-        )
-        errors = live_plan_rebase_errors(chain_plan(), planner_view, current)
-        assert any("control mode changed" in error for error in errors)
-
-    def test_stale_current_telemetry_refuses(self) -> None:
-        planner_view = observation(controls=TRADE_CONTROLS)
-        current = later(planner_view).model_copy(update={"telemetry_stale": True}, deep=True)
-        errors = live_plan_rebase_errors(chain_plan(), planner_view, current)
-        assert any("stale" in error for error in errors)
 
     def test_a_plan_whose_basis_is_not_its_planner_snapshot_refuses(self) -> None:
         planner_view = observation(controls=TRADE_CONTROLS)
@@ -751,91 +490,9 @@ class TestRunControlActions:
             ],
             pointer=1,
         )
-        assert live_plan_policy_errors(
-            composed, observation(controls=TRADE_CONTROLS)
-        ) == []
+        assert live_plan_policy_errors(composed) == []
 
-    def test_direct_unpause_is_rejected_before_the_plan_can_start(self) -> None:
-        composed = plan(
-            [
-                step(
-                    "unpause",
-                    PauseAction(paused=False),
-                    success=[
-                        Condition(
-                            kind=ConditionKind.FIELD,
-                            path="telemetry.game.paused",
-                            operator=ConditionOperator.EQUALS,
-                            expected=False,
-                            max_age_seconds=3.0,
-                            required_capabilities=["game.pause"],
-                        )
-                    ],
-                )
-            ],
-            native=0,
-            pointer=0,
-        )
-
-        errors = live_plan_policy_errors(
-            composed,
-            observation(
-                controls=TRADE_CONTROLS,
-                capabilities=[*CAPABILITIES, "game.pause"],
-            ),
-        )
-
-        assert any("direct live unpause" in error for error in errors)
-        assert any("approach_dialogue_target" in error for error in errors)
-
-    @pytest.mark.parametrize(
-        ("action", "success"),
-        [
-            *[
-                (
-                    SetSpeedAction(speed=speed),
-                    Condition(
-                        kind=ConditionKind.FIELD,
-                        path="telemetry.game.speed_multiplier",
-                        operator=ConditionOperator.EQUALS,
-                        expected=multiplier,
-                        max_age_seconds=3.0,
-                        required_capabilities=["game.speed"],
-                    ),
-                )
-                for speed, multiplier in ((1, 1.0), (2, 3.0), (3, 5.0))
-            ],
-        ],
-    )
-    def test_playback_action_cannot_alias_a_direct_unpause(
-        self,
-        action: Action,
-        success: Condition,
-    ) -> None:
-        composed = plan(
-            [
-                step(
-                    "unpause",
-                    action,
-                    success=[success],
-                )
-            ],
-            native=0,
-            pointer=0,
-        )
-
-        errors = live_plan_policy_errors(
-            composed,
-            observation(
-                controls=TRADE_CONTROLS,
-                capabilities=[*CAPABILITIES, "game.pause", "game.speed"],
-            ),
-        )
-
-        assert any("direct live unpause" in error for error in errors)
-        assert any("harvest_resource" in error for error in errors)
-
-    def test_a_stop_only_plan_needs_no_causal_success_condition(self) -> None:
+    def test_noncausal_authored_terminal_is_rejected_even_for_stop(self) -> None:
         from kenshi_agent.models import ConditionPath, StopAction
 
         control_mode_only = Condition(
@@ -850,9 +507,8 @@ class TestRunControlActions:
             pointer=0,
             native=0,
         )
-        assert live_plan_policy_errors(
-            composed, observation(controls=TRADE_CONTROLS)
-        ) == []
+        errors = live_plan_policy_errors(composed)
+        assert any("none witness a causal world change" in error for error in errors)
 
     def test_run_control_steps_do_not_block_a_rebase(self) -> None:
         from kenshi_agent.models import StopAction
@@ -897,37 +553,14 @@ class TestDismissScreen:
     def test_dismissing_the_open_screen_is_accepted(self) -> None:
         from kenshi_agent.models import DismissScreenAction
 
-        state = observation(controls=TRADE_CONTROLS)
-        telemetry = state.telemetry
-        assert telemetry is not None
-        trading = state.model_copy(
-            update={
-                "telemetry": telemetry.model_copy(
-                    update={"ui": telemetry.ui.model_copy(update={"active_screen": "trade"})}
-                )
-            },
-            deep=True,
-        )
         composed = self._plan_with(DismissScreenAction(expected_screen="trade"))
-        assert live_plan_policy_errors(composed, trading) == []
+        assert live_plan_policy_errors(composed) == []
 
-    def test_dismissing_a_screen_that_is_not_open_fails_closed(self) -> None:
+    def test_dismissing_a_screen_that_is_not_open_is_left_to_authority(self) -> None:
         from kenshi_agent.models import DismissScreenAction
 
-        state = observation(controls=TRADE_CONTROLS)
-        telemetry = state.telemetry
-        assert telemetry is not None
-        in_world = state.model_copy(
-            update={
-                "telemetry": telemetry.model_copy(
-                    update={"ui": telemetry.ui.model_copy(update={"active_screen": "world"})}
-                )
-            },
-            deep=True,
-        )
         composed = self._plan_with(DismissScreenAction(expected_screen="trade"))
-        errors = live_plan_policy_errors(composed, in_world)
-        assert any("does not bind to current state" in error for error in errors)
+        assert live_plan_policy_errors(composed) == []
 
     def test_dismiss_costs_one_pointer_and_no_native_budget(self) -> None:
         from kenshi_agent.operation_definitions import DISMISS_SCREEN_DEFINITION
@@ -978,10 +611,8 @@ class TestCapabilityAliases:
 class TestFutureStepsMayReferenceFutureState:
     """The point of composing: later steps describe state that does not exist yet.
 
-    Requiring every step to bind against the *current* observation quietly made
-    real multi-step plans impossible — a closing reply cannot bind before an
-    approach has opened dialogue. Only the entry step must bind now; the rest
-    are bound when reached and again inside the input lease.
+    Plan structure never binds operations against current state. The operation
+    authority binds each step when scheduled and again inside the input lease.
     """
 
     def _approach_then_reply(self) -> PlanEnvelope:
@@ -1008,18 +639,7 @@ class TestFutureStepsMayReferenceFutureState:
         )
 
     def test_a_plan_whose_later_step_needs_future_state_is_accepted(self) -> None:
-        state = observation(controls=TRADE_CONTROLS)
-        telemetry = state.telemetry
-        assert telemetry is not None
-        in_world = state.model_copy(
-            update={
-                "telemetry": telemetry.model_copy(
-                    update={"ui": telemetry.ui.model_copy(update={"active_screen": "world"})}
-                )
-            },
-            deep=True,
-        )
-        assert live_plan_policy_errors(self._approach_then_reply(), in_world) == []
+        assert live_plan_policy_errors(self._approach_then_reply()) == []
 
     def test_the_same_plan_rebases_across_planner_latency(self) -> None:
         state = observation(controls=TRADE_CONTROLS)
@@ -1037,21 +657,17 @@ class TestFutureStepsMayReferenceFutureState:
             self._approach_then_reply(), in_world, later(in_world)
         ) == []
 
-    def test_an_unbindable_entry_step_is_still_refused(self) -> None:
-        """Relaxing future steps must not relax the step about to run."""
+    def test_entry_step_binding_is_also_left_to_operation_authority(self) -> None:
 
         composed = plan(
             [step("approach", ApproachDialogueTargetAction(target_id="entity-ghost"))],
             pointer=0,
         )
-        errors = live_plan_policy_errors(
-            composed, observation(controls=TRADE_CONTROLS)
-        )
-        assert any("does not bind to current state" in error for error in errors)
+        assert live_plan_policy_errors(composed) == []
 
 
 class TestIdempotencyClaims:
-    """A step may be more cautious than its contract, never less."""
+    """Plan policy judges the step's retry declaration, not operation policy."""
 
     def _plan_with(self, idem: IdempotencyPolicy, retries: int = 0) -> PlanEnvelope:
         from kenshi_agent.models import ScrollScreenAction
@@ -1070,41 +686,17 @@ class TestIdempotencyClaims:
             native=0,
         )
 
-    def _trade_state(self) -> Observation:
-        state = observation(
-            controls=[
-                VisibleUIControl(
-                    label="item_3", role="item", window="BARMAN", bounds=bounds(0.5)
-                ),
-            ],
-            capabilities=[*CAPABILITIES, "ui.tooltip"],
-        )
-        telemetry = state.telemetry
-        assert telemetry is not None
-        return state.model_copy(
-            update={
-                "telemetry": telemetry.model_copy(
-                    update={"ui": telemetry.ui.model_copy(update={"active_screen": "trade"})}
-                )
-            },
-            deep=True,
-        )
-
     def test_declaring_at_most_once_for_a_retryable_action_is_accepted(self) -> None:
         """The exact loop that stalled an open-ended live run."""
 
-        errors = live_plan_policy_errors(
-            self._plan_with(IdempotencyPolicy.AT_MOST_ONCE), self._trade_state()
-        )
+        errors = live_plan_policy_errors(self._plan_with(IdempotencyPolicy.AT_MOST_ONCE))
         assert errors == [], errors
 
     def test_the_contract_idempotency_is_also_accepted(self) -> None:
-        errors = live_plan_policy_errors(
-            self._plan_with(IdempotencyPolicy.SAFE_TO_RETRY), self._trade_state()
-        )
+        errors = live_plan_policy_errors(self._plan_with(IdempotencyPolicy.SAFE_TO_RETRY))
         assert errors == [], errors
 
-    def test_claiming_retryable_for_an_at_most_once_action_is_refused(self) -> None:
+    def test_retryable_declaration_without_a_retry_is_structurally_valid(self) -> None:
         composed = plan(
             [
                 step(
@@ -1115,8 +707,7 @@ class TestIdempotencyClaims:
             ],
             pointer=0,
         )
-        errors = live_plan_policy_errors(composed, observation(controls=TRADE_CONTROLS))
-        assert any("may not be retried" in error for error in errors)
+        assert live_plan_policy_errors(composed) == []
 
 
 class TestDerivedRiskBudget:
@@ -1166,16 +757,13 @@ class TestDerivedRiskBudget:
         covered = with_covering_risk_budget(self._buying_plan(declared=5))
         assert covered.risk_budget.max_purchase_actions == 5
 
-    def test_deriving_the_budget_does_not_excuse_an_unbindable_purchase(self) -> None:
-        """Only the bookkeeping goes away, not any check that was protecting something."""
+    def test_deriving_the_budget_does_not_reintroduce_binding_policy(self) -> None:
         from kenshi_agent.live_plan_policy import with_covering_risk_budget
 
         covered = with_covering_risk_budget(self._buying_plan(declared=0))
-        errors = live_plan_policy_errors(
-            covered, observation(controls=TRADE_CONTROLS)
-        )
+        errors = live_plan_policy_errors(covered)
         assert not any("purchase budget" in error for error in errors)
-        assert errors, "an unbindable purchase must still be refused"
+        assert errors == []
 
 
 def test_capability_presence_can_never_count_as_causal_effect_proof() -> None:
@@ -1200,8 +788,7 @@ def test_capability_presence_can_never_count_as_causal_effect_proof() -> None:
     assert not _is_causal_condition(ConditionKind.FIELD, "control_mode")
 
 
-def test_raw_time_binding_is_rejected_in_favor_of_semantic_intent() -> None:
-    """The model states gameplay intent, not Kenshi's motor-key sequence."""
+def test_plan_structure_does_not_decide_operation_semantics() -> None:
 
     speed_effect = Condition(
         kind=ConditionKind.FIELD,
@@ -1226,10 +813,6 @@ def test_raw_time_binding_is_rejected_in_favor_of_semantic_intent() -> None:
         native=0,
     )
 
-    errors = live_plan_policy_errors(
-        composed,
-        observation(capabilities=[*CAPABILITIES, "game.speed"]),
-    )
+    errors = live_plan_policy_errors(composed)
 
-    assert any("raw time binding 'speed_3'" in error for error in errors)
-    assert any("semantic gameplay intention" in error for error in errors)
+    assert errors == []

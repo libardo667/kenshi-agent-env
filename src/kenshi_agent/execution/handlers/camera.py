@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from typing import Literal, Protocol, cast
 
 from ... import operation_definitions as operations
+from ...affordances import OPERATION_BINDING_AUTHORITY
 from ...camera_recovery import score_camera_observation
 from ...control.base import PrimitiveInputAction
 from ...input_boundary import ExecutionToken
@@ -39,6 +40,7 @@ from ..types import (
     OperationResult,
     OperationStatus,
 )
+from .input_binding import authorized_input_binding
 from .kenshi_surface import KenshiControlSurface
 
 
@@ -182,7 +184,12 @@ class KenshiCameraMechanics:
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
     ) -> Transition:
         return await self._surface.run_exact(
-            action, command=command, token=token, receipt=self._execute_rotate_operation
+            action,
+            command=command,
+            token=token,
+            receipt=lambda current, started, dispatch: self._execute_rotate_operation(
+                current, started, dispatch, token
+            ),
         )
 
     async def recover_camera_view(
@@ -193,10 +200,14 @@ class KenshiCameraMechanics:
         )
 
     async def _execute_rotate_operation(
-        self, action: Action, started: datetime, command: CommandDispatchContext | None
+        self,
+        action: Action,
+        started: datetime,
+        command: CommandDispatchContext | None,
+        token: ExecutionToken | None,
     ) -> ActionReceipt:
         del command
-        return await self._execute_rotate_camera(cast(RotateCameraAction, action), started)
+        return await self._execute_rotate_camera(cast(RotateCameraAction, action), started, token)
 
     async def _execute_recovery_operation(
         self, action: Action, started: datetime, command: CommandDispatchContext | None
@@ -210,15 +221,13 @@ class KenshiCameraMechanics:
         self,
         action: RotateCameraAction,
         started: datetime,
+        token: ExecutionToken | None,
     ) -> ActionReceipt:
         """Apply one bounded held-Mouse3 drag after in-lease world revalidation."""
 
-        result = self._surface.telemetry_reader.read()
-        if result.stale:
-            raise RuntimeError("No input was sent: telemetry became stale inside the input lease.")
-        observation = self._surface.port._observation_from_snapshot(result.snapshot)
-        binding = operations.require_bound(
-            operations.ROTATE_CAMERA_DEFINITION.bind(action, observation),
+        binding, observation = authorized_input_binding(
+            action,
+            token,
             operations.BoundNamedOperation,
         )
         primitive = camera_rotation_primitive(action)
@@ -316,12 +325,16 @@ class KenshiCameraMechanics:
             objective=self._surface.runtime_config.objective,
             available_skills=self._surface.port.available_skills,
             skill_specs=[
-                self._surface.macros.spec(name)
-                for name in self._surface.port.available_skills
+                self._surface.macros.spec(name) for name in self._surface.port.available_skills
             ],
         )
+        rebound = OPERATION_BINDING_AUTHORITY.bind(
+            action,
+            observation,
+            affordance=None,
+        )
         binding = operations.require_bound(
-            operations.RECOVER_CAMERA_VIEW_DEFINITION.bind(action, observation),
+            rebound.binding,
             operations.BoundCameraRecovery,
             context="Camera recovery binding changed",
         )

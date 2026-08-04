@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from typing import TypeVar, cast
 
+from .action_budget import ActionBudgetLedger
 from .advisor import (
     AdvisorSession,
 )
 from .advisor_service import AdvisorService
+from .affordances import OPERATION_BINDING_AUTHORITY
 from .config import PlanningConfig
 from .continuity import ContinuityLedger
 from .continuity_service import ContinuityService
@@ -33,7 +35,7 @@ from .planning import PlanningClock, SystemPlanningClock
 from .reflexes import ReflexEngine
 from .reporting import ConsoleDecisionReporter
 from .run_coordinator import RunCoordinator, RunSummary
-from .safety import ActionGuard
+from .safety import OperationPolicy
 from .scenario_fixtures import ScenarioAttestation
 from .session_log import SessionLogger
 
@@ -55,7 +57,7 @@ class AgentRuntime:
         operation_port: OperationMechanicsPort | None = None,
         planner: Planner,
         advisor: AdvisorSession | None = None,
-        guard: ActionGuard,
+        policy: OperationPolicy,
         reflexes: ReflexEngine,
         logger: SessionLogger,
         memory: MemoryStore | None,
@@ -88,10 +90,11 @@ class AgentRuntime:
         self.operation_port = cast(OperationMechanicsPort, resolved_operation_port)
         self.planner = planner
         self.advisor = advisor
-        self.guard = guard
+        self.policy = policy
+        self.action_budget = ActionBudgetLedger(policy.config, policy.macros)
         # One cross-cutting authority, asked before scheduling and again
         # inside the input lease, so both moments share one policy.
-        self.authority = OperationAuthority(guard)
+        self.authority = OperationAuthority(policy, OPERATION_BINDING_AUTHORITY)
         self.reflexes = reflexes
         self.logger = logger
         self.memory = memory
@@ -144,9 +147,7 @@ class AgentRuntime:
             control_mode=control_mode,
             run_id=run_id,
             refresh_context=(
-                lambda observation: self._coordinator._advisor_context_observation(
-                    observation
-                )
+                lambda observation: self._coordinator._advisor_context_observation(observation)
             ),
         )
         self.planner_service = PlannerService(
@@ -172,7 +173,8 @@ class AgentRuntime:
         self.operation_execution = OperationExecutionFactory(
             environment=environment,
             operation_port=self.operation_port,
-            guard=guard,
+            macros=policy.macros,
+            action_budget=self.action_budget,
             authority=self.authority,
             logger=logger,
             clock=self.planning_clock,
@@ -182,9 +184,7 @@ class AgentRuntime:
             apply_patch_continuity=self.continuity.apply_patch,
             read_memory=self.continuity.read_memory,
             read_fieldbook=self.continuity.read_fieldbook,
-            report_action_started=(
-                reporter.action_started if reporter is not None else None
-            ),
+            report_action_started=(reporter.action_started if reporter is not None else None),
         )
         self.log_full_observations = log_full_observations
         self.scenario = scenario
@@ -194,9 +194,10 @@ class AgentRuntime:
         self._coordinator = RunCoordinator(
             run_id=run_id,
             environment=environment,
-            operation_port=self.operation_port,
-            guard=guard,
-            authority=self.authority,
+            execute_control_pause=self.operation_port.control_pause,
+            safety_config=policy.config,
+            macros=policy.macros,
+            validate_safety_pause=policy.validate_safety_pause,
             reflexes=reflexes,
             logger=logger,
             control_mode=control_mode,

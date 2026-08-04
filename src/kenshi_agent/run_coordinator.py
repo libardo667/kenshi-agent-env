@@ -8,19 +8,20 @@ are one scheduling policy argument over this same machine, not two runtimes.
 It contains no operation-family knowledge. Which operation is running is the
 operation definition's business and its handler's.
 """
+
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 from contextlib import suppress
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from time import monotonic
-from typing import Any, TypeVar
+from typing import Any, Protocol, TypeVar
 
 from .advisor_service import AdvisorService
 from .affordances import terminal_affordance_receipt
-from .config import PlanningConfig
+from .config import PlanningConfig, SafetyConfig
 from .continuity import ContinuityLedger
 from .continuity_service import ContinuityService
 from .continuous_executor import (
@@ -32,13 +33,11 @@ from .control_ownership import (
     ControlOwnershipState,
 )
 from .env import AgentEnvironment
-from .execution.ports import OperationMechanicsPort
 from .final_safe_state import (
     FinalSafeStateOutcome,
     FinalSafeStateStatus,
 )
 from .models import (
-    Action,
     AffordanceExecution,
     AffordanceLifecycleStatus,
     AuthoredPlannerContext,
@@ -60,9 +59,9 @@ from .models import (
     RiskBudget,
     ScenarioIdentity,
     StopAction,
+    Transition,
     WorldStateRevision,
 )
-from .operation_authority import AuthorizationDecision, OperationAuthority
 from .operation_execution import OperationExecutionFactory
 from .outcome_recorder import OutcomeRecorder
 from .plan_events import PlanEventRecorder
@@ -78,10 +77,11 @@ from .planners.base import (
 from .planning import PlanningClock, PlanValidationError, validate_plan
 from .reflexes import ReflexEngine
 from .reporting import ConsoleDecisionReporter
-from .safety import ActionGuard, SafetyViolation
+from .safety import SafetyViolation
 from .safety_supervisor import SafetyCause, SafetyPreemption, SafetySupervisor
 from .scenario_fixtures import ScenarioAttestation
 from .session_log import SessionLogger
+from .skills import MacroRegistry
 from .world_state import (
     CommandCausalityError,
     ObservationPump,
@@ -93,6 +93,16 @@ from .world_state import (
 )
 
 _WorkResult = TypeVar("_WorkResult")
+SafetyPauseValidator = Callable[[PauseAction, Observation], PauseAction]
+
+
+class ControlPauseExecutor(Protocol):
+    async def __call__(
+        self,
+        action: PauseAction,
+        *,
+        command: CommandDispatchContext,
+    ) -> Transition: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,9 +138,10 @@ class RunCoordinator:
         *,
         run_id: str,
         environment: AgentEnvironment,
-        operation_port: OperationMechanicsPort,
-        guard: ActionGuard,
-        authority: OperationAuthority,
+        execute_control_pause: ControlPauseExecutor,
+        safety_config: SafetyConfig,
+        macros: MacroRegistry,
+        validate_safety_pause: SafetyPauseValidator,
         reflexes: ReflexEngine,
         logger: SessionLogger,
         control_mode: ControlMode,
@@ -153,9 +164,10 @@ class RunCoordinator:
     ) -> None:
         self.run_id = run_id
         self.environment = environment
-        self.operation_port = operation_port
-        self.guard = guard
-        self.authority = authority
+        self.execute_control_pause = execute_control_pause
+        self.safety_config = safety_config
+        self.macros = macros
+        self.validate_safety_pause = validate_safety_pause
         self.reflexes = reflexes
         self.logger = logger
         self.control_mode = control_mode
@@ -196,15 +208,6 @@ class RunCoordinator:
             step_index=observation.step_index,
             payload=payload,
         )
-
-    def _action_authority(
-        self,
-        action: Action,
-        observation: Observation,
-    ) -> AuthorizationDecision:
-        """Re-ask the one authority, without spending the same budget twice."""
-
-        return self.authority.evaluate(action, observation)
 
     async def _begin_run(
         self,
@@ -251,7 +254,7 @@ class RunCoordinator:
         safety_supervisor: SafetySupervisor | None = None
         observation_pump: ObservationPump | None = None
         if supervised:
-            if self.guard.config.supervisor_enabled:
+            if self.safety_config.supervisor_enabled:
                 safety_supervisor = self._new_safety_supervisor(state_store)
                 await safety_supervisor.start()
             if self.planning_config.observation_pump_enabled:
@@ -734,8 +737,8 @@ class RunCoordinator:
                         plan_version=plan.plan_version,
                         observation=observation,
                         reason=(
-                            "Every action still binds to the same current reference and "
-                            "all assumptions still hold on the newer revision."
+                            "The plan basis and its own assumptions still hold on the "
+                            "newer revision; operation eligibility is checked at scheduling."
                         ),
                         evidence={
                             "old_basis": old_basis.model_dump(mode="json"),
@@ -756,7 +759,7 @@ class RunCoordinator:
                         plan,
                         observation,
                         self.planning_config,
-                        self.guard.macros,
+                        self.macros,
                     )
                 except PlanValidationError as exc:
                     # A rejected plan is one bad plan, not a reason to end the
@@ -924,7 +927,7 @@ class RunCoordinator:
                 )
                 if result.reflex_decision is not None:
                     # The next scheduler pass executes the deterministic reflex
-                    # through the ordinary guard/environment path before replanning.
+                    # through the ordinary authority/handler path before replanning.
                     pending_reflex = result.reflex_decision
                     continue
                 if identical_failure_limit_reached(result.reason):
@@ -1004,11 +1007,11 @@ class RunCoordinator:
         return SafetySupervisor(
             store=state_store,
             reflexes=self.reflexes,
-            max_sequence_stalls=self.guard.config.supervisor_max_sequence_stalls,
+            max_sequence_stalls=self.safety_config.supervisor_max_sequence_stalls,
             minimum_live_stall_age_seconds=(
-                self.guard.config.supervisor_sequence_stall_min_age_seconds
+                self.safety_config.supervisor_sequence_stall_min_age_seconds
             ),
-            require_paused_between_actions=(self.guard.config.require_paused_between_actions),
+            require_paused_between_actions=(self.safety_config.require_paused_between_actions),
         )
 
     async def _finish_safety_supervisor(
@@ -1058,7 +1061,7 @@ class RunCoordinator:
 
         can_offer_takeover = (
             preemption.cause is SafetyCause.HUMAN_INPUT
-            and self.guard.config.automatic_takeover_enabled
+            and self.safety_config.automatic_takeover_enabled
             and remaining_run_actions > completed
             and observation.telemetry is not None
             and not observation.telemetry_stale
@@ -1100,7 +1103,7 @@ class RunCoordinator:
                 )
                 return observation, completed, True, None, stop_reason, None, None
 
-            if self.guard.config.supervisor_enabled:
+            if self.safety_config.supervisor_enabled:
                 supervisor = self._new_safety_supervisor(state_store)
                 await supervisor.start()
             feedback = (
@@ -1188,7 +1191,7 @@ class RunCoordinator:
         if supervisor is not None:
             await self._finish_safety_supervisor(supervisor)
             supervisor = None
-        if self.guard.config.supervisor_enabled:
+        if self.safety_config.supervisor_enabled:
             supervisor = self._new_safety_supervisor(state_store)
             await supervisor.start()
         planner_feedback = (
@@ -1257,8 +1260,8 @@ class RunCoordinator:
         preemption: SafetyPreemption,
     ) -> tuple[bool, Observation, str]:
         machine = ControlOwnershipMachine(
-            quiet_seconds=self.guard.config.human_control_quiet_seconds,
-            countdown_seconds=self.guard.config.takeover_countdown_seconds,
+            quiet_seconds=self.safety_config.human_control_quiet_seconds,
+            countdown_seconds=self.safety_config.takeover_countdown_seconds,
         )
         observation = state_store.latest or preemption.observation
         # The takeover pauses the game for the human's benefit, so handing
@@ -1289,7 +1292,7 @@ class RunCoordinator:
                     name="kenshi-agent-handoff-observation",
                 )
                 timer_task = asyncio.create_task(
-                    self.planning_clock.sleep(self.guard.config.takeover_poll_seconds),
+                    self.planning_clock.sleep(self.safety_config.takeover_poll_seconds),
                     name="kenshi-agent-handoff-timer",
                 )
                 done, pending = await asyncio.wait(
@@ -1383,13 +1386,12 @@ class RunCoordinator:
             start_revision=observation.world_revision,
         )
         try:
-            transition = await self.operation_port.pause(
+            transition = await self.execute_control_pause(
                 PauseAction(paused=False),
                 command=CommandDispatchContext(
                     command_id=command.command_id,
                     based_on_revision=observation.world_revision,
                 ),
-                token=None,
             )
         except Exception as exc:
             state_store.fail_active_command(f"{type(exc).__name__}: {exc}")
@@ -1546,9 +1548,9 @@ class RunCoordinator:
 
         action = preemption.decision.action
         try:
-            guarded_action = self.guard.validate_safety_pause(action, observation)
+            guarded_action = self.validate_safety_pause(action, observation)
         except SafetyViolation as exc:
-            reason = f"Safety cleanup guard rejected pause: {exc}"
+            reason = f"Safety cleanup policy rejected pause: {exc}"
             self.logger.write(
                 "safety_cleanup_failed",
                 step_index=observation.step_index,
@@ -1590,13 +1592,12 @@ class RunCoordinator:
             },
         )
         try:
-            transition = await self.operation_port.pause(
+            transition = await self.execute_control_pause(
                 guarded_action,
                 command=CommandDispatchContext(
                     command_id=command.command_id,
                     based_on_revision=start_revision,
                 ),
-                token=None,
             )
         except Exception as exc:
             state_store.fail_active_command(f"{type(exc).__name__}: {exc}")
@@ -1659,7 +1660,7 @@ class RunCoordinator:
                 latest = await state_store.wait_for(
                     self._is_usable_paused_observation,
                     after_revision=start_revision,
-                    timeout_seconds=(self.guard.config.supervisor_pause_timeout_seconds),
+                    timeout_seconds=(self.safety_config.supervisor_pause_timeout_seconds),
                 )
             except TimeoutError:
                 pass

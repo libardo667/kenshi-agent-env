@@ -7,10 +7,12 @@ directly; no second contract language reconstructs an operation's meaning.
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Callable
-from dataclasses import dataclass, field
-from enum import StrEnum
+from dataclasses import dataclass, field, fields
+from enum import Enum, StrEnum
+from hashlib import sha256
 from typing import Literal, TypeAlias, TypeVar
 
 from pydantic import BaseModel
@@ -99,46 +101,19 @@ LEGACY_NATIVE_APPROACH_CAPABILITY = "control.approach_vendor"
 NATIVE_APPROACH_CAPABILITY_ALIASES: frozenset[str] = frozenset(
     {NATIVE_APPROACH_CAPABILITY, LEGACY_NATIVE_APPROACH_CAPABILITY}
 )
-NATIVE_APPROACH_WIRE_COMMAND: Literal["approach_confirmed_vendor"] = "approach_confirmed_vendor"
-
 NATIVE_MOVE_CAPABILITY = "control.move_to_character"
 NATIVE_SQUAD_SELECTION_CAPABILITY = "control.select_squad_member"
-NATIVE_SQUAD_SELECTION_WIRE_COMMAND: Literal["select_squad_member"] = (
-    "select_squad_member"
-)
 NATIVE_SQUAD_REGROUP_CAPABILITY = "control.regroup_with_squad_member"
-NATIVE_SQUAD_REGROUP_WIRE_COMMAND: Literal["regroup_with_squad_member"] = (
-    "regroup_with_squad_member"
-)
 NATIVE_DIRECTION_CAPABILITY = "control.move_in_direction"
-NATIVE_DIRECTION_WIRE_COMMAND: Literal["move_in_direction"] = "move_in_direction"
-NATIVE_MOVE_WIRE_COMMAND: Literal["move_to_character"] = "move_to_character"
 NATIVE_MAP_TRAVEL_CAPABILITY = "control.travel_to_map_destination"
 NATIVE_MAP_DESTINATIONS_CAPABILITY = "world.known_map_destinations"
-NATIVE_MAP_TRAVEL_WIRE_COMMAND: Literal["travel_to_map_destination"] = (
-    "travel_to_map_destination"
-)
 NATIVE_EXIT_BUILDING_CAPABILITY = "control.exit_current_building"
-NATIVE_EXIT_BUILDING_WIRE_COMMAND: Literal["exit_current_building"] = (
-    "exit_current_building"
-)
 NATIVE_WALK_DESTINATION_REACHED_RESULT = "walk_destination_reached"
 NATIVE_CONTEXT_ACTION_CAPABILITY = "control.perform_context_action"
 NATIVE_CONTEXT_TARGETS_CAPABILITY = "world.context_targets"
-WORLD_CONTEXT_TARGET_SCREEN_POSITIONS_CAPABILITY = (
-    "world.context_target_screen_positions"
-)
-NATIVE_CONTEXT_ACTION_WIRE_COMMAND: Literal["perform_context_action"] = (
-    "perform_context_action"
-)
+WORLD_CONTEXT_TARGET_SCREEN_POSITIONS_CAPABILITY = "world.context_target_screen_positions"
 NATIVE_PRODUCE_RESOURCE_CAPABILITY = "control.produce_resource_output"
-NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND: Literal["produce_resource_output"] = (
-    "produce_resource_output"
-)
 NATIVE_OPEN_CONTEXT_INVENTORY_CAPABILITY = "control.open_context_inventory"
-NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND: Literal["open_context_inventory"] = (
-    "open_context_inventory"
-)
 CONTEXT_INVENTORY_TARGET_CAPABILITY = "ui.context_inventory_target"
 
 VISIBLE_CONTROLS_CAPABILITY = "ui.visible_controls"
@@ -353,9 +328,7 @@ def require_bound(
     if isinstance(binding, BindingFailure):
         raise RuntimeError(f"{context}: {binding.reason}")
     if not isinstance(binding, binding_type):
-        raise RuntimeError(
-            f"{context}: the operation definition returned the wrong binding type."
-        )
+        raise RuntimeError(f"{context}: the operation definition returned the wrong binding type.")
     return binding
 
 
@@ -535,18 +508,14 @@ def bind_approach_dialogue_target(
             "finish or close that dialogue first."
         )
     if ui.modal_open:
-        return _unbound(
-            "A modal interface is open and blocks a new approach; close it first."
-        )
+        return _unbound("A modal interface is open and blocks a new approach; close it first.")
     matches = [
         target
         for target in dialogue_targets(telemetry.nearby_entities)
         if target.id == action.target_id
     ]
     if not matches:
-        return _unbound(
-            f"Target {action.target_id!r} is not a current valid dialogue target."
-        )
+        return _unbound(f"Target {action.target_id!r} is not a current valid dialogue target.")
     if len(matches) > 1:
         return _unbound(
             f"Target {action.target_id!r} matches {len(matches)} current entities; "
@@ -586,13 +555,10 @@ def bind_move_to_character(
         return _unbound("Telemetry is stale, so the destination cannot be bound.")
     if failure := _world_interface_error(observation):
         return _unbound(failure)
-    matches = [
-        entity for entity in telemetry.nearby_entities if entity.id == action.target_id
-    ]
+    matches = [entity for entity in telemetry.nearby_entities if entity.id == action.target_id]
     if not matches:
         return _unbound(
-            f"Destination {action.target_id!r} is not a currently observed nearby "
-            "character."
+            f"Destination {action.target_id!r} is not a currently observed nearby character."
         )
     if len(matches) > 1:
         return _unbound(
@@ -632,13 +598,9 @@ def bind_perform_context_action(
             "The modal and dialogue state is not confirmed clear, so a new world "
             "context action cannot bind; finish or close the interface first."
         )
-    matches = [
-        target for target in telemetry.world_targets if target.id == action.target_id
-    ]
+    matches = [target for target in telemetry.world_targets if target.id == action.target_id]
     if not matches:
-        return _unbound(
-            f"Target {action.target_id!r} is not a current actionable world target."
-        )
+        return _unbound(f"Target {action.target_id!r} is not a current actionable world target.")
     if len(matches) > 1:
         return _unbound(
             f"Target {action.target_id!r} matches {len(matches)} world targets; "
@@ -697,13 +659,9 @@ def bind_command_world_target(
             "The modal and dialogue state is not confirmed clear, so a world "
             "target command cannot bind; finish or close the interface first."
         )
-    matches = [
-        target for target in telemetry.world_targets if target.id == action.target_id
-    ]
+    matches = [target for target in telemetry.world_targets if target.id == action.target_id]
     if not matches:
-        return _unbound(
-            f"Target {action.target_id!r} is not a current actionable world target."
-        )
+        return _unbound(f"Target {action.target_id!r} is not a current actionable world target.")
     if len(matches) > 1:
         return _unbound(
             f"Target {action.target_id!r} matches {len(matches)} world targets; "
@@ -717,13 +675,9 @@ def bind_command_world_target(
         )
     point = target.screen_position
     if point is None:
-        return _unbound(
-            f"Target {target.name!r} has no current on-screen command geometry."
-        )
+        return _unbound(f"Target {target.name!r} has no current on-screen command geometry.")
     if not (0.0 <= point.x <= 1.0 and 0.0 <= point.y <= 1.0):
-        return _unbound(
-            f"Target {target.name!r} has out-of-range command geometry."
-        )
+        return _unbound(f"Target {target.name!r} has out-of-range command geometry.")
     bounds = NormalizedPointerBounds(
         min_x=point.x,
         max_x=point.x,
@@ -781,13 +735,9 @@ def bind_select_squad_member(
             "The modal and dialogue state is not confirmed clear, so a squad "
             "member selection cannot bind; finish or close the interface first."
         )
-    matches = [
-        character for character in telemetry.squad if character.id == action.target_id
-    ]
+    matches = [character for character in telemetry.squad if character.id == action.target_id]
     if not matches:
-        return _unbound(
-            f"Target {action.target_id!r} is not a current squad member."
-        )
+        return _unbound(f"Target {action.target_id!r} is not a current squad member.")
     if len(matches) > 1:
         return _unbound(
             f"Target {action.target_id!r} matches {len(matches)} squad members; "
@@ -797,8 +747,7 @@ def bind_select_squad_member(
     same_name = [
         character
         for character in telemetry.squad
-        if normalize_control_label(character.name)
-        == normalize_control_label(target.name)
+        if normalize_control_label(character.name) == normalize_control_label(target.name)
     ]
     if len(same_name) != 1:
         return _unbound(
@@ -809,8 +758,7 @@ def bind_select_squad_member(
         control
         for control in (telemetry.ui.visible_controls or [])
         if control.role == "text"
-        and normalize_control_label(control.label)
-        == normalize_control_label(target.name)
+        and normalize_control_label(control.label) == normalize_control_label(target.name)
         and control.bounds.min_y >= 0.75
     ]
     if len(portrait_matches) != 1:
@@ -877,17 +825,12 @@ def bind_select_squad_member_exact(
             "member selection cannot bind; finish or close the interface first."
         )
     selected_ids = telemetry.ui.selected_character_ids
-    if (
-        not selected_ids
-        or telemetry.ui.selected_character_id not in selected_ids
-    ):
+    if not selected_ids or telemetry.ui.selected_character_id not in selected_ids:
         return _unbound(
             "Native squad selection requires one or more exact current squad "
             "selections as its causal basis."
         )
-    matches = [
-        character for character in telemetry.squad if character.id == action.target_id
-    ]
+    matches = [character for character in telemetry.squad if character.id == action.target_id]
     if len(matches) != 1:
         return _unbound(
             f"Target {action.target_id!r} identifies {len(matches)} current squad "
@@ -914,8 +857,7 @@ def exact_squad_member_selection_is_currently_authorable(
         telemetry is not None
         and not observation.telemetry_stale
         and bool(telemetry.ui.selected_character_ids)
-        and telemetry.ui.selected_character_id
-        in telemetry.ui.selected_character_ids
+        and telemetry.ui.selected_character_id in telemetry.ui.selected_character_ids
         and any(
             bind_select_squad_member_exact(
                 SelectSquadMemberExactAction(target_id=character.id),
@@ -981,13 +923,9 @@ def _bind_exact_natural_resource(
         return None, _unbound("No telemetry is available to bind the resource.")
     if observation.telemetry_stale:
         return None, _unbound("Telemetry is stale, so the resource cannot be bound.")
-    matches = [
-        target for target in telemetry.world_targets if target.id == target_id
-    ]
+    matches = [target for target in telemetry.world_targets if target.id == target_id]
     if not matches:
-        return None, _unbound(
-            f"Target {target_id!r} is not a current natural-resource target."
-        )
+        return None, _unbound(f"Target {target_id!r} is not a current natural-resource target.")
     if len(matches) > 1:
         return None, _unbound(
             f"Target {target_id!r} matches {len(matches)} world targets; an "
@@ -1025,8 +963,7 @@ def bind_produce_resource_output(
         or telemetry.ui.dialogue_open is not False
     ):
         return _unbound(
-            "The world interface is not confirmed clear, so resource production "
-            "cannot bind."
+            "The world interface is not confirmed clear, so resource production cannot bind."
         )
     return BoundNamedTarget(
         reason=(
@@ -1075,8 +1012,7 @@ def bind_harvest_resource(
         or telemetry.ui.dialogue_open is not False
     ):
         return _unbound(
-            "The world interface is not confirmed clear, so a harvest option "
-            "cannot begin."
+            "The world interface is not confirmed clear, so a harvest option cannot begin."
         )
     selected = [
         character
@@ -1182,10 +1118,7 @@ def context_inventory_is_currently_authorable(observation: Observation) -> bool:
         return False
     if telemetry.ui.dialogue_open is not False:
         return False
-    clear_world = (
-        telemetry.ui.active_screen == "world"
-        and telemetry.ui.modal_open is False
-    )
+    clear_world = telemetry.ui.active_screen == "world" and telemetry.ui.modal_open is False
     exact_inventory_target = telemetry.ui.context_inventory_target_id
     exact_inventory = telemetry.ui.active_screen == "inventory" and any(
         target.id == exact_inventory_target
@@ -1273,8 +1206,7 @@ def bind_travel_to_map_destination(
     ]
     if not matches:
         return _unbound(
-            f"Destination {action.destination_id!r} is not a currently known "
-            "map destination."
+            f"Destination {action.destination_id!r} is not a currently known map destination."
         )
     if len(matches) > 1:
         return _unbound(
@@ -1290,9 +1222,7 @@ def bind_travel_to_map_destination(
         location_authoritative=location_authoritative,
     ):
         boundary = (
-            "already inside"
-            if telemetry.game.inside_town_walls is True
-            else "already within"
+            "already inside" if telemetry.game.inside_town_walls is True else "already within"
         )
         return _unbound(
             f"Destination {destination.name!r} ({destination.id}) is {boundary} "
@@ -1366,28 +1296,20 @@ def bind_regroup_with_squad_member(
             "option owns the complete playback boundary."
         )
     actor_matches = [
-        member
-        for member in telemetry.squad
-        if member.id == action.actor_id and member.selected
+        member for member in telemetry.squad if member.id == action.actor_id and member.selected
     ]
     if (
         len(actor_matches) != 1
         or telemetry.ui.selected_character_id != action.actor_id
         or telemetry.ui.selected_character_ids != [action.actor_id]
     ):
-        return _unbound(
-            "actor_id must be the one exact currently selected squad member."
-        )
+        return _unbound("actor_id must be the one exact currently selected squad member.")
     actor = actor_matches[0]
     if actor.alive is not True or actor.conscious is not True or actor.down is True:
-        return _unbound(
-            f"Selected actor {actor.name!r} is not confirmed able to travel."
-        )
+        return _unbound(f"Selected actor {actor.name!r} is not confirmed able to travel.")
     if action.target_id == action.actor_id:
         return _unbound("A squad member cannot regroup with itself.")
-    target_matches = [
-        member for member in telemetry.squad if member.id == action.target_id
-    ]
+    target_matches = [member for member in telemetry.squad if member.id == action.target_id]
     if len(target_matches) != 1:
         return _unbound(
             f"target_id must identify one exact current squad member; found "
@@ -1397,15 +1319,12 @@ def bind_regroup_with_squad_member(
     if target.alive is not True:
         return _unbound(f"Target squad member {target.name!r} is not confirmed alive.")
     if actor.position is None or target.position is None:
-        return _unbound(
-            "Both squad members need current world positions for regrouping."
-        )
+        return _unbound("Both squad members need current world positions for regrouping.")
     dx = actor.position.x - target.position.x
     dz = actor.position.z - target.position.z
     if dx * dx + dz * dz <= SQUAD_REGROUP_ARRIVAL_DISTANCE**2:
         return _unbound(
-            f"{actor.name!r} is already within the native arrival boundary of "
-            f"{target.name!r}."
+            f"{actor.name!r} is already within the native arrival boundary of {target.name!r}."
         )
     return BoundNamedTarget(
         reason=(
@@ -1520,9 +1439,7 @@ def bind_visible_control(
             "semantic gameplay intent and let its monitored option own playback."
         )
     if not matches:
-        return _unbound(
-            f"No current {action.role} control matches label {action.exact_label!r}."
-        )
+        return _unbound(f"No current {action.role} control matches label {action.exact_label!r}.")
     if len(matches) > 1:
         windows = sorted({control.window or "<no window>" for control in matches})
         return _unbound(
@@ -1591,7 +1508,6 @@ def _window_belongs_to(window: str, owner_name: str | None) -> bool:
     return normalize_control_label(window) == normalize_control_label(owner_name)
 
 
-
 def _bind_item_cell(
     cell_label: str,
     observation: Observation,
@@ -1655,9 +1571,7 @@ def _bind_item_cell(
         # mismatched price with the real one named; refusing here as well would
         # report the cell as missing rather than mispriced, which is the less
         # actionable of the two failures.
-        narrowed = [
-            control for control in matches if control.item_base_value == item_base_value
-        ]
+        narrowed = [control for control in matches if control.item_base_value == item_base_value]
         if narrowed:
             matches = narrowed
 
@@ -1669,8 +1583,7 @@ def _bind_item_cell(
         # live Barman's shelf actually did. Distinguishable duplicates still
         # fail closed.
         distinct = {
-            (control.window, control.item_name, control.item_base_value)
-            for control in matches
+            (control.window, control.item_name, control.item_base_value) for control in matches
         }
         if len(distinct) > 1 or matches[0].item_name is None:
             return _unbound(
@@ -1728,9 +1641,7 @@ def bind_purchase_item(
     cell_price = cell.item_base_value
     if cell_name is not None and cell_price is not None:
         if action.item_name != cell_name:
-            return _unbound(
-                f"The cell holds {cell_name!r}, not {action.item_name!r}."
-            )
+            return _unbound(f"The cell holds {cell_name!r}, not {action.item_name!r}.")
         # This check used to be skipped, on the grounds that the asking price
         # "is never exported" and so a disagreeing `expected_price` proved
         # nothing. That was true of the old export, which shipped the sell
@@ -1750,11 +1661,7 @@ def bind_purchase_item(
     else:
         tooltip_text = telemetry.ui.tooltip_text
         tooltip_bounds = telemetry.ui.tooltip_source_bounds
-        if (
-            telemetry.ui.tooltip_visible is not True
-            or not tooltip_text
-            or tooltip_bounds is None
-        ):
+        if telemetry.ui.tooltip_visible is not True or not tooltip_text or tooltip_bounds is None:
             return _unbound(
                 "This plug-in does not name item cells, so a purchase needs a "
                 "visible tooltip; hover the cell first."
@@ -1788,9 +1695,7 @@ def bind_purchase_item(
         or seller.shop_inventory_owner is not True
         or seller.disposition not in (Disposition.NEUTRAL, Disposition.FRIENDLY)
     ):
-        return _unbound(
-            "The seller is not a verified non-hostile shop owner."
-        )
+        return _unbound("The seller is not a verified non-hostile shop owner.")
     # Ownership is proved by the cell sitting in the seller's own inventory
     # window, not by a count of shop traders in the world. `active_shop_trader_count`
     # is that registry - it read 5 in a bar with no trade open at all - so gating
@@ -1800,9 +1705,7 @@ def bind_purchase_item(
             f"Window {action.window!r} is not the seller's own inventory "
             f"({seller.name!r}); the cell is not the shop's stock."
         )
-    recipient, recipient_error = _single_selected_player_inventory_owner(
-        observation
-    )
+    recipient, recipient_error = _single_selected_player_inventory_owner(observation)
     if recipient is None:
         assert recipient_error is not None
         return _unbound(recipient_error)
@@ -1831,7 +1734,6 @@ def bind_purchase_item(
         item_quantity=cell.item_quantity,
         section=cell.section,
     )
-
 
 
 def bind_sell_item(
@@ -1899,7 +1801,6 @@ def bind_sell_item(
         resolved_bounds=cell.resolved_bounds,
         source_revision=observation.world_revision,
     )
-
 
 
 def bind_equip_item(
@@ -1977,8 +1878,7 @@ def bind_collect_resource_output(
         return _unbound(layout_error)
     if telemetry.ui.context_inventory_target_id != action.target_id:
         return _unbound(
-            "The open contextual inventory does not belong to the exact "
-            "requested resource target."
+            "The open contextual inventory does not belong to the exact requested resource target."
         )
     if telemetry.ui.visible_controls_complete is not True:
         return _unbound(
@@ -1986,9 +1886,7 @@ def bind_collect_resource_output(
             "quantity cannot be proved."
         )
     if not _window_belongs_to(action.window, target.name):
-        return _unbound(
-            f"Window {action.window!r} does not name target {target.name!r}."
-        )
+        return _unbound(f"Window {action.window!r} does not name target {target.name!r}.")
     selected = [character for character in telemetry.squad if character.selected]
     if (
         len(selected) != 1
@@ -1997,8 +1895,7 @@ def bind_collect_resource_output(
         or selected[0].inventory_complete is not True
     ):
         return _unbound(
-            "One exact selected character with a complete destination inventory "
-            "is required."
+            "One exact selected character with a complete destination inventory is required."
         )
     cell = _bind_item_cell(
         action.cell_label,
@@ -2094,16 +1991,12 @@ def bind_dismiss_screen(
     if observation.telemetry_stale:
         return _unbound("Telemetry is stale, so the current screen cannot be bound.")
     named_screen = (
-        action.expected_screen
-        if isinstance(action.expected_screen, GameScreen)
-        else None
+        action.expected_screen if isinstance(action.expected_screen, GameScreen) else None
     )
     if named_screen is not None:
         open_state = screen_is_open(named_screen, telemetry)
         if open_state is None:
-            return _unbound(
-                f"Nothing observable reports whether {named_screen.value} is open."
-            )
+            return _unbound(f"Nothing observable reports whether {named_screen.value} is open.")
         if not open_state:
             return _unbound(
                 f"The {named_screen.value} screen is already closed, so no "
@@ -2157,8 +2050,7 @@ def bind_dismiss_screen(
     ]
     if not owned:
         return _unbound(
-            f"No window captioned {action.window!r} is currently open, so it "
-            "cannot be closed."
+            f"No window captioned {action.window!r} is currently open, so it cannot be closed."
         )
     rect = max(
         (control.bounds for control in owned),
@@ -2202,8 +2094,7 @@ def bind_use_game_binding(
         and QUICKSAVE_COMPLETION_CAPABILITY not in telemetry.capabilities
     ):
         return _unbound(
-            "Quicksave requires controller-owned completion evidence for the "
-            "exact quicksave slot."
+            "Quicksave requires controller-owned completion evidence for the exact quicksave slot."
         )
     if action.binding is GameBinding.QUICKLOAD and (
         telemetry.identity_session_id is None
@@ -2279,8 +2170,7 @@ def bind_recover_camera_view(
         control
         for control in controls
         if control.role == "text"
-        and normalize_control_label(control.label)
-        == normalize_control_label(character.name)
+        and normalize_control_label(control.label) == normalize_control_label(character.name)
         and control.bounds.min_y >= 0.75
     ]
     if len(portrait_matches) != 1:
@@ -2298,21 +2188,18 @@ def bind_recover_camera_view(
             floor_matches.append((int(match.group(1)), control.bounds))
     if len(floor_matches) != 1:
         return _unbound(
-            f"The HUD exposes {len(floor_matches)} current floor labels; exactly "
-            "one is required."
+            f"The HUD exposes {len(floor_matches)} current floor labels; exactly one is required."
         )
 
     up_matches = [
         control
         for control in controls
-        if control.role == "button"
-        and control.label.casefold().endswith("_floorarrowup")
+        if control.role == "button" and control.label.casefold().endswith("_floorarrowup")
     ]
     down_matches = [
         control
         for control in controls
-        if control.role == "button"
-        and control.label.casefold().endswith("_floorarrowdown")
+        if control.role == "button" and control.label.casefold().endswith("_floorarrowdown")
     ]
     if len(up_matches) != 1 or len(down_matches) != 1:
         return _unbound(
@@ -2563,6 +2450,119 @@ class BoundOperation:
     # Keeping that absence explicit is more honest than forging provenance.
     affordance: BoundAffordance | None
     based_on_revision: WorldStateRevision
+    identity: OperationIdentity
+
+
+@dataclass(frozen=True, slots=True)
+class OperationIdentity:
+    """Stable semantic identity retained across fresh current-state binding.
+
+    Rebinding is expected to advance the source revision and may move witnessed
+    pointer geometry. Neither changes what was selected. Definition identity,
+    authored arguments, affordance provenance, and stable domain references do.
+    """
+
+    fingerprint: str
+    operation_kind: str
+    definition_version: str
+    handler_key: str
+    operation_fingerprint: str
+    affordance_fingerprint: str | None
+    binding_fingerprint: str
+
+
+_VOLATILE_BINDING_IDENTITY_FIELDS = frozenset(
+    {
+        "bound",
+        "reason",
+        "resolved_bounds",
+        "floor_up_bounds",
+        "floor_down_bounds",
+        "source_revision",
+    }
+)
+
+
+def _identity_json(value: object) -> object:
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json")
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, tuple):
+        return [_identity_json(item) for item in value]
+    if isinstance(value, list):
+        return [_identity_json(item) for item in value]
+    return value
+
+
+def _fingerprint(prefix: str, payload: object) -> str:
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return f"{prefix}-{sha256(encoded.encode('utf-8')).hexdigest()[:20]}"
+
+
+def operation_identity(
+    definition: OperationDefinition,
+    operation: Action,
+    binding: OperationBinding,
+    affordance: BoundAffordance | None,
+) -> OperationIdentity:
+    """Build the one immutable identity used at scheduling and dispatch."""
+
+    if isinstance(binding, BindingFailure):
+        raise ValueError("An unbound operation cannot have execution identity.")
+    operation_payload = operation.model_dump(mode="json")
+    operation_hash = _fingerprint("request", operation_payload)
+    binding_payload = {
+        "type": type(binding).__name__,
+        **{
+            item.name: _identity_json(getattr(binding, item.name))
+            for item in fields(binding)
+            if item.name not in _VOLATILE_BINDING_IDENTITY_FIELDS
+        },
+    }
+    binding_hash = _fingerprint("binding", binding_payload)
+    affordance_payload = (
+        {
+            "source": affordance.source.value,
+            "semantic": affordance.semantic,
+            "target": (
+                affordance.target.model_dump(mode="json") if affordance.target is not None else None
+            ),
+            "parameters": [
+                parameter.model_dump(mode="json") for parameter in affordance.parameters
+            ],
+            "execution": affordance.execution.value,
+            "operation_kind": affordance.operation_kind,
+        }
+        if affordance is not None
+        else None
+    )
+    affordance_hash = (
+        _fingerprint("affordance", affordance_payload) if affordance_payload is not None else None
+    )
+    identity_payload = {
+        "definition": {
+            "kind": definition.kind,
+            "version": definition.version,
+            "handler_key": definition.handler_key,
+        },
+        "operation": operation_hash,
+        "affordance": affordance_hash,
+        "binding": binding_hash,
+    }
+    return OperationIdentity(
+        fingerprint=_fingerprint("operation", identity_payload),
+        operation_kind=operation.kind,
+        definition_version=definition.version,
+        handler_key=definition.handler_key,
+        operation_fingerprint=operation_hash,
+        affordance_fingerprint=affordance_hash,
+        binding_fingerprint=binding_hash,
+    )
 
 
 def _bounded_trade_quantity(action: Action) -> int:
@@ -2632,10 +2632,7 @@ def _game_binding_terminal(
     selected_affordance: bool,
 ) -> OperationTerminal | None:
     del observation, selected_affordance
-    if (
-        isinstance(action, UseGameBindingAction)
-        and action.binding is GameBinding.QUICKSAVE
-    ):
+    if isinstance(action, UseGameBindingAction) and action.binding is GameBinding.QUICKSAVE:
         return OperationTerminal(owner=TerminalOwner.CONTROLLER_TERMINAL)
     return None
 
@@ -2813,9 +2810,7 @@ def _runtime_control_definition(
         receipt_kind="runtime_control",
         bind=bind_runtime_control,
         handler_key=handler_key,
-        derive_terminal=lambda action, observation, selected: runtime_control_terminal(
-            action
-        ),
+        derive_terminal=lambda action, observation, selected: runtime_control_terminal(action),
         requires_fresh_telemetry=False,
     )
 
@@ -2933,9 +2928,7 @@ SELECT_SQUAD_MEMBER_DEFINITION = OperationDefinition(
         "target_id must be copied from a current squad entry whose unique name "
         "matches exactly one current lower-HUD portrait label."
     ),
-    allowed_control_modes=frozenset(
-        {ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}
-    ),
+    allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(
         {
             "squad.basic",
@@ -2989,9 +2982,7 @@ SELECT_SQUAD_MEMBER_EXACT_DEFINITION = OperationDefinition(
     handler_key="movement.select_squad_member_exact",
     derive_completion_conditions=_selected_squad_member,
     controller_verified=True,
-    native_terminal_success_reasons=frozenset(
-        {"exact_squad_member_selected"}
-    ),
+    native_terminal_success_reasons=frozenset({"exact_squad_member_selected"}),
     authorable_when=exact_squad_member_selection_is_currently_authorable,
 )
 
@@ -3005,9 +2996,7 @@ ROTATE_CAMERA_DEFINITION = OperationDefinition(
         "Kenshi's held-Mouse3 rotation mode."
     ),
     argument_source="direction is left or right.",
-    allowed_control_modes=frozenset(
-        {ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}
-    ),
+    allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(),
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
@@ -3214,8 +3203,7 @@ OPEN_CONTEXT_INVENTORY_DEFINITION = OperationDefinition(
         "destination before collecting output."
     ),
     argument_source=(
-        "target_id must be copied from one natural_resource entry in "
-        "context_targets."
+        "target_id must be copied from one natural_resource entry in context_targets."
     ),
     allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(
@@ -3238,9 +3226,7 @@ OPEN_CONTEXT_INVENTORY_DEFINITION = OperationDefinition(
     bind=bind_open_context_inventory,
     handler_key="resources.open_context_inventory",
     controller_verified=True,
-    native_terminal_success_reasons=frozenset(
-        {"exact_context_inventory_open"}
-    ),
+    native_terminal_success_reasons=frozenset({"exact_context_inventory_open"}),
     authorable_when=context_inventory_is_currently_authorable,
 )
 
@@ -3418,8 +3404,7 @@ MOVE_TO_CHARACTER_DEFINITION = OperationDefinition(
         "monitored option owns the whole group walk."
     ),
     argument_source=(
-        "target_id must be an exact id from the observation's "
-        "telemetry.nearby_entities."
+        "target_id must be an exact id from the observation's telemetry.nearby_entities."
     ),
     allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(
@@ -3594,10 +3579,7 @@ def bind_open_screen(
             source_revision=observation.world_revision,
         )
     return EmptyBinding(
-        reason=(
-            f"The {action.screen.value} screen is closed and "
-            f"{binding.value} opens it."
-        ),
+        reason=(f"The {action.screen.value} screen is closed and {binding.value} opens it."),
         source_revision=observation.world_revision,
     )
 
@@ -3621,12 +3603,8 @@ OPEN_SCREEN_DEFINITION = OperationDefinition(
         "opens it and proves the exact screen arrived, so the affordance expresses "
         "state intent rather than a key."
     ),
-    argument_source=(
-        "The screen adapter supplies one current GameScreen state intention."
-    ),
-    allowed_control_modes=frozenset(
-        {ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}
-    ),
+    argument_source=("The screen adapter supplies one current GameScreen state intention."),
+    allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(),
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
@@ -3696,9 +3674,7 @@ RECOVER_CAMERA_VIEW_DEFINITION = OperationDefinition(
         "lower-HUD portrait, the current floor, and floor arrows from fresh "
         "telemetry, then scores retained frames."
     ),
-    allowed_control_modes=frozenset(
-        {ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}
-    ),
+    allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(
         {
             CAMERA_RECOVERY_CAPABILITY,
@@ -3721,8 +3697,6 @@ RECOVER_CAMERA_VIEW_DEFINITION = OperationDefinition(
     handler_key="camera.recover_camera_view",
     controller_verified=True,
 )
-
-
 
 
 SCROLL_SCREEN_DEFINITION = OperationDefinition(
@@ -3942,3 +3916,10 @@ def definition_for(action: Action) -> OperationDefinition | None:
     """Return the sole definition for an adapted private operation, if any."""
 
     return OPERATION_DEFINITIONS.get(action.kind)
+
+
+def risk_for_operation(action: Action) -> OperationRisk | None:
+    """Return one definition-owned risk declaration for plan accounting."""
+
+    definition = definition_for(action)
+    return definition.risk_for(action) if definition is not None else None

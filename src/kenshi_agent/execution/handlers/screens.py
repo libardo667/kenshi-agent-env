@@ -44,6 +44,7 @@ from ..types import (
     OperationResult,
     OperationStatus,
 )
+from .input_binding import authorized_input_binding
 from .kenshi_surface import KenshiControlSurface
 
 ScreenOperation = Callable[
@@ -237,73 +238,119 @@ class KenshiScreenMechanics:
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
     ) -> Transition:
         return await self._surface.run_exact(
-            action, command=command, token=token, receipt=self._execute_visible_operation
+            action,
+            command=command,
+            token=token,
+            receipt=lambda current, started, dispatch: self._execute_visible_operation(
+                current, started, dispatch, token
+            ),
         )
 
     async def dismiss_screen(
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
     ) -> Transition:
         return await self._surface.run_exact(
-            action, command=command, token=token, receipt=self._execute_dismiss_operation
+            action,
+            command=command,
+            token=token,
+            receipt=lambda current, started, dispatch: self._execute_dismiss_operation(
+                current, started, dispatch, token
+            ),
         )
 
     async def open_screen(
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
     ) -> Transition:
         return await self._surface.run_exact(
-            action, command=command, token=token, receipt=self._execute_open_screen_operation
+            action,
+            command=command,
+            token=token,
+            receipt=lambda current, started, dispatch: self._execute_open_screen_operation(
+                current, started, dispatch, token
+            ),
         )
 
     async def use_game_binding(
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
     ) -> Transition:
         return await self._surface.run_exact(
-            action, command=command, token=token, receipt=self._execute_binding_operation
+            action,
+            command=command,
+            token=token,
+            receipt=lambda current, started, dispatch: self._execute_binding_operation(
+                current, started, dispatch, token
+            ),
         )
 
     async def scroll_screen(
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
     ) -> Transition:
         return await self._surface.run_exact(
-            action, command=command, token=token, receipt=self._execute_scroll_operation
+            action,
+            command=command,
+            token=token,
+            receipt=lambda current, started, dispatch: self._execute_scroll_operation(
+                current, started, dispatch, token
+            ),
         )
 
     async def _execute_visible_operation(
-        self, action: Action, started: datetime, command: CommandDispatchContext | None
+        self,
+        action: Action,
+        started: datetime,
+        command: CommandDispatchContext | None,
+        token: ExecutionToken | None,
     ) -> ActionReceipt:
         del command
         return await self._execute_visible_control(
-            cast(ActivateVisibleControlAction, action), started
+            cast(ActivateVisibleControlAction, action), started, token
         )
 
     async def _execute_dismiss_operation(
-        self, action: Action, started: datetime, command: CommandDispatchContext | None
+        self,
+        action: Action,
+        started: datetime,
+        command: CommandDispatchContext | None,
+        token: ExecutionToken | None,
     ) -> ActionReceipt:
         del command
-        return await self._execute_dismiss_screen(cast(DismissScreenAction, action), started)
+        return await self._execute_dismiss_screen(cast(DismissScreenAction, action), started, token)
 
     async def _execute_open_screen_operation(
-        self, action: Action, started: datetime, command: CommandDispatchContext | None
+        self,
+        action: Action,
+        started: datetime,
+        command: CommandDispatchContext | None,
+        token: ExecutionToken | None,
     ) -> ActionReceipt:
         del command
-        return await self._execute_open_screen(cast(OpenScreenAction, action), started)
+        return await self._execute_open_screen(cast(OpenScreenAction, action), started, token)
 
     async def _execute_binding_operation(
-        self, action: Action, started: datetime, command: CommandDispatchContext | None
+        self,
+        action: Action,
+        started: datetime,
+        command: CommandDispatchContext | None,
+        token: ExecutionToken | None,
     ) -> ActionReceipt:
         del command
-        return await self._execute_game_binding(cast(UseGameBindingAction, action), started)
+        return await self._execute_game_binding(cast(UseGameBindingAction, action), started, token)
 
     async def _execute_scroll_operation(
-        self, action: Action, started: datetime, command: CommandDispatchContext | None
+        self,
+        action: Action,
+        started: datetime,
+        command: CommandDispatchContext | None,
+        token: ExecutionToken | None,
     ) -> ActionReceipt:
         del command
-        return await self._execute_scroll_screen(cast(ScrollScreenAction, action), started)
+        return await self._execute_scroll_screen(cast(ScrollScreenAction, action), started, token)
 
     async def _execute_visible_control(
         self,
         action: ActivateVisibleControlAction,
         started: datetime,
+        token: ExecutionToken | None,
     ) -> ActionReceipt:
         """Click exactly one currently advertised control, re-resolved in-lease.
 
@@ -314,12 +361,9 @@ class KenshiScreenMechanics:
         Any drift emits zero input.
         """
 
-        result = self._surface.telemetry_reader.read()
-        if result.stale:
-            raise RuntimeError("No input was sent: telemetry became stale inside the input lease.")
-        observation = self._surface.port._observation_from_snapshot(result.snapshot)
-        binding = operations.require_bound(
-            operations.ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(action, observation),
+        binding, observation = authorized_input_binding(
+            action,
+            token,
             operations.BoundVisibleControl,
         )
         bounds = binding.resolved_bounds
@@ -360,6 +404,7 @@ class KenshiScreenMechanics:
         self,
         action: OpenScreenAction,
         started: datetime,
+        token: ExecutionToken | None,
     ) -> ActionReceipt:
         """Have the named screen open, pressing nothing when it already is.
 
@@ -371,16 +416,15 @@ class KenshiScreenMechanics:
         screen arrived rather than that something changed.
         """
 
-        result = self._surface.telemetry_reader.read()
-        if result.stale:
-            raise RuntimeError("No input was sent: telemetry became stale inside the input lease.")
-        observation = self._surface.port._observation_from_snapshot(result.snapshot)
-        binding = operations.require_bound(
-            operations.OPEN_SCREEN_DEFINITION.bind(action, observation),
+        binding, observation = authorized_input_binding(
+            action,
+            token,
             operations.EmptyBinding,
         )
+        if observation.telemetry is None:
+            raise RuntimeError("No input was sent: current telemetry is unavailable.")
 
-        already = screen_is_open(action.screen, result.snapshot)
+        already = screen_is_open(action.screen, observation.telemetry)
         control = SCREEN_BINDINGS[action.screen]
         if already:
             semantic = SemanticActionReceipt(
@@ -434,6 +478,7 @@ class KenshiScreenMechanics:
         self,
         action: UseGameBindingAction,
         started: datetime,
+        token: ExecutionToken | None,
     ) -> ActionReceipt:
         """Send the key Kenshi itself binds to this control.
 
@@ -442,12 +487,9 @@ class KenshiScreenMechanics:
         the silent failure this action exists to replace.
         """
 
-        result = self._surface.telemetry_reader.read()
-        if result.stale:
-            raise RuntimeError("No input was sent: telemetry became stale inside the input lease.")
-        observation = self._surface.port._observation_from_snapshot(result.snapshot)
-        binding = operations.require_bound(
-            operations.USE_GAME_BINDING_DEFINITION.bind(action, observation),
+        binding, observation = authorized_input_binding(
+            action,
+            token,
             operations.BoundNamedOperation,
         )
         quicksave_before = (
@@ -571,6 +613,7 @@ class KenshiScreenMechanics:
         self,
         action: ScrollScreenAction,
         started: datetime,
+        token: ExecutionToken | None,
     ) -> ActionReceipt:
         """Scroll at the centre of one window's own observed bounds.
 
@@ -579,9 +622,9 @@ class KenshiScreenMechanics:
         whatever is behind it.
         """
 
-        binding, observation = self._surface.rebind_in_lease(
-            operations.SCROLL_SCREEN_DEFINITION,
+        binding, observation = authorized_input_binding(
             action,
+            token,
             operations.BoundVisibleControl,
         )
         bounds = binding.resolved_bounds
@@ -617,6 +660,7 @@ class KenshiScreenMechanics:
         self,
         action: DismissScreenAction,
         started: datetime,
+        token: ExecutionToken | None,
     ) -> ActionReceipt:
         """Back out of the currently open screen with one configured key.
 
@@ -625,12 +669,9 @@ class KenshiScreenMechanics:
         cannot be closed by a stale intention.
         """
 
-        result = self._surface.telemetry_reader.read()
-        if result.stale:
-            raise RuntimeError("No input was sent: telemetry became stale inside the input lease.")
-        observation = self._surface.port._observation_from_snapshot(result.snapshot)
-        binding = operations.require_bound(
-            operations.DISMISS_SCREEN_DEFINITION.bind(action, observation),
+        binding, observation = authorized_input_binding(
+            action,
+            token,
             operations.BoundScreenDismissal,
         )
         if binding.resolved_bounds is not None:

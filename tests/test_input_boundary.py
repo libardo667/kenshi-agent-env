@@ -48,14 +48,16 @@ from kenshi_agent.models import (
     InputBoundaryReport,
     Observation,
     PlannerDecision,
+    PointerActionClass,
     SkillAction,
     WorldStateRevision,
 )
 from kenshi_agent.operation_authority import AuthorizationDecision
+from kenshi_agent.operation_definitions import definition_for
 from kenshi_agent.planners.base import Planner
 from kenshi_agent.reflexes import ReflexEngine
 from kenshi_agent.runtime import AgentRuntime
-from kenshi_agent.safety import ActionGuard
+from kenshi_agent.safety import OperationPolicy
 from kenshi_agent.session_log import SessionLogger
 
 
@@ -76,6 +78,7 @@ def _refused(violation: str) -> AuthorizationDecision:
         operation_fingerprint="op-test",
         details={"violation": violation},
     )
+
 
 def environment(
     tmp_path: Path,
@@ -198,6 +201,7 @@ def token_for(
     preconditions: tuple[Condition, ...] | None = None,
     failure_conditions: tuple[Condition, ...] | None = None,
     max_telemetry_age_seconds: float | None = 3.0,
+    pointer_class: PointerActionClass = PointerActionClass.COORDINATE_INDEPENDENT,
 ) -> ExecutionToken:
     return ExecutionToken(
         plan_id="boundary-plan",
@@ -208,6 +212,7 @@ def token_for(
         validated_revision=validated or revision(10),
         latest_observation=lambda: latest[0],
         max_telemetry_age_seconds=max_telemetry_age_seconds,
+        pointer_class=pointer_class,
         assumptions=(assumptions if assumptions is not None else (paused_condition(),)),
         preconditions=(preconditions if preconditions is not None else (selection_condition(),)),
         failure_conditions=failure_conditions or (),
@@ -361,6 +366,8 @@ async def dispatch_with_blocking_lease(
     await live.reset()
 
     latest: list[Observation | None] = [observation(control_mode=control_mode)]
+    dispatched_action = action if action is not None else movement_action()
+    definition = definition_for(dispatched_action)  # type: ignore[arg-type]
     token = token_for(
         latest,
         validated=validated,
@@ -368,12 +375,17 @@ async def dispatch_with_blocking_lease(
         assumptions=assumptions,
         preconditions=preconditions,
         failure_conditions=failure_conditions,
+        pointer_class=(
+            definition.pointer_class
+            if definition is not None
+            else PointerActionClass.COORDINATE_INDEPENDENT
+        ),
     )
 
     task = asyncio.create_task(
         execute_operation(
             live,
-            action if action is not None else movement_action(),  # type: ignore[arg-type]
+            dispatched_action,  # type: ignore[arg-type]
             command=CommandDispatchContext(
                 command_id=token.command_id,
                 based_on_revision=token.validated_revision,
@@ -675,7 +687,7 @@ def test_single_step_live_dispatch_carries_boundary_authority(
         live = environment(tmp_path, telemetry, controller)
         macros = movement_registry()
         logger = SessionLogger(tmp_path / "single-step-boundary.jsonl", "boundary-test")
-        guard = ActionGuard(
+        guard = OperationPolicy(
             SafetyConfig(
                 allow_action_kinds=["skill"],
                 allow_skills=["move_visible_terrain"],
@@ -687,7 +699,7 @@ def test_single_step_live_dispatch_carries_boundary_authority(
             run_id="boundary-test",
             environment=live,
             planner=OneMovePlanner(),
-            guard=guard,
+            policy=guard,
             reflexes=ReflexEngine(),
             logger=logger,
             memory=None,
@@ -737,7 +749,7 @@ def test_missing_canonical_observation_blocks_input(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_dispatch_without_a_token_keeps_legacy_behaviour(tmp_path: Path) -> None:
+def test_direct_adapter_characterization_still_uses_boundary_authority(tmp_path: Path) -> None:
     async def scenario() -> None:
         telemetry = PulseTelemetry()
         controller = PulseController(telemetry)
@@ -755,7 +767,8 @@ def test_dispatch_without_a_token_keeps_legacy_behaviour(tmp_path: Path) -> None
 
         assert len(controller.actions) == 3
         assert transition.receipt.executed is True
-        assert transition.receipt.input_boundary is None
+        assert transition.receipt.input_boundary is not None
+        assert transition.receipt.input_boundary.decision is InputBoundaryDecision.REVALIDATED
 
     asyncio.run(scenario())
 
@@ -791,8 +804,7 @@ def test_boundary_report_survives_receipt_serialization(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_tokenless_calibration_mismatch_fails_closed_by_raising(tmp_path: Path) -> None:
-    """Without a token to carry the rejection, the client-size brake still raises."""
+def test_direct_adapter_calibration_mismatch_is_a_boundary_rejection(tmp_path: Path) -> None:
 
     async def scenario() -> None:
         telemetry = PulseTelemetry()
@@ -800,14 +812,12 @@ def test_tokenless_calibration_mismatch_fails_closed_by_raising(tmp_path: Path) 
         live = environment(tmp_path, telemetry, controller)
         await live.reset()
 
-        raised = False
-        try:
-            await execute_operation(live, movement_action())
-        except RuntimeError as exc:
-            raised = "1280x720" in str(exc)
+        transition = await execute_operation(live, movement_action())
 
-        assert raised
         assert controller.actions == []
+        assert transition.receipt.accepted is False
+        assert transition.receipt.input_boundary is not None
+        assert transition.receipt.input_boundary.code is AuthorizationCode.CALIBRATION_DRIFTED
 
     asyncio.run(scenario())
 
@@ -827,7 +837,7 @@ def test_calibration_mismatch_with_a_token_rejects_gracefully(tmp_path: Path) ->
         await live.reset()
 
         latest: list[Observation | None] = [observation()]
-        token = token_for(latest)
+        token = token_for(latest, pointer_class=PointerActionClass.PROFILE_CALIBRATED)
         transition = await execute_operation(
             live,
             movement_action(),
@@ -931,6 +941,32 @@ def test_a_boundary_verdict_about_another_operation_is_not_a_revalidation() -> N
     assert boundary.decision is InputBoundaryDecision.REJECTED
     assert boundary.code is AuthorizationCode.OPERATION_IDENTITY_CHANGED
     assert "op-scheduled" in boundary.reason
+
+
+def test_a_typed_stale_identity_refusal_is_not_masked_by_fingerprint_comparison() -> None:
+    token = ExecutionToken(
+        plan_id="plan-1",
+        plan_version=1,
+        step_id="operate",
+        command_id="cmd-" + "0" * 32,
+        control_mode=ControlMode.INTERFACE_ONLY,
+        validated_revision=revision(10),
+        latest_observation=lambda: observation(sequence=12),
+        max_telemetry_age_seconds=3.0,
+        authorized_fingerprint="op-scheduled",
+        authority_validator=lambda _: AuthorizationDecision(
+            allowed=False,
+            code=AuthorizationCode.STALE_BOUND_IDENTITY,
+            based_on_revision=revision(12),
+            operation_fingerprint="op-freshly-different",
+            details={"violation": "fresh binding changed identity"},
+        ),
+    )
+
+    boundary = token.revalidate()
+
+    assert boundary.decision is InputBoundaryDecision.REJECTED
+    assert boundary.code is AuthorizationCode.STALE_BOUND_IDENTITY
 
 
 def test_a_boundary_verdict_about_the_scheduled_operation_revalidates() -> None:

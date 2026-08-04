@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .affordances import bind_runtime_operation
+from .action_budget import ActionBudgetLedger
+from .affordances import OPERATION_BINDING_AUTHORITY, bind_runtime_operation
 from .config import PlanningConfig
 from .env import AgentEnvironment
 from .execution.handlers.camera import camera_handlers
@@ -39,12 +40,12 @@ from .future_planning import (
     FuturePlanResolution,
     PatchContinuityApplier,
 )
-from .models import Observation, PlanEnvelope, PlanStep
+from .models import IdempotencyPolicy, Observation, PlanEnvelope, PlanStep
 from .operation_authority import OperationAuthority
 from .plan_events import PlanEventReporter
 from .planning import PlanBudgetLedger, PlanningClock
-from .safety import ActionGuard
 from .session_log import SessionLogger
+from .skills import MacroRegistry
 from .world_state import WorldStateStore
 
 
@@ -59,6 +60,7 @@ class OperationSubmissionResult:
     staged_patch: StagedPatch | None = None
     interrupted: bool = False
     pause_before_replan: bool = False
+    retry_authorized: bool = False
 
 
 class OperationExecutionService:
@@ -145,6 +147,9 @@ class OperationExecutionService:
             staged_patch=staged,
             interrupted=result.interrupted,
             pause_before_replan=result.pause_before_replan,
+            retry_authorized=(
+                bound.definition.idempotency is IdempotencyPolicy.SAFE_TO_RETRY
+            ),
         )
 
     def activate_future_patch(
@@ -181,7 +186,8 @@ class OperationExecutionFactory:
         *,
         environment: AgentEnvironment,
         operation_port: OperationMechanicsPort,
-        guard: ActionGuard,
+        macros: MacroRegistry,
+        action_budget: ActionBudgetLedger,
         authority: OperationAuthority,
         logger: SessionLogger,
         clock: PlanningClock,
@@ -195,7 +201,8 @@ class OperationExecutionFactory:
     ) -> None:
         self.environment = environment
         self.operation_port = operation_port
-        self.guard = guard
+        self.macros = macros
+        self.action_budget = action_budget
         self.authority = authority
         self.logger = logger
         self.clock = clock
@@ -225,9 +232,14 @@ class OperationExecutionFactory:
             **movement_handlers(
                 self.operation_port,
                 planning_config,
-                self.guard.macros,
+                self.macros,
             ),
-            **resource_handlers(self.operation_port, self.guard, planning_config),
+            **resource_handlers(
+                self.operation_port,
+                self.authority,
+                OPERATION_BINDING_AUTHORITY,
+                planning_config,
+            ),
             **cognition_handlers(
                 CognitiveServices(
                     consult_advisor=self.consult_advisor,
@@ -238,7 +250,8 @@ class OperationExecutionFactory:
         }
         kernel = ExecutionKernel(
             handlers=HandlerRegistry(handlers),
-            guard=self.guard,
+            action_budget=self.action_budget,
+            macros=self.macros,
             logger=self.logger,
             clock=self.clock,
             state_store=state_store,
@@ -246,6 +259,7 @@ class OperationExecutionFactory:
                 event=event,
                 observe_transition=self.observe_transition,
                 authorized=self.authority.evaluate,
+                pointer_class=self.authority.pointer_class_for,
                 report_action_started=self.report_action_started,
             ),
             input_boundary_observation=self.environment.input_boundary_observation,
@@ -256,7 +270,7 @@ class OperationExecutionFactory:
         future_planning = FuturePlanningPolicy(
             config=planning_config,
             planner=self.concurrent_planner if concurrent_planning else None,
-            macros=self.guard.macros,
+            macros=self.macros,
             logger=self.logger,
             clock=self.clock,
             state_store=state_store,

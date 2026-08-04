@@ -37,6 +37,12 @@ class RuntimeMechanicsPort(Protocol):
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
     ) -> Transition: ...
 
+    async def control_pause(
+        self, action: PauseAction, *, command: CommandDispatchContext
+    ) -> Transition:
+        """Pause or resume under supervisor/control-ownership authority."""
+        ...
+
     async def set_speed(
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
     ) -> Transition: ...
@@ -209,6 +215,20 @@ class KenshiRuntimeMechanics:
             action, command=command, token=token, receipt=self._execute_runtime_pause
         )
 
+    async def control_pause(
+        self,
+        action: PauseAction,
+        *,
+        command: CommandDispatchContext,
+    ) -> Transition:
+        """Deliver the narrow pause path owned by supervision or handback."""
+
+        return await self._surface.run_control_pause(
+            action,
+            command=command,
+            receipt=self._execute_control_pause,
+        )
+
     async def set_speed(
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
     ) -> Transition:
@@ -245,31 +265,56 @@ class KenshiRuntimeMechanics:
         self, action: Action, started: datetime, command: CommandDispatchContext | None
     ) -> ActionReceipt:
         del command
-        typed = cast(PauseAction, action)
+        return await self._pause_receipt(
+            cast(PauseAction, action),
+            started,
+            safety=False,
+        )
+
+    async def _execute_control_pause(
+        self, action: Action, started: datetime, command: CommandDispatchContext | None
+    ) -> ActionReceipt:
+        del command
+        return await self._pause_receipt(
+            cast(PauseAction, action),
+            started,
+            safety=True,
+        )
+
+    async def _pause_receipt(
+        self,
+        action: PauseAction,
+        started: datetime,
+        *,
+        safety: bool,
+    ) -> ActionReceipt:
         paused = (
             self._surface.last_observation.telemetry.game.paused
             if self._surface.last_observation is not None
             and self._surface.last_observation.telemetry is not None
             else None
         )
-        if paused is typed.paused:
+        if paused is action.paused:
             return ActionReceipt(
-                action=typed,
+                action=action,
                 accepted=True,
                 executed=True,
                 dry_run=False,
                 started_at=started,
                 finished_at=datetime.now(UTC),
                 primitive_actions=0,
-                message=f"Kenshi already reports paused={typed.paused}.",
+                message=f"Kenshi already reports paused={action.paused}.",
             )
         if paused is None:
             raise RuntimeError(
                 "Refusing to change Kenshi pause because the current pause state is unknown."
             )
-        primitive_count, pause_control = await self._surface.apply_pause_request(typed.paused)
+        primitive_count, pause_control = await self._surface.apply_pause_request(
+            action.paused,
+            safety=safety,
+        )
         return ActionReceipt(
-            action=typed,
+            action=action,
             accepted=True,
             executed=True,
             dry_run=False,
@@ -277,7 +322,7 @@ class KenshiRuntimeMechanics:
             finished_at=datetime.now(UTC),
             primitive_actions=primitive_count,
             message=(
-                f"Used {pause_control} to request paused={typed.paused}. "
+                f"Used {pause_control} to request paused={action.paused}. "
                 "A later observation must confirm the state."
             ),
         )

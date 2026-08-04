@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from ..action_budget import ActionBudgetError, ActionBudgetLedger, ActionBudgetReservation
 from ..authorization import InputBoundaryDecision
 from ..input_boundary import ExecutionToken
 from ..models import (
@@ -18,10 +19,11 @@ from ..models import (
     ObservationPolicy,
     PlanEnvelope,
     PlanStep,
+    PointerActionClass,
     Transition,
     WorldStateRevision,
 )
-from ..operation_authority import AuthorizationDecision, operation_fingerprint
+from ..operation_authority import AuthorizationDecision
 from ..operation_definitions import BoundOperation, OperationTerminal, TerminalOwner
 from ..planning import (
     PlanBudgetError,
@@ -30,8 +32,8 @@ from ..planning import (
     evaluate_conditions,
     game_elapsed_seconds,
 )
-from ..safety import ActionGuard, SafetyViolation
 from ..session_log import SessionLogger
+from ..skills import MacroRegistry
 from ..world_state import CommandCausalityError, WorldStateStore
 from .monitor_types import OperationMonitorPort
 from .registry import HandlerRegistry
@@ -69,7 +71,8 @@ TransitionObserver = Callable[
     Observation,
 ]
 ActionStartedReporter = Callable[[int, Action], None]
-OperationAuthorized = Callable[[Action, Observation], AuthorizationDecision]
+OperationAuthorized = Callable[[BoundOperation, Observation], AuthorizationDecision]
+OperationPointerClass = Callable[[BoundOperation], PointerActionClass]
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +80,7 @@ class KernelHooks:
     event: KernelEventReporter
     observe_transition: TransitionObserver
     authorized: OperationAuthorized
+    pointer_class: OperationPointerClass
     report_action_started: ActionStartedReporter | None = None
 
 
@@ -112,7 +116,8 @@ class ExecutionKernel:
         self,
         *,
         handlers: HandlerRegistry,
-        guard: ActionGuard,
+        action_budget: ActionBudgetLedger,
+        macros: MacroRegistry,
         logger: SessionLogger,
         clock: PlanningClock,
         state_store: WorldStateStore,
@@ -121,7 +126,8 @@ class ExecutionKernel:
         input_boundary_max_telemetry_age_seconds: Callable[[], float | None],
     ) -> None:
         self.handlers = handlers
-        self.guard = guard
+        self.action_budget = action_budget
+        self.macros = macros
         self.logger = logger
         self.clock = clock
         self.state_store = state_store
@@ -143,9 +149,21 @@ class ExecutionKernel:
             )
 
         observation = request.observation
+        authorization = self.hooks.authorized(bound, observation)
+        if not authorization.allowed or authorization.bound_operation is None:
+            return KernelResult(
+                observation=observation,
+                succeeded=False,
+                actions_completed=0,
+                reason=(
+                    "Operation authority rejected the bound operation: "
+                    + str(authorization.details.get("violation", authorization.code.value))
+                ),
+            )
+        bound = authorization.bound_operation
         try:
-            guard_reservation = self.guard.reserve(bound.operation, observation)
-        except SafetyViolation as exc:
+            action_reservation = self.action_budget.reserve(bound, observation)
+        except ActionBudgetError as exc:
             self.logger.write(
                 "action_rejected",
                 step_index=observation.step_index,
@@ -156,6 +174,7 @@ class ExecutionKernel:
                     "executed": False,
                     "dry_run": True,
                     "primitive_actions": 0,
+                    "authorization_code": exc.code.value,
                     "message": str(exc),
                     "error_type": type(exc).__name__,
                 },
@@ -164,25 +183,17 @@ class ExecutionKernel:
                 observation=observation,
                 succeeded=False,
                 actions_completed=0,
-                reason=f"Existing action guard rejected the operation: {exc}",
+                reason=f"{exc.code.value}: {exc}",
             )
 
-        action = guard_reservation.action
-        if action != bound.operation:
-            self.guard.release(guard_reservation)
-            return KernelResult(
-                observation=observation,
-                succeeded=False,
-                actions_completed=0,
-                reason="The action guard changed an already-bound operation.",
-            )
+        action = bound.operation
         completion = bound.definition.resolve_terminal(
             action,
             observation,
             selected_affordance=bound.affordance is not None,
         )
         if completion.owner is TerminalOwner.RUNTIME_CONDITIONS and not completion.conditions:
-            self.guard.release(guard_reservation)
+            self.action_budget.release(action_reservation)
             return KernelResult(
                 observation=observation,
                 succeeded=False,
@@ -194,9 +205,9 @@ class ExecutionKernel:
             )
 
         try:
-            reserved_risk = request.budget.reserve(action, self.guard.macros)
+            reserved_risk = request.budget.reserve(action, self.macros)
         except PlanBudgetError as exc:
-            self.guard.release(guard_reservation)
+            self.action_budget.release(action_reservation)
             return KernelResult(
                 observation=observation,
                 succeeded=False,
@@ -225,7 +236,7 @@ class ExecutionKernel:
             handled = await self.handlers.resolve(bound).execute(bound, context)
         except asyncio.CancelledError:
             request.budget.commit()
-            self.guard.commit(guard_reservation)
+            self.action_budget.commit(action_reservation)
             reason = (
                 "Independent safety supervision cancelled the in-flight operation; "
                 "delivery is uncertain and the reservation remains spent."
@@ -243,7 +254,7 @@ class ExecutionKernel:
             raise
         except Exception as exc:
             request.budget.commit()
-            self.guard.commit(guard_reservation)
+            self.action_budget.commit(action_reservation)
             if command is not None:
                 self.state_store.fail_active_command(f"{type(exc).__name__}: {exc}")
             reason = (
@@ -271,7 +282,7 @@ class ExecutionKernel:
         closed = self._close_reservations(
             handled,
             request,
-            guard_reservation,
+            action_reservation,
             reserved_risk,
             command,
         )
@@ -387,7 +398,7 @@ class ExecutionKernel:
             request.plan,
             request.observation,
             step=request.step,
-            reason="Bound operation passed the guard and reserved plan budget.",
+            reason="Bound operation was authorized and reserved execution budgets.",
             evidence={
                 "action_start_revision": request.observation.world_revision.model_dump(mode="json"),
                 "operation_id": context.scope.operation_id,
@@ -429,11 +440,12 @@ class ExecutionKernel:
             validated_revision=revision,
             latest_observation=self._latest_input_authority,
             max_telemetry_age_seconds=(self.input_boundary_max_telemetry_age_seconds()),
+            pointer_class=self.hooks.pointer_class(bound),
             authority_validator=lambda current: self.hooks.authorized(
-                bound.operation,
+                bound,
                 current,
             ),
-            authorized_fingerprint=operation_fingerprint(bound.operation),
+            authorized_fingerprint=bound.identity.fingerprint,
             assumptions=tuple(request.plan.assumptions),
             preconditions=tuple(request.step.preconditions),
             failure_conditions=tuple(request.step.failure_conditions),
@@ -447,13 +459,10 @@ class ExecutionKernel:
         self,
         handled: OperationResult,
         request: KernelRequest,
-        guard_reservation: object,
+        action_reservation: ActionBudgetReservation,
         reserved_risk: tuple[int, int, int],
         command: CommandDispatchContext | None,
     ) -> tuple[Observation, Transition | None] | KernelResult:
-        from ..safety import ActionBudgetReservation
-
-        assert isinstance(guard_reservation, ActionBudgetReservation)
         transition = handled.transition
         receipt_matches = bool(
             transition is not None
@@ -469,12 +478,12 @@ class ExecutionKernel:
         )
         if definitely_rejected:
             request.budget.release(reserved_risk)
-            self.guard.release(guard_reservation)
+            self.action_budget.release(action_reservation)
             event = "plan_budget_released"
             reason = "The handler definitively rejected the operation without execution."
         else:
             request.budget.commit()
-            self.guard.commit(guard_reservation)
+            self.action_budget.commit(action_reservation)
             event = "plan_budget_committed"
             reason = "The handler accepted or may have executed the bound operation."
 

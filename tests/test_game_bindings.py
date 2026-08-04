@@ -863,45 +863,12 @@ def test_raw_time_key_cannot_bind_as_a_planner_affordance(
 
 
 def test_inventory_binding_owns_its_inventory_signal() -> None:
-    from kenshi_agent.live_plan_policy import _step_action_errors
-    from kenshi_agent.models import (
-        Condition,
-        ConditionKind,
-        ConditionOperator,
-        ControlMode,
-        IdempotencyPolicy,
-        PlanStep,
+    action = UseGameBindingAction(
+        binding=GameBinding.TOGGLE_INVENTORY,
+        expected_effect="open the selected character inventory",
     )
-
-    unrelated_screen = Condition(
-        kind=ConditionKind.FIELD,
-        path="telemetry.ui.active_screen",
-        operator=ConditionOperator.EQUALS,
-        expected="trade",
-        max_age_seconds=2.0,
-    )
-    step = PlanStep(
-        step_id="open-inventory",
-        action=UseGameBindingAction(
-            binding=GameBinding.TOGGLE_INVENTORY,
-            expected_effect="open the selected character inventory",
-        ),
-        preconditions=[unrelated_screen],
-        success_conditions=[unrelated_screen],
-        idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-        retry_budget=0,
-        timeout_seconds=10.0,
-    )
-
-    errors = _step_action_errors(
-        step,
-        observation(),
-        control_mode=ControlMode.NATIVE_ASSISTED,
-        require_binding=False,
-    )
-    assert errors == []
     completion = USE_GAME_BINDING_DEFINITION.resolve_terminal(
-        step.action,
+        action,
         observation(),
     )
     assert completion.owner is TerminalOwner.RUNTIME_CONDITIONS
@@ -1630,7 +1597,7 @@ def test_a_running_world_does_not_block_a_purchase_by_default() -> None:
 
     from kenshi_agent.config import SafetyConfig
     from kenshi_agent.models import PurchaseItemAction
-    from kenshi_agent.safety import ActionGuard, SafetyViolation
+    from kenshi_agent.safety import OperationPolicy, SafetyViolation
     from kenshi_agent.skills import MacroRegistry
 
     action = PurchaseItemAction(
@@ -1640,7 +1607,7 @@ def test_a_running_world_does_not_block_a_purchase_by_default() -> None:
     running = _purchase_guard_state(paused=False)
 
     macros = MacroRegistry({})
-    lenient = ActionGuard(
+    lenient = OperationPolicy(
         SafetyConfig(
             require_paused_between_actions=False,
             allow_action_kinds=["purchase_item"],
@@ -1649,7 +1616,7 @@ def test_a_running_world_does_not_block_a_purchase_by_default() -> None:
     )
     lenient.validate(action, running)  # must not raise
 
-    strict = ActionGuard(
+    strict = OperationPolicy(
         SafetyConfig(
             require_paused_between_actions=True,
             allow_action_kinds=["purchase_item"],
@@ -1668,45 +1635,11 @@ def test_a_purchase_contract_owns_transfer_conservation() -> None:
     neither restates that motor effect nor gets to call an unverified click done.
     """
 
-    from kenshi_agent.live_plan_policy import _step_action_errors
-    from kenshi_agent.models import (
-        Condition,
-        ConditionKind,
-        ConditionOperator,
-        ControlMode,
-        IdempotencyPolicy,
-        PlanStep,
-        PurchaseItemAction,
-    )
+    from kenshi_agent.models import PurchaseItemAction
 
     action = PurchaseItemAction(
         cell_label="Dried Meat", item_name="Dried Meat", expected_price=38,
         window="BARMAN", seller_id="e-barman",
-    )
-
-    screen_only = Condition(
-        kind=ConditionKind.FIELD, path="telemetry.ui.active_screen",
-        operator=ConditionOperator.EQUALS, expected="trade", max_age_seconds=2.0,
-    )
-
-    def step_with(*conditions: Condition) -> PlanStep:
-        return PlanStep(
-            step_id="buy",
-            action=action,
-            preconditions=[screen_only],
-            success_conditions=list(conditions),
-            idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-            retry_budget=0,
-            timeout_seconds=10.0,
-        )
-
-    planner_did_not_duplicate = _step_action_errors(
-        step_with(screen_only), observation(),
-        control_mode=ControlMode.NATIVE_ASSISTED, require_binding=False,
-    )
-    assert not any(
-        "completion" in error or "causal success" in error
-        for error in planner_did_not_duplicate
     )
 
     completion = PURCHASE_ITEM_DEFINITION.resolve_terminal(action, observation())

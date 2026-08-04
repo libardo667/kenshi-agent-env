@@ -33,6 +33,7 @@ from ..types import (
     OperationResult,
     OperationStatus,
 )
+from .input_binding import authorized_input_binding
 from .kenshi_surface import KenshiControlSurface
 from .movement import run_prepared_option
 
@@ -167,7 +168,12 @@ class KenshiDialogueMechanics:
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
     ) -> Transition:
         return await self._surface.run_exact(
-            action, command=command, token=token, receipt=self._execute_world_target_operation
+            action,
+            command=command,
+            token=token,
+            receipt=lambda current, started, dispatch: self._execute_world_target_operation(
+                current, started, dispatch, token
+            ),
         )
 
     async def _execute_approach_operation(
@@ -180,11 +186,15 @@ class KenshiDialogueMechanics:
         )
 
     async def _execute_world_target_operation(
-        self, action: Action, started: datetime, command: CommandDispatchContext | None
+        self,
+        action: Action,
+        started: datetime,
+        command: CommandDispatchContext | None,
+        token: ExecutionToken | None,
     ) -> ActionReceipt:
         del command
         return await self._execute_world_target_command(
-            cast(CommandWorldTargetAction, action), started
+            cast(CommandWorldTargetAction, action), started, token
         )
 
     async def _execute_semantic_approach(
@@ -236,21 +246,20 @@ class KenshiDialogueMechanics:
             require_vendor_role=False,
             semantic=semantic,
             continue_until_terminal=True,
+            paused_dialogue_terminal=True,
         )
 
     async def _execute_world_target_command(
         self,
         action: CommandWorldTargetAction,
         started: datetime,
+        token: ExecutionToken | None,
     ) -> ActionReceipt:
         """Right-click one exact target at geometry re-read inside the input lease."""
 
-        result = self._surface.telemetry_reader.read()
-        if result.stale:
-            raise RuntimeError("No input was sent: telemetry became stale inside the input lease.")
-        observation = self._surface.port._observation_from_snapshot(result.snapshot)
-        binding = operations.require_bound(
-            operations.COMMAND_WORLD_TARGET_DEFINITION.bind(action, observation),
+        binding, observation = authorized_input_binding(
+            action,
+            token,
             operations.BoundPointerTarget,
         )
         bounds = binding.resolved_bounds

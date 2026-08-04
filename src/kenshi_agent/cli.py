@@ -54,7 +54,7 @@ from .planners.base import Planner
 from .reflexes import ReflexEngine
 from .reporting import ConsoleDecisionReporter
 from .runtime import AgentRuntime
-from .safety import ActionGuard
+from .safety import OperationPolicy
 from .scenario_fixtures import (
     ScenarioFixtureError,
     load_scenario_attestation,
@@ -198,9 +198,7 @@ def _apply_run_overrides(config: AppConfig, args: argparse.Namespace) -> AppConf
             "--scenario-attestation cannot be combined with manual "  # mutation: diagnostic-only
             "scenario labels."  # mutation: diagnostic-only
         )
-    if supplied_scenario_values and len(supplied_scenario_values) != len(
-        scenario_values
-    ):
+    if supplied_scenario_values and len(supplied_scenario_values) != len(scenario_values):
         missing = sorted(set(scenario_values) - set(supplied_scenario_values))
         raise SystemExit(
             "A scenario declaration requires all scenario fields; "  # mutation: diagnostic-only
@@ -225,12 +223,7 @@ def _apply_run_overrides(config: AppConfig, args: argparse.Namespace) -> AppConf
                 f"Invalid scenario declaration: {exc}"  # mutation: diagnostic-only
             ) from exc
 
-    if (
-        objective is None
-        and planning_mode is None
-        and campaign is None
-        and scenario is None
-    ):
+    if objective is None and planning_mode is None and campaign is None and scenario is None:
         return config
     updates: dict[str, object] = {}
     runtime_updates: dict[str, object] = {}
@@ -272,26 +265,18 @@ def _live_actions_enabled(config: AppConfig, args: argparse.Namespace) -> bool:
             raise SystemExit(
                 "Native-assisted live execution requires --acknowledge-native-assisted-control."
             )
-    if (
-        config.planning.mode == PlanningMode.CONTINUOUS
-        and not args.acknowledge_continuous_live
-    ):
-        raise SystemExit(
-            "Continuous live execution requires --acknowledge-continuous-live."
-        )
+    if config.planning.mode == PlanningMode.CONTINUOUS and not args.acknowledge_continuous_live:
+        raise SystemExit("Continuous live execution requires --acknowledge-continuous-live.")
     return True
 
 
 def _validate_run_platform(config: AppConfig, args: argparse.Namespace) -> None:
     mode = args.mode or config.mode
     if config.runtime.scenario_attestation is not None and mode != "live":
-        raise SystemExit(
-            "Fixture-attested scenarios are valid only for a live Kenshi run."
-        )
+        raise SystemExit("Fixture-attested scenarios are valid only for a live Kenshi run.")
     if mode == "live" and os.name != "nt":
         raise SystemExit(
-            "Live mode requires Windows. From WSL, use the supported ./dev run "
-            "launcher."
+            "Live mode requires Windows. From WSL, use the supported ./dev run launcher."
         )
 
 
@@ -304,9 +289,7 @@ def _validate_attested_live_scenario(
         return
     raw_path = getattr(args, "scenario_attestation", None)
     if raw_path is None:
-        raise SystemExit(
-            "A fixture-attested live run requires its current attestation path."
-        )
+        raise SystemExit("A fixture-attested live run requires its current attestation path.")
     path = Path(raw_path).expanduser().resolve()
     try:
         manifest = load_scenario_fixture(
@@ -321,9 +304,7 @@ def _validate_attested_live_scenario(
             require_protocol_major=config.telemetry.require_protocol_major,
         ).read()
         if result.stale:
-            raise ScenarioFixtureError(
-                "Fixture-attested run requires fresh current telemetry."
-            )
+            raise ScenarioFixtureError("Fixture-attested run requires fresh current telemetry.")
         validate_current_scenario(
             attestation,
             manifest,
@@ -401,9 +382,7 @@ def _build_environment(
             capture_config=config.capture,
             execute_actions=execute_actions,
             emergency_stop_key=config.safety.emergency_stop_key,
-            final_pause_timeout_seconds=(
-                config.safety.supervisor_pause_timeout_seconds
-            ),
+            final_pause_timeout_seconds=(config.safety.supervisor_pause_timeout_seconds),
             available_skills=config.safety.allow_skills,
             control_mode=config.control.mode,
             quicksave_dir=_live_quicksave_dir(),
@@ -477,10 +456,7 @@ def _compact_memory(args: argparse.Namespace) -> int:
         )
         return 1
     campaign_rows = read_only_campaigns(path)
-    origins = {
-        campaign_id: CampaignScopeOrigin(origin)
-        for campaign_id, origin, _ in campaign_rows
-    }
+    origins = {campaign_id: CampaignScopeOrigin(origin) for campaign_id, origin, _ in campaign_rows}
     if args.campaign not in origins:
         print(
             f"No campaign {args.campaign!r} in {path}.",
@@ -496,8 +472,7 @@ def _compact_memory(args: argparse.Namespace) -> int:
                     record = memories.get(memory_id)
                     if record is None:
                         raise MemoryCompactionError(
-                            f"No memory {memory_id!r} exists in campaign "
-                            f"{args.campaign!r}."
+                            f"No memory {memory_id!r} exists in campaign {args.campaign!r}."
                         )
                     records.append(record)
                 candidate = build_lossless_compaction_candidate(records)
@@ -509,9 +484,7 @@ def _compact_memory(args: argparse.Namespace) -> int:
             candidate_path.read_text(encoding="utf-8")
         )
         if candidate.campaign_id != args.campaign:
-            raise MemoryCompactionError(
-                "The inspected candidate belongs to another campaign."
-            )
+            raise MemoryCompactionError("The inspected candidate belongs to another campaign.")
         with MemoryStore(
             path,
             CampaignScope(
@@ -570,10 +543,7 @@ def _inspect_fieldbook(args: argparse.Namespace) -> int:
         if args.project_id is not None:
             project = store.fieldbook.get_project(args.project_id)
             if project is None:
-                print(
-                    f"No fieldbook project {args.project_id!r} in "
-                    f"campaign {args.campaign!r}."
-                )
+                print(f"No fieldbook project {args.project_id!r} in campaign {args.campaign!r}.")
                 return 1
             document = {
                 "project": project.model_dump(mode="json"),
@@ -679,10 +649,11 @@ async def _run_command(args: argparse.Namespace) -> int:
             environment=environment,
             planner=planner,
             advisor=advisor,
-            guard=ActionGuard(
+            policy=OperationPolicy(
                 config.safety,
                 macros,
                 control_mode=run_control_mode,
+                semantic_pointer_skills=config.controls.semantic_pointer_skills,
             ),
             reflexes=ReflexEngine(),
             logger=logger,
@@ -765,9 +736,7 @@ def _doctor(args: argparse.Namespace) -> int:
 
             checks.append(("advisor_openai_package", True, "installed"))
         except ImportError:
-            checks.append(
-                ("advisor_openai_package", False, "pip install -e '.[openai]'")
-            )
+            checks.append(("advisor_openai_package", False, "pip install -e '.[openai]'"))
     if (args.mode or config.mode) == "live":
         checks.append(("windows", os.name == "nt", platform.platform()))
         checks.append(
@@ -890,10 +859,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--tts",
         action="store_true",
-        help=(
-            "Narrate human-readable planning and action updates through "
-            "offline Windows speech."
-        ),
+        help=("Narrate human-readable planning and action updates through offline Windows speech."),
     )
     run.add_argument(
         "--objective",

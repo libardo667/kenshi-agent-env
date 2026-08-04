@@ -2139,7 +2139,7 @@ def _single_step_runtime(
     from kenshi_agent.env import MockEnvironment
     from kenshi_agent.reflexes import ReflexEngine
     from kenshi_agent.runtime import AgentRuntime
-    from kenshi_agent.safety import ActionGuard
+    from kenshi_agent.safety import OperationPolicy
     from kenshi_agent.session_log import SessionLogger
     from kenshi_agent.skills import MacroRegistry
 
@@ -2154,7 +2154,7 @@ def _single_step_runtime(
         environment=environment,
         operation_port=operation_port(environment),
         planner=planner,
-        guard=ActionGuard(
+        policy=OperationPolicy(
             SafetyConfig(
                 allow_action_kinds=["noop", "stop", "pause", "wait"],
                 max_actions_per_minute=500,
@@ -3344,7 +3344,7 @@ def test_a_requested_read_reaches_exactly_the_next_planner_and_touches_no_game(
             keep_fact(store, "The gate at Squin closes at night.")
             planner = ReadingPlanner()
             runtime, logger = _single_step_runtime(tmp_path, planner, store)
-            runtime.guard.config.allow_action_kinds.append("recall_memory")
+            runtime.policy.config.allow_action_kinds.append("recall_memory")
             try:
                 summary = await runtime.run(max_steps=3)
             finally:

@@ -41,7 +41,7 @@ from kenshi_agent.models import (
     VisibleUIControl,
 )
 from kenshi_agent.operation_definitions import RECOVER_CAMERA_VIEW_DEFINITION
-from kenshi_agent.safety import ActionGuard, SafetyViolation
+from kenshi_agent.safety import OperationPolicy, SafetyViolation
 from kenshi_agent.skills import MacroRegistry
 from kenshi_agent.telemetry import TelemetryRead
 
@@ -69,6 +69,7 @@ class CameraTelemetry:
         self.angle = 0
         self.tilt = 0
         self.sequence = 0
+        self.max_age_seconds = 3.0
         self.path = Path("camera-telemetry.json")
 
     def read(self) -> TelemetryRead:
@@ -346,7 +347,7 @@ def test_controller_transaction_limit_does_not_loosen_ordinary_primitive_limit(
         environment, _, _ = camera_environment(tmp_path, mode="clear")
         observation = await environment.reset()
         action = RecoverCameraViewAction()
-        guard = ActionGuard(
+        guard = OperationPolicy(
             SafetyConfig(
                 allow_action_kinds=[action.kind],
                 max_primitive_actions_per_step=4,
@@ -358,7 +359,7 @@ def test_controller_transaction_limit_does_not_loosen_ordinary_primitive_limit(
         )
         assert guard.validate(action, observation) == action
 
-        too_tight = ActionGuard(
+        too_tight = OperationPolicy(
             SafetyConfig(
                 allow_action_kinds=[action.kind],
                 max_primitive_actions_per_step=4,

@@ -13,9 +13,9 @@ import time
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal, Protocol, TypeVar
+from typing import Literal, Protocol
 
-from ... import operation_definitions as operations
+from ... import native_commands
 from ...authorization import InputBoundaryDecision
 from ...config import CaptureConfig, ControlsConfig, RuntimeConfig
 from ...control.base import InputController, PrimitiveInputAction
@@ -30,7 +30,6 @@ from ...models import (
     GAME_SPEED_MULTIPLIER_BY_GEAR,
     Action,
     ActionReceipt,
-    ApproachDialogueTargetAction,
     CalibrationReport,
     ClickAction,
     CommandDispatchContext,
@@ -45,6 +44,7 @@ from ...models import (
     NativeCommandRequest,
     NativeCommandStatus,
     Observation,
+    PauseAction,
     PointerActionClass,
     ScrollAction,
     SemanticActionReceipt,
@@ -54,7 +54,6 @@ from ...models import (
     TelemetrySnapshot,
     Transition,
 )
-from ...native_commands import write_native_command_request_atomic
 from ...skills import MacroRegistry
 from ...telemetry import TelemetryReader, TelemetryReadError
 
@@ -62,27 +61,6 @@ NATIVE_COMMAND_REQUEST_FILE = "native_command.request.json"
 NATIVE_COMMAND_ACK_TIMEOUT_SECONDS = 2.0
 NATIVE_COMMAND_POLL_SECONDS = 0.025
 NATIVE_DIALOGUE_SETTLE_SECONDS = 1.0
-
-BindingT = TypeVar("BindingT")
-
-_NATIVE_DEFINITION_BY_WIRE_COMMAND = {
-    operations.NATIVE_DIRECTION_WIRE_COMMAND: operations.MOVE_IN_DIRECTION_DEFINITION,
-    operations.NATIVE_MAP_TRAVEL_WIRE_COMMAND: operations.TRAVEL_TO_MAP_DESTINATION_DEFINITION,
-    operations.NATIVE_SQUAD_SELECTION_WIRE_COMMAND: (
-        operations.SELECT_SQUAD_MEMBER_EXACT_DEFINITION
-    ),
-    operations.NATIVE_SQUAD_REGROUP_WIRE_COMMAND: (operations.REGROUP_WITH_SQUAD_MEMBER_DEFINITION),
-    operations.NATIVE_EXIT_BUILDING_WIRE_COMMAND: operations.EXIT_CURRENT_BUILDING_DEFINITION,
-    operations.NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND: (
-        operations.PRODUCE_RESOURCE_OUTPUT_DEFINITION
-    ),
-    operations.NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND: (
-        operations.OPEN_CONTEXT_INVENTORY_DEFINITION
-    ),
-    operations.NATIVE_CONTEXT_ACTION_WIRE_COMMAND: operations.PERFORM_CONTEXT_ACTION_DEFINITION,
-    operations.NATIVE_MOVE_WIRE_COMMAND: operations.MOVE_TO_CHARACTER_DEFINITION,
-}
-
 
 class LiveCapturePort(Protocol):
     def capture(self, sequence: int) -> CapturedFrame: ...
@@ -169,32 +147,9 @@ class KenshiControlSurface:
     def last_observation(self) -> Observation | None:
         return self._port._last_observation
 
-    def classify_pointer_action(self, action: Action) -> PointerActionClass:
-        """Classify the calibration authority required by one exact operation."""
-
-        contract = operations.definition_for(action)
-        if contract is not None and not isinstance(action, SkillAction):
-            return contract.pointer_class
-        if isinstance(action, SkillAction):
-            if action.name in self.controls_config.semantic_pointer_skills:
-                return PointerActionClass.SEMANTIC_CURRENT
-            if not self.macros.has(action.name):
-                return PointerActionClass.UNSUPPORTED
-            pointer = any(
-                isinstance(primitive, (ClickAction, MoveCursorAction, ScrollAction))
-                for primitive in self.macros.expand(action)
-            )
-        else:
-            pointer = isinstance(action, (ClickAction, MoveCursorAction, ScrollAction))
-        return (
-            PointerActionClass.PROFILE_CALIBRATED
-            if pointer
-            else PointerActionClass.COORDINATE_INDEPENDENT
-        )
-
-    def calibration_report(self, action: Action) -> CalibrationReport:
+    def calibration_report(self, pointer_class: PointerActionClass) -> CalibrationReport:
         return evaluate_calibration_identity(
-            action_class=self.classify_pointer_action(action),
+            action_class=pointer_class,
             expected=self.controls_config.expected_calibration_identity(),
             observed=self.controller.observed_calibration_identity(),
         )
@@ -244,13 +199,17 @@ class KenshiControlSurface:
                 message="Live action withheld by the dry-run safety gate.",
             )
         else:
+            if token is None:
+                raise RuntimeError(
+                    "Live input delivery requires an input-boundary execution token."
+                )
             if self.controller.emergency_stop_pressed(self._port.emergency_stop_key):
                 raise RuntimeError(
                     f"Emergency stop key {self._port.emergency_stop_key!r} is pressed; "
                     "action aborted."
                 )
             async with self.controller.input_lease(alt_tab_on_restore=True):
-                calibration = self.calibration_report(action)
+                calibration = self.calibration_report(token.pointer_class)
                 lease_wait = self.controller.input_lease_wait_seconds()
                 boundary = (
                     token.revalidate(
@@ -309,6 +268,60 @@ class KenshiControlSurface:
 
         started = datetime.now(UTC)
         action_receipt = await receipt(action, started, command)
+        return await self._finish_transition(action_receipt, command)
+
+    async def run_control_pause(
+        self,
+        action: PauseAction,
+        *,
+        command: CommandDispatchContext,
+        receipt: Callable[
+            [Action, datetime, CommandDispatchContext | None],
+            Awaitable[ActionReceipt],
+        ],
+    ) -> Transition:
+        """Deliver the supervisor/ownership pause path from fresh host state.
+
+        This authority is intentionally independent of a plan execution token:
+        human input and F12 are exactly the conditions under which supervision
+        must still be able to establish a safe pause. The caller owns the
+        decision; this adapter owns the narrow fresh-state and safety-lease
+        delivery boundary.
+        """
+
+        started = datetime.now(UTC)
+        if not self._port.execute_actions:
+            action_receipt = ActionReceipt(
+                action=action,
+                accepted=True,
+                executed=False,
+                dry_run=True,
+                started_at=started,
+                finished_at=datetime.now(UTC),
+                primitive_actions=0,
+                message="Live control pause withheld by the dry-run safety gate.",
+            )
+            return await self._finish_transition(action_receipt, command)
+
+        async with self.controller.safety_input_lease():
+            observation = await self._port.observe_without_capture()
+            telemetry = observation.telemetry
+            if observation.telemetry_stale or telemetry is None:
+                raise RuntimeError(
+                    "Control pause requires fresh canonical telemetry inside its safety lease."
+                )
+            age = observation.telemetry_age_seconds
+            if age is None or age > self.telemetry_reader.max_age_seconds:
+                raise RuntimeError(
+                    "Control pause telemetry age is unknown or exceeds its freshness ceiling."
+                )
+            if not telemetry.game.loaded or "game.pause" not in telemetry.capabilities:
+                raise RuntimeError(
+                    "Control pause requires a loaded game with the pause capability."
+                )
+            if telemetry.game.paused is None:
+                raise RuntimeError("Control pause requires a known current pause state.")
+            action_receipt = await receipt(action, started, command)
         return await self._finish_transition(action_receipt, command)
 
     async def _finish_transition(
@@ -694,21 +707,6 @@ class KenshiControlSurface:
             )
         return primitive_skill, pulse_seconds
 
-    def rebind_in_lease(
-        self,
-        contract: operations.OperationDefinition,
-        action: Action,
-        binding_type: type[BindingT],
-    ) -> tuple[BindingT, Observation]:
-        """Re-resolve an action's reference against telemetry read right now."""
-
-        result = self.telemetry_reader.read()
-        if result.stale:
-            raise RuntimeError("No input was sent: telemetry became stale inside the input lease.")
-        observation = self._port._observation_from_snapshot(result.snapshot)
-        binding = operations.require_bound(contract.bind(action, observation), binding_type)
-        return binding, observation
-
     @staticmethod
     def _accepted_native_terminal_receipt(
         *,
@@ -740,27 +738,6 @@ class KenshiControlSurface:
             semantic=semantic,
         )
 
-    def _is_task_start_only(
-        self,
-        action: Action,
-        acknowledgement: NativeCommandAcknowledgement,
-    ) -> bool:
-        """Did Kenshi merely adopt this order rather than carry it out?
-
-        The native side reports "completed" as soon as the character holds the
-        exact AI goal, which for a context task means the work has begun, not
-        finished. Returning a terminal receipt there would leave the character
-        holding a goal in a world that never runs, so such an order still owes
-        the caller a resumed world.
-        """
-
-        if acknowledgement.status is not NativeCommandStatus.COMPLETED:
-            return False
-        definition = operations.definition_for(action)
-        if definition is None:
-            return False
-        return acknowledgement.reason in definition.native_task_started_reasons
-
     async def run_native_order(
         self,
         action: Action,
@@ -782,7 +759,7 @@ class KenshiControlSurface:
             "perform_context_action",
             "produce_resource_output",
             "open_context_inventory",
-        ] = operations.NATIVE_APPROACH_WIRE_COMMAND,
+        ] = native_commands.NATIVE_APPROACH_WIRE_COMMAND,
         require_dialogue_target: bool = True,
         bearing_degrees: float = 0.0,
         distance_units: float = 0.0,
@@ -793,6 +770,8 @@ class KenshiControlSurface:
         running_speed_gear: int = 1,
         expected_actor_id: str | None = None,
         context_action: ContextActionKind | None = None,
+        task_started_reasons: frozenset[str] = frozenset(),
+        paused_dialogue_terminal: bool = False,
     ) -> ActionReceipt:
         adopted = (
             self._active_native_order_for(
@@ -841,7 +820,7 @@ class KenshiControlSurface:
                 context_action=context_action,
             )
             request_path = self.telemetry_reader.path.parent / NATIVE_COMMAND_REQUEST_FILE
-            write_native_command_request_atomic(request_path, request)
+            native_commands.write_native_command_request_atomic(request_path, request)
             primitive_count, messages = await self.run_skill_primitives(primitive_skill)
             acknowledgement = await self._wait_for_native_acknowledgement(request)
         acknowledgement_message = (
@@ -869,7 +848,10 @@ class KenshiControlSurface:
         if acknowledgement.status in {
             NativeCommandStatus.CANCELLED,
             NativeCommandStatus.COMPLETED,
-        } and not self._is_task_start_only(action, acknowledgement):
+        } and not (
+            acknowledgement.status is NativeCommandStatus.COMPLETED
+            and acknowledgement.reason in task_started_reasons
+        ):
             return self._accepted_native_terminal_receipt(
                 action=action,
                 command=command,
@@ -898,7 +880,7 @@ class KenshiControlSurface:
                 native_acknowledgement=acknowledgement,
                 semantic=semantic,
             )
-        if isinstance(action, ApproachDialogueTargetAction) and self._fresh_pause_state() is True:
+        if paused_dialogue_terminal and self._fresh_pause_state() is True:
             dialogue_open, current = await self._wait_for_exact_native_dialogue(
                 target_id=target_id,
                 command_id=acknowledgement.command_id,
@@ -1150,14 +1132,14 @@ class KenshiControlSurface:
             or acknowledgement.context_action != (context_action or "")
         ):
             return None
-        if wire_command == operations.NATIVE_DIRECTION_WIRE_COMMAND:
+        if wire_command == native_commands.NATIVE_DIRECTION_WIRE_COMMAND:
             if (
                 acknowledgement.target_id
                 or acknowledgement.bearing_degrees != bearing_degrees
                 or acknowledgement.distance_units != distance_units
             ):
                 return None
-        elif wire_command == operations.NATIVE_EXIT_BUILDING_WIRE_COMMAND:
+        elif wire_command == native_commands.NATIVE_EXIT_BUILDING_WIRE_COMMAND:
             if (
                 acknowledgement.target_id
                 or acknowledgement.bearing_degrees != 0.0
@@ -1199,7 +1181,7 @@ class KenshiControlSurface:
             "perform_context_action",
             "produce_resource_output",
             "open_context_inventory",
-        ] = operations.NATIVE_APPROACH_WIRE_COMMAND,
+        ] = native_commands.NATIVE_APPROACH_WIRE_COMMAND,
         require_dialogue_target: bool = True,
         bearing_degrees: float = 0.0,
         distance_units: float = 0.0,
@@ -1240,23 +1222,14 @@ class KenshiControlSurface:
         ):
             raise RuntimeError("Native command basis regressed behind the authorized revision.")
         telemetry = observation.telemetry
-        native_contract = _NATIVE_DEFINITION_BY_WIRE_COMMAND.get(
-            wire_command,
-            operations.APPROACH_DIALOGUE_TARGET_DEFINITION,
-        )
-        missing = native_contract.missing_capabilities(set(telemetry.capabilities))
-        if missing:
-            raise RuntimeError(
-                "Native command lacks required capabilities: " + ", ".join(sorted(missing))
-            )
         if not telemetry.identity_session_id:
             raise RuntimeError("Native command requires a current identity session.")
         selected_ids = telemetry.ui.selected_character_ids
         group_selection_command = wire_command in {
-            operations.NATIVE_APPROACH_WIRE_COMMAND,
-            operations.NATIVE_MOVE_WIRE_COMMAND,
-            operations.NATIVE_SQUAD_SELECTION_WIRE_COMMAND,
-            operations.NATIVE_MAP_TRAVEL_WIRE_COMMAND,
+            native_commands.NATIVE_APPROACH_WIRE_COMMAND,
+            native_commands.NATIVE_MOVE_WIRE_COMMAND,
+            native_commands.NATIVE_SQUAD_SELECTION_WIRE_COMMAND,
+            native_commands.NATIVE_MAP_TRAVEL_WIRE_COMMAND,
         }
         if (
             not selected_ids
@@ -1272,7 +1245,7 @@ class KenshiControlSurface:
                 "Native squad regrouping requires actor_id to remain the exact "
                 "current selection at issue time."
             )
-        if wire_command == operations.NATIVE_DIRECTION_WIRE_COMMAND:
+        if wire_command == native_commands.NATIVE_DIRECTION_WIRE_COMMAND:
             # References nobody: the destination is derived from where the
             # character already stands, which is what makes it available in a
             # place a destination list would be empty.
@@ -1287,7 +1260,7 @@ class KenshiControlSurface:
                 bearing_degrees=bearing_degrees,
                 distance_units=distance_units,
             )
-        if wire_command == operations.NATIVE_EXIT_BUILDING_WIRE_COMMAND:
+        if wire_command == native_commands.NATIVE_EXIT_BUILDING_WIRE_COMMAND:
             selected = [character for character in telemetry.squad if character.selected]
             if len(selected) != 1 or selected[0].indoors is not True:
                 raise RuntimeError(
@@ -1303,7 +1276,7 @@ class KenshiControlSurface:
                 based_on_revision=observation.world_revision,
                 selected_character_ids=list(selected_ids),
             )
-        if wire_command == operations.NATIVE_MAP_TRAVEL_WIRE_COMMAND:
+        if wire_command == native_commands.NATIVE_MAP_TRAVEL_WIRE_COMMAND:
             map_destinations = [
                 destination
                 for destination in telemetry.known_map_destinations
@@ -1323,7 +1296,7 @@ class KenshiControlSurface:
                 selected_character_ids=list(selected_ids),
                 target_id=target_id,
             )
-        if wire_command == operations.NATIVE_SQUAD_SELECTION_WIRE_COMMAND:
+        if wire_command == native_commands.NATIVE_SQUAD_SELECTION_WIRE_COMMAND:
             target_matches = [member for member in telemetry.squad if member.id == target_id]
             if len(target_matches) != 1:
                 raise RuntimeError(
@@ -1339,7 +1312,7 @@ class KenshiControlSurface:
                 selected_character_ids=list(selected_ids),
                 target_id=target_id,
             )
-        if wire_command == operations.NATIVE_SQUAD_REGROUP_WIRE_COMMAND:
+        if wire_command == native_commands.NATIVE_SQUAD_REGROUP_WIRE_COMMAND:
             target_matches = [
                 member
                 for member in telemetry.squad
@@ -1363,11 +1336,11 @@ class KenshiControlSurface:
         if not target_id:
             raise RuntimeError("Native approach requires an exact target_id.")
         if wire_command in {
-            operations.NATIVE_CONTEXT_ACTION_WIRE_COMMAND,
-            operations.NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND,
-            operations.NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND,
+            native_commands.NATIVE_CONTEXT_ACTION_WIRE_COMMAND,
+            native_commands.NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND,
+            native_commands.NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND,
         }:
-            if wire_command == operations.NATIVE_CONTEXT_ACTION_WIRE_COMMAND:
+            if wire_command == native_commands.NATIVE_CONTEXT_ACTION_WIRE_COMMAND:
                 if context_action is None:
                     raise RuntimeError("Native context execution requires an exact semantic.")
                 expected_context_action = context_action

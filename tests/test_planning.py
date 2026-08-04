@@ -1009,11 +1009,6 @@ def test_plan_validation_fails_closed_for_every_outer_authority_boundary() -> No
     invalid_cases = [
         (
             valid_plan,
-            valid_observation.model_copy(update={"mode": "live"}),
-            PlanningConfig(),
-        ),
-        (
-            valid_plan,
             valid_observation.model_copy(
                 update={"control_mode": ControlMode.NATIVE_ASSISTED}
             ),
@@ -1138,22 +1133,21 @@ def test_plan_validation_fails_closed_for_every_outer_authority_boundary() -> No
             validate_plan(plan, current, config, macros)
 
 
-def test_live_plan_policy_receives_the_exact_plan_snapshot_and_bound(
+def test_live_plan_policy_receives_the_exact_plan_and_configured_bound(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from kenshi_agent import live_plan_policy
 
     current = observation().model_copy(update={"mode": "live"})
     plan = plan_for(current.world_revision)
-    calls: list[tuple[PlanEnvelope, Observation, int]] = []
+    calls: list[tuple[PlanEnvelope, int]] = []
 
     def policy_errors(
         candidate: PlanEnvelope,
-        snapshot: Observation,
         *,
         max_steps: int,
     ) -> list[str]:
-        calls.append((candidate, snapshot, max_steps))
+        calls.append((candidate, max_steps))
         return []
 
     monkeypatch.setattr(
@@ -1168,7 +1162,7 @@ def test_live_plan_policy_receives_the_exact_plan_snapshot_and_bound(
         MacroRegistry({}),
     )
 
-    assert calls == [(plan, current, 4)]
+    assert calls == [(plan, 4)]
     assert [item.result for item in results] == [ConditionResult.TRUE]
 
 
@@ -1239,7 +1233,7 @@ def purchase_step(step_id: str, *, on_success: str | None = None) -> PlanStep:
     )
 
 
-def test_plan_rejects_an_unchanged_retry_after_a_definitive_no_op() -> None:
+def test_plan_structure_does_not_restate_the_affordance_non_progress_barrier() -> None:
     current = observation(
         sequence=5,
         capabilities=["game.pause", "game.time", "game.money"],
@@ -1277,11 +1271,8 @@ def test_plan_rejects_an_unchanged_retry_after_a_definitive_no_op() -> None:
         }
     )
 
-    with pytest.raises(
-        PlanValidationError,
-        match="definitive no-op.*unchanged",
-    ):
-        validate_plan(plan, current, PlanningConfig(), MacroRegistry({}))
+    results = validate_plan(plan, current, PlanningConfig(), MacroRegistry({}))
+    assert [item.result for item in results] == [ConditionResult.TRUE]
 
 
 def test_plan_risk_validation_conserves_cost_across_all_steps_and_retries() -> None:
@@ -1328,16 +1319,15 @@ def test_plan_risk_validation_conserves_cost_across_all_steps_and_retries() -> N
             )
         }
     )
-    with pytest.raises(PlanValidationError):
-        validate_plan(
-            retry_plan,
-            current,
-            PlanningConfig(
-                max_pointer_actions_per_plan=2,
-                max_purchase_actions_per_plan=2,
-            ),
-            MacroRegistry({}),
-        )
+    validate_plan(
+        retry_plan,
+        current,
+        PlanningConfig(
+            max_pointer_actions_per_plan=2,
+            max_purchase_actions_per_plan=2,
+        ),
+        MacroRegistry({}),
+    )
 
     pointer_steps = [
         PlanStep(
@@ -1590,7 +1580,7 @@ def test_future_patch_rebases_to_current_state_and_cannot_restart_protected_step
         )
 
 
-def test_future_patch_rebase_still_requires_latest_entry_authority() -> None:
+def test_future_patch_rebase_leaves_latest_entry_authority_to_submission() -> None:
     planner_observation = observation(sequence=7, paused=False).model_copy(
         update={"mode": "live"}
     )
@@ -1605,18 +1595,18 @@ def test_future_patch_rebase_still_requires_latest_entry_authority() -> None:
     )
     current = observation(sequence=8, paused=True).model_copy(update={"mode": "live"})
 
-    with pytest.raises(PlanValidationError, match="direct live unpause"):
-        validate_future_plan_patch(
-            patch,
-            active_plan=active_plan,
-            planner_observation=planner_observation,
-            current_observation=current,
-            config=PlanningConfig(),
-            macros=MacroRegistry({}),
-            budget=PlanBudgetLedger.from_plan(active_plan),
-            remaining_run_actions=1,
-            protected_step_ids=set(),
-        )
+    candidate = validate_future_plan_patch(
+        patch,
+        active_plan=active_plan,
+        planner_observation=planner_observation,
+        current_observation=current,
+        config=PlanningConfig(),
+        macros=MacroRegistry({}),
+        budget=PlanBudgetLedger.from_plan(active_plan),
+        remaining_run_actions=1,
+        protected_step_ids=set(),
+    )
+    assert candidate.entry_step_id == "future-speed"
 
 
 def test_interrupt_patch_requires_exact_opt_in_and_a_pause_handoff() -> None:

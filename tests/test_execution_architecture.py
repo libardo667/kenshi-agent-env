@@ -1,4 +1,4 @@
-"""Stage 2 fitness checks derived from the reconstruction authority."""
+"""Execution and authority fitness checks derived from the reconstruction plan."""
 
 from __future__ import annotations
 
@@ -282,3 +282,103 @@ def test_plan_executor_owns_only_plan_local_execution() -> None:
         "planning_config",
         "event",
     }
+
+
+def test_stage_four_deleted_the_mutable_action_guard_owner() -> None:
+    classes = {
+        node.name
+        for path in SOURCE.rglob("*.py")
+        for node in ast.walk(_tree(path))
+        if isinstance(node, ast.ClassDef)
+    }
+    assert "ActionGuard" not in classes
+
+    policy = next(
+        node
+        for node in _tree(SOURCE / "safety.py").body
+        if isinstance(node, ast.ClassDef) and node.name == "OperationPolicy"
+    )
+    assert _defined_methods(policy).isdisjoint({"reserve", "commit", "release"})
+    policy_source = ast.unparse(policy)
+    for mutable_budget_field in (
+        "_action_times",
+        "_purchase_count",
+        "_pending_primitive_count",
+        "_reservations",
+    ):
+        assert mutable_budget_field not in policy_source
+
+    ledger = next(
+        node
+        for node in _tree(SOURCE / "action_budget.py").body
+        if isinstance(node, ast.ClassDef) and node.name == "ActionBudgetLedger"
+    )
+    assert {"reserve", "commit", "release"} <= _defined_methods(ledger)
+
+    coordinator_source = (SOURCE / "run_coordinator.py").read_text(encoding="utf-8")
+    for authority_owner in ("OperationPolicy", "OperationAuthority", "ActionBudgetLedger"):
+        assert authority_owner not in coordinator_source
+    assert "operation_port" not in coordinator_source
+
+
+def test_fresh_binding_calls_route_through_the_one_binding_authority() -> None:
+    """Definitions bind only inside the affordance/binding owner.
+
+    Callers may ask the process-wide authority or an injected
+    ``OperationBindingAuthority`` to bind. They may not invoke an operation
+    definition's binder directly and grow another fresh-binding implementation.
+    """
+
+    offenders: list[str] = []
+    for path in SOURCE.rglob("*.py"):
+        if path.name == "affordances.py":
+            continue
+        for node in ast.walk(_tree(path)):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                continue
+            if node.func.attr != "bind":
+                continue
+            receiver = ast.unparse(node.func.value)
+            if receiver not in {"OPERATION_BINDING_AUTHORITY", "self.binding"}:
+                offenders.append(f"{path.relative_to(ROOT)}:{node.lineno}:{receiver}.bind")
+    assert offenders == []
+
+
+def test_kenshi_surface_is_external_delivery_not_operation_policy() -> None:
+    path = HANDLERS / "kenshi_surface.py"
+    source = path.read_text(encoding="utf-8")
+    surface = next(
+        node
+        for node in _tree(path).body
+        if isinstance(node, ast.ClassDef) and node.name == "KenshiControlSurface"
+    )
+    assert _defined_methods(surface).isdisjoint(
+        {"classify_pointer_action", "rebind_in_lease", "_is_task_start_only"}
+    )
+    for semantic_dependency in (
+        "operation_definitions",
+        "definition_for(",
+        "OperationDefinition",
+        "ApproachDialogueTargetAction",
+        ".bind(",
+        "native_task_started_reasons",
+    ):
+        assert semantic_dependency not in source
+
+
+def test_live_plan_policy_contains_no_current_operation_eligibility() -> None:
+    path = SOURCE / "live_plan_policy.py"
+    source = path.read_text(encoding="utf-8")
+    for operation_policy_dependency in (
+        "definition_for",
+        ".bind(",
+        "resolve_terminal",
+        ".idempotency",
+    ):
+        assert operation_policy_dependency not in source
+    policy = next(
+        node
+        for node in _tree(path).body
+        if isinstance(node, ast.FunctionDef) and node.name == "live_plan_policy_errors"
+    )
+    assert [argument.arg for argument in policy.args.args] == ["plan"]

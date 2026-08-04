@@ -2,8 +2,11 @@ from datetime import UTC, datetime
 
 import pytest
 
+from kenshi_agent.action_budget import ActionBudgetError, ActionBudgetLedger
+from kenshi_agent.affordances import OPERATION_BINDING_AUTHORITY
 from kenshi_agent.config import MacroConfig, NormalizedPointerBoundsConfig, SafetyConfig
 from kenshi_agent.models import (
+    Action,
     ApproachDialogueTargetAction,
     CharacterState,
     ClickAction,
@@ -42,8 +45,17 @@ from kenshi_agent.models import (
     VisibleUIControl,
     WaitAction,
 )
-from kenshi_agent.safety import ActionGuard, SafetyViolation, require_exact_target_id
+from kenshi_agent.safety import OperationPolicy, SafetyViolation, require_exact_target_id
 from kenshi_agent.skills import MacroRegistry
+
+
+def reserve_action(
+    ledger: ActionBudgetLedger,
+    action: Action,
+    observation: Observation,
+):
+    bound = OPERATION_BINDING_AUTHORITY.bind(action, observation, affordance=None)
+    return ledger.reserve(bound, observation)
 
 
 def safety_config() -> SafetyConfig:
@@ -68,14 +80,14 @@ def safety_config() -> SafetyConfig:
 
 
 def test_normalized_click_outside_bounds_is_blocked() -> None:
-    guard = ActionGuard(safety_config(), MacroRegistry({}))
+    guard = OperationPolicy(safety_config(), MacroRegistry({}))
     observation = Observation(run_id="run", step_index=0, mode="mock")
     with pytest.raises(SafetyViolation):
         guard.validate(ClickAction(x=1.1, y=0.5), observation)
 
 
 def test_stale_live_click_is_blocked() -> None:
-    guard = ActionGuard(safety_config(), MacroRegistry({}))
+    guard = OperationPolicy(safety_config(), MacroRegistry({}))
     observation = Observation(
         run_id="run",
         step_index=0,
@@ -88,7 +100,7 @@ def test_stale_live_click_is_blocked() -> None:
 
 
 def test_stale_live_scroll_is_blocked() -> None:
-    guard = ActionGuard(safety_config(), MacroRegistry({}))
+    guard = OperationPolicy(safety_config(), MacroRegistry({}))
     observation = Observation(
         run_id="run",
         step_index=0,
@@ -101,7 +113,7 @@ def test_stale_live_scroll_is_blocked() -> None:
 
 
 def test_live_screen_space_pointer_action_is_blocked() -> None:
-    guard = ActionGuard(safety_config(), MacroRegistry({}))
+    guard = OperationPolicy(safety_config(), MacroRegistry({}))
     observation = Observation(
         run_id="run",
         step_index=0,
@@ -113,7 +125,7 @@ def test_live_screen_space_pointer_action_is_blocked() -> None:
 
 
 def test_live_move_cursor_uses_the_same_bounds_as_clicks() -> None:
-    guard = ActionGuard(safety_config(), MacroRegistry({}))
+    guard = OperationPolicy(safety_config(), MacroRegistry({}))
     observation = Observation(
         run_id="run",
         step_index=0,
@@ -125,7 +137,7 @@ def test_live_move_cursor_uses_the_same_bounds_as_clicks() -> None:
 
 
 def test_live_client_pointer_requires_known_window_dimensions() -> None:
-    guard = ActionGuard(safety_config(), MacroRegistry({}))
+    guard = OperationPolicy(safety_config(), MacroRegistry({}))
     observation = Observation(
         run_id="run", step_index=0, mode="live", telemetry=TelemetrySnapshot()
     )
@@ -134,10 +146,8 @@ def test_live_client_pointer_requires_known_window_dimensions() -> None:
 
 
 def test_exact_squad_selection_can_reduce_a_current_multi_selection() -> None:
-    config = safety_config().model_copy(
-        update={"allow_action_kinds": ["select_squad_member"]}
-    )
-    guard = ActionGuard(
+    config = safety_config().model_copy(update={"allow_action_kinds": ["select_squad_member"]})
+    guard = OperationPolicy(
         config,
         MacroRegistry({}),
         control_mode=ControlMode.NATIVE_ASSISTED,
@@ -198,7 +208,7 @@ def test_dialogue_approach_preserves_a_valid_multi_selection() -> None:
             ]
         }
     )
-    guard = ActionGuard(
+    guard = OperationPolicy(
         config,
         MacroRegistry({}),
         control_mode=ControlMode.NATIVE_ASSISTED,
@@ -255,10 +265,8 @@ def test_dialogue_approach_preserves_a_valid_multi_selection() -> None:
 def test_native_party_control_accepts_an_exact_group_basis(
     action: SelectSquadMemberExactAction | TravelToMapDestinationAction,
 ) -> None:
-    guard = ActionGuard(
-        safety_config().model_copy(
-            update={"allow_action_kinds": [action.kind]}
-        ),
+    guard = OperationPolicy(
+        safety_config().model_copy(update={"allow_action_kinds": [action.kind]}),
         MacroRegistry({}),
         control_mode=ControlMode.NATIVE_ASSISTED,
     )
@@ -313,7 +321,7 @@ def test_native_party_control_accepts_an_exact_group_basis(
 
 
 def test_live_pause_requires_known_current_state() -> None:
-    guard = ActionGuard(safety_config(), MacroRegistry({}))
+    guard = OperationPolicy(safety_config(), MacroRegistry({}))
     unknown = Observation(run_id="run", step_index=0, mode="live", telemetry=TelemetrySnapshot())
     with pytest.raises(SafetyViolation, match="pause state is unknown"):
         guard.validate(PauseAction(paused=True), unknown)
@@ -340,12 +348,10 @@ def test_set_speed_unpause_requires_explicit_profile_authority() -> None:
     )
 
     with pytest.raises(SafetyViolation, match="Direct live unpause"):
-        ActionGuard(safety_config(), MacroRegistry({})).validate(action, paused)
+        OperationPolicy(safety_config(), MacroRegistry({})).validate(action, paused)
 
-    enabled = safety_config().model_copy(
-        update={"allow_live_unpause_actions": True}
-    )
-    assert ActionGuard(enabled, MacroRegistry({})).validate(action, paused) == action
+    enabled = safety_config().model_copy(update={"allow_live_unpause_actions": True})
+    assert OperationPolicy(enabled, MacroRegistry({})).validate(action, paused) == action
 
 
 @pytest.mark.parametrize(
@@ -360,7 +366,7 @@ def test_set_speed_unpause_requires_explicit_profile_authority() -> None:
 def test_raw_time_binding_is_not_a_guarded_planner_affordance(
     binding: GameBinding,
 ) -> None:
-    guard = ActionGuard(
+    guard = OperationPolicy(
         safety_config().model_copy(
             update={"allow_action_kinds": [*safety_config().allow_action_kinds, "use_game_binding"]}
         ),
@@ -386,12 +392,13 @@ def test_raw_time_binding_is_not_a_guarded_planner_affordance(
 
 def test_safety_pause_bypasses_only_the_rate_budget() -> None:
     config = safety_config().model_copy(update={"max_actions_per_minute": 1})
-    guard = ActionGuard(config, MacroRegistry({}))
+    guard = OperationPolicy(config, MacroRegistry({}))
+    ledger = ActionBudgetLedger(config, guard.macros)
     observation = Observation(run_id="run", step_index=0, mode="mock")
 
-    guard.validate(PauseAction(paused=True), observation)
-    with pytest.raises(SafetyViolation, match="rate limit"):
-        guard.validate(PauseAction(paused=True), observation)
+    ledger.commit(reserve_action(ledger, PauseAction(paused=True), observation))
+    with pytest.raises(ActionBudgetError, match="rate limit"):
+        reserve_action(ledger, PauseAction(paused=True), observation)
 
     assert guard.validate_safety_pause(PauseAction(paused=True), observation).paused is True
     with pytest.raises(SafetyViolation, match="paused=true"):
@@ -410,52 +417,54 @@ def test_safety_pause_bypasses_only_the_rate_budget() -> None:
 
 def test_revalidation_does_not_spend_rate_authority_twice() -> None:
     config = safety_config().model_copy(update={"max_actions_per_minute": 1})
-    guard = ActionGuard(config, MacroRegistry({}))
+    guard = OperationPolicy(config, MacroRegistry({}))
+    ledger = ActionBudgetLedger(config, guard.macros)
     observation = Observation(run_id="run", step_index=0, mode="mock")
     action = PauseAction(paused=True)
 
-    assert guard.validate(action, observation) == action
+    ledger.commit(reserve_action(ledger, action, observation))
     for _ in range(5):
         assert guard.revalidate(action, observation) == action
-    with pytest.raises(SafetyViolation, match="rate limit"):
-        guard.validate(action, observation)
+    with pytest.raises(ActionBudgetError, match="rate limit"):
+        reserve_action(ledger, action, observation)
 
 
 def test_rate_budget_conserves_committed_and_pending_authority(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     clock = [0.0]
-    monkeypatch.setattr("kenshi_agent.safety.time.monotonic", lambda: clock[0])
+    monkeypatch.setattr("kenshi_agent.action_budget.time.monotonic", lambda: clock[0])
     config = safety_config().model_copy(update={"max_actions_per_minute": 2})
-    guard = ActionGuard(config, MacroRegistry({}))
+    guard = OperationPolicy(config, MacroRegistry({}))
+    ledger = ActionBudgetLedger(config, guard.macros)
     observation = Observation(run_id="run", step_index=0, mode="mock")
     action = PauseAction(paused=True)
 
-    first = guard.reserve(action, observation)
-    second = guard.reserve(action, observation)
+    first = reserve_action(ledger, action, observation)
+    second = reserve_action(ledger, action, observation)
     assert [first.token, second.token] == [1, 2]
-    with pytest.raises(SafetyViolation, match="rate limit"):
-        guard.reserve(action, observation)
+    with pytest.raises(ActionBudgetError, match="rate limit"):
+        reserve_action(ledger, action, observation)
 
-    guard.release(first)
+    ledger.release(first)
     with pytest.raises(RuntimeError):
-        guard.release(first)
-    replacement = guard.reserve(action, observation)
+        ledger.release(first)
+    replacement = reserve_action(ledger, action, observation)
     assert replacement.token == 3
-    guard.commit(second)
-    with pytest.raises(SafetyViolation, match="rate limit"):
-        guard.reserve(action, observation)
+    ledger.commit(second)
+    with pytest.raises(ActionBudgetError, match="rate limit"):
+        reserve_action(ledger, action, observation)
 
-    guard.release(replacement)
-    guard.commit(guard.reserve(action, observation))
-    with pytest.raises(SafetyViolation, match="rate limit"):
-        guard.reserve(action, observation)
+    ledger.release(replacement)
+    ledger.commit(reserve_action(ledger, action, observation))
+    with pytest.raises(ActionBudgetError, match="rate limit"):
+        reserve_action(ledger, action, observation)
 
     clock[0] = 60.0
-    with pytest.raises(SafetyViolation, match="rate limit"):
-        guard.reserve(action, observation)
+    with pytest.raises(ActionBudgetError, match="rate limit"):
+        reserve_action(ledger, action, observation)
     clock[0] = 60.001
-    assert guard.reserve(action, observation).token == 5
+    assert reserve_action(ledger, action, observation).token == 5
 
 
 def test_cognitive_actions_do_not_consume_primitive_authority() -> None:
@@ -470,9 +479,10 @@ def test_cognitive_actions_do_not_consume_primitive_authority() -> None:
             "max_actions_per_minute": 1,
         }
     )
-    guard = ActionGuard(config, MacroRegistry({}))
+    guard = OperationPolicy(config, MacroRegistry({}))
+    ledger = ActionBudgetLedger(config, guard.macros)
     observation = Observation(run_id="run", step_index=0, mode="mock")
-    guard.validate(PauseAction(paused=True), observation)
+    ledger.commit(reserve_action(ledger, PauseAction(paused=True), observation))
 
     advisor = ConsultAdvisorAction(question="What should the squad pursue next?")
     recall = RecallMemoryAction(query="gate")
@@ -497,6 +507,9 @@ def test_cognitive_actions_do_not_consume_primitive_authority() -> None:
     assert guard.validate(advisor, observation) == advisor
     assert guard.validate(recall, observation) == recall
     assert guard.validate(read_fieldbook, fieldbook_observation) == read_fieldbook
+    assert reserve_action(ledger, advisor, observation).primitive_actions == 0
+    assert reserve_action(ledger, recall, observation).primitive_actions == 0
+    assert reserve_action(ledger, read_fieldbook, fieldbook_observation).primitive_actions == 0
 
 
 def test_fieldbook_read_fails_closed_on_an_undelivered_project_identity() -> None:
@@ -508,7 +521,7 @@ def test_fieldbook_read_fails_closed_on_an_undelivered_project_identity() -> Non
             ]
         }
     )
-    guard = ActionGuard(config, MacroRegistry({}))
+    guard = OperationPolicy(config, MacroRegistry({}))
 
     with pytest.raises(SafetyViolation, match="not present"):
         guard.validate(
@@ -532,17 +545,18 @@ def test_live_nonpurchase_actions_never_reserve_purchase_authority() -> None:
             ]
         }
     )
-    contracted = ActionGuard(contracted_config, MacroRegistry({})).reserve(
-        UseGameBindingAction(
-            binding=GameBinding.TOGGLE_MAP,
-            expected_effect="open the map",
-        ),
+    contracted_macros = MacroRegistry({})
+    contracted_ledger = ActionBudgetLedger(contracted_config, contracted_macros)
+    contracted = reserve_action(
+        contracted_ledger,
+        UseGameBindingAction(binding=GameBinding.TOGGLE_MAP, expected_effect="open the map"),
         observation,
     )
     assert contracted.purchase_actions == 0
 
     macros = MacroRegistry({"open_map": MacroConfig(actions=[{"kind": "key", "key": "m"}])})
-    skill = ActionGuard(safety_config(), macros).reserve(
+    skill = reserve_action(
+        ActionBudgetLedger(safety_config(), macros),
         SkillAction(name="open_map"),
         observation,
     )
@@ -551,7 +565,7 @@ def test_live_nonpurchase_actions_never_reserve_purchase_authority() -> None:
 
 def test_live_skill_must_be_configured_and_allowlisted() -> None:
     macros = MacroRegistry({"open_map": MacroConfig(actions=[{"kind": "key", "key": "m"}])})
-    guard = ActionGuard(safety_config(), macros)
+    guard = OperationPolicy(safety_config(), macros)
     observation = Observation(run_id="run", step_index=0, mode="live")
     action = guard.validate(SkillAction(name="open_map"), observation)
     assert action.kind == "skill"
@@ -561,12 +575,12 @@ def test_live_skill_requires_both_allowlist_and_configured_macro() -> None:
     observation = Observation(run_id="run", step_index=0, mode="live")
     macro = MacroConfig(actions=[{"kind": "key", "key": "m"}])
     with pytest.raises(SafetyViolation, match="not allowlisted"):
-        ActionGuard(
+        OperationPolicy(
             safety_config().model_copy(update={"allow_skills": []}),
             MacroRegistry({"open_map": macro}),
         ).validate(SkillAction(name="open_map"), observation)
     with pytest.raises(SafetyViolation, match="no configured macro"):
-        ActionGuard(
+        OperationPolicy(
             safety_config().model_copy(update={"allow_skills": ["open_map"]}),
             MacroRegistry({}),
         ).validate(SkillAction(name="open_map"), observation)
@@ -585,7 +599,7 @@ def test_interface_only_guard_rejects_native_assisted_skill() -> None:
     observation = Observation(run_id="run", step_index=0, mode="live")
 
     with pytest.raises(SafetyViolation, match="requires native_assisted"):
-        ActionGuard(config, macros, control_mode=ControlMode.INTERFACE_ONLY).validate(
+        OperationPolicy(config, macros, control_mode=ControlMode.INTERFACE_ONLY).validate(
             SkillAction(name="approach_confirmed_vendor"),
             observation,
         )
@@ -601,7 +615,7 @@ def test_native_assisted_guard_accepts_marked_skill_only_for_matching_observatio
             )
         }
     )
-    guard = ActionGuard(config, macros, control_mode=ControlMode.NATIVE_ASSISTED)
+    guard = OperationPolicy(config, macros, control_mode=ControlMode.NATIVE_ASSISTED)
     action = SkillAction(
         name="approach_confirmed_vendor",
         args={"target_id": "entity-vendor"},  # type: ignore[arg-type]
@@ -721,7 +735,7 @@ def native_vendor_observation(*, with_active_command: bool = False) -> Observati
     )
 
 
-def native_vendor_guard(skill_name: str) -> ActionGuard:
+def native_vendor_guard(skill_name: str) -> OperationPolicy:
     config = safety_config().model_copy(update={"allow_skills": [skill_name]})
     macros = MacroRegistry(
         {
@@ -731,7 +745,7 @@ def native_vendor_guard(skill_name: str) -> ActionGuard:
             )
         }
     )
-    return ActionGuard(config, macros, control_mode=ControlMode.NATIVE_ASSISTED)
+    return OperationPolicy(config, macros, control_mode=ControlMode.NATIVE_ASSISTED)
 
 
 @pytest.mark.parametrize(
@@ -935,7 +949,7 @@ def test_allowlisted_skill_can_expand_to_a_blocked_top_level_primitive() -> None
         update={"allow_action_kinds": ["noop", "stop", "wait", "skill"]}
     )
     macros = MacroRegistry({"open_map": MacroConfig(actions=[{"kind": "key", "key": "m"}])})
-    guard = ActionGuard(config, macros)
+    guard = OperationPolicy(config, macros)
     observation = Observation(run_id="run", step_index=0, mode="live")
 
     assert guard.validate(SkillAction(name="open_map"), observation).kind == "skill"
@@ -980,9 +994,9 @@ def test_skill_primitive_boundary_includes_every_supported_pointer_kind() -> Non
     )
 
     action = SkillAction(name="pointer_pair")
-    assert ActionGuard(config, macros).validate(action, observation) == action
+    assert OperationPolicy(config, macros).validate(action, observation) == action
     with pytest.raises(SafetyViolation, match="maximum is 1"):
-        ActionGuard(
+        OperationPolicy(
             config.model_copy(update={"max_primitive_actions_per_step": 1}),
             macros,
         ).validate(action, observation)
@@ -1000,7 +1014,9 @@ def test_skill_primitive_boundary_includes_every_supported_pointer_kind() -> Non
 def test_normalized_pointer_boundary_is_closed(x: float, y: float) -> None:
     action = MoveCursorAction(x=x, y=y, space=CoordinateSpace.NORMALIZED)
     observation = Observation(run_id="run", step_index=0, mode="mock")
-    assert ActionGuard(safety_config(), MacroRegistry({})).validate(action, observation) == action
+    assert (
+        OperationPolicy(safety_config(), MacroRegistry({})).validate(action, observation) == action
+    )
 
 
 @pytest.mark.parametrize(
@@ -1014,7 +1030,7 @@ def test_normalized_pointer_boundary_is_closed(x: float, y: float) -> None:
 )
 def test_each_normalized_pointer_axis_fails_closed(x: float, y: float) -> None:
     with pytest.raises(SafetyViolation):
-        ActionGuard(safety_config(), MacroRegistry({})).validate(
+        OperationPolicy(safety_config(), MacroRegistry({})).validate(
             MoveCursorAction(x=x, y=y, space=CoordinateSpace.NORMALIZED),
             Observation(run_id="run", step_index=0, mode="mock"),
         )
@@ -1026,7 +1042,7 @@ def test_each_normalized_pointer_axis_fails_closed(x: float, y: float) -> None:
 )
 def test_each_client_pointer_axis_rejects_negative_values(x: float, y: float) -> None:
     with pytest.raises(SafetyViolation):
-        ActionGuard(safety_config(), MacroRegistry({})).validate(
+        OperationPolicy(safety_config(), MacroRegistry({})).validate(
             MoveCursorAction(x=x, y=y, space=CoordinateSpace.CLIENT),
             Observation(run_id="run", step_index=0, mode="mock"),
         )
@@ -1041,11 +1057,12 @@ def test_client_pointer_boundary_uses_both_current_dimensions() -> None:
     )
     accepted = MoveCursorAction(x=1279, y=719, space=CoordinateSpace.CLIENT)
     assert (
-        ActionGuard(safety_config(), MacroRegistry({})).validate(accepted, observation) == accepted
+        OperationPolicy(safety_config(), MacroRegistry({})).validate(accepted, observation)
+        == accepted
     )
     for x, y in [(1280, 719), (1279, 720)]:
         with pytest.raises(SafetyViolation, match="outside the Kenshi window"):
-            ActionGuard(safety_config(), MacroRegistry({})).validate(
+            OperationPolicy(safety_config(), MacroRegistry({})).validate(
                 MoveCursorAction(x=x, y=y, space=CoordinateSpace.CLIENT),
                 observation,
             )
@@ -1066,7 +1083,7 @@ def test_live_client_pointer_requires_each_dimension(
         telemetry=TelemetrySnapshot(ui=UIState(client_width=width, client_height=height)),
     )
     with pytest.raises(SafetyViolation, match="dimensions are unknown"):
-        ActionGuard(safety_config(), MacroRegistry({})).validate(
+        OperationPolicy(safety_config(), MacroRegistry({})).validate(
             MoveCursorAction(x=0, y=0, space=CoordinateSpace.CLIENT),
             observation,
         )
@@ -1080,7 +1097,7 @@ def test_live_skill_primitives_receive_pointer_validation() -> None:
             )
         }
     )
-    guard = ActionGuard(safety_config(), macros)
+    guard = OperationPolicy(safety_config(), macros)
     observation = Observation(
         run_id="run",
         step_index=0,
@@ -1121,7 +1138,7 @@ def test_live_movement_skill_is_confined_to_its_calibrated_envelope() -> None:
         telemetry=TelemetrySnapshot(),
         telemetry_stale=False,
     )
-    guard = ActionGuard(config, macros)
+    guard = OperationPolicy(config, macros)
 
     accepted = guard.validate(
         SkillAction(
@@ -1166,7 +1183,7 @@ def test_live_movement_skill_rejects_missing_coordinates_as_safety_violation() -
     observation = Observation(run_id="run", step_index=0, mode="live")
 
     with pytest.raises(SafetyViolation, match="Missing skill argument: y"):
-        ActionGuard(config, macros).validate(
+        OperationPolicy(config, macros).validate(
             SkillAction(name="move_on_map", args=[SkillArgument(name="x", value=0.5)]),
             observation,
         )
@@ -1199,7 +1216,7 @@ def test_live_movement_pulse_requires_confirmed_pause() -> None:
     )
 
     with pytest.raises(SafetyViolation, match="requires confirmed paused"):
-        ActionGuard(config, macros).validate(action, unpaused)
+        OperationPolicy(config, macros).validate(action, unpaused)
 
 
 def test_live_movement_pulse_rejects_duration_outside_bounds() -> None:
@@ -1223,7 +1240,7 @@ def test_live_movement_pulse_rejects_duration_outside_bounds() -> None:
     )
 
     with pytest.raises(SafetyViolation, match="outside the calibrated range"):
-        ActionGuard(config, macros).validate(action, paused)
+        OperationPolicy(config, macros).validate(action, paused)
 
 
 def generic_purchase_observation() -> Observation:
@@ -1278,7 +1295,7 @@ def generic_purchase_observation() -> Observation:
                         item_name="Dried Meat",
                         item_base_value=38,
                         bounds=bounds,
-                    )
+                    ),
                 ],
             ),
             squad=[
@@ -1327,27 +1344,28 @@ def generic_purchase_config() -> SafetyConfig:
 
 
 def test_generic_purchase_budget_conserves_pending_and_committed_authority() -> None:
-    guard = ActionGuard(generic_purchase_config(), MacroRegistry({}))
+    guard = OperationPolicy(generic_purchase_config(), MacroRegistry({}))
+    ledger = ActionBudgetLedger(guard.config, guard.macros)
     action = generic_purchase_action()
     observation = generic_purchase_observation()
 
-    first = guard.reserve(action, observation)
-    second = guard.reserve(action, observation)
-    with pytest.raises(SafetyViolation, match="purchase limit"):
-        guard.reserve(action, observation)
+    first = reserve_action(ledger, action, observation)
+    second = reserve_action(ledger, action, observation)
+    with pytest.raises(ActionBudgetError, match="purchase limit"):
+        reserve_action(ledger, action, observation)
 
     for _ in range(3):
         assert guard.revalidate(action, observation) == action
-    guard.commit(first)
-    guard.release(second)
-    replacement = guard.reserve(action, observation)
-    guard.commit(replacement)
-    with pytest.raises(SafetyViolation, match="purchase limit"):
-        guard.reserve(action, observation)
+    ledger.commit(first)
+    ledger.release(second)
+    replacement = reserve_action(ledger, action, observation)
+    ledger.commit(replacement)
+    with pytest.raises(ActionBudgetError, match="purchase limit"):
+        reserve_action(ledger, action, observation)
 
-    one_at_a_time = ActionGuard(generic_purchase_config(), MacroRegistry({}))
-    one_at_a_time.commit(one_at_a_time.reserve(action, observation))
-    second_after_commit = one_at_a_time.reserve(action, observation)
+    one_at_a_time = ActionBudgetLedger(generic_purchase_config(), MacroRegistry({}))
+    one_at_a_time.commit(reserve_action(one_at_a_time, action, observation))
+    second_after_commit = reserve_action(one_at_a_time, action, observation)
     assert second_after_commit.purchase_actions == 1
 
 
@@ -1360,29 +1378,25 @@ def test_bounded_purchase_reserves_every_unit_and_its_total_spend() -> None:
             "max_purchases_per_run": 2,
         }
     )
-    guard = ActionGuard(config, MacroRegistry({}))
+    guard = OperationPolicy(config, MacroRegistry({}))
+    ledger = ActionBudgetLedger(config, guard.macros)
 
-    reservation = guard.reserve(action, observation)
+    reservation = reserve_action(ledger, action, observation)
     assert reservation.purchase_actions == 2
     assert reservation.primitive_actions == 4
-    with pytest.raises(SafetyViolation, match="purchase limit"):
-        guard.reserve(generic_purchase_action(), observation)
+    with pytest.raises(ActionBudgetError, match="purchase limit"):
+        reserve_action(ledger, generic_purchase_action(), observation)
 
-    too_little_reserve = config.model_copy(
-        update={"min_money_after_purchase": 925}
-    )
+    too_little_reserve = config.model_copy(update={"min_money_after_purchase": 925})
     with pytest.raises(SafetyViolation, match="would leave 924 cats"):
-        ActionGuard(too_little_reserve, MacroRegistry({})).reserve(
-            action,
-            observation,
-        )
+        OperationPolicy(too_little_reserve, MacroRegistry({})).validate(action, observation)
 
 
 def test_generic_purchase_limits_are_inclusive_and_independent() -> None:
     action = generic_purchase_action()
     observation = generic_purchase_observation()
     assert (
-        ActionGuard(generic_purchase_config(), MacroRegistry({})).validate(
+        OperationPolicy(generic_purchase_config(), MacroRegistry({})).validate(
             action,
             observation,
         )
@@ -1409,17 +1423,17 @@ def test_generic_purchase_limits_are_inclusive_and_independent() -> None:
             {},
             {
                 "telemetry": observation.telemetry.model_copy(
-                        update={
-                            "ui": observation.telemetry.ui.model_copy(
-                                update={"selected_character_ids": []}
-                            )
-                        }
+                    update={
+                        "ui": observation.telemetry.ui.model_copy(
+                            update={"selected_character_ids": []}
+                        )
+                    }
                 )
             },
         ),
     ]:
         with pytest.raises(SafetyViolation):
-            ActionGuard(
+            OperationPolicy(
                 generic_purchase_config().model_copy(update=config_update),
                 MacroRegistry({}),
             ).validate(action, observation.model_copy(update=observation_update))
@@ -1452,7 +1466,7 @@ def test_generic_purchase_budget_uses_the_bound_window_owner_in_a_group() -> Non
     )
 
     assert (
-        ActionGuard(generic_purchase_config(), MacroRegistry({})).validate(
+        OperationPolicy(generic_purchase_config(), MacroRegistry({})).validate(
             generic_purchase_action(),
             grouped,
         )
@@ -1475,7 +1489,7 @@ def test_generic_purchase_marker_requires_real_tooltip_text() -> None:
         update={"required_purchase_tooltip_markers": ["XXXX"]}
     )
     with pytest.raises(SafetyViolation):
-        ActionGuard(config, MacroRegistry({})).validate(
+        OperationPolicy(config, MacroRegistry({})).validate(
             generic_purchase_action(),
             no_tooltip_text,
         )
@@ -1511,7 +1525,7 @@ def test_contracted_purchase_requires_fresh_capable_live_state(
         )
 
     with pytest.raises(SafetyViolation):
-        ActionGuard(generic_purchase_config(), MacroRegistry({})).validate(
+        OperationPolicy(generic_purchase_config(), MacroRegistry({})).validate(
             generic_purchase_action(),
             observation,
         )
@@ -1519,12 +1533,16 @@ def test_contracted_purchase_requires_fresh_capable_live_state(
 
 def test_mock_purchase_contract_spends_neither_live_purchase_authority_nor_evidence() -> None:
     config = generic_purchase_config().model_copy(update={"max_purchases_per_run": 0})
-    guard = ActionGuard(config, MacroRegistry({}))
-    observation = Observation(run_id="mock-purchase", step_index=0, mode="mock")
+    guard = OperationPolicy(config, MacroRegistry({}))
+    observation = generic_purchase_observation().model_copy(
+        update={"run_id": "mock-purchase", "mode": "mock"}
+    )
     action = generic_purchase_action()
 
     assert guard.validate(action, observation) == action
     assert guard.revalidate(action, observation) == action
+    ledger = ActionBudgetLedger(config, guard.macros)
+    assert reserve_action(ledger, action, observation).purchase_actions == 0
 
 
 def purchase_observation(*, include_tooltip: bool = True) -> Observation:
@@ -1607,8 +1625,8 @@ def legacy_purchase_config() -> SafetyConfig:
     )
 
 
-def legacy_purchase_guard() -> ActionGuard:
-    return ActionGuard(
+def legacy_purchase_guard() -> OperationPolicy:
+    return OperationPolicy(
         legacy_purchase_config(),
         MacroRegistry({"buy_inspected_shop_item": MacroConfig(actions=[])}),
     )
@@ -1922,11 +1940,14 @@ def test_purchase_requires_verified_owner_budget_and_one_per_run() -> None:
             },
         }
     )
-    guard = ActionGuard(config, macros)
+    guard = OperationPolicy(config, macros)
+    ledger = ActionBudgetLedger(config, macros)
+    observation = purchase_observation()
 
-    assert guard.validate(action, purchase_observation()) == action
-    with pytest.raises(SafetyViolation, match="purchase limit"):
-        guard.validate(action, purchase_observation())
+    assert guard.validate(action, observation) == action
+    ledger.commit(reserve_action(ledger, action, observation))
+    with pytest.raises(ActionBudgetError, match="purchase limit"):
+        reserve_action(ledger, action, observation)
 
 
 def test_purchase_revalidation_does_not_spend_purchase_authority_twice() -> None:
@@ -1965,14 +1986,15 @@ def test_purchase_revalidation_does_not_spend_purchase_authority_twice() -> None
             },
         }
     )
-    guard = ActionGuard(config, macros)
+    guard = OperationPolicy(config, macros)
+    ledger = ActionBudgetLedger(config, macros)
     observation = purchase_observation()
 
-    assert guard.validate(action, observation) == action
+    ledger.commit(reserve_action(ledger, action, observation))
     for _ in range(5):
         assert guard.revalidate(action, observation) == action
-    with pytest.raises(SafetyViolation, match="purchase limit"):
-        guard.validate(action, observation)
+    with pytest.raises(ActionBudgetError, match="purchase limit"):
+        reserve_action(ledger, action, observation)
 
 
 def test_released_purchase_reservation_does_not_spend_per_run_authority() -> None:
@@ -2011,17 +2033,19 @@ def test_released_purchase_reservation_does_not_spend_per_run_authority() -> Non
             },
         }
     )
-    guard = ActionGuard(config, macros)
+    guard = OperationPolicy(config, macros)
+    ledger = ActionBudgetLedger(config, macros)
     observation = purchase_observation()
 
-    reservation = guard.reserve(action, observation)
-    with pytest.raises(SafetyViolation, match="purchase limit"):
-        guard.reserve(action, observation)
-    guard.release(reservation)
+    reservation = reserve_action(ledger, action, observation)
+    with pytest.raises(ActionBudgetError, match="purchase limit"):
+        reserve_action(ledger, action, observation)
+    ledger.release(reservation)
 
     assert guard.validate(action, observation) == action
-    with pytest.raises(SafetyViolation, match="purchase limit"):
-        guard.validate(action, observation)
+    ledger.commit(reserve_action(ledger, action, observation))
+    with pytest.raises(ActionBudgetError, match="purchase limit"):
+        reserve_action(ledger, action, observation)
 
 
 @pytest.mark.parametrize(
@@ -2054,7 +2078,7 @@ def test_purchase_rejects_missing_or_excessive_expected_price(
     action = SkillAction.model_validate({"name": "buy_inspected_shop_item", "args": args})
 
     with pytest.raises(SafetyViolation, match=message):
-        ActionGuard(config, macros).validate(action, purchase_observation())
+        OperationPolicy(config, macros).validate(action, purchase_observation())
 
 
 def test_purchase_rejects_insufficient_post_purchase_balance() -> None:
@@ -2077,14 +2101,14 @@ def test_purchase_rejects_insufficient_post_purchase_balance() -> None:
     )
 
     with pytest.raises(SafetyViolation, match="minimum is 400"):
-        ActionGuard(config, macros).validate(
+        OperationPolicy(config, macros).validate(
             action,
             purchase_observation(include_tooltip=False),
         )
 
 
 def test_wait_limit() -> None:
-    guard = ActionGuard(safety_config(), MacroRegistry({}))
+    guard = OperationPolicy(safety_config(), MacroRegistry({}))
     observation = Observation(run_id="run", step_index=0, mode="mock")
     assert (
         guard.validate(
@@ -2132,7 +2156,7 @@ def test_purchase_survives_a_trade_screen_kenshi_labels_inventory() -> None:
     observation = trade_in_progress_observation()
 
     assert (
-        ActionGuard(generic_purchase_config(), MacroRegistry({})).validate(
+        OperationPolicy(generic_purchase_config(), MacroRegistry({})).validate(
             action,
             observation,
         )
@@ -2150,13 +2174,11 @@ def test_purchase_still_refuses_a_solo_inventory_with_no_trader_window() -> None
         update={
             "telemetry": observation.telemetry.model_copy(
                 update={
-                    "ui": observation.telemetry.ui.model_copy(
-                        update={"open_inventory_windows": 1}
-                    )
+                    "ui": observation.telemetry.ui.model_copy(update={"open_inventory_windows": 1})
                 }
             )
         }
     )
 
     with pytest.raises(SafetyViolation, match="trade"):
-        ActionGuard(generic_purchase_config(), MacroRegistry({})).validate(action, solo)
+        OperationPolicy(generic_purchase_config(), MacroRegistry({})).validate(action, solo)

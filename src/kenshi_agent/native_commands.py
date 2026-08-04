@@ -3,8 +3,36 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
+from typing import Literal
 
 from .models import NativeCommandRequest
+
+NATIVE_APPROACH_WIRE_COMMAND: Literal["approach_confirmed_vendor"] = (
+    "approach_confirmed_vendor"
+)
+NATIVE_SQUAD_SELECTION_WIRE_COMMAND: Literal["select_squad_member"] = (
+    "select_squad_member"
+)
+NATIVE_SQUAD_REGROUP_WIRE_COMMAND: Literal["regroup_with_squad_member"] = (
+    "regroup_with_squad_member"
+)
+NATIVE_DIRECTION_WIRE_COMMAND: Literal["move_in_direction"] = "move_in_direction"
+NATIVE_MOVE_WIRE_COMMAND: Literal["move_to_character"] = "move_to_character"
+NATIVE_MAP_TRAVEL_WIRE_COMMAND: Literal["travel_to_map_destination"] = (
+    "travel_to_map_destination"
+)
+NATIVE_EXIT_BUILDING_WIRE_COMMAND: Literal["exit_current_building"] = (
+    "exit_current_building"
+)
+NATIVE_CONTEXT_ACTION_WIRE_COMMAND: Literal["perform_context_action"] = (
+    "perform_context_action"
+)
+NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND: Literal["produce_resource_output"] = (
+    "produce_resource_output"
+)
+NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND: Literal["open_context_inventory"] = (
+    "open_context_inventory"
+)
 
 
 def write_native_command_request_atomic(

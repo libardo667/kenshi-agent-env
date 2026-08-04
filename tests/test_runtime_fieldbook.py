@@ -29,7 +29,7 @@ from kenshi_agent.models import (
 from kenshi_agent.planners.base import Planner
 from kenshi_agent.reflexes import ReflexEngine
 from kenshi_agent.runtime import AgentRuntime
-from kenshi_agent.safety import ActionGuard
+from kenshi_agent.safety import OperationPolicy
 from kenshi_agent.session_log import SessionLogger
 from kenshi_agent.skills import MacroRegistry
 
@@ -50,7 +50,7 @@ def runtime_for(
         environment=environment,
         operation_port=operation_port(environment),
         planner=planner,
-        guard=ActionGuard(
+        policy=OperationPolicy(
             SafetyConfig(
                 allow_action_kinds=[
                     "noop",

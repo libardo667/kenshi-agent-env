@@ -94,7 +94,7 @@ from kenshi_agent.reflexes import ReflexEngine
 from kenshi_agent.reporting import ConsoleDecisionReporter
 from kenshi_agent.run_coordinator import RunCoordinator
 from kenshi_agent.runtime import AgentRuntime
-from kenshi_agent.safety import ActionGuard
+from kenshi_agent.safety import OperationPolicy
 from kenshi_agent.session_log import SessionLogger
 from kenshi_agent.skills import MacroRegistry
 
@@ -556,7 +556,7 @@ def runtime_for(
         environment=environment,
         operation_port=operation_port(environment),
         planner=planner,
-        guard=ActionGuard(safety, macros, control_mode=control_mode),
+        policy=OperationPolicy(safety, macros, control_mode=control_mode),
         reflexes=ReflexEngine(),
         logger=logger,
         memory=memory,
@@ -4662,8 +4662,7 @@ def test_a_handback_sets_a_stopped_world_running_again() -> None:
     dispatched: list[object] = []
 
     class FakeOperationPort:
-        async def pause(self, action, *, command, token):  # type: ignore[no-untyped-def]
-            del token
+        async def control_pause(self, action, *, command):  # type: ignore[no-untyped-def]
             dispatched.append(action)
             resumed = Observation(
                 run_id="handback",
@@ -4683,7 +4682,7 @@ def test_a_handback_sets_a_stopped_world_running_again() -> None:
 
     # _restore_running_world is the coordinator's, so build one directly.
     runtime = object.__new__(RunCoordinator)
-    runtime.operation_port = FakeOperationPort()
+    runtime.execute_control_pause = FakeOperationPort().control_pause
     runtime.logger = SimpleNamespace(write=lambda *a, **k: None)
     store = FakeStore()
 
@@ -4706,11 +4705,11 @@ def test_a_handback_does_not_disturb_a_world_already_running() -> None:
     from kenshi_agent.models import GameState
 
     class Unused:
-        async def pause(self, action, *, command, token):  # type: ignore[no-untyped-def]
+        async def control_pause(self, action, *, command):  # type: ignore[no-untyped-def]
             raise AssertionError("a running world needs no resume")
 
     runtime = object.__new__(RunCoordinator)
-    runtime.operation_port = Unused()
+    runtime.execute_control_pause = Unused().control_pause
     runtime.logger = SimpleNamespace(write=lambda *a, **k: None)
 
     already = Observation(
@@ -5047,7 +5046,7 @@ def test_a_continuous_fieldbook_read_reaches_the_replacing_planner_without_game_
             clock,
             memory=store,
         )
-        runtime.guard.config.allow_action_kinds.append("read_fieldbook")
+        runtime.policy.config.allow_action_kinds.append("read_fieldbook")
         try:
             summary = await runtime.run(max_steps=2)
         finally:

@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, cast
 
 from PIL import Image, ImageDraw, ImageFont
 
+from ..affordances import OPERATION_BINDING_AUTHORITY
 from ..camera_recovery import score_camera_observation
 from ..config import MockConfig
 from ..models import (
@@ -97,6 +98,14 @@ class MockOperationPort:
             command,
             message=f"Mock game paused={typed.paused}.",
         )
+
+    async def control_pause(
+        self,
+        action: PauseAction,
+        *,
+        command: CommandDispatchContext,
+    ) -> Transition:
+        return await self.pause(action, command=command, token=None)
 
     async def set_speed(
         self,
@@ -528,23 +537,30 @@ class MockEnvironment(AgentEnvironment):
         recorded no-op rather than a silent success.
         """
 
-        definition = definition_for(action)
-        if definition is None:
-            return (f"Unknown semantic action {action.kind}.", None)
         observation = self._last_observation
         if observation is None:
             return (f"Mock {action.kind} had no current observation to bind against.", None)
-        binding = definition.bind(action, observation)
-        if isinstance(binding, BindingFailure):
+        definition = definition_for(action)
+        if definition is None:
+            return (f"Unknown semantic action {action.kind}.", None)
+        try:
+            bound = OPERATION_BINDING_AUTHORITY.bind(
+                action,
+                observation,
+                affordance=None,
+            )
+        except ValueError as exc:
             return (
-                f"Mock {action.kind} bound to nothing and changed no state: {binding.reason}",
+                f"Mock {action.kind} bound to nothing and changed no state: {exc}",
                 SemanticActionReceipt(
                     action_kind=action.kind,
                     contract_version=definition.version,
                     source_revision=observation.world_revision,
-                    revalidation=binding.reason,
+                    revalidation=str(exc),
                 ),
             )
+        binding = bound.binding
+        assert not isinstance(binding, BindingFailure)
         if isinstance(action, RecoverCameraViewAction):
             assert isinstance(binding, BoundCameraRecovery)
             score = score_camera_observation(

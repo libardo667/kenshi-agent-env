@@ -341,6 +341,13 @@
         "input_authority_withdrawn",
         "operation_unauthorized",
         "operation_identity_changed",
+        "binding_absent",
+        "binding_ambiguous",
+        "capability_unavailable",
+        "selection_invalid",
+        "policy_disallowed",
+        "transaction_budget_unavailable",
+        "stale_bound_identity",
         "precondition_untrue",
         "failure_condition_active"
       ],

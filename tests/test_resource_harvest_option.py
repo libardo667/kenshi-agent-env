@@ -53,7 +53,7 @@ from kenshi_agent.models import (
 )
 from kenshi_agent.planning import PlanningClock
 from kenshi_agent.reflexes import ReflexEngine
-from kenshi_agent.safety import ActionGuard
+from kenshi_agent.safety import OperationPolicy
 from kenshi_agent.session_log import SessionLogger
 from kenshi_agent.skills import MacroRegistry
 from kenshi_agent.world_state import WorldStateStore
@@ -462,7 +462,6 @@ def test_harvest_is_one_planner_action_with_controller_owned_transfer(
         )
         assert live_plan_policy_errors(
             plan,
-            observation,
             max_steps=1,
         ) == []
 
@@ -489,7 +488,7 @@ def test_harvest_is_one_planner_action_with_controller_owned_transfer(
         executor = plan_executor(
             environment=environment,
             operation_port=operation_port(environment),
-            guard=ActionGuard(
+            policy=OperationPolicy(
                 SafetyConfig(
                     allow_action_kinds=[
                         "harvest_resource",

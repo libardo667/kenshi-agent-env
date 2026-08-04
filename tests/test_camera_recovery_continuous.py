@@ -51,7 +51,7 @@ from kenshi_agent.models import (
 )
 from kenshi_agent.planning import PlanningClock
 from kenshi_agent.reflexes import ReflexEngine
-from kenshi_agent.safety import ActionGuard
+from kenshi_agent.safety import OperationPolicy
 from kenshi_agent.session_log import SessionLogger
 from kenshi_agent.skills import MacroRegistry
 from kenshi_agent.world_state import WorldStateStore
@@ -524,7 +524,7 @@ def test_continuous_executor_uses_controller_verdict_without_postconditions(
         environment = CameraVerdictEnvironment(status, tmp_path)
         observation = await environment.reset()
         plan = camera_plan(observation)
-        assert live_plan_policy_errors(plan, observation) == []
+        assert live_plan_policy_errors(plan) == []
 
         store = WorldStateStore(clock=clock)
         store.publish(observation)
@@ -545,7 +545,7 @@ def test_continuous_executor_uses_controller_verdict_without_postconditions(
         executor = plan_executor(
             environment=environment,
             operation_port=operation_port(environment),
-            guard=ActionGuard(
+            policy=OperationPolicy(
                 SafetyConfig(
                     allow_action_kinds=["recover_camera_view"],
                     max_actions_per_minute=100,

@@ -10,7 +10,9 @@ from datetime import datetime
 from functools import partial
 from typing import Any, Literal, Protocol, cast
 
+from ... import native_commands
 from ... import operation_definitions as operations
+from ...affordances import OperationBindingAuthority
 from ...authorization import AuthorizationCode
 from ...config import PlanningConfig
 from ...input_boundary import ExecutionToken
@@ -48,7 +50,7 @@ from ...operation_authority import AuthorizationDecision, OperationAuthority
 from ...operation_definitions import BoundOperation
 from ...options import StatefulNativeMovementOption
 from ...resource_transfer import begin_resource_transfer, finalize_resource_transfer
-from ...safety import ActionGuard, SafetyViolation
+from ...safety import SafetyViolation
 from ...world_state import CommandCausalityError
 from ..monitor_types import StagedPatch
 from ..types import (
@@ -58,6 +60,7 @@ from ..types import (
     OperationResult,
     OperationStatus,
 )
+from .input_binding import authorized_input_binding
 from .kenshi_surface import KenshiControlSurface
 from .movement import (
     AtomicMovementHandler,
@@ -114,7 +117,8 @@ class _HarvestState:
 @dataclass(frozen=True, slots=True)
 class HarvestHandler:
     port: ResourceMechanicsPort
-    guard: ActionGuard
+    authority: OperationAuthority
+    binding: OperationBindingAuthority
     planning_config: PlanningConfig
 
     async def execute(
@@ -199,14 +203,14 @@ class HarvestHandler:
                 target_id=action.target_id,
                 minimum_output_quantity=action.quantity,
             )
-            self._require_phase_authority(
+            phase_bound = self._require_phase_authority(
                 production,
                 action.actor_id,
                 state.current,
                 require_safe_actor=True,
             )
             command, token = self._phase_authority(
-                production,
+                phase_bound,
                 action.actor_id,
                 state.current,
                 context,
@@ -602,14 +606,14 @@ class HarvestHandler:
         require_safe_actor: bool = True,
         retain_outer_authority: bool = True,
     ) -> tuple[Transition, Observation, str]:
-        self._require_phase_authority(
+        phase_bound = self._require_phase_authority(
             action,
             actor_id,
             observation,
             require_safe_actor=require_safe_actor,
         )
         command, token = self._phase_authority(
-            action,
+            phase_bound,
             actor_id,
             observation,
             context,
@@ -631,7 +635,7 @@ class HarvestHandler:
 
     def _phase_authority(
         self,
-        action: Action,
+        bound: BoundOperation,
         actor_id: str,
         observation: Observation,
         context: OperationContext,
@@ -655,12 +659,14 @@ class HarvestHandler:
             validated_revision=command.based_on_revision,
             latest_observation=parent.latest_observation,
             max_telemetry_age_seconds=parent.max_telemetry_age_seconds,
+            pointer_class=self.authority.pointer_class_for(bound),
             authority_validator=lambda current: self._phase_authorized(
-                action,
+                bound,
                 actor_id,
                 current,
                 require_safe_actor=require_safe_actor,
             ),
+            authorized_fingerprint=bound.identity.fingerprint,
             assumptions=parent.assumptions if retain_outer_authority else (),
             preconditions=(),
             failure_conditions=(parent.failure_conditions if retain_outer_authority else ()),
@@ -705,21 +711,25 @@ class HarvestHandler:
         observation: Observation,
         *,
         require_safe_actor: bool,
-    ) -> None:
+    ) -> BoundOperation:
+        try:
+            bound = self.binding.bind(action, observation, affordance=None)
+        except ValueError as exc:
+            raise SafetyViolation(str(exc)) from exc
         decision = self._phase_authorized(
-            action,
+            bound,
             actor_id,
             observation,
             require_safe_actor=require_safe_actor,
         )
         if not decision.allowed:
-            raise SafetyViolation(
-                str(decision.details.get("violation", decision.code.value))
-            )
+            raise SafetyViolation(str(decision.details.get("violation", decision.code.value)))
+        assert decision.bound_operation is not None
+        return decision.bound_operation
 
     def _phase_authorized(
         self,
-        action: Action,
+        bound: BoundOperation,
         actor_id: str,
         observation: Observation,
         *,
@@ -732,34 +742,38 @@ class HarvestHandler:
         an inner check with its own shape.
         """
 
-        decision = OperationAuthority(self.guard).evaluate(action, observation)
+        decision = self.authority.evaluate(bound, observation)
         if not decision.allowed:
             return decision
-        actor_error = self._actor_error(
+        actor_refusal = self._actor_refusal(
             actor_id,
             observation,
             require_safe=require_safe_actor,
         )
-        if actor_error is None:
+        if actor_refusal is None:
             return decision
+        code, actor_error = actor_refusal
         return AuthorizationDecision(
             allowed=False,
-            code=AuthorizationCode.OPERATION_UNAUTHORIZED,
+            code=code,
             based_on_revision=observation.world_revision,
             operation_fingerprint=decision.operation_fingerprint,
-            details={"violation": actor_error, "operation_kind": action.kind},
+            details={"violation": actor_error, "operation_kind": bound.operation.kind},
         )
 
     @staticmethod
-    def _actor_error(
+    def _actor_refusal(
         actor_id: str,
         observation: Observation,
         *,
         require_safe: bool,
-    ) -> str | None:
+    ) -> tuple[AuthorizationCode, str] | None:
         telemetry = observation.telemetry
         if telemetry is None or observation.telemetry_stale:
-            return "Fresh telemetry is required to retain harvest authority."
+            return (
+                AuthorizationCode.POLICY_DISALLOWED,
+                "Fresh telemetry is required to retain harvest authority.",
+            )
         selected = [
             character
             for character in telemetry.squad
@@ -770,7 +784,10 @@ class HarvestHandler:
             or telemetry.ui.selected_character_id != actor_id
             or telemetry.ui.selected_character_ids != [actor_id]
         ):
-            return "The exact harvest actor is no longer solely selected."
+            return (
+                AuthorizationCode.SELECTION_INVALID,
+                "The exact harvest actor is no longer solely selected.",
+            )
         if require_safe and (
             selected[0].alive is not True
             or selected[0].conscious is not True
@@ -778,7 +795,10 @@ class HarvestHandler:
             or selected[0].in_combat is not False
             or selected[0].inventory_complete is not True
         ):
-            return "The harvest actor is no longer confirmed safe with complete inventory."
+            return (
+                AuthorizationCode.POLICY_DISALLOWED,
+                "The harvest actor is no longer confirmed safe with complete inventory.",
+            )
         return None
 
     @staticmethod
@@ -903,7 +923,8 @@ class HarvestHandler:
 
 def resource_handlers(
     port: ResourceMechanicsPort,
-    guard: ActionGuard,
+    authority: OperationAuthority,
+    binding: OperationBindingAuthority,
     planning_config: PlanningConfig,
 ) -> dict[str, OperationHandler]:
     return {
@@ -919,7 +940,8 @@ def resource_handlers(
         ),
         "resources.harvest_resource": HarvestHandler(
             port,
-            guard,
+            authority,
+            binding,
             planning_config,
         ),
     }
@@ -1019,7 +1041,12 @@ class KenshiResourceMechanics:
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
     ) -> Transition:
         transition = await self._surface.run_exact(
-            action, command=command, token=token, receipt=self._execute_collect_operation
+            action,
+            command=command,
+            token=token,
+            receipt=lambda current, started, dispatch: self._execute_collect_operation(
+                current, started, dispatch, token
+            ),
         )
         return await self.finish_resource_transfer(
             cast(CollectResourceOutputAction, action), transition
@@ -1053,11 +1080,15 @@ class KenshiResourceMechanics:
         )
 
     async def _execute_collect_operation(
-        self, action: Action, started: datetime, command: CommandDispatchContext | None
+        self,
+        action: Action,
+        started: datetime,
+        command: CommandDispatchContext | None,
+        token: ExecutionToken | None,
     ) -> ActionReceipt:
         del command
         return await self._execute_collect_resource_output(
-            cast(CollectResourceOutputAction, action), started
+            cast(CollectResourceOutputAction, action), started, token
         )
 
     async def _execute_context_action(
@@ -1102,9 +1133,12 @@ class KenshiResourceMechanics:
             require_vendor_role=False,
             semantic=semantic,
             continue_until_terminal=True,
-            wire_command=operations.NATIVE_CONTEXT_ACTION_WIRE_COMMAND,
+            wire_command=native_commands.NATIVE_CONTEXT_ACTION_WIRE_COMMAND,
             context_action=action.context_action,
             require_dialogue_target=False,
+            task_started_reasons=(
+                operations.PERFORM_CONTEXT_ACTION_DEFINITION.native_task_started_reasons
+            ),
         )
 
     async def _execute_produce_resource_output(
@@ -1141,7 +1175,7 @@ class KenshiResourceMechanics:
             require_vendor_role=False,
             semantic=semantic,
             continue_until_terminal=True,
-            wire_command=operations.NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND,
+            wire_command=native_commands.NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND,
             require_dialogue_target=False,
             minimum_output_quantity=action.minimum_output_quantity,
         )
@@ -1177,7 +1211,7 @@ class KenshiResourceMechanics:
             primitive_skill=primitive_skill,
             require_vendor_role=False,
             semantic=semantic,
-            wire_command=operations.NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND,
+            wire_command=native_commands.NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND,
             require_dialogue_target=False,
             accepted_is_terminal_error=True,
         )
@@ -1186,13 +1220,14 @@ class KenshiResourceMechanics:
         self,
         action: CollectResourceOutputAction,
         started: datetime,
+        token: ExecutionToken | None,
     ) -> ActionReceipt:
         """Right-click exact output, retaining both inventory baselines."""
 
         del started
-        binding, observation = self._surface.rebind_in_lease(
-            operations.COLLECT_RESOURCE_OUTPUT_DEFINITION,
+        binding, observation = authorized_input_binding(
             action,
+            token,
             operations.BoundResourceOutputCell,
         )
         bounds = binding.resolved_bounds

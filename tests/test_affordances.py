@@ -10,12 +10,12 @@ import kenshi_agent.affordances as affordance_module
 from kenshi_agent.affordances import (
     AFFORDANCE_ADAPTERS,
     OPAQUE_CHARACTER_SELECTION_GAME_BINDINGS,
+    OPERATION_BINDING_AUTHORITY,
     SEMANTICALLY_ADAPTED_GAME_BINDINGS,
     AffordanceSource,
     bind_affordance,
     bound_affordance,
     offered_affordances,
-    rebind_affordance_operation,
     selection_for,
     terminal_affordance_receipt,
 )
@@ -990,11 +990,7 @@ def test_exact_current_offer_is_the_only_action_language() -> None:
     assert bound.operation.kind == "approach_dialogue_target"
     assert bound.operation.target_id == target.id
     assert (
-        rebind_affordance_operation(
-            bound.operation,
-            bound.affordance,
-            observation,
-        )
+        OPERATION_BINDING_AUTHORITY.rebind(bound, observation)
         == bound
     )
 
@@ -1010,11 +1006,7 @@ def test_exact_current_offer_is_the_only_action_language() -> None:
             ),
         }
     )
-    rebound = rebind_affordance_operation(
-        bound.operation,
-        bound.affordance,
-        later_current,
-    )
+    rebound = OPERATION_BINDING_AUTHORITY.rebind(bound, later_current)
     assert rebound.affordance == bound.affordance
     assert rebound.based_on_revision == later_revision
     assert rebound.binding.source_revision == later_revision

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import re
-import time
-from collections import deque
-from dataclasses import dataclass
+from collections.abc import Iterable
 
+from .affordances import OPERATION_BINDING_AUTHORITY, OperationBindingError
+from .authorization import AuthorizationCode
 from .config import SafetyConfig
 from .models import (
     Action,
@@ -17,6 +17,7 @@ from .models import (
     NativeCommandStatus,
     Observation,
     PauseAction,
+    PointerActionClass,
     PurchaseItemAction,
     ReadFieldbookAction,
     RecallMemoryAction,
@@ -24,19 +25,25 @@ from .models import (
     SetSpeedAction,
     SkillAction,
     WaitAction,
+    is_controller_primitive,
     normalize_control_label,
 )
 from .operation_definitions import (
-    BindingFailure,
-    OperationDefinition,
+    BoundOperation,
     SelectionRequirement,
-    definition_for,
 )
 from .skills import MacroRegistry
 
 
 class SafetyViolation(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: AuthorizationCode = AuthorizationCode.POLICY_DISALLOWED,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 def require_exact_target_id(value: object) -> str:
@@ -49,119 +56,53 @@ def require_exact_target_id(value: object) -> str:
     return value
 
 
-@dataclass(frozen=True, slots=True)
-class ActionBudgetReservation:
-    """Exact pending global authority for one validated action."""
-
-    action: Action
-    primitive_actions: int
-    purchase_actions: int
-    token: int
-
-
-class ActionGuard:
+class OperationPolicy:
     def __init__(
         self,
         config: SafetyConfig,
         macros: MacroRegistry,
         *,
         control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
+        semantic_pointer_skills: Iterable[str] = (),
     ) -> None:
         self.config = config
         self.macros = macros
         self.control_mode = control_mode
-        self._action_times: deque[float] = deque()
-        self._purchase_count = 0
-        self._pending_primitive_count = 0
-        self._pending_purchase_count = 0
-        self._next_reservation_token = 1
-        self._reservations: dict[int, ActionBudgetReservation] = {}
+        self.semantic_pointer_skills = frozenset(semantic_pointer_skills)
 
     def validate(self, action: Action, observation: Observation) -> Action:
-        """Validate and immediately commit authority for a direct caller."""
+        """Bind and apply pure policy for a direct diagnostic caller."""
 
-        reservation = self.reserve(action, observation)
-        self.commit(reservation)
-        return reservation.action
+        if is_controller_primitive(action):
+            self._validate_control_mode(observation)
+            self._validate_action_constraints(action, observation)
+            return action
+        try:
+            bound = OPERATION_BINDING_AUTHORITY.bind(action, observation, affordance=None)
+        except OperationBindingError as exc:
+            raise SafetyViolation(str(exc), code=exc.code) from exc
+        return self.revalidate_bound(bound, observation)
 
     def revalidate(self, action: Action, observation: Observation) -> Action:
         """Re-check current authority without spending the same budget twice."""
 
-        validated, _, _ = self._validate(action, observation)
-        return validated
+        return self.validate(action, observation)
 
-    def reserve(
+    def revalidate_bound(
         self,
-        action: Action,
+        bound: BoundOperation,
         observation: Observation,
-    ) -> ActionBudgetReservation:
-        """Validate and hold rate/purchase capacity until delivery is known."""
+    ) -> Action:
+        """Apply pure policy to a binding established by the binding authority."""
 
-        validated, primitive_actions, purchase_actions = self._validate(
-            action,
-            observation,
-            check_budget=True,
-        )
-        self._reserve_rate_budget(primitive_actions)
-        self._pending_purchase_count += purchase_actions
-        token = self._next_reservation_token
-        self._next_reservation_token += 1
-        reservation = ActionBudgetReservation(
-            action=validated,
-            primitive_actions=primitive_actions,
-            purchase_actions=purchase_actions,
-            token=token,
-        )
-        self._reservations[token] = reservation
-        return reservation
-
-    def commit(self, reservation: ActionBudgetReservation) -> None:
-        """Spend a reservation after accepted, executed, or ambiguous delivery."""
-
-        self._take_reservation(reservation)
-        self._pending_primitive_count -= reservation.primitive_actions
-        self._pending_purchase_count -= reservation.purchase_actions
-        self._purchase_count += reservation.purchase_actions
-        now = time.monotonic()
-        self._prune_rate_budget(now)
-        self._action_times.extend([now] * reservation.primitive_actions)
-
-    def release(self, reservation: ActionBudgetReservation) -> None:
-        """Return a reservation only after delivery is proven not to have occurred."""
-
-        self._take_reservation(reservation)
-        self._pending_primitive_count -= reservation.primitive_actions
-        self._pending_purchase_count -= reservation.purchase_actions
-
-    def _take_reservation(
-        self,
-        reservation: ActionBudgetReservation,
-    ) -> None:
-        active = self._reservations.pop(reservation.token, None)
-        if active is not reservation:
-            raise RuntimeError(  # mutation: reason
-                "Action budget reservation is foreign or already finalized."  # mutation: reason
-            )
-
-    def _validate(
-        self,
-        action: Action,
-        observation: Observation,
-        *,
-        check_budget: bool = False,
-    ) -> tuple[Action, int, int]:
+        action = bound.operation
         self._validate_control_mode(observation)
         self._validate_action_constraints(action, observation)
-        definition = definition_for(action)
-        # Configured compatibility skills retain their macro-expanded guard
-        # until the macro surface is retired in its own reconstruction stage.
-        # They still bind and execute through the operation kernel.
-        if definition is not None and not isinstance(action, SkillAction):
+        definition = bound.definition
+        if not isinstance(action, SkillAction):
             primitive_actions = definition.primitive_action_bound_for(action)
-            risk = definition.risk_for(action)
-            self._validate_operation_definition(
-                action,
-                definition,
+            self._validate_bound_operation_definition(
+                bound,
                 observation,
                 primitive_actions=primitive_actions,
             )
@@ -169,95 +110,150 @@ class ActionGuard:
                 self._validate_generic_purchase(
                     action,
                     observation,
-                    check_purchase_limit=check_budget,
                 )
-            purchase_actions = (
-                risk.purchase_actions
-                if isinstance(action, PurchaseItemAction)
-                and observation.mode == "live"
-                else 0
+            return action
+        return self._validate_compatibility_skill(action, observation)
+
+    def pointer_class_for(self, bound: BoundOperation) -> PointerActionClass:
+        """Resolve calibration policy without teaching the external adapter semantics."""
+
+        action = bound.operation
+        if not isinstance(action, SkillAction):
+            return bound.definition.pointer_class
+        if action.name in self.semantic_pointer_skills:
+            return PointerActionClass.SEMANTIC_CURRENT
+        if not self.macros.has(action.name):
+            return PointerActionClass.UNSUPPORTED
+        pointer = any(
+            isinstance(primitive, (ClickAction, MoveCursorAction, ScrollAction))
+            for primitive in self.macros.expand(action)
+        )
+        return (
+            PointerActionClass.PROFILE_CALIBRATED
+            if pointer
+            else PointerActionClass.COORDINATE_INDEPENDENT
+        )
+
+    def _validate_bound_operation_definition(
+        self,
+        bound: BoundOperation,
+        observation: Observation,
+        *,
+        primitive_actions: int,
+    ) -> None:
+        definition = bound.definition
+        if not definition.allows_control_mode(self.control_mode):
+            raise SafetyViolation(
+                f"Action {definition.kind!r} is not permitted in "
+                f"control mode {self.control_mode.value!r}."
             )
-            return action, primitive_actions, purchase_actions
+        if definition.native_assisted and self.control_mode != ControlMode.NATIVE_ASSISTED:
+            raise SafetyViolation(
+                f"Action {definition.kind!r} requires native_assisted control mode."
+            )
+        primitive_limit = (
+            self.config.max_controller_verified_primitive_actions_per_step
+            if definition.controller_verified
+            else self.config.max_primitive_actions_per_step
+        )
+        if primitive_actions > primitive_limit:
+            raise SafetyViolation(
+                f"Action {definition.kind!r} may emit {primitive_actions} primitives; "
+                f"maximum is {primitive_limit} for this operation class."
+            )
+        if observation.mode != "live":
+            return
+        if definition.requires_fresh_telemetry and (
+            observation.telemetry_stale or observation.telemetry is None
+        ):
+            raise SafetyViolation(
+                f"Action {definition.kind!r} requires fresh authoritative telemetry."
+            )
+        capabilities = set(
+            observation.telemetry.capabilities if observation.telemetry is not None else ()
+        )
+        missing = definition.missing_capabilities(capabilities)
+        if missing:
+            raise SafetyViolation(
+                f"Action {definition.kind!r} lacks required capabilities: " + ", ".join(missing),
+                code=AuthorizationCode.CAPABILITY_UNAVAILABLE,
+            )
+        if definition.selection_requirement is SelectionRequirement.EXACTLY_ONE:
+            try:
+                self._validate_exact_selection(observation)
+            except SafetyViolation as exc:
+                raise SafetyViolation(str(exc), code=AuthorizationCode.SELECTION_INVALID) from exc
+        elif definition.selection_requirement is SelectionRequirement.ONE_OR_MORE:
+            try:
+                self._validate_squad_selection(observation)
+            except SafetyViolation as exc:
+                raise SafetyViolation(str(exc), code=AuthorizationCode.SELECTION_INVALID) from exc
+
+    def _validate_compatibility_skill(
+        self,
+        action: SkillAction,
+        observation: Observation,
+    ) -> Action:
+        self._validate_control_mode(observation)
+        self._validate_action_constraints(action, observation)
+        # Configured compatibility skills retain their macro-expanded policy
+        # until the macro surface is retired in its own reconstruction stage.
+        # They still bind and execute through the operation kernel.
         primitives: list[Action] | None = None
-        if isinstance(action, SkillAction):
+        if (
+            self.macros.has(action.name)
+            and self.macros.requires_native_assisted(action.name)
+            and self.control_mode != ControlMode.NATIVE_ASSISTED
+        ):
+            raise SafetyViolation(f"Skill {action.name!r} requires native_assisted control mode.")
+        if action.name not in self.config.allow_skills and observation.mode == "live":
+            raise SafetyViolation(f"Skill {action.name!r} is not allowlisted for live use.")
+        if observation.mode == "live" and not self.macros.has(action.name):
+            raise SafetyViolation(f"Live skill {action.name!r} has no configured macro.")
+        if observation.mode == "live":
+            try:
+                pulse_seconds = self.macros.resolve_movement_pulse_seconds(action)
+                primitives = self.macros.expand(action)
+            except (TypeError, ValueError) as exc:
+                raise SafetyViolation(
+                    f"Live skill {action.name!r} could not be expanded safely: {exc}"
+                ) from exc
             if (
-                self.macros.has(action.name)
-                and self.macros.requires_native_assisted(action.name)
-                and self.control_mode != ControlMode.NATIVE_ASSISTED
+                pulse_seconds is not None
+                and self.config.require_paused_between_actions
+                and (observation.telemetry is None or observation.telemetry.game.paused is not True)
             ):
-                raise SafetyViolation(  # mutation: reason
-                    f"Skill {action.name!r} requires native_assisted "  # mutation: reason
-                    "control mode."  # mutation: reason
+                raise SafetyViolation(
+                    f"Movement pulse {action.name!r} requires confirmed paused live state."
                 )
-            if action.name not in self.config.allow_skills and observation.mode == "live":
-                raise SafetyViolation(  # mutation: reason
-                    f"Skill {action.name!r} is not allowlisted "  # mutation: reason
-                    "for live use."  # mutation: reason
-                )
-            if observation.mode == "live" and not self.macros.has(action.name):
-                raise SafetyViolation(  # mutation: reason
-                    f"Live skill {action.name!r} has no configured macro."  # mutation: reason
-                )
-            if observation.mode == "live":
-                try:
-                    pulse_seconds = self.macros.resolve_movement_pulse_seconds(action)
-                    primitives = self.macros.expand(action)
-                except (TypeError, ValueError) as exc:
-                    raise SafetyViolation(  # mutation: reason
-                        f"Live skill {action.name!r} could not be expanded "  # mutation: reason
-                        f"safely: {exc}"  # mutation: reason
-                    ) from exc
-                if (
-                    pulse_seconds is not None
-                    and self.config.require_paused_between_actions
-                    and (
-                        observation.telemetry is None
-                        or observation.telemetry.game.paused is not True
+            if action.name == "approach_confirmed_vendor":
+                self._validate_native_vendor_target(action, observation)
+            if action.name == "continue_confirmed_vendor_approach":
+                self._validate_native_vendor_continuation(action, observation)
+            if action.name == "buy_inspected_shop_item":
+                self._validate_purchase(action, observation)
+            pointer_bounds = self.macros.normalized_pointer_bounds(action.name)
+            for primitive in primitives:
+                if primitive.kind not in {"key", "hotkey", "move_cursor", "click", "scroll"}:
+                    raise SafetyViolation(
+                        f"Live skill {action.name!r} contains unsupported "
+                        f"primitive {primitive.kind!r}."
                     )
+                self._validate_intrinsic_action_constraints(primitive, observation)
+                if pointer_bounds is not None and isinstance(
+                    primitive, (ClickAction, MoveCursorAction, ScrollAction)
                 ):
-                    raise SafetyViolation(  # mutation: reason
-                        f"Movement pulse {action.name!r} requires confirmed "  # mutation: reason
-                        "paused live state."  # mutation: reason
-                    )
-                if action.name == "approach_confirmed_vendor":
-                    self._validate_native_vendor_target(action, observation)
-                if action.name == "continue_confirmed_vendor_approach":
-                    self._validate_native_vendor_continuation(action, observation)
-                if action.name == "buy_inspected_shop_item":
-                    self._validate_purchase(
-                        action,
-                        observation,
-                        check_purchase_limit=check_budget,
-                    )
-                pointer_bounds = self.macros.normalized_pointer_bounds(action.name)
-                for primitive in primitives:
-                    if primitive.kind not in {
-                        "key",
-                        "hotkey",
-                        "move_cursor",
-                        "click",
-                        "scroll",
-                    }:
-                        raise SafetyViolation(  # mutation: reason
-                            f"Live skill {action.name!r} contains unsupported "  # mutation: reason
-                            f"primitive {primitive.kind!r}."  # mutation: reason
+                    if primitive.space != CoordinateSpace.NORMALIZED:
+                        raise SafetyViolation(
+                            f"Live skill {action.name!r} has a pointer safety envelope "
+                            "but emitted non-normalized coordinates."
                         )
-                    self._validate_intrinsic_action_constraints(primitive, observation)
-                    if pointer_bounds is not None and isinstance(
-                        primitive, (ClickAction, MoveCursorAction, ScrollAction)
-                    ):
-                        if primitive.space != CoordinateSpace.NORMALIZED:
-                            raise SafetyViolation(  # mutation: reason
-                                f"Live skill {action.name!r} has a pointer "  # mutation: reason
-                                "safety envelope but emitted non-normalized "  # mutation: reason
-                                "coordinates."  # mutation: reason
-                            )
-                        if not pointer_bounds.contains(primitive.x, primitive.y):
-                            raise SafetyViolation(  # mutation: reason
-                                f"Live skill {action.name!r} pointer target "  # mutation: reason
-                                f"({primitive.x:.3f}, {primitive.y:.3f}) "  # mutation: reason
-                                "is outside its calibrated safety envelope."  # mutation: reason
-                            )
+                    if not pointer_bounds.contains(primitive.x, primitive.y):
+                        raise SafetyViolation(
+                            f"Live skill {action.name!r} pointer target "
+                            f"({primitive.x:.3f}, {primitive.y:.3f}) is outside its "
+                            "calibrated safety envelope."
+                        )
         primitive_count = (
             self.macros.primitive_count(action)
             if primitives is not None
@@ -266,7 +262,7 @@ class ActionGuard:
                 action,
                 (
                     ConsultAdvisorAction,
-                                    RecallMemoryAction,
+                    RecallMemoryAction,
                     ReadFieldbookAction,
                 ),
             )
@@ -277,89 +273,12 @@ class ActionGuard:
                 f"Action expands to {primitive_count} primitives; "  # mutation: reason
                 f"maximum is {self.config.max_primitive_actions_per_step}."  # mutation: reason
             )
-        purchase_actions = int(
-            isinstance(action, SkillAction)
-            and action.name == "buy_inspected_shop_item"
-            and observation.mode == "live"
-        )
-        return action, primitive_count, purchase_actions
-
-    def _validate_operation_definition(
-        self,
-        action: Action,
-        definition: OperationDefinition,
-        observation: Observation,
-        *,
-        primitive_actions: int,
-    ) -> None:
-        """Enforce one operation definition instead of its exact action name.
-
-        Every check here reads from the definition, so adding a reusable action
-        does not add a branch: the same code gates approach, control activation,
-        and whatever lands next.
-        """
-
-        if not definition.allows_control_mode(self.control_mode):
-            raise SafetyViolation(  # mutation: reason
-                f"Action {definition.kind!r} is not permitted in "  # mutation: reason
-                f"control mode {self.control_mode.value!r}."  # mutation: reason
-            )
-        if definition.native_assisted and self.control_mode != ControlMode.NATIVE_ASSISTED:
-            raise SafetyViolation(  # mutation: reason
-                f"Action {definition.kind!r} requires native_assisted "  # mutation: reason
-                "control mode."  # mutation: reason
-            )
-        primitive_limit = (
-            self.config.max_controller_verified_primitive_actions_per_step
-            if definition.controller_verified
-            else self.config.max_primitive_actions_per_step
-        )
-        if primitive_actions > primitive_limit:
-            raise SafetyViolation(  # mutation: reason
-                f"Action {definition.kind!r} may emit "  # mutation: reason
-                f"{primitive_actions} primitives; "  # mutation: reason
-                f"maximum is {primitive_limit} for this operation class."  # mutation: reason
-            )
-        if observation.mode != "live":
-            return
-
-        if definition.requires_fresh_telemetry and (
-            observation.telemetry_stale or observation.telemetry is None
-        ):
-            raise SafetyViolation(  # mutation: reason
-                f"Action {definition.kind!r} requires fresh "  # mutation: reason
-                "authoritative telemetry."  # mutation: reason
-            )
-        capabilities = set(
-            observation.telemetry.capabilities
-            if observation.telemetry is not None
-            else ()
-        )
-        missing = definition.missing_capabilities(capabilities)
-        if missing:
-            raise SafetyViolation(  # mutation: reason
-                f"Action {definition.kind!r} lacks required capabilities: "  # mutation: reason
-                + ", ".join(missing)  # mutation: reason
-            )
-        # The reference must resolve against the state observed right now.
-        # Absent, duplicated, or ambiguous references fail closed.
-        binding = definition.bind(action, observation)
-        if isinstance(binding, BindingFailure):
-            raise SafetyViolation(  # mutation: reason
-                f"Action {definition.kind!r} does not bind to "  # mutation: reason
-                f"current state: {binding.reason}"  # mutation: reason
-            )
-        if definition.selection_requirement is SelectionRequirement.EXACTLY_ONE:
-            self._validate_exact_selection(observation)
-        elif definition.selection_requirement is SelectionRequirement.ONE_OR_MORE:
-            self._validate_squad_selection(observation)
+        return action
 
     def _validate_generic_purchase(
         self,
         action: PurchaseItemAction,
         observation: Observation,
-        *,
-        check_purchase_limit: bool,
     ) -> None:
         """Spending limits for the generic purchase.
 
@@ -389,20 +308,8 @@ class ActionGuard:
                 "Purchase blocked because no trade is open: a shop's own "  # mutation: reason
                 "inventory window must be open beside ours."  # mutation: reason
             )
-        # Each of these is enforced only when the profile actually asks for it.
-        if (
-            check_purchase_limit
-            and self.config.max_purchases_per_run is not None
-            and (
-                self._purchase_count
-                + self._pending_purchase_count
-                + action.quantity
-                > self.config.max_purchases_per_run
-            )
-        ):
-            raise SafetyViolation(  # mutation: reason
-                "Requested quantity exceeds the remaining per-run purchase limit."
-            )
+        # Price and remaining-money constraints are pure policy. The mutable
+        # per-run purchase count is owned by ActionBudgetLedger.
         if (
             self.config.max_purchase_price is not None
             and action.expected_price > self.config.max_purchase_price
@@ -451,13 +358,8 @@ class ActionGuard:
         assert observation.telemetry is not None
         telemetry = observation.telemetry
         selected_ids = telemetry.ui.selected_character_ids
-        if (
-            not selected_ids
-            or telemetry.ui.selected_character_id not in selected_ids
-        ):
-            raise SafetyViolation(
-                "Action requires one or more exact selected squad members."
-            )
+        if not selected_ids or telemetry.ui.selected_character_id not in selected_ids:
+            raise SafetyViolation("Action requires one or more exact selected squad members.")
 
     @staticmethod
     def _validate_native_vendor_target(
@@ -483,10 +385,7 @@ class ActionGuard:
                 + ", ".join(sorted(missing))  # mutation: reason
             )
         selected_ids = telemetry.ui.selected_character_ids
-        if (
-            not selected_ids
-            or telemetry.ui.selected_character_id not in selected_ids
-        ):
+        if not selected_ids or telemetry.ui.selected_character_id not in selected_ids:
             raise SafetyViolation(  # mutation: reason
                 "Native vendor approach requires an exact nonempty selection "  # mutation: reason
                 "with its primary selected character identified."  # mutation: reason
@@ -561,15 +460,13 @@ class ActionGuard:
             raise SafetyViolation(  # mutation: reason
                 "Observation control mode "  # mutation: reason
                 f"{observation.control_mode.value!r} does not match "  # mutation: reason
-                f"guard control mode {self.control_mode.value!r}."  # mutation: reason
+                f"operation-policy control mode {self.control_mode.value!r}."  # mutation: reason
             )
 
     def _validate_purchase(
         self,
         action: SkillAction,
         observation: Observation,
-        *,
-        check_purchase_limit: bool,
     ) -> None:
         if observation.telemetry_stale or observation.telemetry is None:
             raise SafetyViolation(  # mutation: reason
@@ -632,16 +529,6 @@ class ActionGuard:
                 "Purchase blocked because the exact target is "  # mutation: reason
                 "not a verified non-hostile shop owner."  # mutation: reason
             )
-        if (
-            check_purchase_limit
-            and self.config.max_purchases_per_run is not None
-            and self._purchase_count + self._pending_purchase_count
-            >= self.config.max_purchases_per_run
-        ):
-            raise SafetyViolation(  # mutation: reason
-                "Per-run purchase limit has already been reached."  # mutation: reason
-            )
-
         expected_price = arguments.get("expected_price")
         if (
             isinstance(expected_price, bool)
@@ -773,10 +660,7 @@ class ActionGuard:
                     "Set-speed action requires fresh authoritative pause and "
                     "speed state."  # mutation: reason
                 )
-            if (
-                telemetry.game.paused
-                and not self.config.allow_live_unpause_actions
-            ):
+            if telemetry.game.paused and not self.config.allow_live_unpause_actions:
                 raise SafetyViolation(  # mutation: reason
                     "Direct live unpause through set_speed is blocked; "
                     "use a bounded movement option."  # mutation: reason
@@ -786,13 +670,9 @@ class ActionGuard:
                 project.project_id for project in observation.fieldbook_projects
             }
             if observation.active_fieldbook_project is not None:
-                available_project_ids.add(
-                    observation.active_fieldbook_project.project_id
-                )
+                available_project_ids.add(observation.active_fieldbook_project.project_id)
             if observation.fieldbook_read is not None:
-                available_project_ids.update(
-                    observation.fieldbook_read.project_ids
-                )
+                available_project_ids.update(observation.fieldbook_read.project_ids)
             available_project_ids.update(
                 receipt.project_id
                 for receipt in observation.recent_fieldbook_receipts
@@ -855,20 +735,3 @@ class ActionGuard:
                 raise SafetyViolation(  # mutation: reason
                     "Pointer y-coordinate is outside the Kenshi window."  # mutation: reason
                 )
-
-    def _prune_rate_budget(self, now: float) -> None:
-        cutoff = now - 60.0
-        while self._action_times and self._action_times[0] < cutoff:
-            self._action_times.popleft()
-
-    def _reserve_rate_budget(self, count: int) -> None:
-        now = time.monotonic()
-        self._prune_rate_budget(now)
-        if (
-            len(self._action_times) + self._pending_primitive_count + count
-            > self.config.max_actions_per_minute
-        ):
-            raise SafetyViolation(  # mutation: reason
-                "Per-minute primitive action rate limit would be exceeded."  # mutation: reason
-            )
-        self._pending_primitive_count += count

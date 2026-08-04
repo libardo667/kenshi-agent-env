@@ -17,7 +17,8 @@ from operation_test_support import execute_operation
 from test_input_boundary import observation, paused_condition, selection_condition
 from test_live_env import PulseController, PulseTelemetry, movement_action, movement_registry
 
-from kenshi_agent.config import CaptureConfig, ControlsConfig, RuntimeConfig
+from kenshi_agent.affordances import OPERATION_BINDING_AUTHORITY
+from kenshi_agent.config import CaptureConfig, ControlsConfig, RuntimeConfig, SafetyConfig
 from kenshi_agent.control.calibration import (
     calibration_allows_input,
     evaluate_calibration_identity,
@@ -33,6 +34,7 @@ from kenshi_agent.models import (
     PointerActionClass,
     WorldStateRevision,
 )
+from kenshi_agent.safety import OperationPolicy
 
 
 def full_identity(**overrides: object) -> CalibrationIdentity:
@@ -260,14 +262,12 @@ def test_ui_scale_mismatch_blocks_pointer_input_before_dispatch(tmp_path: Path) 
         env = scaled_environment(tmp_path, telemetry, controller, expected_ui_scale=1.0)
         await env.reset()
 
-        raised = False
-        try:
-            await execute_operation(env, movement_action())
-        except RuntimeError as exc:
-            raised = "ui_scale" in str(exc)
+        transition = await execute_operation(env, movement_action())
 
-        assert raised
         assert controller.actions == []
+        assert transition.receipt.accepted is False
+        assert transition.receipt.calibration is not None
+        assert "ui_scale" in transition.receipt.calibration.mismatched_fields
 
     asyncio.run(scenario())
 
@@ -314,27 +314,24 @@ def test_semantic_skill_ignores_calibration_mismatch(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_classify_pointer_action_buckets(tmp_path: Path) -> None:
-    from kenshi_agent.models import KeyAction
-
+def test_operation_policy_owns_compatibility_skill_pointer_class(tmp_path: Path) -> None:
     telemetry = PulseTelemetry()
     controller = ScaledController(telemetry)
     env = scaled_environment(
         tmp_path, telemetry, controller, semantic_skills=["move_visible_terrain"]
     )
-    assert (
-        env.control_surface.classify_pointer_action(movement_action())
-        is PointerActionClass.SEMANTIC_CURRENT
+    observation = env.input_boundary_observation()
+    action = movement_action()
+    bound = OPERATION_BINDING_AUTHORITY.bind(action, observation, affordance=None)
+    config = SafetyConfig(allow_action_kinds=["skill"], allow_skills=[action.name])
+    semantic = OperationPolicy(
+        config,
+        env.macros,
+        semantic_pointer_skills=[action.name],
     )
-    plain = scaled_environment(tmp_path, telemetry, controller)
-    assert (
-        plain.control_surface.classify_pointer_action(movement_action())
-        is PointerActionClass.PROFILE_CALIBRATED
-    )
-    assert (
-        plain.control_surface.classify_pointer_action(KeyAction(key="space"))
-        is PointerActionClass.COORDINATE_INDEPENDENT
-    )
+    plain = OperationPolicy(config, env.macros)
+    assert semantic.pointer_class_for(bound) is PointerActionClass.SEMANTIC_CURRENT
+    assert plain.pointer_class_for(bound) is PointerActionClass.PROFILE_CALIBRATED
 
 
 def test_calibration_drift_inside_lease_is_caught_by_the_boundary(tmp_path: Path) -> None:
@@ -359,6 +356,7 @@ def test_calibration_drift_inside_lease_is_caught_by_the_boundary(tmp_path: Path
             ),
             latest_observation=lambda: latest[0],
             max_telemetry_age_seconds=3.0,
+            pointer_class=PointerActionClass.PROFILE_CALIBRATED,
             assumptions=(paused_condition(),),
             preconditions=(selection_condition(),),
         )

@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from typing import Literal, Protocol, TypeAlias, cast
 
 from ... import operation_definitions as operations
+from ...affordances import OPERATION_BINDING_AUTHORITY
 from ...input_boundary import ExecutionToken
 from ...models import (
     Action,
@@ -40,6 +41,7 @@ from ..types import (
     OperationResult,
     OperationStatus,
 )
+from .input_binding import authorized_input_binding
 from .kenshi_surface import NATIVE_COMMAND_POLL_SECONDS, KenshiControlSurface
 
 
@@ -231,40 +233,59 @@ class KenshiTradeMechanics:
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
     ) -> Transition:
         return await self._surface.run_exact(
-            action, command=command, token=token, receipt=self._execute_purchase_operation
+            action,
+            command=command,
+            token=token,
+            receipt=lambda current, started, dispatch: self._execute_purchase_operation(
+                current, started, dispatch, token
+            ),
         )
 
     async def sell_item(
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
     ) -> Transition:
         return await self._surface.run_exact(
-            action, command=command, token=token, receipt=self._execute_sale_operation
+            action,
+            command=command,
+            token=token,
+            receipt=lambda current, started, dispatch: self._execute_sale_operation(
+                current, started, dispatch, token
+            ),
         )
 
     async def _execute_purchase_operation(
-        self, action: Action, started: datetime, command: CommandDispatchContext | None
+        self,
+        action: Action,
+        started: datetime,
+        command: CommandDispatchContext | None,
+        token: ExecutionToken | None,
     ) -> ActionReceipt:
         del command
-        return await self._execute_purchase_item(cast(PurchaseItemAction, action), started)
+        return await self._execute_purchase_item(cast(PurchaseItemAction, action), started, token)
 
     async def _execute_sale_operation(
-        self, action: Action, started: datetime, command: CommandDispatchContext | None
+        self,
+        action: Action,
+        started: datetime,
+        command: CommandDispatchContext | None,
+        token: ExecutionToken | None,
     ) -> ActionReceipt:
         del command
-        return await self._execute_sell_item(cast(SellItemAction, action), started)
+        return await self._execute_sell_item(cast(SellItemAction, action), started, token)
 
     async def _execute_purchase_item(
         self,
         action: PurchaseItemAction,
         started: datetime,
+        token: ExecutionToken | None,
     ) -> ActionReceipt:
         """Buy a bounded quantity with per-unit identity and conservation proof."""
 
         outcome = await self._execute_bounded_trade(
             action,
-            operations.PURCHASE_ITEM_DEFINITION,
             direction="purchase",
             observation_timeout_seconds=PURCHASE_OBSERVATION_TIMEOUT_SECONDS,
+            token=token,
         )
         status = {
             "completed": PurchaseStatus.PURCHASED,
@@ -400,19 +421,22 @@ class KenshiTradeMechanics:
     async def _execute_bounded_trade(
         self,
         action: PurchaseItemAction | SellItemAction,
-        contract: operations.OperationDefinition,
         *,
         direction: Literal["purchase", "sale"],
         observation_timeout_seconds: float,
+        token: ExecutionToken | None,
     ) -> _BoundedTradeOutcome:
         binding_type = (
             operations.BoundPurchaseCell if direction == "purchase" else operations.BoundSaleCell
         )
-        initial_rebound, initial_observation = self._surface.rebind_in_lease(
-            contract,
+        initial_rebound, initial_observation = authorized_input_binding(
             action,
+            token,
             binding_type,
         )
+        scheduled_bound = token.authorized_bound if token is not None else None
+        if scheduled_bound is None:
+            raise RuntimeError("Trade execution lost its authorized bound operation.")
         initial_binding = cast(TradeBinding, initial_rebound)
         telemetry = initial_observation.telemetry
         assert telemetry is not None
@@ -441,7 +465,7 @@ class KenshiTradeMechanics:
             if unit_index:
                 rebound, rebind_reason, rebound_snapshot = self._try_rebind_trade(
                     action,
-                    contract,
+                    scheduled_bound,
                     direction=direction,
                     selected_character_id=selected_character_id,
                     expected_money=current_money,
@@ -623,7 +647,7 @@ class KenshiTradeMechanics:
     def _try_rebind_trade(
         self,
         action: PurchaseItemAction | SellItemAction,
-        contract: operations.OperationDefinition,
+        scheduled_bound: BoundOperation,
         *,
         direction: Literal["purchase", "sale"],
         selected_character_id: str,
@@ -641,8 +665,13 @@ class KenshiTradeMechanics:
             operations.BoundPurchaseCell if direction == "purchase" else operations.BoundSaleCell
         )
         try:
-            binding = operations.require_bound(contract.bind(action, observation), binding_type)
-        except RuntimeError as exc:
+            rebound = OPERATION_BINDING_AUTHORITY.bind(
+                action,
+                observation,
+                affordance=scheduled_bound.affordance,
+            )
+            binding = operations.require_bound(rebound.binding, binding_type)
+        except (RuntimeError, ValueError) as exc:
             return None, str(exc), None
         trade_binding = cast(TradeBinding, binding)
         if trade_binding.inventory_owner_id != selected_character_id:
@@ -834,14 +863,15 @@ class KenshiTradeMechanics:
         self,
         action: SellItemAction,
         started: datetime,
+        token: ExecutionToken | None,
     ) -> ActionReceipt:
         """Sell a bounded quantity with per-unit identity and conservation proof."""
 
         outcome = await self._execute_bounded_trade(
             action,
-            operations.SELL_ITEM_DEFINITION,
             direction="sale",
             observation_timeout_seconds=SALE_OBSERVATION_TIMEOUT_SECONDS,
+            token=token,
         )
         status = {
             "completed": SaleStatus.SOLD,

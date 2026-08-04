@@ -59,7 +59,7 @@ from kenshi_agent.models import (
 from kenshi_agent.planners.base import Planner
 from kenshi_agent.reflexes import ReflexEngine
 from kenshi_agent.runtime import AgentRuntime
-from kenshi_agent.safety import ActionGuard
+from kenshi_agent.safety import OperationPolicy
 from kenshi_agent.session_log import SessionLogger
 from kenshi_agent.skills import MacroRegistry
 from kenshi_agent.world_state import WorldStateStore
@@ -292,7 +292,6 @@ def test_advisor_request_can_share_a_plan_with_independent_world_work() -> None:
     assert (
         live_plan_policy_errors(
             consult_while_playing_plan(current),
-            current,
         )
         == []
     )
@@ -330,7 +329,7 @@ def test_foreground_world_action_runs_while_advisor_is_still_thinking(
             operation_port=operation_port(environment),
             planner=planner,
             advisor=session,
-            guard=ActionGuard(
+            policy=OperationPolicy(
                 SafetyConfig(
                     supervisor_enabled=False,
                     allow_action_kinds=["consult_advisor", "wait", "stop"],
@@ -400,7 +399,7 @@ def test_run_end_cancels_a_pending_advisor_without_leaving_session_state(
             operation_port=operation_port(environment),
             planner=OnePlanPlanner(),
             advisor=session,
-            guard=ActionGuard(
+            policy=OperationPolicy(
                 SafetyConfig(
                     supervisor_enabled=False,
                     allow_action_kinds=["consult_advisor", "wait"],
@@ -717,7 +716,7 @@ def test_continuous_runtime_never_dispatches_consult_to_the_environment(
             operation_port=operation_port(environment),
             planner=planner,
             advisor=session,
-            guard=ActionGuard(
+            policy=OperationPolicy(
                 SafetyConfig(
                     supervisor_enabled=False,
                     allow_action_kinds=["consult_advisor", "wait", "stop"],
@@ -812,7 +811,7 @@ def test_advisor_handoff_rebases_context_after_telemetry_advances(
             ),
             planner=ConsultThenStopPlanner(),
             advisor=session,
-            guard=ActionGuard(
+            policy=OperationPolicy(
                 SafetyConfig(
                     supervisor_enabled=False,
                     allow_action_kinds=["consult_advisor", "stop"],
@@ -898,7 +897,7 @@ def test_runtime_never_shortens_the_configured_advisor_timeout(
             ),
             planner=ConsultThenStopPlanner(),
             advisor=session,
-            guard=ActionGuard(
+            policy=OperationPolicy(
                 SafetyConfig(
                     supervisor_enabled=False,
                     allow_action_kinds=["consult_advisor", "stop"],

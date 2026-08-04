@@ -1,46 +1,23 @@
-"""Generic live-continuous policy for composable semantic actions.
+"""Structural policy for composable live plans.
 
-The policy this replaced was a recipe: it knew the exact phases, the exact skill
-order, and the exact sentence a Barman says. That made one calibrated chain safe
-and every other chain impossible.
-
-This policy validates *properties* instead of a script. It asks whether each
-action has an authoritative contract, whether its arguments bind to something
-the current observation actually advertises, whether the plan stays inside its
-declared budgets, and whether success is stated causally. It deliberately does
-not know what a good plan looks like: it never requires a particular step order,
-never injects a missing step, and never mentions a scenario, a role, a label, or
-a coordinate. A planner that composes approach-then-activate and a planner that
-composes activate-alone are both acceptable if their references bind.
+This layer validates the plan's own shape: semantic rather than primitive
+steps, coherent retry declarations, causal authored terminals, and declared
+risk coverage. Current binding, capability, selection, control mode, and domain
+eligibility belong to operation definitions and ``OperationAuthority``.
 """
 
 from __future__ import annotations
 
 from .models import (
-    TIME_GAME_BINDINGS,
-    TOGGLE_GAME_BINDINGS,
-    Action,
     ConditionKind,
     ConditionResult,
-    ControlMode,
-    IdempotencyPolicy,
     Observation,
-    PauseAction,
     PlanEnvelope,
     PlanStep,
     RiskBudget,
-    SetSpeedAction,
-    UseGameBindingAction,
     is_controller_primitive,
-    is_runtime_control_action,
 )
-from .operation_definitions import (
-    BindingFailure,
-    OperationDefinition,
-    TerminalOwner,
-    definition_for,
-    runtime_control_terminal,
-)
+from .operation_definitions import risk_for_operation
 from .planning import evaluate_conditions
 
 # Default only. The caller passes the configured `max_plan_steps` so a
@@ -70,31 +47,18 @@ def _is_causal_condition(kind: ConditionKind, path: str | None) -> bool:
 
 def _step_action_errors(
     step: PlanStep,
-    observation: Observation,
-    *,
-    control_mode: ControlMode,
-    require_binding: bool,
 ) -> list[str]:
-    errors: list[str] = []
-    action: Action = step.action
-    label = f"step {step.step_id!r}"
+    """Validate only the structure authored around one plan step.
 
-    if require_binding:
-        failure_evaluations = evaluate_conditions(
-            step.failure_conditions,
-            observation,
-        )
-        for evaluation in failure_evaluations:
-            if evaluation.result is ConditionResult.TRUE:
-                errors.append(
-                    f"{label} failure condition is already true before dispatch: "
-                    f"{evaluation.reason}"
-                )
-            elif evaluation.result is ConditionResult.UNKNOWN:
-                errors.append(
-                    f"{label} failure condition is not observable before dispatch: "
-                    f"{evaluation.reason}"
-                )
+    Current capability, binding, selection, control-mode, and terminal policy
+    belong to the operation definition and ``OperationAuthority``. The plan
+    layer owns only the semantic-surface shape, its retry declaration, and any
+    terminal conditions the plan itself chose to declare.
+    """
+
+    errors: list[str] = []
+    action = step.action
+    label = f"step {step.step_id!r}"
 
     if is_controller_primitive(action):
         errors.append(
@@ -103,144 +67,11 @@ def _step_action_errors(
             "carries no evidence about what it would activate"
         )
         return errors
-
-    direct_unpause = (
-        isinstance(action, PauseAction)
-        and action.paused is False
-    ) or (
-        isinstance(action, SetSpeedAction)
-        and observation.telemetry is not None
-        and observation.telemetry.game.paused is True
-    )
-    if direct_unpause:
-        errors.append(
-            f"{label} requests direct live unpause, which the action guard cannot "
-            "authorize. Do not add an unpause step before movement: "
-            "approach_dialogue_target, move_to_character, move_in_direction, "
-            "travel_to_map_destination, regroup_with_squad_member, harvest_resource, and "
-            "respond_to_immediate_threat own any world-time "
-            "transition they require."
-        )
-        return errors
-
-    if (
-        isinstance(action, UseGameBindingAction)
-        and action.binding in TIME_GAME_BINDINGS
-    ):
-        errors.append(
-            f"{label} authors raw time binding {action.binding.value!r}; state a "
-            "semantic gameplay intention and let its runtime option own playback"
-        )
-        return errors
-
-    definition: OperationDefinition | None = definition_for(action)
-    if is_runtime_control_action(action):
-        # Run control (stop, noop, wait, pause, set_speed) touches no game object
-        # and binds to no reference. Its completion is runtime-owned rather than
-        # a second model-authored description of the same intention.
-        completion = (
-            definition.resolve_terminal(action, observation)
-            if definition is not None
-            else runtime_control_terminal(action)
-        )
-        if completion is None:
-            errors.append(f"{label} runtime action {action.kind!r} has no terminal")
-            return errors
-        if (
-            completion.owner is TerminalOwner.RUNTIME_CONDITIONS
-            and not completion.conditions
-        ):
-            errors.append(
-                f"{label} runtime completion baseline is unavailable; no input "
-                "may be dispatched without a verifiable terminal"
-            )
-        return errors
-
-    if definition is None:
-        errors.append(f"{label} action {action.kind!r} has no operation definition")
-        return errors
-    if not definition.allows_control_mode(control_mode):
-        errors.append(
-            f"{label} action {action.kind!r} is not permitted in control mode "
-            f"{control_mode.value!r}"
-        )
-
-    capabilities = set(
-        observation.telemetry.capabilities if observation.telemetry is not None else []
-    )
-    missing = definition.missing_capabilities(capabilities)
-    if missing:
-        errors.append(
-            f"{label} action {action.kind!r} requires unavailable capabilities: "
-            + ", ".join(missing)
-        )
-
-    # Only the step about to run must bind right now. A later step legitimately
-    # refers to state its predecessors will create - a closing dialogue reply
-    # cannot bind before the approach has opened one - and demanding otherwise
-    # would reject every genuinely composed plan. Each step is still bound and
-    # revalidated when it is actually reached, and again inside the input lease.
-    if require_binding:
-        binding = definition.bind(action, observation)
-        if isinstance(binding, BindingFailure):
-            errors.append(f"{label} reference does not bind to current state: {binding.reason}")
-
-    # Only a claim *weaker* than the contract is a problem. Declaring
-    # `at_most_once` for an action the contract says is safe to retry is simply
-    # more cautious, and rejecting it trapped the planner in a loop it could not
-    # escape: everything else in the prompt tells it to prefer at_most_once.
-    if (
-        definition.idempotency is IdempotencyPolicy.AT_MOST_ONCE
-        and step.idempotency is IdempotencyPolicy.SAFE_TO_RETRY
-    ):
-        errors.append(
-            f"{label} declares idempotency {step.idempotency.value!r}, but "
-            f"{action.kind!r} is {definition.idempotency.value!r} and may not be retried"
-        )
-    if step.retry_budget and isinstance(action, UseGameBindingAction):
-        # Retryability here is a property of the individual binding, not the
-        # action kind. Panning the camera means pressing the same key several
-        # times and is exactly what a retry is for; pressing `toggle_inventory`
-        # twice closes the window the first press opened.
-        if action.binding in TOGGLE_GAME_BINDINGS:
-            errors.append(
-                f"{label} retries {action.binding.value!r}, which toggles: a second "
-                "press undoes the first rather than repeating it"
-            )
-    elif step.retry_budget and definition.idempotency is IdempotencyPolicy.AT_MOST_ONCE:
-        errors.append(
-            f"{label} retries an at-most-once action; a delayed confirmation is not "
-            "permission to act twice"
-        )
-
-    completion = definition.resolve_terminal(
-        action,
-        observation,
-        selected_affordance=step.affordance is not None,
-    )
-    if (
-        completion.owner is TerminalOwner.RUNTIME_CONDITIONS
-        and not completion.conditions
-    ):
-        errors.append(
-            f"{label} runtime completion baseline is unavailable; no input may "
-            "be dispatched without a verifiable terminal"
-        )
-    elif completion.owner is TerminalOwner.RUNTIME_CONDITIONS and not all(
-        _is_causal_condition(condition.kind, condition.path)
-        for condition in completion.conditions
-    ):
-        errors.append(
-            f"{label} runtime completion contract contains a non-causal condition"
-        )
-    elif completion.owner is TerminalOwner.STEP_CONDITIONS and not any(
+    if step.success_conditions and not any(
         _is_causal_condition(condition.kind, condition.path)
         for condition in step.success_conditions
     ):
-        errors.append(
-            f"{label} has no causal success condition; success must be observable in a "
-            "later world revision rather than assumed from dispatch"
-        )
+        errors.append(f"{label} declares success conditions but none witness a causal world change")
     return errors
 
 
@@ -256,14 +87,10 @@ def live_plan_rebase_errors(
     number. Refusing on that alone would make composition impossible while
     proving nothing: the sequence is not what authorized the plan.
 
-    What authorized it is the contracts' reference bindings plus the plan's own
-    typed conditions. So a rebase is permitted exactly when each action still
-    binds to the same reference it bound to when the plan was written, the
-    assumptions still hold, and control mode and capabilities have not changed.
-    Anything else — a target that moved out of the valid set, a control that
-    became ambiguous, a withdrawn capability, an unpause — refuses, and the
-    executor still revalidates preconditions before dispatch and again inside
-    the input lease.
+    Rebase owns plan chronology and the plan's own assumptions. Operation
+    capability, selection, and reference eligibility are evaluated later by the
+    one operation authority, first before scheduling and again in the input
+    lease.
     """
 
     errors: list[str] = []
@@ -272,24 +99,6 @@ def live_plan_rebase_errors(
     if not current_observation.world_revision.is_later_than(planner_observation.world_revision):
         errors.append("current world revision is not causally later than the planner snapshot")
 
-    if current_observation.telemetry is None:
-        errors.append("current observation has no telemetry to rebase against")
-        return errors
-    if current_observation.telemetry_stale:
-        errors.append("current telemetry is stale, so the plan cannot be rebased")
-
-    if current_observation.control_mode != planner_observation.control_mode:
-        errors.append("control mode changed while the strategic planner was running")
-
-    before_capabilities = set(
-        planner_observation.telemetry.capabilities
-        if planner_observation.telemetry is not None
-        else []
-    )
-    withdrawn = sorted(before_capabilities - set(current_observation.telemetry.capabilities))
-    if withdrawn:
-        errors.append("capabilities were withdrawn during planning: " + ", ".join(withdrawn))
-
     blocking = [
         event
         for event in current_observation.events
@@ -297,26 +106,6 @@ def live_plan_rebase_errors(
     ]
     if blocking:
         errors.append(f"input authority was withdrawn during planning by {blocking[0]!r}")
-
-    # Only the entry step has to still bind: later steps refer to state their
-    # predecessors will create, and each is rebound when it is actually reached.
-    entry = next(
-        (step for step in plan.steps if step.step_id == plan.entry_step_id),
-        None,
-    )
-    if entry is not None and not is_runtime_control_action(entry.action):
-        definition = definition_for(entry.action)
-        if definition is None:
-            errors.append(
-                f"step {entry.step_id!r} has no definition, so its reference cannot be rebased"
-            )
-        else:
-            current = definition.bind(entry.action, current_observation)
-            if isinstance(current, BindingFailure):
-                errors.append(
-                    f"step {entry.step_id!r} pointed at something that changed while the "
-                    f"planner was thinking: {current.reason}"
-                )
 
     assumptions = evaluate_conditions(plan.assumptions, current_observation)
     blocked = [
@@ -334,11 +123,10 @@ def plan_contract_costs(plan: PlanEnvelope) -> tuple[int, int, int]:
     """What this plan's steps cost in pointer, purchase and native actions."""
     pointer = purchase = native = 0
     for step in plan.steps:
-        definition = definition_for(step.action)
-        if definition is None:
+        risk = risk_for_operation(step.action)
+        if risk is None:
             continue
         attempts = 1 + step.retry_budget
-        risk = definition.risk_for(step.action)
         pointer += risk.pointer_actions * attempts
         purchase += risk.purchase_actions * attempts
         native += risk.native_assisted_actions * attempts
@@ -374,23 +162,16 @@ def with_covering_risk_budget(plan: PlanEnvelope) -> PlanEnvelope:
 
 def live_plan_policy_errors(
     plan: PlanEnvelope,
-    observation: Observation,
     *,
     max_steps: int = LIVE_PLAN_MAX_STEPS,
 ) -> list[str]:
-    """Every reason this plan may not run under the generic interaction policy.
+    """Every structural reason this authored plan cannot be scheduled.
 
-    Returns an empty list when the plan is acceptable. The checks are properties
-    of contracts, references, and budgets — never a required action sequence.
+    Returns an empty list when its own shape and declarations are coherent.
+    Current operation eligibility is intentionally absent from this answer.
     """
 
     errors: list[str] = []
-
-    if observation.telemetry is None:
-        errors.append("generic interaction policy requires current telemetry")
-        return errors
-    if observation.telemetry_stale:
-        errors.append("generic interaction policy requires fresh telemetry")
 
     if len(plan.steps) > max_steps:
         errors.append(
@@ -408,12 +189,7 @@ def live_plan_policy_errors(
 
     for step in plan.steps:
         errors.extend(
-            _step_action_errors(
-                step,
-                observation,
-                control_mode=plan.control_mode,
-                require_binding=step.step_id == plan.entry_step_id,
-            )
+            _step_action_errors(step)
         )
 
     # Risk budgets must cover what the contracts actually cost, so an
