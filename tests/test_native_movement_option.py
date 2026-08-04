@@ -1230,7 +1230,10 @@ def test_squad_regroup_option_owns_exact_actor_and_target_until_arrival() -> Non
         )
         rejected = regroup.poll(update(squad_regroup_observation(3, ack=wrong_terminal)))
         assert rejected.status is OptionStatus.FAILED
-        assert "without exact arrival proof" in rejected.reason
+        # The refusal names what Kenshi actually reported and what this
+        # operation's definition requires, rather than restating prose here.
+        assert "walk_destination_reached" in rejected.reason
+        assert "squad_member_reached" in rejected.reason
 
         successful = native_option(
             option_id="native-squad-regroup-2",

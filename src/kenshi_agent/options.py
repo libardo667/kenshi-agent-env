@@ -31,6 +31,7 @@ from .models import (
     WorldStateRevision,
 )
 from .movement_ownership import has_keyed_native_movement_terminal
+from .operation_definitions import definition_for
 from .threat_response import (
     threat_response_authority_error,
     threat_response_health_error,
@@ -474,6 +475,21 @@ class StatefulThreatResponseOption:
         )
 
 
+
+def _required_native_terminal_reasons(action: Action) -> frozenset[str]:
+    """The exact native reasons this operation's definition accepts as complete.
+
+    Empty means the definition names no proof, so any terminal is accepted. This
+    keeps "what proves this operation finished" the definition's answer rather
+    than a type switch at the monitor.
+    """
+
+    definition = definition_for(action)
+    if definition is None:
+        return frozenset()
+    return definition.native_terminal_success_reasons
+
+
 class StatefulNativeMovementOption:
     """Own one native command until its exact acknowledgement becomes terminal.
 
@@ -780,23 +796,13 @@ class StatefulNativeMovementOption:
                     "is still walking."
                 )
         elif acknowledgement.status is NativeCommandStatus.COMPLETED:
-            if (
-                isinstance(self.action, ProduceResourceOutputAction)
-                and acknowledgement.reason != "resource_output_ready"
-            ):
+            required = _required_native_terminal_reasons(self.action)
+            if required and acknowledgement.reason not in required:
                 self.status = OptionStatus.FAILED
                 self.reason = (
-                    "Native resource production claimed terminal completion "
-                    f"without output proof: {acknowledgement.reason}."
-                )
-            elif (
-                isinstance(self.action, RegroupWithSquadMemberAction)
-                and acknowledgement.reason != "squad_member_reached"
-            ):
-                self.status = OptionStatus.FAILED
-                self.reason = (
-                    "Native squad regrouping claimed terminal completion without "
-                    f"exact arrival proof: {acknowledgement.reason}."
+                    "Native operation claimed terminal completion without its "
+                    f"required proof: reported {acknowledgement.reason!r}, "
+                    f"expected one of {', '.join(sorted(required))}."
                 )
             elif self.transition is None:
                 self.reason = (

@@ -2435,6 +2435,10 @@ class OperationDefinition:
     # executor consumes this generically, so adding a new exact native command
     # cannot succeed in the controller and then fall through as untyped.
     native_terminal_success_reasons: frozenset[str] = frozenset()
+    # Reasons that prove Kenshi adopted the order without carrying it out. The
+    # character holds an AI goal it can only act on while the world runs, so a
+    # terminal here is acceptance and the runtime still owes it a running world.
+    native_task_started_reasons: frozenset[str] = frozenset()
     # A deterministic effect derived from the action and its immediate
     # pre-dispatch observation. `None` means this operation has no effect-level
     # condition; an empty tuple means the runtime owns one but the required
@@ -3037,6 +3041,9 @@ PERFORM_CONTEXT_ACTION_DEFINITION = OperationDefinition(
     # Kept as a compatibility-level "issue the task" primitive. Planning uses
     # produce_resource_output, whose terminal is actual output rather than the
     # first observed AI goal.
+    # Kenshi reports this the moment the character adopts the goal, which is why
+    # it is a started reason rather than a success one.
+    native_task_started_reasons=frozenset({"context_task_started"}),
     allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(
         {
@@ -3097,6 +3104,9 @@ PRODUCE_RESOURCE_OUTPUT_DEFINITION = OperationDefinition(
     bind=bind_produce_resource_output,
     handler_key="resources.produce_resource_output",
     controller_verified=True,
+    # Adopting the job is progress; only stock in the output inventory proves
+    # the operation itself finished.
+    native_terminal_success_reasons=frozenset({"resource_output_ready"}),
     authorable_when=resource_production_is_currently_authorable,
 )
 
@@ -3273,6 +3283,9 @@ REGROUP_WITH_SQUAD_MEMBER_DEFINITION = OperationDefinition(
     bind=bind_regroup_with_squad_member,
     handler_key="movement.regroup_with_squad_member",
     controller_verified=True,
+    # Only exact arrival proves the regroup; any other terminal reason is a
+    # completion claim without arrival evidence.
+    native_terminal_success_reasons=frozenset({"squad_member_reached"}),
     authorable_when=squad_regroup_is_currently_authorable,
 )
 

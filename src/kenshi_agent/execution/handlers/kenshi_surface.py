@@ -740,6 +740,27 @@ class KenshiControlSurface:
             semantic=semantic,
         )
 
+    def _is_task_start_only(
+        self,
+        action: Action,
+        acknowledgement: NativeCommandAcknowledgement,
+    ) -> bool:
+        """Did Kenshi merely adopt this order rather than carry it out?
+
+        The native side reports "completed" as soon as the character holds the
+        exact AI goal, which for a context task means the work has begun, not
+        finished. Returning a terminal receipt there would leave the character
+        holding a goal in a world that never runs, so such an order still owes
+        the caller a resumed world.
+        """
+
+        if acknowledgement.status is not NativeCommandStatus.COMPLETED:
+            return False
+        definition = operations.definition_for(action)
+        if definition is None:
+            return False
+        return acknowledgement.reason in definition.native_task_started_reasons
+
     async def run_native_order(
         self,
         action: Action,
@@ -848,7 +869,7 @@ class KenshiControlSurface:
         if acknowledgement.status in {
             NativeCommandStatus.CANCELLED,
             NativeCommandStatus.COMPLETED,
-        }:
+        } and not self._is_task_start_only(action, acknowledgement):
             return self._accepted_native_terminal_receipt(
                 action=action,
                 command=command,

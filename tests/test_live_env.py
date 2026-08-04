@@ -2276,6 +2276,54 @@ def test_context_action_issues_exact_native_resource_task_without_world_click(
     asyncio.run(scenario())
 
 
+def test_a_started_context_task_leaves_the_world_running(tmp_path: Path) -> None:
+    """A context order Kenshi has only *started* still owes the caller a running world.
+
+    Native code reports "completed"/context_task_started the moment the selected
+    character adopts the exact AI goal. Treating that as a finished terminal
+    leaves the character holding a job in a world that never advances, so it
+    walks nowhere and mines nothing - which is exactly what a live run showed.
+    """
+
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(
+            tmp_path,
+            status=NativeCommandStatus.COMPLETED,
+            reason="context_task_started",
+        )
+        environment.controls_config = environment.controls_config.model_copy(
+            update={
+                "native_approach_skill": "approach_confirmed_vendor",
+                # The canonical live configuration; a run that plays continuously
+                # is allowed to leave the world running.
+                "require_paused_between_actions": False,
+            }
+        )
+        telemetry.paused = True
+        initial = await environment.reset()
+
+        await execute_operation(
+            environment,
+            PerformContextAction(
+                target_id="entity-copper",
+                context_action=ContextActionKind.OPERATE,
+            ),
+            command=CommandDispatchContext(
+                command_id="cmd-" + "3" * 32,
+                based_on_revision=initial.world_revision,
+            ),
+        )
+
+        speed_key = environment.controls_config.speed_keys[1]
+        assert [
+            action
+            for action in controller.actions
+            if isinstance(action, KeyAction) and action.key == speed_key
+        ], "the started context task left Kenshi paused, so the job could never run"
+
+    asyncio.run(scenario())
+
+
 def test_first_aid_uses_the_same_exact_semantic_native_route(tmp_path: Path) -> None:
     async def scenario() -> None:
         environment, telemetry, controller = native_vendor_environment(
