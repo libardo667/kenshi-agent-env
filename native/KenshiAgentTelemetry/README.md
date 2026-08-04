@@ -82,7 +82,9 @@ deliberately accept a group:
   carry an empty target plus the exact bearing and distance.
 - `travel_to_map_destination` gives the complete exact current selection one
   ordinary group order toward an exact discovered town's direction-dependent
-  gate waypoint. A gated town then receives one controller-owned interior order.
+  gate waypoint. The map distance is measured from the farthest selected member,
+  so a primary member already in town cannot hide travel from a remote groupmate.
+  A gated town then receives one controller-owned interior order.
   Crossing the wall predicate does not terminate that order. Completion requires
   every member of the command's selection basis to reach the exact town; a
   reached interior leg without that group evidence cancels rather than inventing

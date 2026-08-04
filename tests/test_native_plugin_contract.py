@@ -360,3 +360,17 @@ def test_native_group_travel_requires_every_selected_member_at_each_leg() -> Non
     assert "HasReachedFixedDirectionDestination" not in map_monitor
     assert "stallX" in map_monitor
     assert "member beyond another member's destination plane" in tests
+
+
+def test_native_map_distance_uses_the_farthest_selected_member() -> None:
+    plugin = PLUGIN_SOURCE.read_text(encoding="utf-8")
+    collector = plugin.split("void CollectKnownMapDestinations", 1)[1].split(
+        "TownBase* FindExactKnownMapDestination",
+        1,
+    )[0]
+    exporter = plugin.split('json << "\\\"known_map_destinations\\\":["', 1)[1]
+
+    assert "selectedPositions" in collector
+    assert "HasGroupReachedDestination" in collector
+    assert "farthestX" in collector
+    assert "IsSelected(player, member->getHandle())" in exporter

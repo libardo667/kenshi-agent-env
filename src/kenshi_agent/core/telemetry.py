@@ -328,6 +328,10 @@ class KnownMapDestination(StrictModel):
 
     id: str = Field(min_length=1, max_length=200)
     name: str = Field(min_length=1, max_length=200)
+    # Native XZ distance from the farthest currently selected squad member.
+    # For one selected member this is the ordinary point distance. For a group,
+    # using the primary member would hide travel whenever that member was
+    # already local while another selected member was still far away.
     distance: float = Field(ge=0.0)
     has_gates: bool | None = None
 
@@ -345,9 +349,11 @@ def map_destination_already_reached(
     current_location_id: str | None = None,
     inside_town_walls: bool | None = None,
     location_authoritative: bool = False,
+    selected_count: int = 1,
 ) -> bool:
     return (
         location_authoritative
+        and selected_count == 1
         and current_location_id == destination.id
         and (inside_town_walls is True or destination.has_gates is False)
     )
@@ -359,12 +365,14 @@ def map_destination_travel_available(
     current_location_id: str | None = None,
     inside_town_walls: bool | None = None,
     location_authoritative: bool = False,
+    selected_count: int = 1,
 ) -> bool:
     if map_destination_already_reached(
         destination,
         current_location_id=current_location_id,
         inside_town_walls=inside_town_walls,
         location_authoritative=location_authoritative,
+        selected_count=selected_count,
     ):
         return False
     return destination.distance > MINIMUM_REMOTE_MAP_TRAVEL_DISTANCE

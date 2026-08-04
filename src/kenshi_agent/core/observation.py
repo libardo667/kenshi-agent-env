@@ -195,6 +195,13 @@ class Observation(StrictModel):
 
         if self.telemetry is None or self.telemetry_stale:
             return []
+        # Budgeted/replay observations can omit the squad while retaining the
+        # primary character's authoritative game location. Preserve the
+        # historical single-character interpretation in that case.
+        selected_count = max(
+            1,
+            sum(character.selected for character in self.telemetry.squad),
+        )
         return [
             destination.model_dump(mode="json", exclude_none=True)
             | {
@@ -205,6 +212,7 @@ class Observation(StrictModel):
                     location_authoritative=(
                         "game.location.identity" in self.telemetry.capabilities
                     ),
+                    selected_count=selected_count,
                 ),
             }
             for destination in sorted(

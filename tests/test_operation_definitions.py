@@ -1321,6 +1321,8 @@ def test_map_travel_cannot_bind_the_exact_current_town_after_gate_entry() -> Non
             "world.known_map_destinations",
             "game.location",
             "game.location.identity",
+            "game.pause",
+            "game.speed",
             "identity.stable_handles",
             "squad.health",
         ],
@@ -1390,6 +1392,68 @@ def test_map_travel_cannot_bind_the_exact_current_town_after_gate_entry() -> Non
         )
     )
     assert not contract.bind(action, state).bound
+
+
+def test_group_map_travel_is_not_hidden_by_a_primary_member_already_in_town() -> None:
+    state = observation(
+        capabilities=[
+            "control.travel_to_map_destination",
+            "world.known_map_destinations",
+            "game.location",
+            "game.location.identity",
+            "game.pause",
+            "game.speed",
+            "identity.stable_handles",
+            "squad.health",
+        ],
+        squad=[
+            CharacterState(
+                id="entity-primary-local",
+                name="Kole",
+                selected=True,
+            ),
+            CharacterState(
+                id="entity-remote-groupmate",
+                name="Polly",
+                selected=True,
+            ),
+        ],
+        ui=UIState(
+            selected_character_id="entity-primary-local",
+            selected_character_ids=[
+                "entity-primary-local",
+                "entity-remote-groupmate",
+            ],
+        ),
+        game=GameState(
+            loaded=True,
+            paused=True,
+            location_id="entity-known-town",
+            location_name="The Hub",
+            inside_town_walls=False,
+        ),
+    )
+    assert state.telemetry is not None
+    state.telemetry.known_map_destinations = [
+        KnownMapDestination(
+            id="entity-known-town",
+            name="The Hub",
+            # Native group telemetry reports the farthest selected member.
+            distance=1700.0,
+            has_gates=False,
+        )
+    ]
+    action = TravelToMapDestinationAction(destination_id="entity-known-town")
+
+    binding = TRAVEL_TO_MAP_DESTINATION_DEFINITION.bind(action, state)
+    assert binding.bound
+    travel_offer = next(
+        offer
+        for offer in offered_affordances(state)
+        if offer.operation_kind == "travel_to_map_destination"
+    )
+    assert travel_offer.semantic == "travel_squad"
+    assert state.known_map_destination_digest()[0]["travel_available"] is True
 
 
 class TestAffordancesAreAdvertised:

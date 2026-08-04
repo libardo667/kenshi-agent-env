@@ -842,15 +842,16 @@ def _map_offers(observation: Observation) -> Iterable[AffordanceOffer]:
     selected = [member for member in telemetry.squad if member.selected]
     if not selected:
         return
+    selected_count = len(selected)
     for destination in telemetry.known_map_destinations:
         if not map_destination_travel_available(
             destination,
             current_location_id=telemetry.game.location_id,
             inside_town_walls=telemetry.game.inside_town_walls,
             location_authoritative="game.location.identity" in capabilities,
+            selected_count=selected_count,
         ):
             continue
-        selected_count = len(selected)
         yield _offer(
             observation,
             source=AffordanceSource.MAP,

@@ -844,11 +844,14 @@ namespace
     }
 
     void CollectKnownMapDestinations(
-        const Ogre::Vector3& selectedPosition,
+        const std::vector<KenshiAgentTelemetry::NativeMovementPosition>&
+            selectedPositions,
         std::vector<KnownMapDestinationSnapshot>& destinations)
     {
         destinations.clear();
-        if (shou == NULL || shou->townList == NULL)
+        if (selectedPositions.empty() ||
+            shou == NULL ||
+            shou->townList == NULL)
             return;
 
         lektor<RootObject*>& towns = shou->townList->getAllTowns();
@@ -870,8 +873,18 @@ namespace
             KnownMapDestinationSnapshot snapshot;
             snapshot.id = id;
             snapshot.name = name;
-            snapshot.distance =
-                Distance(town->getPosition(), selectedPosition);
+            const Ogre::Vector3 townPosition = town->getPosition();
+            float farthestX = selectedPositions[0].x;
+            float farthestZ = selectedPositions[0].z;
+            KenshiAgentTelemetry::HasGroupReachedDestination(
+                selectedPositions,
+                townPosition.x,
+                townPosition.z,
+                farthestX,
+                farthestZ);
+            const float dx = farthestX - townPosition.x;
+            const float dz = farthestZ - townPosition.z;
+            snapshot.distance = std::sqrt(dx * dx + dz * dz);
             snapshot.hasGates = town->hasGates();
             destinations.push_back(snapshot);
         }
@@ -4181,9 +4194,40 @@ namespace
         json << "\"known_map_destinations\":[";
         if (selected != NULL && selected->isValid())
         {
+            std::vector<KenshiAgentTelemetry::NativeMovementPosition>
+                selectedPositions;
+            if (characters != NULL)
+            {
+                for (unsigned int index = 0;
+                     index < characters->size();
+                     ++index)
+                {
+                    Character* member = (*characters)[index];
+                    if (member == NULL || !member->isValid() ||
+                        !IsSelected(player, member->getHandle()))
+                    {
+                        continue;
+                    }
+                    const Ogre::Vector3 memberPosition =
+                        member->getPosition();
+                    KenshiAgentTelemetry::NativeMovementPosition position;
+                    position.x = memberPosition.x;
+                    position.z = memberPosition.z;
+                    selectedPositions.push_back(position);
+                }
+            }
+            if (selectedPositions.empty())
+            {
+                const Ogre::Vector3 selectedPosition =
+                    selected->getPosition();
+                KenshiAgentTelemetry::NativeMovementPosition position;
+                position.x = selectedPosition.x;
+                position.z = selectedPosition.z;
+                selectedPositions.push_back(position);
+            }
             std::vector<KnownMapDestinationSnapshot> destinations;
             CollectKnownMapDestinations(
-                selected->getPosition(),
+                selectedPositions,
                 destinations);
             knownMapDestinationsTruncated =
                 destinations.size() > MAX_KNOWN_MAP_DESTINATIONS;

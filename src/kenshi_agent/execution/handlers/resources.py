@@ -247,9 +247,17 @@ class HarvestHandler:
                 context,
             )
             state.receipts.append(result.transition.receipt)
-            production_acknowledgement = (
-                result.transition.receipt.native_acknowledgement
-            )
+            production_acknowledgement = None
+            if state.current.telemetry is not None:
+                production_acknowledgement = (
+                    state.current.telemetry.native_control.acknowledgement_for(
+                        command.command_id
+                    )
+                )
+            if production_acknowledgement is None:
+                production_acknowledgement = (
+                    result.transition.receipt.native_acknowledgement
+                )
             state.production_task_released = bool(
                 production_acknowledgement is not None
                 and production_acknowledgement.reason

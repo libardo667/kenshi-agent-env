@@ -1225,6 +1225,7 @@ def bind_travel_to_map_destination(
         current_location_id=telemetry.game.location_id,
         inside_town_walls=telemetry.game.inside_town_walls,
         location_authoritative=location_authoritative,
+        selected_count=len(selected),
     ):
         boundary = (
             "already inside" if telemetry.game.inside_town_walls is True else "already within"
@@ -1239,6 +1240,7 @@ def bind_travel_to_map_destination(
         current_location_id=telemetry.game.location_id,
         inside_town_walls=telemetry.game.inside_town_walls,
         location_authoritative=location_authoritative,
+        selected_count=len(selected),
     ):
         return _unbound(
             f"Destination {destination.name!r} ({destination.id}) is already local "
@@ -1261,17 +1263,19 @@ def map_travel_is_currently_authorable(observation: Observation) -> bool:
     telemetry = observation.telemetry
     if telemetry is None:
         return False
+    selected = [character for character in telemetry.squad if character.selected]
     location_authoritative = "game.location.identity" in telemetry.capabilities
     return bool(
         not observation.telemetry_stale
         and telemetry.game.loaded is True
-        and bool([character for character in telemetry.squad if character.selected])
+        and bool(selected)
         and any(
             map_destination_travel_available(
                 destination,
                 current_location_id=telemetry.game.location_id,
                 inside_town_walls=telemetry.game.inside_town_walls,
                 location_authoritative=location_authoritative,
+                selected_count=len(selected),
             )
             for destination in telemetry.known_map_destinations
         )
