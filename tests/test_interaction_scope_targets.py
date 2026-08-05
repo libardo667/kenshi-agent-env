@@ -1,10 +1,12 @@
 """Target behaviour for the interaction-scope and order-lifecycle stage.
 
-These encode where the architecture is going, and they fail today on purpose.
-Each is `xfail(strict=True)`, so the suite goes red the moment the behaviour
-lands and the test stops being a prediction. That is the intended signal: flip
-the marker off in the slice that implements it rather than discovering months
-later that a gate has been silently passing.
+These encode where the architecture is going. Each starts as
+`xfail(strict=True)`, so the suite goes red the moment the behaviour lands and
+the test stops being a prediction. That is the intended signal: retire the
+marker in the slice that implements it rather than discovering months later
+that a gate has been silently passing.
+
+Slice 1's three targets have been retired and now assert plainly.
 
 Nothing here weakens an existing test. Every assertion is about the target
 model; the current model is pinned by the suite as it stands.
@@ -19,13 +21,11 @@ import pytest
 from kenshi_agent.core.telemetry import NativeControlState, TelemetrySnapshot
 from kenshi_agent.core.transport import NativeCommandRequest
 
-SLICE_1 = "Slice 1: interaction contract replaces selection cardinality"
 SLICE_2 = "Slice 2: protocol 2.0 roster, platoons, plural command records"
 SLICE_3 = "Slice 3: native captured-recipient command registry"
 SLICE_4 = "Slice 4: immutable dispatch basis at the input boundary"
 
 
-@pytest.mark.xfail(strict=True, reason=SLICE_1)
 def test_selection_requirement_is_absent_from_production_code() -> None:
     """Section 12: the old cardinality model must not survive or grow back."""
 
@@ -34,7 +34,6 @@ def test_selection_requirement_is_absent_from_production_code() -> None:
     assert not hasattr(operation_definitions, "SelectionRequirement")
 
 
-@pytest.mark.xfail(strict=True, reason=SLICE_1)
 def test_every_operation_definition_resolves_one_interaction_contract() -> None:
     """Section 4.7: exactly one of a static contract or a resolver."""
 
@@ -46,13 +45,13 @@ def test_every_operation_definition_resolves_one_interaction_contract() -> None:
         assert (static is None) != (resolver is None), definition.kind
 
 
-@pytest.mark.xfail(strict=True, reason=SLICE_1)
 def test_transport_holds_no_command_name_cardinality_exception_set() -> None:
     """Section 3.1: recipient scope is not decided at the transport edge.
 
-    `NativeCommandRequest.validate_native_fences` currently refuses a
-    multi-character basis unless the command appears in a hardcoded name set.
-    That is a second selection authority living in transport validation.
+    `validate_native_fences` used to refuse a multi-character basis unless the
+    command appeared in a hardcoded name set - a second selection authority
+    living in transport validation, able to disagree with the definition it was
+    supposedly enforcing. Scope now has one owner.
     """
 
     import inspect

@@ -451,7 +451,7 @@ def test_character_adapter_retains_exact_native_selection_from_a_group() -> None
     } == {bark.id, plant.id}
 
 
-def test_group_selection_exposes_selection_repair_not_exact_actor_orders() -> None:
+def test_group_selection_can_issue_broadcast_orders_and_still_narrow() -> None:
     bark = CharacterState(id="entity-bark", name="Bark", selected=True)
     plant = CharacterState(id="entity-plant", name="Plant", selected=True)
     resource = WorldTarget(
@@ -488,8 +488,12 @@ def test_group_selection_exposes_selection_repair_not_exact_actor_orders() -> No
         offer.operation_kind for offer in offered_affordances(observation)
     }
 
+    # Narrowing the selection stays available; it is no longer the only thing a
+    # group can do. A selection-broadcast order addresses whoever is selected,
+    # so a pair standing at a resource can work it together rather than being
+    # required to un-pair first.
     assert "select_squad_member_exact" in operation_kinds
-    assert "perform_context_action" not in operation_kinds
+    assert "perform_context_action" in operation_kinds
 
 
 def test_screen_adapter_offers_exact_current_window_dismissal() -> None:

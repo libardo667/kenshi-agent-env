@@ -78,14 +78,17 @@ def test_fingerprint_ignores_sequence_but_tracks_selection() -> None:
     assert first.fingerprint() != changed.fingerprint()
 
 
-def test_enumeration_does_not_consult_authorability() -> None:
-    """The defect the watcher exists to surface.
+def test_selecting_a_second_character_does_not_strand_group_orders() -> None:
+    """The defect the watcher found, now fixed.
 
-    An `exactly_one` operation stays on the menu when a second character is
-    selected, because enumeration and `is_currently_authorable` are separate
-    authorities and the first never asks the second. Confirmed live against a
-    two-character start: harvest_resource, move_in_direction, and
-    perform_context_action were all offered and all refused.
+    Before Slice 1, an `exactly_one` operation stayed on the menu when a second
+    character was selected while its own definition refused it. Confirmed live
+    against a two-character start: harvest_resource, move_in_direction, and
+    perform_context_action were all offered and all unusable, one of them
+    pointed at the iron deposit the pair was standing on.
+
+    A selection-broadcast order is not invalidated by a second character being
+    selected. That is the whole point of broadcasting.
     """
 
     pair = current_menu(observation_from_snapshot(snapshot(selected=[PRIMARY, SECOND])))
@@ -94,27 +97,54 @@ def test_enumeration_does_not_consult_authorability() -> None:
     offered_kinds = {row.operation_kind for row in pair.offers}
 
     assert "move_in_direction" in offered_kinds
-    assert "move_in_direction" in pair.unauthorable_offer_kinds
-    assert "move_in_direction" not in single.unauthorable_offer_kinds
+    assert pair.unauthorable_offer_kinds == ()
+    assert single.unauthorable_offer_kinds == ()
 
 
-def test_payload_carries_the_unauthorable_kinds() -> None:
+def test_menu_never_offers_what_the_registry_would_refuse() -> None:
+    """Enumeration and authorability answer to one owner now.
+
+    The watcher keeps reporting this cross-check because a future adapter can
+    reintroduce the disagreement; the assertion is that it is currently empty,
+    not that the check is unnecessary.
+    """
+
+    for selected in ([PRIMARY], [PRIMARY, SECOND], []):
+        menu = current_menu(observation_from_snapshot(snapshot(selected=selected)))
+        assert menu.unauthorable_offer_kinds == (), (selected, menu.unauthorable_offer_kinds)
+
+
+def test_payload_reports_the_authorability_cross_check() -> None:
     payload = menu_payload(
         current_menu(observation_from_snapshot(snapshot(selected=[PRIMARY, SECOND])))
     )
 
     assert payload["offer_count"] == len(payload["offers"])
-    assert "move_in_direction" in payload["unauthorable_offer_kinds"]
+    assert payload["unauthorable_offer_kinds"] == []
     assert payload["selected_character_ids"] == [PRIMARY, SECOND]
 
 
-def test_render_names_the_unauthorable_offers_with_their_requirement() -> None:
-    body = "\n".join(
-        render_menu(current_menu(observation_from_snapshot(snapshot(selected=[PRIMARY, SECOND]))))
+def test_render_names_unauthorable_offers_by_recipient_scope() -> None:
+    """Rendered only when the cross-check finds something, so build one."""
+
+    menu = AffordanceMenu(
+        telemetry_sequence=1,
+        stale=False,
+        loaded=True,
+        location_id="",
+        primary_character_id=PRIMARY,
+        selected_character_ids=(PRIMARY,),
+        roster_size=1,
+        offers=(),
+        adapters_offering=(),
+        adapters_silent=(),
+        unauthorable_offer_kinds=("move_in_direction",),
     )
 
+    body = "\n".join(render_menu(menu))
+
     assert "OFFERED BUT NOT AUTHORABLE" in body
-    assert "selection_requirement=exactly_one" in body
+    assert "recipient_scope=current_selection" in body
 
 
 def test_empty_menu_states_that_absence_is_ambiguous() -> None:

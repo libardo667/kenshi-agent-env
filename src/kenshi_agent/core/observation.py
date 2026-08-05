@@ -198,9 +198,12 @@ class Observation(StrictModel):
         # Budgeted/replay observations can omit the squad while retaining the
         # primary character's authoritative game location. Preserve the
         # historical single-character interpretation in that case.
-        selected_count = max(
-            1,
-            sum(character.selected for character in self.telemetry.squad),
+        #
+        # One selected character at the destination means everyone travelling is
+        # there. A group can be scattered, so arrival is not proven and travel
+        # stays available.
+        whole_group_present = (
+            max(1, sum(character.selected for character in self.telemetry.squad)) == 1
         )
         return [
             destination.model_dump(mode="json", exclude_none=True)
@@ -212,7 +215,7 @@ class Observation(StrictModel):
                     location_authoritative=(
                         "game.location.identity" in self.telemetry.capabilities
                     ),
-                    selected_count=selected_count,
+                    whole_group_present=whole_group_present,
                 ),
             }
             for destination in sorted(

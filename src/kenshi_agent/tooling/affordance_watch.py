@@ -16,12 +16,12 @@ typed withholding reasons is the separate, larger change that section 9.6 of
 the interaction-scope plan requires; until it lands, an empty menu is a
 question rather than an answer.
 
-What it can do cheaply is catch the opposite and more damaging failure: an
-affordance that is *offered but not authorable*. Enumeration and
-`OperationDefinition.is_currently_authorable` are separate authorities and they
-can disagree, because enumeration never consults it. The planner is then shown
-a choice that cannot bind, and nothing explains the refusal. Cross-checking the
-two costs one predicate call per offered kind and needs no enumerator change.
+It also cross-checks each offered kind against its own definition. Slice 1 made
+`AffordanceAdapter.offers` filter unauthorable offers, so this should always
+come back empty. It is kept as a live assertion rather than deleted: an adapter
+that enumerates through some other path would reintroduce exactly the
+disagreement that put `harvest_resource` on the menu for a pair standing at an
+iron deposit they could not harvest.
 """
 
 from __future__ import annotations
@@ -146,7 +146,7 @@ def current_menu(observation: Observation) -> AffordanceMenu:
     silent: list[str] = []
     rows: list[OfferRow] = []
     for adapter in AFFORDANCE_ADAPTERS:
-        produced = [OfferRow.from_offer(offer) for offer in adapter.enumerate(observation)]
+        produced = [OfferRow.from_offer(offer) for offer in adapter.offers(observation)]
         if produced:
             offering.append(adapter.name)
             rows.extend(produced)
@@ -265,10 +265,10 @@ def render_menu(menu: AffordanceMenu) -> list[str]:
         )
         for kind in menu.unauthorable_offer_kinds:
             definition = OPERATION_DEFINITIONS.get(kind)
-            requirement = (
-                definition.selection_requirement.value if definition is not None else "?"
+            scope = (
+                definition.recipient_scope_for().value if definition is not None else "?"
             )
-            header.append(f"    {kind:<30} selection_requirement={requirement}")
+            header.append(f"    {kind:<30} recipient_scope={scope}")
         header.append("")
     if menu.adapters_silent:
         header.append(f"silent adapters: {', '.join(menu.adapters_silent)}")

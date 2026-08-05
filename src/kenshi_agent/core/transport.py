@@ -117,13 +117,11 @@ class NativeCommandRequest(StrictModel):
             raise ValueError("native command basis requires a telemetry sequence")
         if len(set(self.selected_character_ids)) != len(self.selected_character_ids):
             raise ValueError("native command selection basis contains duplicates")
-        if len(self.selected_character_ids) != 1 and self.command not in {
-            "approach_confirmed_vendor",
-            "move_to_character",
-            "select_squad_member",
-            "travel_to_map_destination",
-        }:
-            raise ValueError("this native command requires exactly one selected character")
+        # Recipient cardinality is not decided here. The operation registry owns
+        # recipient scope, and this schema validates only that a dispatch basis
+        # is internally consistent. A command-name exception set at this edge
+        # was a second selection authority that could disagree with the
+        # definition it was supposed to be enforcing.
         if self.command == "move_in_direction":
             if self.target_id:
                 raise ValueError("a directional walk must not name a target")

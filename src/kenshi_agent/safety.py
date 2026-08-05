@@ -3,6 +3,7 @@ from __future__ import annotations
 from .affordances import OPERATION_BINDING_AUTHORITY, OperationBindingError
 from .config import SafetyConfig
 from .core.authority import AuthorizationCode
+from .core.interaction import RecipientScope
 from .core.observation import Observation
 from .core.operation import (
     Action,
@@ -19,10 +20,7 @@ from .core.operation import (
     WaitAction,
     is_controller_primitive,
 )
-from .operation_definitions import (
-    BoundOperation,
-    SelectionRequirement,
-)
+from .operation_definitions import BoundOperation
 
 
 class SafetyViolation(RuntimeError):
@@ -134,12 +132,13 @@ class OperationPolicy:
                 f"Action {definition.kind!r} lacks required capabilities: " + ", ".join(missing),
                 code=AuthorizationCode.CAPABILITY_UNAVAILABLE,
             )
-        if definition.selection_requirement is SelectionRequirement.EXACTLY_ONE:
+        scope = definition.recipient_scope_for(bound.operation, observation)
+        if scope is RecipientScope.PRIMARY:
             try:
                 self._validate_exact_selection(observation)
             except SafetyViolation as exc:
                 raise SafetyViolation(str(exc), code=AuthorizationCode.SELECTION_INVALID) from exc
-        elif definition.selection_requirement is SelectionRequirement.ONE_OR_MORE:
+        elif scope is RecipientScope.CURRENT_SELECTION:
             try:
                 self._validate_squad_selection(observation)
             except SafetyViolation as exc:

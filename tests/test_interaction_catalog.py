@@ -88,11 +88,11 @@ def test_no_group_scope_behaviour_is_recorded_as_live_proven() -> None:
     assert audit.status_counts()["live_proven"] == 0
 
 
-def test_catalog_renders_both_tables_and_the_native_routes() -> None:
+def test_catalog_renders_the_contract_execution_and_native_routes() -> None:
     lines = render_interaction_catalog(audit_interaction_catalog())
     body = "\n".join(lines)
 
-    assert "REGISTRY-DERIVED" in body
-    assert "PROPOSED CONTRACT AND PROOF" in body
+    assert "INTERACTION CONTRACT (resolved from the sole operation registry)" in body
+    assert "EXECUTION AND ROUTING" in body
     assert "NATIVE COMMAND ROUTES" in body
     assert "coverage proof          PASS" in body

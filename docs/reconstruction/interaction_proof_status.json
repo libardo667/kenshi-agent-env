@@ -1,370 +1,218 @@
 {
   "schema_version": 1,
   "stage": "interaction-scope-and-order-lifecycle",
-  "slice": 0,
+  "slice": 1,
   "authority": "docs/KENSHI_INTERACTION_SCOPE_ORDER_LIFECYCLE_PLAN.md",
   "captured_at_utc": "2026-08-04T00:00:00Z",
   "note": [
-    "Hand-authored. Not an authority over gameplay semantics.",
-    "The proposed_* fields live here only because OperationDefinition has no",
-    "interaction contract yet. Slice 1 moves them into the registry, after",
-    "which this manifest may carry only proof_status, evidence, and note; the",
-    "manifest_restates_registry check in tooling/interaction_catalog.py",
-    "enforces that migration.",
+    "Hand-authored. Not an authority over gameplay semantics, and no longer a",
+    "home for the interaction contract: Slice 1 moved that into",
+    "OperationDefinition, where it has exactly one owner. This file now records",
+    "only how well each operation's declared contract is actually evidenced.",
     "proof_status meanings: source_proven = follows from readable source;",
     "unit_proven = a deterministic test pins it; live_proven = a named run",
-    "bundle shows it; unproven = proposed, no proof yet; withheld = should not",
+    "bundle shows it; unproven = declared, no proof yet; withheld = should not",
     "be offered until proven.",
-    "No group-scope behavior is live_proven anywhere in this repository. Every",
+    "No group-scope behaviour is live_proven anywhere in this repository. Every",
     "context-menu witness in game_sources/kenshi/context_menu_witnesses.json",
     "was captured with exactly one character selected, so multi-recipient",
-    "semantics are proposals throughout."
+    "semantics remain declared rather than demonstrated."
   ],
   "entries": [
     {
       "operation_kind": "noop",
-      "proposed_interaction_kind": "runtime_only",
-      "proposed_recipient_scope": "none",
-      "proposed_selection_dependency": "none",
-      "proposed_completion_milestone": "input_delivered",
-      "proposed_conflict_policy": "not_applicable",
-      "proposed_playback_requirement": "any",
       "proof_status": "source_proven",
-      "evidence": ["operation_definitions.py NOOP_DEFINITION emits no world command"],
+      "evidence": [
+        "operation_definitions.py NOOP_DEFINITION emits no world command"
+      ],
       "note": "No Kenshi input and no recipient."
     },
     {
       "operation_kind": "stop",
-      "proposed_interaction_kind": "runtime_only",
-      "proposed_recipient_scope": "none",
-      "proposed_selection_dependency": "none",
-      "proposed_completion_milestone": "input_delivered",
-      "proposed_conflict_policy": "not_applicable",
-      "proposed_playback_requirement": "any",
       "proof_status": "source_proven",
-      "evidence": ["operation_definitions.py STOP_DEFINITION ends the run, touches no character"],
+      "evidence": [
+        "operation_definitions.py STOP_DEFINITION ends the run, touches no character"
+      ],
       "note": "Run control, not a game order."
     },
     {
       "operation_kind": "wait",
-      "proposed_interaction_kind": "runtime_only",
-      "proposed_recipient_scope": "none",
-      "proposed_selection_dependency": "none",
-      "proposed_completion_milestone": "input_delivered",
-      "proposed_conflict_policy": "not_applicable",
-      "proposed_playback_requirement": "running_for_progress",
       "proof_status": "source_proven",
-      "evidence": ["operation_definitions.py WAIT_DEFINITION is internal-only run control"],
+      "evidence": [
+        "operation_definitions.py WAIT_DEFINITION is internal-only run control"
+      ],
       "note": "Waiting is only meaningful while the world runs; the playback requirement is the honest declaration of that, not a licence to toggle pause."
     },
     {
       "operation_kind": "consult_advisor",
-      "proposed_interaction_kind": "runtime_only",
-      "proposed_recipient_scope": "none",
-      "proposed_selection_dependency": "none",
-      "proposed_completion_milestone": "input_delivered",
-      "proposed_conflict_policy": "not_applicable",
-      "proposed_playback_requirement": "any",
       "proof_status": "source_proven",
-      "evidence": ["cognition.advisor handler performs no Kenshi input"],
+      "evidence": [
+        "cognition.advisor handler performs no Kenshi input"
+      ],
       "note": "Read-only strategic call."
     },
     {
       "operation_kind": "recall_memory",
-      "proposed_interaction_kind": "runtime_only",
-      "proposed_recipient_scope": "none",
-      "proposed_selection_dependency": "none",
-      "proposed_completion_milestone": "input_delivered",
-      "proposed_conflict_policy": "not_applicable",
-      "proposed_playback_requirement": "any",
       "proof_status": "source_proven",
-      "evidence": ["cognition.memory handler performs no Kenshi input"],
+      "evidence": [
+        "cognition.memory handler performs no Kenshi input"
+      ],
       "note": "Continuity read."
     },
     {
       "operation_kind": "read_fieldbook",
-      "proposed_interaction_kind": "runtime_only",
-      "proposed_recipient_scope": "none",
-      "proposed_selection_dependency": "none",
-      "proposed_completion_milestone": "input_delivered",
-      "proposed_conflict_policy": "not_applicable",
-      "proposed_playback_requirement": "any",
       "proof_status": "source_proven",
-      "evidence": ["cognition.fieldbook handler performs no Kenshi input"],
+      "evidence": [
+        "cognition.fieldbook handler performs no Kenshi input"
+      ],
       "note": "Continuity read."
     },
     {
       "operation_kind": "pause",
-      "proposed_interaction_kind": "global_ui",
-      "proposed_recipient_scope": "none",
-      "proposed_selection_dependency": "none",
-      "proposed_completion_milestone": "world_outcome_observed",
-      "proposed_conflict_policy": "not_applicable",
-      "proposed_playback_requirement": "any",
       "proof_status": "source_proven",
-      "evidence": ["operation_definitions.py PAUSE_DEFINITION is internal-only"],
+      "evidence": [
+        "operation_definitions.py PAUSE_DEFINITION is internal-only"
+      ],
       "note": "Slice 7 moves ordinary in-run pause behind the playback coordinator; FinalSafeStateOwner keeps the terminal pause decision. Its milestone is a real observed world state, not delivery."
     },
     {
       "operation_kind": "set_speed",
-      "proposed_interaction_kind": "global_ui",
-      "proposed_recipient_scope": "none",
-      "proposed_selection_dependency": "none",
-      "proposed_completion_milestone": "world_outcome_observed",
-      "proposed_conflict_policy": "not_applicable",
-      "proposed_playback_requirement": "any",
       "proof_status": "source_proven",
-      "evidence": ["operation_definitions.py SET_SPEED_DEFINITION is internal-only"],
+      "evidence": [
+        "operation_definitions.py SET_SPEED_DEFINITION is internal-only"
+      ],
       "note": "Global playback affects every character and every retained order. Slice 7 owner."
     },
     {
       "operation_kind": "rotate_camera",
-      "proposed_interaction_kind": "global_ui",
-      "proposed_recipient_scope": "none",
-      "proposed_selection_dependency": "none",
-      "proposed_completion_milestone": "input_delivered",
-      "proposed_conflict_policy": "not_applicable",
-      "proposed_playback_requirement": "any",
       "proof_status": "source_proven",
-      "evidence": ["camera.rotate_camera handler drives the view, never a character"],
+      "evidence": [
+        "camera.rotate_camera handler drives the view, never a character"
+      ],
       "note": "View state only."
     },
     {
       "operation_kind": "recover_camera_view",
-      "proposed_interaction_kind": "global_ui",
-      "proposed_recipient_scope": "none",
-      "proposed_selection_dependency": "none",
-      "proposed_completion_milestone": "world_outcome_observed",
-      "proposed_conflict_policy": "not_applicable",
-      "proposed_playback_requirement": "any",
       "proof_status": "source_proven",
-      "evidence": ["camera.recover_camera_view handler drives the view, never a character"],
+      "evidence": [
+        "camera.recover_camera_view handler drives the view, never a character"
+      ],
       "note": "Recovery is verified against observed camera state, hence the outcome milestone."
     },
     {
       "operation_kind": "open_screen",
-      "proposed_interaction_kind": "global_ui",
-      "proposed_recipient_scope": "none",
-      "proposed_selection_dependency": "ui_transaction",
-      "proposed_completion_milestone": "world_outcome_observed",
-      "proposed_conflict_policy": "not_applicable",
-      "proposed_playback_requirement": "paused_transaction",
       "proof_status": "unproven",
       "evidence": [],
       "note": "Screen opening is global today. Whether any specific screen is primary-scoped rather than global is exactly the question section 10.1 leaves open; no screen has been proven primary-owned."
     },
     {
       "operation_kind": "dismiss_screen",
-      "proposed_interaction_kind": "global_ui",
-      "proposed_recipient_scope": "none",
-      "proposed_selection_dependency": "ui_transaction",
-      "proposed_completion_milestone": "world_outcome_observed",
-      "proposed_conflict_policy": "not_applicable",
-      "proposed_playback_requirement": "paused_transaction",
       "proof_status": "unproven",
       "evidence": [],
       "note": "Same open question as open_screen."
     },
     {
       "operation_kind": "scroll_screen",
-      "proposed_interaction_kind": "global_ui",
-      "proposed_recipient_scope": "none",
-      "proposed_selection_dependency": "ui_transaction",
-      "proposed_completion_milestone": "input_delivered",
-      "proposed_conflict_policy": "not_applicable",
-      "proposed_playback_requirement": "paused_transaction",
       "proof_status": "unproven",
       "evidence": [],
       "note": "Scrolling within an owned window."
     },
     {
       "operation_kind": "select_squad_member",
-      "proposed_interaction_kind": "selection_mutation",
-      "proposed_recipient_scope": "explicit_recipients",
-      "proposed_selection_dependency": "none",
-      "proposed_completion_milestone": "world_outcome_observed",
-      "proposed_conflict_policy": "not_applicable",
-      "proposed_playback_requirement": "any",
       "proof_status": "source_proven",
-      "evidence": ["operation_definitions.py SELECT_SQUAD_MEMBER_DEFINITION changes selection; it issues no order to the prior selection"],
+      "evidence": [
+        "operation_definitions.py SELECT_SQUAD_MEMBER_DEFINITION changes selection; it issues no order to the prior selection"
+      ],
       "note": "Changing who is selected is not commanding whoever was selected. Its terminal is the observed selection state."
     },
     {
       "operation_kind": "select_squad_member_exact",
-      "proposed_interaction_kind": "selection_mutation",
-      "proposed_recipient_scope": "explicit_recipients",
-      "proposed_selection_dependency": "none",
-      "proposed_completion_milestone": "world_outcome_observed",
-      "proposed_conflict_policy": "not_applicable",
-      "proposed_playback_requirement": "any",
       "proof_status": "source_proven",
-      "evidence": ["operation_definitions.py SELECT_SQUAD_MEMBER_EXACT_DEFINITION targets named character identity"],
-      "note": "Its current one_or_more selection requirement describes the precondition, not the recipients; the recipients are the named characters."
+      "evidence": [
+        "operation_definitions.py SELECT_SQUAD_MEMBER_EXACT_DEFINITION targets named character identity"
+      ],
+      "note": "Changing who is selected is not commanding whoever was selected. Its recipients are the characters the action names, and its terminal is the observed selection state."
     },
     {
       "operation_kind": "equip_item",
-      "proposed_interaction_kind": "global_ui",
-      "proposed_recipient_scope": "explicit_recipients",
-      "proposed_selection_dependency": "ui_transaction",
-      "proposed_completion_milestone": "world_outcome_observed",
-      "proposed_conflict_policy": "not_applicable",
-      "proposed_playback_requirement": "paused_transaction",
       "proof_status": "unproven",
       "evidence": [],
       "note": "The inventory window belongs to one character. Whether that character is Kenshi's primary or the first selected roster member is the section 13.7 proof; today affordances.py resolves it by roster iteration, which is the defect."
     },
     {
       "operation_kind": "purchase_item",
-      "proposed_interaction_kind": "global_ui",
-      "proposed_recipient_scope": "explicit_recipients",
-      "proposed_selection_dependency": "ui_transaction",
-      "proposed_completion_milestone": "world_outcome_observed",
-      "proposed_conflict_policy": "not_applicable",
-      "proposed_playback_requirement": "paused_transaction",
       "proof_status": "unproven",
       "evidence": [],
       "note": "Bounded trade transaction against one owned window pair. Recipient resolution shares the section 13.7 proof."
     },
     {
       "operation_kind": "sell_item",
-      "proposed_interaction_kind": "global_ui",
-      "proposed_recipient_scope": "explicit_recipients",
-      "proposed_selection_dependency": "ui_transaction",
-      "proposed_completion_milestone": "world_outcome_observed",
-      "proposed_conflict_policy": "not_applicable",
-      "proposed_playback_requirement": "paused_transaction",
       "proof_status": "unproven",
       "evidence": [],
       "note": "Same window ownership and recipient question as purchase_item."
     },
     {
       "operation_kind": "open_context_inventory",
-      "proposed_interaction_kind": "global_ui",
-      "proposed_recipient_scope": "explicit_recipients",
-      "proposed_selection_dependency": "ui_transaction",
-      "proposed_completion_milestone": "world_outcome_observed",
-      "proposed_conflict_policy": "not_applicable",
-      "proposed_playback_requirement": "paused_transaction",
       "proof_status": "unproven",
       "evidence": [],
       "note": "Internal harvest phase. Opens the container window for one exact actor."
     },
     {
       "operation_kind": "collect_resource_output",
-      "proposed_interaction_kind": "global_ui",
-      "proposed_recipient_scope": "explicit_recipients",
-      "proposed_selection_dependency": "ui_transaction",
-      "proposed_completion_milestone": "world_outcome_observed",
-      "proposed_conflict_policy": "not_applicable",
-      "proposed_playback_requirement": "paused_transaction",
       "proof_status": "unproven",
       "evidence": [],
       "note": "Internal harvest phase. One explicit collection recipient; section 10.5 requires that this phase stop imposing singleton selection on the whole composite."
     },
     {
       "operation_kind": "move_to_character",
-      "proposed_interaction_kind": "ordinary_order",
-      "proposed_recipient_scope": "current_selection",
-      "proposed_selection_dependency": "dispatch_only",
-      "proposed_completion_milestone": "world_outcome_observed",
-      "proposed_conflict_policy": "supersede_owned_order",
-      "proposed_playback_requirement": "running_for_progress",
       "proof_status": "unproven",
       "evidence": [],
-      "note": "Already one_or_more today, but group arrival semantics and per-recipient aggregation are unproven. Section 13.1 is its proof."
+      "note": "Group arrival semantics and per-recipient aggregation are unproven. Section 13.1 is its proof."
     },
     {
       "operation_kind": "move_in_direction",
-      "proposed_interaction_kind": "ordinary_order",
-      "proposed_recipient_scope": "current_selection",
-      "proposed_selection_dependency": "dispatch_only",
-      "proposed_completion_milestone": "world_outcome_observed",
-      "proposed_conflict_policy": "supersede_owned_order",
-      "proposed_playback_requirement": "running_for_progress",
       "proof_status": "unproven",
       "evidence": [],
-      "note": "Currently exactly_one. Directional walk broadcasts naturally in Kenshi, but that has not been proven here."
+      "note": "A directional walk plausibly broadcasts to the whole selection in Kenshi, but that has not been proven here. Before Slice 1 its cardinality gate made it unauthorable whenever a pair was selected, while still appearing on the planner's menu."
     },
     {
       "operation_kind": "travel_to_map_destination",
-      "proposed_interaction_kind": "ordinary_order",
-      "proposed_recipient_scope": "current_selection",
-      "proposed_selection_dependency": "dispatch_only",
-      "proposed_completion_milestone": "world_outcome_observed",
-      "proposed_conflict_policy": "supersede_owned_order",
-      "proposed_playback_requirement": "running_for_progress",
       "proof_status": "unproven",
       "evidence": [],
       "note": "Issues a delayed interior-leg continuation through newPlayerTaskSelectedCharacters, so it is the clearest case for the captured dispatch basis and the ScopedOrderDispatcher. Section 13.3 is its proof."
     },
     {
       "operation_kind": "regroup_with_squad_member",
-      "proposed_interaction_kind": "ordinary_order",
-      "proposed_recipient_scope": "explicit_recipients",
-      "proposed_selection_dependency": "dispatch_only",
-      "proposed_completion_milestone": "world_outcome_observed",
-      "proposed_conflict_policy": "supersede_owned_order",
-      "proposed_playback_requirement": "running_for_progress",
       "proof_status": "unproven",
       "evidence": [],
       "note": "The action already carries actor_id, so it names its recipient rather than inheriting the selection. Converting it is Slice 5 work."
     },
     {
       "operation_kind": "exit_current_building",
-      "proposed_interaction_kind": "ordinary_order",
-      "proposed_recipient_scope": "current_selection",
-      "proposed_selection_dependency": "dispatch_only",
-      "proposed_completion_milestone": "world_outcome_observed",
-      "proposed_conflict_policy": "supersede_owned_order",
-      "proposed_playback_requirement": "running_for_progress",
       "proof_status": "unproven",
       "evidence": [],
       "note": "Mixed-building group behavior is unknown: recipients inside different buildings, or some already outside, have never been observed."
     },
     {
       "operation_kind": "respond_to_immediate_threat",
-      "proposed_interaction_kind": "ordinary_order",
-      "proposed_recipient_scope": "explicit_recipients",
-      "proposed_selection_dependency": "dispatch_only",
-      "proposed_completion_milestone": "order_accepted",
-      "proposed_conflict_policy": "supersede_owned_order",
-      "proposed_playback_requirement": "running_for_progress",
       "proof_status": "unproven",
       "evidence": [],
       "note": "Explicit actor. Whether engage/withdraw broadcasts to a group is proof-required and must not be inherited from current selection."
     },
     {
       "operation_kind": "approach_dialogue_target",
-      "proposed_interaction_kind": "ordinary_order",
-      "proposed_recipient_scope": "current_selection",
-      "proposed_selection_dependency": "dispatch_only",
-      "proposed_completion_milestone": "world_outcome_observed",
-      "proposed_conflict_policy": "supersede_owned_order",
-      "proposed_playback_requirement": "running_for_progress",
       "proof_status": "unproven",
       "evidence": [],
       "note": "Movement is plausibly group-scoped while the dialogue outcome belongs to one participant. Which character becomes that participant is unproven; section 13.9 is its proof. Its wire command is still named approach_confirmed_vendor."
     },
     {
       "operation_kind": "command_world_target",
-      "proposed_interaction_kind": "ordinary_order",
-      "proposed_recipient_scope": "current_selection",
-      "proposed_selection_dependency": "dispatch_only",
-      "proposed_completion_milestone": "order_accepted",
-      "proposed_conflict_policy": "supersede_owned_order",
-      "proposed_playback_requirement": "running_for_progress",
       "proof_status": "unproven",
       "evidence": [],
       "note": "Generic world-target order. Its contract may need to resolve per semantic rather than once for the operation."
     },
     {
       "operation_kind": "perform_context_action",
-      "proposed_interaction_kind": "ordinary_order",
-      "proposed_recipient_scope": "current_selection",
-      "proposed_selection_dependency": "dispatch_only",
-      "proposed_completion_milestone": "order_accepted",
-      "proposed_conflict_policy": "supersede_owned_order",
-      "proposed_playback_requirement": "running_for_progress",
       "proof_status": "unproven",
       "evidence": [],
       "note": "Section 4.7 requires this operation to resolve its contract dynamically per context semantic; the base row is the fallback, not a universal answer."
@@ -372,62 +220,36 @@
     {
       "operation_kind": "perform_context_action",
       "subcase": "operate",
-      "proposed_interaction_kind": "ordinary_order",
-      "proposed_recipient_scope": "current_selection",
-      "proposed_selection_dependency": "dispatch_only",
-      "proposed_completion_milestone": "activity_running",
-      "proposed_conflict_policy": "supersede_owned_order",
-      "proposed_playback_requirement": "running_for_progress",
       "proof_status": "unproven",
       "evidence": [],
       "note": "The only witnessed context action. All four operate witnesses in context_menu_witnesses.json had exactly one character selected, so group operate behavior and resource operator capacity are unobserved."
     },
     {
       "operation_kind": "produce_resource_output",
-      "proposed_interaction_kind": "ordinary_order",
-      "proposed_recipient_scope": "current_selection",
-      "proposed_selection_dependency": "dispatch_only",
-      "proposed_completion_milestone": "world_outcome_observed",
-      "proposed_conflict_policy": "supersede_owned_order",
-      "proposed_playback_requirement": "running_for_progress",
       "proof_status": "unproven",
       "evidence": [],
       "note": "Holds an ordinary order until output exists. Its release path calls removeJob/clearOrders/halt on a claimed-owned queue; that ownership claim is unproven and is the section 13.6 obligation."
     },
     {
       "operation_kind": "harvest_resource",
-      "proposed_interaction_kind": "ordinary_order",
-      "proposed_recipient_scope": "current_selection",
-      "proposed_selection_dependency": "dispatch_only",
-      "proposed_completion_milestone": "world_outcome_observed",
-      "proposed_conflict_policy": "supersede_owned_order",
-      "proposed_playback_requirement": "running_for_progress",
       "proof_status": "unproven",
       "evidence": [],
-      "note": "One planner-visible intent whose phases have different scopes. Its current exactly_one authorability comes from the late collection phase and blocks multi-character starts entirely; section 19.4 of the reconstruction plan recorded this and section 10.5 is the fix. Phase descriptors carry the real per-phase contracts."
+      "note": "One planner-visible intent whose phases have different scopes. Its contract declares current_selection, but harvest_resource_is_currently_authorable still hard-requires a singleton selection - a gate that belongs to the late inventory-transfer phase, not to travelling or mining. Slice 1 stopped the menu offering it to a group it would refuse; it did not make a group able to harvest. Section 10.5 and Slice 6 own phase-scoped descriptors and the actual capability."
     },
     {
       "operation_kind": "activate_visible_control",
-      "proposed_interaction_kind": "global_ui",
-      "proposed_recipient_scope": "none",
-      "proposed_selection_dependency": "ui_transaction",
-      "proposed_completion_milestone": "input_delivered",
-      "proposed_conflict_policy": "not_applicable",
-      "proposed_playback_requirement": "paused_transaction",
       "proof_status": "withheld",
-      "evidence": ["docs/generated/OPERATION_DEFINITIONS.md visible_controls boundary: activation proves delivery and a later observation, not the gameplay meaning of the result"],
+      "evidence": [
+        "docs/generated/OPERATION_DEFINITIONS.md visible_controls boundary: activation proves delivery and a later observation, not the gameplay meaning of the result"
+      ],
       "note": "Section 10.4 forbids this remaining a universal gameplay escape hatch. It has no semantic contract because its effect boundary is deliberately generic; Slice 7 either narrows it to bounded UI delivery or removes the offer. Prospect is the concrete case that must not be activated through it."
     },
     {
       "operation_kind": "use_game_binding",
-      "proposed_interaction_kind": "global_ui",
-      "proposed_recipient_scope": "none",
-      "proposed_selection_dependency": "ui_transaction",
-      "proposed_completion_milestone": "input_delivered",
-      "proposed_conflict_policy": "not_applicable",
-      "proposed_playback_requirement": "any",
       "proof_status": "withheld",
-      "evidence": ["docs/generated/GAME_BINDING_PARITY.md distinguishes witnessed from unwitnessed bindings"],
+      "evidence": [
+        "docs/generated/GAME_BINDING_PARITY.md distinguishes witnessed from unwitnessed bindings"
+      ],
       "note": "Cannot have one universal contract merely because every case shares an input mechanism. Select All is the concrete case: it is currently offered by collecting the whole roster, and section 10.3 requires withholding it until live proof establishes whether the binding is active-platoon scoped."
     }
   ]

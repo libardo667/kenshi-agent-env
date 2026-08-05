@@ -18,6 +18,17 @@ from typing import Literal, TypeAlias, TypeVar
 from pydantic import BaseModel
 
 from .core.affordance import BoundAffordance
+from .core.interaction import (
+    CompletionMilestone,
+    OperationInteractionContract,
+    PlaybackRequirement,
+    RecipientScope,
+    SelectionDependency,
+    global_ui,
+    ordinary_order,
+    runtime_only,
+    selection_mutation,
+)
 from .core.observation import Observation
 from .core.operation import (
     GAME_BINDING_KEYS,
@@ -134,14 +145,6 @@ class OperationExecution(StrEnum):
     COMPOSITE_OPTION = "composite_option"
 
 
-class SelectionRequirement(StrEnum):
-    """How much current squad selection an action may safely own."""
-
-    NONE = "none"
-    EXACTLY_ONE = "exactly_one"
-    ONE_OR_MORE = "one_or_more"
-
-
 class TerminalOwner(StrEnum):
     """Who turns one dispatched intention into a terminal result."""
 
@@ -164,6 +167,10 @@ CompletionConditionFactory = Callable[
     tuple[Condition, ...] | None,
 ]
 TerminalFactory = Callable[[Action, Observation, bool], OperationTerminal | None]
+InteractionContractFactory = Callable[
+    [Action, Observation | None],
+    OperationInteractionContract,
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -578,6 +585,35 @@ def bind_move_to_character(
         ),
         target_id=target.id,
         source_revision=observation.world_revision,
+    )
+
+
+def resolve_context_action_interaction(
+    action: Action,
+    observation: Observation | None = None,
+) -> OperationInteractionContract:
+    """Resolve the contract for one exact context semantic.
+
+    `perform_context_action` cannot have a single contract. Every case is an
+    ordinary order broadcast to the current selection, but what counts as
+    success differs by semantic: `operate` succeeds when Kenshi is running the
+    machine, while an unclassified order can only honestly claim that Kenshi
+    accepted it. Collapsing those into one milestone would let acceptance be
+    reported as achievement.
+
+    New semantics stay at `ORDER_ACCEPTED` until evidence proves a stronger
+    milestone for them specifically.
+    """
+
+    semantic = getattr(action, "context_action", None)
+    milestone = (
+        CompletionMilestone.ACTIVITY_RUNNING
+        if semantic == ContextActionKind.OPERATE
+        else CompletionMilestone.ORDER_ACCEPTED
+    )
+    return ordinary_order(
+        recipients=RecipientScope.CURRENT_SELECTION,
+        milestone=milestone,
     )
 
 
@@ -1225,7 +1261,7 @@ def bind_travel_to_map_destination(
         current_location_id=telemetry.game.location_id,
         inside_town_walls=telemetry.game.inside_town_walls,
         location_authoritative=location_authoritative,
-        selected_count=len(selected),
+        whole_group_present=len(selected) == 1,
     ):
         boundary = (
             "already inside" if telemetry.game.inside_town_walls is True else "already within"
@@ -1240,7 +1276,7 @@ def bind_travel_to_map_destination(
         current_location_id=telemetry.game.location_id,
         inside_town_walls=telemetry.game.inside_town_walls,
         location_authoritative=location_authoritative,
-        selected_count=len(selected),
+        whole_group_present=len(selected) == 1,
     ):
         return _unbound(
             f"Destination {destination.name!r} ({destination.id}) is already local "
@@ -1275,7 +1311,7 @@ def map_travel_is_currently_authorable(observation: Observation) -> bool:
                 current_location_id=telemetry.game.location_id,
                 inside_town_walls=telemetry.game.inside_town_walls,
                 location_authoritative=location_authoritative,
-                selected_count=len(selected),
+                whole_group_present=len(selected) == 1,
             )
             for destination in telemetry.known_map_destinations
         )
@@ -2310,10 +2346,21 @@ class OperationDefinition:
     handler_key: str = ""
     emits_world_command: bool = True
     requires_fresh_telemetry: bool = True
-    # Selection cardinality is action-specific. Most character operations own
-    # one exact actor, while selection collapse and ordinary group travel bind
-    # the complete current selected set.
-    selection_requirement: SelectionRequirement = SelectionRequirement.NONE
+    # How this operation addresses Kenshi. Exactly one of these is populated:
+    # a static contract, or a resolver for operations whose scope depends on
+    # the exact action - `perform_context_action` needs different contracts for
+    # different context semantics, so one contract per operation kind would be
+    # a lie. The resolver receives an optional observation because authorability
+    # is asked before any action exists.
+    interaction: OperationInteractionContract | None = None
+    resolve_interaction: InteractionContractFactory | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    # A resolver's invariant recipient scope, declared once so authorability can
+    # be answered before an action exists. Only meaningful with a resolver.
+    _dynamic_recipient_scope: RecipientScope = RecipientScope.NONE
     derive_risk: RiskFactory | None = field(
         default=None,
         repr=False,
@@ -2361,6 +2408,51 @@ class OperationDefinition:
     def __post_init__(self) -> None:
         if not self.handler_key:
             raise ValueError(f"Operation {self.kind!r} must declare one handler key.")
+        if (self.interaction is None) == (self.resolve_interaction is None):
+            raise ValueError(
+                f"Operation {self.kind!r} must declare exactly one of a static "
+                "interaction contract or a contract resolver."
+            )
+
+    def interaction_for(
+        self,
+        action: Action | None = None,
+        observation: Observation | None = None,
+    ) -> OperationInteractionContract:
+        """Resolve this operation's sole interaction contract.
+
+        The registry is the only place recipient scope is decided. Transport
+        validation and native parsing consume the resolved contract; they never
+        keep their own command-name exception lists.
+        """
+
+        if self.interaction is not None:
+            return self.interaction
+        if self.resolve_interaction is None:  # pragma: no cover - __post_init__ forbids
+            raise RuntimeError(f"Operation {self.kind!r} resolves no interaction contract.")
+        if action is None:
+            raise ValueError(
+                f"Operation {self.kind!r} resolves its interaction contract from the "
+                "exact action, which was not supplied."
+            )
+        return self.resolve_interaction(action, observation)
+
+    def recipient_scope_for(
+        self,
+        action: Action | None = None,
+        observation: Observation | None = None,
+    ) -> RecipientScope:
+        """The scope this operation addresses, for authorability and dispatch."""
+
+        if self.interaction is not None:
+            return self.interaction.recipient_scope
+        if action is None:
+            # A dynamic contract cannot be resolved without its action. Every
+            # current resolver keeps recipient scope fixed across its subcases
+            # and varies only the milestone, so the shared scope is exact rather
+            # than a guess; a resolver that varies scope must declare it here.
+            return self._dynamic_recipient_scope
+        return self.interaction_for(action, observation).recipient_scope
 
     def risk_for(self, action: Action) -> OperationRisk:
         """Resolve risk from this exact action without weakening the ceiling."""
@@ -2432,20 +2524,49 @@ class OperationDefinition:
         )
 
     def is_currently_authorable(self, observation: Observation | None) -> bool:
+        """Whether this operation could be dispatched against this observation.
+
+        Affordance enumeration consults this, so the planner is never offered a
+        choice its own definition would refuse. Before Slice 1 these were two
+        authorities that disagreed: a live two-character start offered
+        `harvest_resource` on an iron deposit that could not be harvested,
+        because enumeration never asked.
+        """
+
         if observation is None:
             return True
-        telemetry = observation.telemetry
-        if self.selection_requirement is not SelectionRequirement.NONE:
-            if telemetry is None or observation.telemetry_stale:
-                return False
-            selected_ids = telemetry.ui.selected_character_ids
-            primary_id = telemetry.ui.selected_character_id
-            if self.selection_requirement is SelectionRequirement.EXACTLY_ONE:
-                if len(selected_ids) != 1 or primary_id != selected_ids[0]:
-                    return False
-            elif not selected_ids or primary_id not in selected_ids:
-                return False
+        if not self.satisfies_recipient_scope(observation):
+            return False
         return self.authorable_when is None or self.authorable_when(observation)
+
+    def satisfies_recipient_scope(
+        self,
+        observation: Observation,
+        action: Action | None = None,
+    ) -> bool:
+        """Whether the current selection can supply this contract's recipients.
+
+        `CURRENT_SELECTION` needs at least one selected character and a primary
+        within that set. `PRIMARY` needs an exported primary. Crucially, neither
+        demands a singleton: an order that broadcasts to the selection is not
+        made invalid by a second character being selected.
+        """
+
+        scope = self.recipient_scope_for(action, observation)
+        if scope is RecipientScope.NONE:
+            return True
+        telemetry = observation.telemetry
+        if telemetry is None or observation.telemetry_stale:
+            return False
+        selected_ids = telemetry.ui.selected_character_ids
+        primary_id = telemetry.ui.selected_character_id
+        if scope is RecipientScope.PRIMARY:
+            return bool(primary_id) and primary_id in selected_ids
+        if scope is RecipientScope.CURRENT_SELECTION:
+            return bool(selected_ids) and primary_id in selected_ids
+        # EXPLICIT_RECIPIENTS names its own characters through the typed action
+        # or binding, so it needs a roster rather than a particular selection.
+        return bool(telemetry.squad)
 
 
 @dataclass(frozen=True, slots=True)
@@ -2728,6 +2849,8 @@ def _runtime_cognitive_definition(
     return OperationDefinition(
         kind=kind,
         version="1.0",
+        # Cognition and run control reach no part of Kenshi and command nobody.
+        interaction=runtime_only(),
         operation_type=operation_type,
         summary=summary,
         argument_source=argument_source,
@@ -2796,12 +2919,14 @@ def _runtime_control_definition(
     operation_type: type[BaseModel],
     summary: str,
     handler_key: str,
+    interaction: OperationInteractionContract,
     execution: OperationExecution = OperationExecution.ATOMIC_HANDLER,
     pointer_class: PointerActionClass = PointerActionClass.COORDINATE_INDEPENDENT,
 ) -> OperationDefinition:
     return OperationDefinition(
         kind=kind,
         version="1.0",
+        interaction=interaction,
         operation_type=operation_type,
         summary=summary,
         argument_source="Runtime-internal control authority.",
@@ -2828,22 +2953,32 @@ PAUSE_DEFINITION = _runtime_control_definition(
     operation_type=PauseAction,
     summary="Request one exact paused or running playback state.",
     handler_key="runtime.pause",
+    # Playback is game-wide: it suspends every character and every retained
+    # order at once. Its terminal is the observed world state, not delivery.
+    interaction=global_ui(milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED),
 )
 SET_SPEED_DEFINITION = _runtime_control_definition(
     kind="set_speed",
     operation_type=SetSpeedAction,
     summary="Request one exact Kenshi playback gear.",
     handler_key="runtime.set_speed",
+    interaction=global_ui(milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED),
 )
 WAIT_DEFINITION = _runtime_control_definition(
     kind="wait",
     operation_type=WaitAction,
     summary="Observe for one bounded interval without sending input.",
     handler_key="runtime.wait",
+    # Waiting sends nothing, but it is only meaningful while the world runs.
+    interaction=runtime_only(playback=PlaybackRequirement.RUNNING_FOR_PROGRESS),
 )
 APPROACH_DIALOGUE_TARGET_DEFINITION = OperationDefinition(
     kind="approach_dialogue_target",
     version="1.0",
+    interaction=ordinary_order(
+        recipients=RecipientScope.CURRENT_SELECTION,
+        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
+    ),
     operation_type=ApproachDialogueTargetAction,
     summary=(
         "Issue Kenshi's native talk-to order for the complete current selection "
@@ -2865,7 +3000,6 @@ APPROACH_DIALOGUE_TARGET_DEFINITION = OperationDefinition(
     capability_aliases=NATIVE_APPROACH_CAPABILITY_ALIASES,
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
-    selection_requirement=SelectionRequirement.ONE_OR_MORE,
     risk=OperationRisk(native_assisted_actions=1),
     max_primitive_actions=4,
     reference_fields=("target_id",),
@@ -2880,6 +3014,10 @@ APPROACH_DIALOGUE_TARGET_DEFINITION = OperationDefinition(
 COMMAND_WORLD_TARGET_DEFINITION = OperationDefinition(
     kind="command_world_target",
     version="1.0",
+    interaction=ordinary_order(
+        recipients=RecipientScope.CURRENT_SELECTION,
+        milestone=CompletionMilestone.ORDER_ACCEPTED,
+    ),
     operation_type=CommandWorldTargetAction,
     summary=(
         "Issue Kenshi's Mouse2 command to one exact current world target at a "
@@ -2900,7 +3038,6 @@ COMMAND_WORLD_TARGET_DEFINITION = OperationDefinition(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.SEMANTIC_CURRENT,
     native_assisted=True,
-    selection_requirement=SelectionRequirement.EXACTLY_ONE,
     risk=OperationRisk(pointer_actions=1),
     max_primitive_actions=1,
     reference_fields=("target_id", "context_action"),
@@ -2916,6 +3053,7 @@ COMMAND_WORLD_TARGET_DEFINITION = OperationDefinition(
 SELECT_SQUAD_MEMBER_DEFINITION = OperationDefinition(
     kind="select_squad_member",
     version="1.0",
+    interaction=selection_mutation(),
     operation_type=SelectSquadMemberAction,
     summary=(
         "Select one exact current squad member with Kenshi's Mouse1 binding at "
@@ -2952,6 +3090,7 @@ SELECT_SQUAD_MEMBER_DEFINITION = OperationDefinition(
 SELECT_SQUAD_MEMBER_EXACT_DEFINITION = OperationDefinition(
     kind="select_squad_member_exact",
     version="1.0",
+    interaction=selection_mutation(),
     operation_type=SelectSquadMemberExactAction,
     summary=(
         "Select one exact current squad member by stable native identity and "
@@ -2969,7 +3108,6 @@ SELECT_SQUAD_MEMBER_EXACT_DEFINITION = OperationDefinition(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
-    selection_requirement=SelectionRequirement.ONE_OR_MORE,
     risk=OperationRisk(native_assisted_actions=1),
     max_primitive_actions=1,
     reference_fields=("target_id",),
@@ -2988,6 +3126,7 @@ SELECT_SQUAD_MEMBER_EXACT_DEFINITION = OperationDefinition(
 ROTATE_CAMERA_DEFINITION = OperationDefinition(
     kind="rotate_camera",
     version="1.0",
+    interaction=global_ui(),
     operation_type=RotateCameraAction,
     summary=(
         "Rotate the current world camera one bounded horizontal increment through "
@@ -3014,6 +3153,8 @@ ROTATE_CAMERA_DEFINITION = OperationDefinition(
 PERFORM_CONTEXT_ACTION_DEFINITION = OperationDefinition(
     kind="perform_context_action",
     version="1.0",
+    resolve_interaction=resolve_context_action_interaction,
+    _dynamic_recipient_scope=RecipientScope.CURRENT_SELECTION,
     operation_type=PerformContextAction,
     summary=(
         "Attempt one exact contextual action advertised by a current world object. "
@@ -3043,7 +3184,6 @@ PERFORM_CONTEXT_ACTION_DEFINITION = OperationDefinition(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
-    selection_requirement=SelectionRequirement.EXACTLY_ONE,
     risk=OperationRisk(native_assisted_actions=1),
     max_primitive_actions=4,
     reference_fields=("target_id", "context_action"),
@@ -3059,6 +3199,10 @@ PERFORM_CONTEXT_ACTION_DEFINITION = OperationDefinition(
 PRODUCE_RESOURCE_OUTPUT_DEFINITION = OperationDefinition(
     kind="produce_resource_output",
     version="1.0",
+    interaction=ordinary_order(
+        recipients=RecipientScope.CURRENT_SELECTION,
+        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
+    ),
     operation_type=ProduceResourceOutputAction,
     summary=(
         "Keep one exact natural-resource order under option ownership until the "
@@ -3082,7 +3226,6 @@ PRODUCE_RESOURCE_OUTPUT_DEFINITION = OperationDefinition(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
-    selection_requirement=SelectionRequirement.EXACTLY_ONE,
     risk=OperationRisk(native_assisted_actions=1),
     max_primitive_actions=7,
     reference_fields=("target_id",),
@@ -3106,6 +3249,10 @@ PRODUCE_RESOURCE_OUTPUT_DEFINITION = OperationDefinition(
 HARVEST_RESOURCE_DEFINITION = OperationDefinition(
     kind="harvest_resource",
     version="1.0",
+    interaction=ordinary_order(
+        recipients=RecipientScope.CURRENT_SELECTION,
+        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
+    ),
     operation_type=HarvestResourceAction,
     summary=(
         "Run one exact natural-resource job at Kenshi's observed 5x speed until "
@@ -3139,7 +3286,6 @@ HARVEST_RESOURCE_DEFINITION = OperationDefinition(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.SEMANTIC_CURRENT,
     native_assisted=True,
-    selection_requirement=SelectionRequirement.EXACTLY_ONE,
     risk=OperationRisk(pointer_actions=12, native_assisted_actions=2),
     max_primitive_actions=45,
     reference_fields=("actor_id", "target_id"),
@@ -3156,6 +3302,10 @@ HARVEST_RESOURCE_DEFINITION = OperationDefinition(
 RESPOND_TO_IMMEDIATE_THREAT_DEFINITION = OperationDefinition(
     kind="respond_to_immediate_threat",
     version="1.0",
+    interaction=ordinary_order(
+        recipients=RecipientScope.EXPLICIT_RECIPIENTS,
+        milestone=CompletionMilestone.ORDER_ACCEPTED,
+    ),
     operation_type=RespondToImmediateThreatAction,
     summary=(
         "Choose whether the exact selected actor engages or withdraws from an "
@@ -3181,7 +3331,6 @@ RESPOND_TO_IMMEDIATE_THREAT_DEFINITION = OperationDefinition(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
-    selection_requirement=SelectionRequirement.EXACTLY_ONE,
     risk=OperationRisk(native_assisted_actions=1),
     # Withdrawal may spend the complete four-primitive native movement budget;
     # the wrapper then owns one additional terminal pause.
@@ -3199,6 +3348,12 @@ RESPOND_TO_IMMEDIATE_THREAT_DEFINITION = OperationDefinition(
 OPEN_CONTEXT_INVENTORY_DEFINITION = OperationDefinition(
     kind="open_context_inventory",
     version="1.0",
+    interaction=global_ui(
+        recipients=RecipientScope.EXPLICIT_RECIPIENTS,
+        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
+        selection=SelectionDependency.UI_TRANSACTION,
+        playback=PlaybackRequirement.PAUSED_TRANSACTION,
+    ),
     operation_type=OpenContextInventoryAction,
     summary=(
         "Open the ordinary inventory UI for one exact current natural-resource "
@@ -3221,7 +3376,6 @@ OPEN_CONTEXT_INVENTORY_DEFINITION = OperationDefinition(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
-    selection_requirement=SelectionRequirement.EXACTLY_ONE,
     risk=OperationRisk(native_assisted_actions=1),
     max_primitive_actions=6,
     reference_fields=("target_id",),
@@ -3239,6 +3393,10 @@ OPEN_CONTEXT_INVENTORY_DEFINITION = OperationDefinition(
 REGROUP_WITH_SQUAD_MEMBER_DEFINITION = OperationDefinition(
     kind="regroup_with_squad_member",
     version="1.0",
+    interaction=ordinary_order(
+        recipients=RecipientScope.EXPLICIT_RECIPIENTS,
+        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
+    ),
     operation_type=RegroupWithSquadMemberAction,
     summary=(
         "Bring one exact selected actor to one distinct current squadmate. The "
@@ -3264,7 +3422,6 @@ REGROUP_WITH_SQUAD_MEMBER_DEFINITION = OperationDefinition(
     capability_aliases=frozenset({NATIVE_SQUAD_REGROUP_CAPABILITY}),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
-    selection_requirement=SelectionRequirement.EXACTLY_ONE,
     risk=OperationRisk(native_assisted_actions=1),
     max_primitive_actions=5,
     reference_fields=("actor_id", "target_id"),
@@ -3284,6 +3441,10 @@ REGROUP_WITH_SQUAD_MEMBER_DEFINITION = OperationDefinition(
 MOVE_IN_DIRECTION_DEFINITION = OperationDefinition(
     kind="move_in_direction",
     version="1.0",
+    interaction=ordinary_order(
+        recipients=RecipientScope.CURRENT_SELECTION,
+        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
+    ),
     operation_type=MoveInDirectionAction,
     summary=(
         "Walk a bearing and distance from where the character stands, ordering "
@@ -3301,7 +3462,6 @@ MOVE_IN_DIRECTION_DEFINITION = OperationDefinition(
     capability_aliases=frozenset({NATIVE_DIRECTION_CAPABILITY}),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
-    selection_requirement=SelectionRequirement.EXACTLY_ONE,
     risk=OperationRisk(native_assisted_actions=1),
     max_primitive_actions=4,
     reference_fields=(),
@@ -3316,6 +3476,10 @@ MOVE_IN_DIRECTION_DEFINITION = OperationDefinition(
 TRAVEL_TO_MAP_DESTINATION_DEFINITION = OperationDefinition(
     kind="travel_to_map_destination",
     version="1.0",
+    interaction=ordinary_order(
+        recipients=RecipientScope.CURRENT_SELECTION,
+        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
+    ),
     operation_type=TravelToMapDestinationAction,
     summary=(
         "Travel to one exact settlement marker the player has already "
@@ -3344,7 +3508,6 @@ TRAVEL_TO_MAP_DESTINATION_DEFINITION = OperationDefinition(
     capability_aliases=frozenset({NATIVE_MAP_TRAVEL_CAPABILITY}),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
-    selection_requirement=SelectionRequirement.ONE_OR_MORE,
     risk=OperationRisk(native_assisted_actions=1),
     max_primitive_actions=5,
     reference_fields=("destination_id",),
@@ -3360,6 +3523,10 @@ TRAVEL_TO_MAP_DESTINATION_DEFINITION = OperationDefinition(
 EXIT_CURRENT_BUILDING_DEFINITION = OperationDefinition(
     kind="exit_current_building",
     version="1.0",
+    interaction=ordinary_order(
+        recipients=RecipientScope.CURRENT_SELECTION,
+        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
+    ),
     operation_type=ExitCurrentBuildingAction,
     summary=(
         "Leave the selected character's current building. The planner supplies "
@@ -3385,7 +3552,6 @@ EXIT_CURRENT_BUILDING_DEFINITION = OperationDefinition(
     capability_aliases=frozenset({NATIVE_EXIT_BUILDING_CAPABILITY}),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
-    selection_requirement=SelectionRequirement.EXACTLY_ONE,
     risk=OperationRisk(native_assisted_actions=1),
     max_primitive_actions=4,
     reference_fields=(),
@@ -3400,6 +3566,10 @@ EXIT_CURRENT_BUILDING_DEFINITION = OperationDefinition(
 MOVE_TO_CHARACTER_DEFINITION = OperationDefinition(
     kind="move_to_character",
     version="1.0",
+    interaction=ordinary_order(
+        recipients=RecipientScope.CURRENT_SELECTION,
+        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
+    ),
     operation_type=MoveToCharacterAction,
     summary=(
         "Walk the complete current selection to one exact currently observed "
@@ -3422,7 +3592,6 @@ MOVE_TO_CHARACTER_DEFINITION = OperationDefinition(
     capability_aliases=frozenset({NATIVE_MOVE_CAPABILITY}),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
-    selection_requirement=SelectionRequirement.ONE_OR_MORE,
     risk=OperationRisk(native_assisted_actions=1),
     max_primitive_actions=4,
     reference_fields=("target_id",),
@@ -3437,6 +3606,10 @@ MOVE_TO_CHARACTER_DEFINITION = OperationDefinition(
 ACTIVATE_VISIBLE_CONTROL_DEFINITION = OperationDefinition(
     kind="activate_visible_control",
     version="1.0",
+    interaction=global_ui(
+        selection=SelectionDependency.UI_TRANSACTION,
+        playback=PlaybackRequirement.PAUSED_TRANSACTION,
+    ),
     operation_type=ActivateVisibleControlAction,
     summary=(
         "Activate exactly one control the interface currently advertises, using "
@@ -3466,6 +3639,11 @@ ACTIVATE_VISIBLE_CONTROL_DEFINITION = OperationDefinition(
 DISMISS_SCREEN_DEFINITION = OperationDefinition(
     kind="dismiss_screen",
     version="1.0",
+    interaction=global_ui(
+        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
+        selection=SelectionDependency.UI_TRANSACTION,
+        playback=PlaybackRequirement.PAUSED_TRANSACTION,
+    ),
     operation_type=DismissScreenAction,
     summary=(
         "Close one currently bound named screen or exact trade/inventory window "
@@ -3498,6 +3676,12 @@ DISMISS_SCREEN_DEFINITION = OperationDefinition(
 PURCHASE_ITEM_DEFINITION = OperationDefinition(
     kind="purchase_item",
     version="2.2",
+    interaction=global_ui(
+        recipients=RecipientScope.EXPLICIT_RECIPIENTS,
+        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
+        selection=SelectionDependency.UI_TRANSACTION,
+        playback=PlaybackRequirement.PAUSED_TRANSACTION,
+    ),
     operation_type=PurchaseItemAction,
     summary=(
         "Acquire a bounded quantity of one item from exact seller-owned cells. "
@@ -3602,6 +3786,11 @@ def _open_screen_terminal(
 OPEN_SCREEN_DEFINITION = OperationDefinition(
     kind="open_screen",
     version="1.0",
+    interaction=global_ui(
+        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
+        selection=SelectionDependency.UI_TRANSACTION,
+        playback=PlaybackRequirement.PAUSED_TRANSACTION,
+    ),
     operation_type=OpenScreenAction,
     summary=(
         "Have a named screen open. The controller presses whichever binding "
@@ -3629,6 +3818,7 @@ OPEN_SCREEN_DEFINITION = OperationDefinition(
 USE_GAME_BINDING_DEFINITION = OperationDefinition(
     kind="use_game_binding",
     version="1.0",
+    interaction=global_ui(selection=SelectionDependency.UI_TRANSACTION),
     operation_type=UseGameBindingAction,
     summary=(
         "Press one named Kenshi control through the hard-coded shipped-default "
@@ -3667,6 +3857,7 @@ USE_GAME_BINDING_DEFINITION = OperationDefinition(
 RECOVER_CAMERA_VIEW_DEFINITION = OperationDefinition(
     kind="recover_camera_view",
     version="1.0",
+    interaction=global_ui(milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED),
     operation_type=RecoverCameraViewAction,
     summary=(
         "Restore a usable selected-character-following world view through one "
@@ -3707,6 +3898,10 @@ RECOVER_CAMERA_VIEW_DEFINITION = OperationDefinition(
 SCROLL_SCREEN_DEFINITION = OperationDefinition(
     kind="scroll_screen",
     version="1.0",
+    interaction=global_ui(
+        selection=SelectionDependency.UI_TRANSACTION,
+        playback=PlaybackRequirement.PAUSED_TRANSACTION,
+    ),
     operation_type=ScrollScreenAction,
     summary=(
         "Scroll inside one open window to reveal contents past the first "
@@ -3738,6 +3933,12 @@ SCROLL_SCREEN_DEFINITION = OperationDefinition(
 SELL_ITEM_DEFINITION = OperationDefinition(
     kind="sell_item",
     version="2.1",
+    interaction=global_ui(
+        recipients=RecipientScope.EXPLICIT_RECIPIENTS,
+        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
+        selection=SelectionDependency.UI_TRANSACTION,
+        playback=PlaybackRequirement.PAUSED_TRANSACTION,
+    ),
     operation_type=SellItemAction,
     summary=(
         "Sell a bounded quantity from the exact observed player-window owner. "
@@ -3784,6 +3985,12 @@ SELL_ITEM_DEFINITION = OperationDefinition(
 EQUIP_ITEM_DEFINITION = OperationDefinition(
     kind="equip_item",
     version="1.1",
+    interaction=global_ui(
+        recipients=RecipientScope.EXPLICIT_RECIPIENTS,
+        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
+        selection=SelectionDependency.UI_TRANSACTION,
+        playback=PlaybackRequirement.PAUSED_TRANSACTION,
+    ),
     operation_type=EquipItemAction,
     summary=(
         "Equip the item in one exact selected squad-owned inventory window. "
@@ -3815,6 +4022,12 @@ EQUIP_ITEM_DEFINITION = OperationDefinition(
 COLLECT_RESOURCE_OUTPUT_DEFINITION = OperationDefinition(
     kind="collect_resource_output",
     version="1.2",
+    interaction=global_ui(
+        recipients=RecipientScope.EXPLICIT_RECIPIENTS,
+        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
+        selection=SelectionDependency.UI_TRANSACTION,
+        playback=PlaybackRequirement.PAUSED_TRANSACTION,
+    ),
     operation_type=CollectResourceOutputAction,
     summary=(
         "Right-click one exact observed output cell into the selected character. "

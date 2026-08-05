@@ -57,6 +57,7 @@ from .core.telemetry import (
 )
 from .non_progress import unchanged_definitive_no_op_reason
 from .operation_definitions import (
+    OPERATION_DEFINITIONS,
     SQUAD_REGROUP_ARRIVAL_DISTANCE,
     BindingFailure,
     BoundOperation,
@@ -849,7 +850,7 @@ def _map_offers(observation: Observation) -> Iterable[AffordanceOffer]:
             current_location_id=telemetry.game.location_id,
             inside_town_walls=telemetry.game.inside_town_walls,
             location_authoritative="game.location.identity" in capabilities,
-            selected_count=selected_count,
+            whole_group_present=selected_count == 1,
         ):
             continue
         yield _offer(
@@ -998,6 +999,27 @@ class AffordanceAdapter:
     denominator: str
     completeness_boundary: str
     enumerate: Callable[[Observation], Iterable[AffordanceOffer]]
+
+    def offers(self, observation: Observation) -> Iterable[AffordanceOffer]:
+        """Every offer this adapter makes that the registry would also accept.
+
+        Enumeration used to answer "what could be offered" while
+        `OperationDefinition.is_currently_authorable` answered "what could be
+        run", and nothing reconciled them. A live two-character start offered
+        `harvest_resource` on an iron deposit that could not be harvested,
+        because the adapter never asked. Filtering here makes the two agree by
+        construction rather than by coincidence, so a future adapter cannot
+        quietly reintroduce the disagreement.
+
+        Enumerate through this, not through `enumerate`, everywhere an offer is
+        shown to or rebound for the planner.
+        """
+
+        for offer in self.enumerate(observation):
+            definition = OPERATION_DEFINITIONS.get(offer.operation_kind)
+            if definition is not None and not definition.is_currently_authorable(observation):
+                continue
+            yield offer
 
     def bind(
         self,
@@ -1229,7 +1251,7 @@ def offered_affordances(observation: Observation) -> tuple[AffordanceOffer, ...]
     enumerated = tuple(
         (adapter, offer)
         for adapter in AFFORDANCE_ADAPTERS
-        for offer in adapter.enumerate(observation)
+        for offer in adapter.offers(observation)
         if interface_clear or offer.operation_kind in INTERFACE_SCOPED_OPERATION_KINDS
     )
     offers_by_id: dict[str, AffordanceOffer] = {}
@@ -1335,7 +1357,7 @@ def _bind_adapter_selection(
     )
     matches = [
         offer
-        for offer in adapter.enumerate(observation)
+        for offer in adapter.offers(observation)
         if offer.affordance_id == selection.affordance_id
         and (interface_clear or offer.operation_kind in INTERFACE_SCOPED_OPERATION_KINDS)
         and _offer_binds_now(offer, observation)
@@ -1376,7 +1398,7 @@ def bind_affordance(
     matches = [
         adapter
         for adapter in AFFORDANCE_ADAPTERS
-        for offer in adapter.enumerate(observation)
+        for offer in adapter.offers(observation)
         if offer.affordance_id == selection.affordance_id
     ]
     if len(matches) != 1:
@@ -1415,7 +1437,7 @@ def _rebind_affordance_operation(
     adapter = adapters[0]
     target_id = affordance.target.target_id if affordance.target else None
     rebounds: list[BoundOperation] = []
-    for offer in adapter.enumerate(observation):
+    for offer in adapter.offers(observation):
         current_target_id = offer.target.target_id if offer.target else None
         if (
             offer.source is not affordance.source

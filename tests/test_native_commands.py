@@ -55,7 +55,7 @@ def test_native_request_is_strict_exact_and_telemetry_revision_bound() -> None:
             valid.model_dump(mode="python")
             | {
                 "command": "move_in_direction",
-                "selected_character_ids": ["entity-selected", "entity-other"],
+                "selected_character_ids": ["entity-selected", "entity-selected"],
                 "target_id": "",
                 "bearing_degrees": 90.0,
                 "distance_units": 10.0,
@@ -69,32 +69,49 @@ def test_native_request_is_strict_exact_and_telemetry_revision_bound() -> None:
         NativeCommandRequest.model_validate(valid.model_dump(mode="python") | {"unexpected": True})
 
 
-def test_group_selection_is_allowed_for_set_aware_native_commands() -> None:
+def test_transport_validates_basis_consistency_not_recipient_cardinality() -> None:
+    """Recipient scope belongs to the operation registry, not to this schema.
+
+    The wire schema used to carry a hardcoded set of command names allowed a
+    multi-character basis. That was a second selection authority at the
+    transport edge, able to disagree with the definition it was supposedly
+    enforcing. Scope is now declared once, by the operation's interaction
+    contract, and this schema checks only that a basis is internally coherent.
+    """
+
     valid = request().model_dump(mode="python")
     group = ["entity-selected", "entity-companion"]
 
-    move = NativeCommandRequest.model_validate(
-        valid
-        | {
-            "command": "move_to_character",
-            "selected_character_ids": group,
-        }
-    )
-    assert move.selected_character_ids == group
-
-    approach = NativeCommandRequest.model_validate(
-        valid | {"selected_character_ids": group}
-    )
-    assert approach.selected_character_ids == group
-
-    with pytest.raises(ValidationError, match="exactly one selected character"):
-        NativeCommandRequest.model_validate(
-            valid
-            | {
-                "command": "regroup_with_squad_member",
-                "selected_character_ids": group,
-            }
+    for command in ("move_to_character", "regroup_with_squad_member", "select_squad_member"):
+        accepted = NativeCommandRequest.model_validate(
+            valid | {"command": command, "selected_character_ids": group}
         )
+        assert accepted.selected_character_ids == group
+
+    # Structural coherence is still enforced here.
+    with pytest.raises(ValidationError, match="duplicates"):
+        NativeCommandRequest.model_validate(
+            valid | {"selected_character_ids": ["entity-selected", "entity-selected"]}
+        )
+    with pytest.raises(ValidationError):
+        NativeCommandRequest.model_validate(valid | {"selected_character_ids": []})
+
+
+def test_recipient_scope_is_declared_by_the_operation_registry() -> None:
+    """The single owner of the question transport no longer answers."""
+
+    from kenshi_agent.core.interaction import RecipientScope
+    from kenshi_agent.operation_definitions import OPERATION_DEFINITIONS
+
+    assert (
+        OPERATION_DEFINITIONS["move_to_character"].recipient_scope_for()
+        is RecipientScope.CURRENT_SELECTION
+    )
+    assert (
+        OPERATION_DEFINITIONS["regroup_with_squad_member"].recipient_scope_for()
+        is RecipientScope.EXPLICIT_RECIPIENTS
+    )
+    assert OPERATION_DEFINITIONS["noop"].recipient_scope_for() is RecipientScope.NONE
 
 
 def test_only_resource_production_may_request_a_larger_bounded_yield() -> None:

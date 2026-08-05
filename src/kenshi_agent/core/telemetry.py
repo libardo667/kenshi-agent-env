@@ -349,11 +349,19 @@ def map_destination_already_reached(
     current_location_id: str | None = None,
     inside_town_walls: bool | None = None,
     location_authoritative: bool = False,
-    selected_count: int = 1,
+    whole_group_present: bool = True,
 ) -> bool:
+    """Whether travel to this destination would be a no-op.
+
+    `whole_group_present` is a fact about the recipients, resolved by the
+    map-travel operation from its own contract. This helper does not count
+    selected characters: recipient scope belongs to the operation registry, and
+    a cardinality rule living here was a second authority on the same question.
+    """
+
     return (
         location_authoritative
-        and selected_count == 1
+        and whole_group_present
         and current_location_id == destination.id
         and (inside_town_walls is True or destination.has_gates is False)
     )
@@ -365,14 +373,14 @@ def map_destination_travel_available(
     current_location_id: str | None = None,
     inside_town_walls: bool | None = None,
     location_authoritative: bool = False,
-    selected_count: int = 1,
+    whole_group_present: bool = True,
 ) -> bool:
     if map_destination_already_reached(
         destination,
         current_location_id=current_location_id,
         inside_town_walls=inside_town_walls,
         location_authoritative=location_authoritative,
-        selected_count=selected_count,
+        whole_group_present=whole_group_present,
     ):
         return False
     return destination.distance > MINIMUM_REMOTE_MAP_TRAVEL_DISTANCE

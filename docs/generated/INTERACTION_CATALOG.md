@@ -32,44 +32,8 @@ PROOF STATUS
   unproven          20
   withheld           2
 
-REGISTRY-DERIVED (what the code says today)
-  operation                           selection    exec         native cmd                 visibility
-  activate_visible_control            none         atomic_handler -                          visible_controls
-  approach_dialogue_target            one_or_more  monitored_option approach_confirmed_vendor  dialogue_targets
-  collect_resource_output             none         atomic_handler -                          internal-only
-  command_world_target                exactly_one  atomic_handler -                          context_orders
-  consult_advisor                     none         atomic_handler -                          runtime
-  dismiss_screen                      none         atomic_handler -                          screens
-  equip_item                          none         atomic_handler -                          inventory
-  exit_current_building               exactly_one  monitored_option exit_current_building      native_and_composite
-  harvest_resource                    exactly_one  composite_option -                          native_and_composite
-  move_in_direction                   exactly_one  monitored_option move_in_direction          native_and_composite
-  move_to_character                   one_or_more  monitored_option move_to_character          characters
-  noop                                none         atomic_handler -                          runtime
-  open_context_inventory              exactly_one  atomic_handler open_context_inventory     internal-only
-  open_screen                         none         atomic_handler -                          screens
-  pause                               none         atomic_handler -                          internal-only
-  perform_context_action              exactly_one  monitored_option perform_context_action     context_orders
-  produce_resource_output             exactly_one  monitored_option produce_resource_output    internal-only
-  purchase_item                       none         composite_option -                          inventory
-  read_fieldbook                      none         atomic_handler -                          runtime
-  recall_memory                       none         atomic_handler -                          runtime
-  recover_camera_view                 none         atomic_handler -                          native_and_composite
-  regroup_with_squad_member           exactly_one  monitored_option regroup_with_squad_member  characters
-  respond_to_immediate_threat         exactly_one  monitored_option -                          characters
-  rotate_camera                       none         atomic_handler -                          native_and_composite
-  scroll_screen                       none         atomic_handler -                          native_and_composite
-  select_squad_member                 none         atomic_handler select_squad_member        characters
-  select_squad_member_exact           one_or_more  atomic_handler -                          characters
-  sell_item                           none         composite_option -                          inventory
-  set_speed                           none         atomic_handler -                          internal-only
-  stop                                none         atomic_handler -                          runtime
-  travel_to_map_destination           one_or_more  monitored_option travel_to_map_destination  map
-  use_game_binding                    none         atomic_handler -                          characters, game_bindings
-  wait                                none         atomic_handler -                          internal-only
-
-PROPOSED CONTRACT AND PROOF (hand-authored; moves to the registry in Slice 1)
-  operation                           kind               recipients          selection        milestone               status
+INTERACTION CONTRACT (resolved from the sole operation registry)
+  operation                           kind               recipients          selection        milestone               proof
   activate_visible_control            global_ui          none                ui_transaction   input_delivered         withheld
   approach_dialogue_target            ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
   collect_resource_output             global_ui          explicit_recipients ui_transaction   world_outcome_observed  unproven
@@ -85,7 +49,7 @@ PROPOSED CONTRACT AND PROOF (hand-authored; moves to the registry in Slice 1)
   open_context_inventory              global_ui          explicit_recipients ui_transaction   world_outcome_observed  unproven
   open_screen                         global_ui          none                ui_transaction   world_outcome_observed  unproven
   pause                               global_ui          none                none             world_outcome_observed  source_proven
-  perform_context_action              ordinary_order     current_selection   dispatch_only    order_accepted          unproven
+  perform_context_action *            varies             current_selection   varies           varies                  unproven
   produce_resource_output             ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
   purchase_item                       global_ui          explicit_recipients ui_transaction   world_outcome_observed  unproven
   read_fieldbook                      runtime_only       none                none             input_delivered         source_proven
@@ -104,6 +68,45 @@ PROPOSED CONTRACT AND PROOF (hand-authored; moves to the registry in Slice 1)
   use_game_binding                    global_ui          none                ui_transaction   input_delivered         withheld
   wait                                runtime_only       none                none             input_delivered         source_proven
 
+  * resolves its contract per exact action; recipient scope is
+    invariant across its subcases and is what appears above.
+
+EXECUTION AND ROUTING
+  operation                           exec               playback                 native cmd                 visibility
+  activate_visible_control            atomic_handler     paused_transaction       -                          visible_controls
+  approach_dialogue_target            monitored_option   running_for_progress     approach_confirmed_vendor  dialogue_targets
+  collect_resource_output             atomic_handler     paused_transaction       -                          internal-only
+  command_world_target                atomic_handler     running_for_progress     -                          context_orders
+  consult_advisor                     atomic_handler     any                      -                          runtime
+  dismiss_screen                      atomic_handler     paused_transaction       -                          screens
+  equip_item                          atomic_handler     paused_transaction       -                          inventory
+  exit_current_building               monitored_option   running_for_progress     exit_current_building      native_and_composite
+  harvest_resource                    composite_option   running_for_progress     -                          native_and_composite
+  move_in_direction                   monitored_option   running_for_progress     move_in_direction          native_and_composite
+  move_to_character                   monitored_option   running_for_progress     move_to_character          characters
+  noop                                atomic_handler     any                      -                          runtime
+  open_context_inventory              atomic_handler     paused_transaction       open_context_inventory     internal-only
+  open_screen                         atomic_handler     paused_transaction       -                          screens
+  pause                               atomic_handler     any                      -                          internal-only
+  perform_context_action              monitored_option   varies                   perform_context_action     context_orders
+  produce_resource_output             monitored_option   running_for_progress     produce_resource_output    internal-only
+  purchase_item                       composite_option   paused_transaction       -                          inventory
+  read_fieldbook                      atomic_handler     any                      -                          runtime
+  recall_memory                       atomic_handler     any                      -                          runtime
+  recover_camera_view                 atomic_handler     any                      -                          native_and_composite
+  regroup_with_squad_member           monitored_option   running_for_progress     regroup_with_squad_member  characters
+  respond_to_immediate_threat         monitored_option   running_for_progress     -                          characters
+  rotate_camera                       atomic_handler     any                      -                          native_and_composite
+  scroll_screen                       atomic_handler     paused_transaction       -                          native_and_composite
+  select_squad_member                 atomic_handler     any                      select_squad_member        characters
+  select_squad_member_exact           atomic_handler     any                      -                          characters
+  sell_item                           composite_option   paused_transaction       -                          inventory
+  set_speed                           atomic_handler     any                      -                          internal-only
+  stop                                atomic_handler     any                      -                          runtime
+  travel_to_map_destination           monitored_option   running_for_progress     travel_to_map_destination  map
+  use_game_binding                    atomic_handler     any                      -                          characters, game_bindings
+  wait                                atomic_handler     running_for_progress     -                          internal-only
+
 NATIVE COMMAND ROUTES
   approach_confirmed_vendor    -> approach_dialogue_target (vestigial name)
   exit_current_building        -> exit_current_building
@@ -117,5 +120,5 @@ NATIVE COMMAND ROUTES
   travel_to_map_destination    -> travel_to_map_destination
 
 SEMANTIC SUBCASES
-  perform_context_action:operate                current_selection   unproven
+  perform_context_action:operate                unproven
 ```

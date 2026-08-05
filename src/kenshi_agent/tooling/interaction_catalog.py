@@ -1,19 +1,16 @@
 """Registry-derived inventory of how each operation interacts with Kenshi.
 
-Slice 0 of the interaction-scope reconstruction. Two artefacts, deliberately
-kept apart:
+Two artefacts, deliberately kept apart:
 
 *The catalog* is generated from the sole operation registry and the affordance
-adapters. It states only what the code says today, including the
-`SelectionRequirement` this stage exists to delete. It invents nothing.
+adapters. It states the interaction contract each operation actually declares.
+It invents nothing.
 
 *The proof-status manifest* is hand-authored and lives beside the catalog
-rather than inside it. Today it also carries the proposed interaction contract,
-because `OperationDefinition` has no contract field yet - the proposal has one
-home, not two. Slice 1 moves those `proposed_*` fields into the registry, and
-from then on the manifest may carry only proof status and evidence. The
-`manifest_restates_registry` check below is what makes that migration
-enforceable rather than aspirational.
+rather than inside it. It carries only proof status and evidence. Slice 1 moved
+the interaction contract into `OperationDefinition`, so the contract now has
+exactly one home; `REGISTRY_OWNED_FIELDS` and the `manifest_restates_registry`
+check keep the manifest from growing a second copy of it.
 
 Neither artefact is an authority over gameplay semantics. The catalog derives
 from the registry; the manifest records what has actually been proven, and by
@@ -29,7 +26,7 @@ from pathlib import Path
 
 from ..affordances import AFFORDANCE_ADAPTERS
 from ..core.transport import NativeCommandRequest
-from ..operation_definitions import OPERATION_DEFINITION_LIST
+from ..operation_definitions import OPERATION_DEFINITION_LIST, OperationDefinition
 
 MANIFEST_PATH = (
     Path(__file__).resolve().parents[3]
@@ -50,7 +47,18 @@ PROOF_STATUSES = (
 # is how a second semantic authority is prevented from growing here.
 REGISTRY_OWNED_FIELDS = frozenset(
     {
-        "selection_requirement",
+        "interaction_kind",
+        "recipient_scope",
+        "selection_dependency",
+        "completion_milestone",
+        "conflict_policy",
+        "playback_requirement",
+        "proposed_interaction_kind",
+        "proposed_recipient_scope",
+        "proposed_selection_dependency",
+        "proposed_completion_milestone",
+        "proposed_conflict_policy",
+        "proposed_playback_requirement",
         "control_modes",
         "pointer_class",
         "native_assisted",
@@ -101,7 +109,14 @@ class CatalogRow:
     kind: str
     planner_visible: bool
     adapters: tuple[str, ...]
-    selection_requirement: str
+    interaction_kind: str
+    recipient_scope: str
+    selection_dependency: str
+    completion_milestone: str
+    conflict_policy: str
+    playback_requirement: str
+    contract_fingerprint: str
+    contract_is_dynamic: bool
     control_modes: tuple[str, ...]
     pointer_class: str
     native_assisted: bool
@@ -116,17 +131,11 @@ class CatalogRow:
 
 @dataclass(frozen=True, slots=True)
 class ProofEntry:
-    """One hand-authored classification proposal and its proof status."""
+    """One operation's proof status and the evidence behind it."""
 
     key: str
     operation_kind: str
     subcase: str
-    proposed_interaction_kind: str
-    proposed_recipient_scope: str
-    proposed_selection_dependency: str
-    proposed_completion_milestone: str
-    proposed_conflict_policy: str
-    proposed_playback_requirement: str
     proof_status: str
     evidence: tuple[str, ...]
     note: str
@@ -167,6 +176,40 @@ class InteractionCatalogAudit:
         return counts
 
 
+DYNAMIC = "varies"
+
+
+def _contract_fields(definition: OperationDefinition) -> dict[str, str]:
+    """The six contract values for display, honest about dynamic resolution.
+
+    A definition with a resolver has no single contract. Its recipient scope is
+    invariant across subcases and is declared, so that is reported exactly;
+    everything the resolver varies is reported as varying rather than as one
+    arbitrarily chosen subcase.
+    """
+
+    contract = definition.interaction
+    if contract is not None:
+        return {
+            "interaction_kind": contract.interaction_kind.value,
+            "recipient_scope": contract.recipient_scope.value,
+            "selection_dependency": contract.selection_dependency.value,
+            "completion_milestone": contract.completion_milestone.value,
+            "conflict_policy": contract.conflict_policy.value,
+            "playback_requirement": contract.playback_requirement.value,
+            "contract_fingerprint": contract.fingerprint(),
+        }
+    return {
+        "interaction_kind": DYNAMIC,
+        "recipient_scope": definition.recipient_scope_for().value,
+        "selection_dependency": DYNAMIC,
+        "completion_milestone": DYNAMIC,
+        "conflict_policy": DYNAMIC,
+        "playback_requirement": DYNAMIC,
+        "contract_fingerprint": DYNAMIC,
+    }
+
+
 def _catalog_rows() -> tuple[CatalogRow, ...]:
     owners = {native_command_owner(name): name for name in native_command_names()}
     rows = []
@@ -178,12 +221,20 @@ def _catalog_rows() -> tuple[CatalogRow, ...]:
                 if definition.kind in adapter.operation_kinds
             )
         )
+        contract = _contract_fields(definition)
         rows.append(
             CatalogRow(
                 kind=definition.kind,
                 planner_visible=bool(adapters),
                 adapters=adapters,
-                selection_requirement=definition.selection_requirement.value,
+                interaction_kind=contract["interaction_kind"],
+                recipient_scope=contract["recipient_scope"],
+                selection_dependency=contract["selection_dependency"],
+                completion_milestone=contract["completion_milestone"],
+                conflict_policy=contract["conflict_policy"],
+                playback_requirement=contract["playback_requirement"],
+                contract_fingerprint=contract["contract_fingerprint"],
+                contract_is_dynamic=definition.interaction is None,
                 control_modes=tuple(
                     sorted(mode.value for mode in definition.allowed_control_modes)
                 ),
@@ -220,18 +271,6 @@ def load_proof_manifest(path: Path = MANIFEST_PATH) -> tuple[ProofEntry, ...]:
                 key=f"{operation_kind}:{subcase}" if subcase else operation_kind,
                 operation_kind=operation_kind,
                 subcase=subcase,
-                proposed_interaction_kind=str(raw.get("proposed_interaction_kind", "")),
-                proposed_recipient_scope=str(raw.get("proposed_recipient_scope", "")),
-                proposed_selection_dependency=str(
-                    raw.get("proposed_selection_dependency", "")
-                ),
-                proposed_completion_milestone=str(
-                    raw.get("proposed_completion_milestone", "")
-                ),
-                proposed_conflict_policy=str(raw.get("proposed_conflict_policy", "")),
-                proposed_playback_requirement=str(
-                    raw.get("proposed_playback_requirement", "")
-                ),
                 proof_status=str(raw.get("proof_status", "")),
                 evidence=tuple(str(item) for item in raw.get("evidence", [])),
                 note=str(raw.get("note", "")),
@@ -319,35 +358,41 @@ def render_interaction_catalog(audit: InteractionCatalogAudit) -> list[str]:
     lines.extend(
         (
             "",
-            "REGISTRY-DERIVED (what the code says today)",
-            f"  {'operation':<35} {'selection':<12} {'exec':<12} "
+            "INTERACTION CONTRACT (resolved from the sole operation registry)",
+            f"  {'operation':<35} {'kind':<18} {'recipients':<19} "
+            f"{'selection':<16} {'milestone':<23} proof",
+        )
+    )
+    for row in audit.rows:
+        entry = by_key.get(row.kind)
+        status = entry.proof_status if entry is not None else "NO MANIFEST ENTRY"
+        marker = " *" if row.contract_is_dynamic else ""
+        lines.append(
+            f"  {row.kind + marker:<35} {row.interaction_kind:<18} "
+            f"{row.recipient_scope:<19} {row.selection_dependency:<16} "
+            f"{row.completion_milestone:<23} {status}"
+        )
+    if any(row.contract_is_dynamic for row in audit.rows):
+        lines.extend(
+            (
+                "",
+                "  * resolves its contract per exact action; recipient scope is",
+                "    invariant across its subcases and is what appears above.",
+            )
+        )
+    lines.extend(
+        (
+            "",
+            "EXECUTION AND ROUTING",
+            f"  {'operation':<35} {'exec':<18} {'playback':<24} "
             f"{'native cmd':<26} visibility",
         )
     )
     for row in audit.rows:
         visibility = ", ".join(row.adapters) if row.adapters else "internal-only"
         lines.append(
-            f"  {row.kind:<35} {row.selection_requirement:<12} {row.execution:<12} "
+            f"  {row.kind:<35} {row.execution:<18} {row.playback_requirement:<24} "
             f"{row.native_command or '-':<26} {visibility}"
-        )
-    lines.extend(
-        (
-            "",
-            "PROPOSED CONTRACT AND PROOF (hand-authored; moves to the registry in Slice 1)",
-            f"  {'operation':<35} {'kind':<18} {'recipients':<19} "
-            f"{'selection':<16} {'milestone':<23} status",
-        )
-    )
-    for row in audit.rows:
-        entry = by_key.get(row.kind)
-        if entry is None:
-            lines.append(f"  {row.kind:<35} (no manifest entry)")
-            continue
-        lines.append(
-            f"  {row.kind:<35} {entry.proposed_interaction_kind:<18} "
-            f"{entry.proposed_recipient_scope:<19} "
-            f"{entry.proposed_selection_dependency:<16} "
-            f"{entry.proposed_completion_milestone:<23} {entry.proof_status}"
         )
     lines.extend(("", "NATIVE COMMAND ROUTES"))
     for command in sorted(audit.native_commands):
@@ -358,10 +403,7 @@ def render_interaction_catalog(audit: InteractionCatalogAudit) -> list[str]:
     if subcases:
         lines.extend(("", "SEMANTIC SUBCASES"))
         for entry in subcases:
-            lines.append(
-                f"  {entry.key:<45} {entry.proposed_recipient_scope:<19} "
-                f"{entry.proof_status}"
-            )
+            lines.append(f"  {entry.key:<45} {entry.proof_status}")
     failures = (
         ("operations missing from the manifest", audit.uncatalogued_operations),
         ("manifest entries for unknown operations", audit.unknown_manifest_operations),
