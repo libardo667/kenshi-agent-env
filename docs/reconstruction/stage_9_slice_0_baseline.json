@@ -12,7 +12,7 @@
     "note": [
       "The baseline is HEAD, not the Stage 8 acceptance tag. Six commits land",
       "between them and four are inside this stage's territory, so inheriting",
-      "the tag as the baseline would silently absorb them. Section 2.4 of the",
+      "the tag as the baseline would silently absorb them. Section 2.6 of the",
       "plan records the delta."
     ]
   },

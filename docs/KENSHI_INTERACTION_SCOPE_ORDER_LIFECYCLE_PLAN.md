@@ -10,7 +10,7 @@
 uploaded Stage 8 snapshot rather than the live repository. It has since been
 reconciled against the working tree at `HEAD`. §2 now separates what was
 verified in-tree from what is stale framing and what cannot be checked here at
-all; §2.4 records post-acceptance drift; §3.5 and the corresponding ratchet were
+all; §2.6 records post-acceptance drift; §3.5 and the corresponding ratchet were
 rewritten from an API prohibition into an ownership rule; the unimplemented
 queue-policy member was removed; Slice 1b was split out of Slice 4 so honest
 evidence vocabulary precedes the risky native work; Slice 2's dual state was
@@ -111,7 +111,63 @@ already exercised on NPC targets; it has simply never been exported for player
 characters. Treat platoon export as low-risk relative to Jobs and operator
 capacity.
 
-### 2.4 Post-Stage-8 drift
+### 2.4 Confirmed live: enumeration and authorability disagree
+
+Observed 2026-08-04 against a live two-character start, using the read-only
+affordance watcher (`./dev affordances`). This is direct evidence, not
+inference.
+
+With both characters selected, the controller offered 112 affordances. Three
+of them **cannot be executed**:
+
+```text
+harvest_resource         selection_requirement=exactly_one   -> Iron Resource
+move_in_direction        selection_requirement=exactly_one
+perform_context_action   selection_requirement=exactly_one   -> Iron Resource
+```
+
+Narrowing the selection to the primary alone, changing nothing else, makes all
+three authorable. The offer count is identical either way: **112 offers with a
+pair selected, 112 with one**. Enumeration never consults
+`OperationDefinition.is_currently_authorable`.
+
+Three consequences:
+
+- The planner is shown "harvest that iron deposit" while standing at an iron
+  deposit, picks it, and receives a refusal it had no way to anticipate. §19.3
+  of the reconstruction plan predicted this class of confusion; here it is,
+  reproducible on demand.
+- §19.4 of that plan recorded the singleton gate as a `harvest_resource`
+  problem. It is not. It is every `EXACTLY_ONE` operation, whenever a player
+  has more than one character selected — which for a two-character start is
+  the default state.
+- This is the strongest available evidence for §1's thesis. `SelectionRequirement`
+  is not merely a coarse abstraction; it is a second authority that silently
+  contradicts the offer menu.
+
+Slice 1 must make one authority answer both questions. Until then, the watcher
+reports the disagreement rather than letting it stay invisible.
+
+### 2.5 Confirmed live: game bindings ignore world state entirely
+
+Same session. The game-binding adapter consults neither `game.loaded`, nor
+capabilities, nor telemetry staleness. With no world loaded and stale
+telemetry, the planner is still offered every binding — 56 of them, including
+`quickload`, `editor_delete`, `editor_toggle`, `rebuild_navmesh`,
+`reload_biomes`, the `build_*` family, and the `gizmo_*` family.
+
+In the loaded two-character menu, 99 of 112 offers were generic escape
+hatches: 61 `use_game_binding` plus 38 `activate_visible_control`. The
+semantic gameplay menu underneath was roughly thirteen choices. `PROSPECT` and
+`JOBS` appeared only as anonymous `activate_visible_control` targets, which is
+precisely the presentation §10.4 forbids.
+
+This is §3.7 stated as a measurement: world-editor and build-mode functions are
+currently authorable gameplay intentions. Slices 5 and 7 own the fix; the
+characterization test in `tests/test_affordance_watch.py` ensures the fix is a
+visible change rather than a silent one.
+
+### 2.6 Post-Stage-8 drift
 
 This plan was drafted against the Stage 8 acceptance snapshot. `HEAD` is five
 commits past tag `reconstruction-stage-8-accepted`, and four of those commits
@@ -870,7 +926,7 @@ These are dependency-ordered slices within one architectural stage. They are not
 **Goal:** Start from one known accepted architecture and inventory the current behavior before changing it.
 
 - Close Stage 8 on one green commit and create a rollback tag/checkpoint. Do not waive a generator or environment gate merely because Stage 9 is more interesting. Pin or make deterministic the supported generation environment.
-- Baseline at `HEAD`, not at `reconstruction-stage-8-accepted`. Work has continued past that tag (§2.4). Re-run the full portable gate at the baseline commit, tag it separately, and record the four post-acceptance commits and the `selected_count` residue as known delta rather than silently inheriting them.
+- Baseline at `HEAD`, not at `reconstruction-stage-8-accepted`. Work has continued past that tag (§2.6). Re-run the full portable gate at the baseline commit, tag it separately, and record the four post-acceptance commits and the `selected_count` residue as known delta rather than silently inheriting them.
 - Record the current commit, Python/dependency/native build environment, protocol/schema hashes, installed DLL hash, canonical live-config hash, public `./dev` workflow, generated artifact hashes, and representative supervised run-bundle IDs.
 
 **Installation rollback.** Slice 2 is a breaking protocol bump with no dual-read
@@ -915,7 +971,7 @@ Add failing/xfail proof scenarios that encode the desired A/B concurrency behavi
 - Make authorability consult the resolved scope rather than `SelectionRequirement`.
 - Delete `SelectionRequirement` immediately; do not retain both models.
 - Remove command-name cardinality exception sets from Python models, replacing them with generic dispatch-basis consistency validation.
-- Absorb the `selected_count` gate in `map_destination_already_reached` (§2.4). Whether travel remains available at the current location is a recipient-scope question and belongs to the map-travel definition's contract, not to a telemetry helper.
+- Absorb the `selected_count` gate in `map_destination_already_reached` (§2.6). Whether travel remains available at the current location is a recipient-scope question and belongs to the map-travel definition's contract, not to a telemetry helper.
 - Name the concrete member set for `SIMULATION_PROCESS`, or delete the member (§4.1).
 
 During this slice, conservative contracts may preserve current runtime behavior where native support has not migrated yet, but the type system must already express the intended distinction.
@@ -1363,7 +1419,7 @@ It does not include:
 Execute this as a broad architectural correction, not a chain of one-line permission changes.
 
 Begin from the Slice 0 baseline commit, which is `HEAD` and not the Stage 8
-acceptance tag — work has continued past that tag and §2.4 records the delta.
+acceptance tag — work has continued past that tag and §2.6 records the delta.
 Treat each slice as a rollback checkpoint, not as an excuse to preserve both
 models. From Slice 2 onward a rollback checkpoint means a git commit *and* the
 matching plug-in artifact; a tag alone will not restore a working system. At slice exit, perform a cold source audit against the stated deletion and ownership criteria; name any residue immediately instead of allowing a later slice to fossilize it.

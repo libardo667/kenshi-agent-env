@@ -245,6 +245,35 @@ def build_parser(
         help="Seconds between watched snapshots.",
     )
 
+    affordances = commands.add_parser(
+        "affordances",
+        parents=[common],
+        help="Show the affordance menu the agent would be offered right now.",
+        formatter_class=_HelpFormatter,
+    )
+    affordances.add_argument(
+        "--watch",
+        action="store_true",
+        help="Re-render whenever the menu changes until interrupted.",
+    )
+    affordances.add_argument(
+        "--interval",
+        type=float,
+        default=1.0,
+        help="Seconds between telemetry reads while watching.",
+    )
+    affordances.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit newline-delimited menu payloads instead of a rendered menu.",
+    )
+    affordances.add_argument(
+        "--capture",
+        type=Path,
+        default=None,
+        help="Append every distinct menu to this newline-delimited JSON file.",
+    )
+
     snapshot = commands.add_parser(
         "snapshot",
         parents=[common],

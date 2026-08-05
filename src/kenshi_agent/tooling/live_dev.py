@@ -64,6 +64,13 @@ from ..scenario_validation import (
 )
 from ..telemetry import TelemetryRead, TelemetryReader, TelemetryReadError
 from ..terminal_state import terminal_window_title
+from .affordance_watch import (
+    AffordanceMenu,
+    current_menu,
+    menu_payload,
+    observation_from_snapshot,
+    render_menu,
+)
 from .authored_starts import (
     AuthoredGameStart,
     install_authored_starts,
@@ -2676,6 +2683,63 @@ def _telemetry(args: argparse.Namespace) -> int:
         return status
 
 
+def _affordance_menu(result: TelemetryRead) -> AffordanceMenu:
+    return current_menu(
+        observation_from_snapshot(result.snapshot, stale=result.stale)
+    )
+
+
+def _emit_affordance_menu(
+    menu: AffordanceMenu,
+    args: argparse.Namespace,
+    *,
+    capture: Path | None,
+) -> None:
+    payload = menu_payload(menu)
+    if args.json:
+        print(json.dumps(payload, separators=(",", ":")), flush=True)
+    else:
+        print("\n".join(render_menu(menu)), flush=True)
+    if capture is not None:
+        capture.parent.mkdir(parents=True, exist_ok=True)
+        with capture.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, separators=(",", ":")) + "\n")
+
+
+def _affordances(args: argparse.Namespace) -> int:
+    """Show what the planner would currently be offered, without touching Kenshi.
+
+    Enumeration is pure over one observation, so this acquires no input lease
+    and emits nothing to the game. It is safe to run beside a live session that
+    a person is driving by hand.
+    """
+
+    config = load_config(_config_path(args))
+    reader = _telemetry_read(config)
+    capture: Path | None = args.capture
+    if not args.watch:
+        result = reader.read()
+        _emit_affordance_menu(_affordance_menu(result), args, capture=capture)
+        return 1 if result.stale else 0
+    if args.interval <= 0:
+        raise SystemExit("--interval must be greater than zero.")
+
+    status = 0
+    previous: str | None = None
+    try:
+        while True:
+            result = reader.read()
+            status = 1 if result.stale else 0
+            menu = _affordance_menu(result)
+            fingerprint = menu.fingerprint()
+            if fingerprint != previous:
+                previous = fingerprint
+                _emit_affordance_menu(menu, args, capture=capture)
+            time.sleep(args.interval)
+    except KeyboardInterrupt:
+        return status
+
+
 def _scenario_identity_from_args(args: argparse.Namespace) -> ScenarioIdentity:
     return ScenarioIdentity(
         scenario_id=args.scenario_id,
@@ -3066,6 +3130,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run(args)
     if args.command == "telemetry":
         return _telemetry(args)
+    if args.command == "affordances":
+        return _affordances(args)
     if args.command == "snapshot":
         return _snapshot(args)
     if args.command == "recover":

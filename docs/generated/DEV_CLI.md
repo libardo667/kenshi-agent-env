@@ -6,16 +6,17 @@ Regenerate with `python scripts/export_dev_cli.py`.
 ## `./dev`
 
 ```text
-usage: ./dev [-h] {doctor,launch,run,telemetry,snapshot,recover,stop,scenario,setup} ...
+usage: ./dev [-h] {doctor,launch,run,telemetry,affordances,snapshot,recover,stop,scenario,setup} ...
 
 Safe, state-aware Kenshi live development. Use 'run' for the normal launch-and-agent workflow.
 
 positional arguments:
-  {doctor,launch,run,telemetry,snapshot,recover,stop,scenario,setup}
+  {doctor,launch,run,telemetry,affordances,snapshot,recover,stop,scenario,setup}
     doctor                    Check every launch prerequisite without sending input.
     launch                    Launch Kenshi without starting an agent.
     run                       Use a safe loaded game or launch one, then run the agent.
     telemetry                 Print the current player-readable telemetry as JSON.
+    affordances               Show the affordance menu the agent would be offered right now.
     snapshot                  Capture one frame with its matching telemetry evidence.
     recover                   Leave Kenshi safely paused and release stranded display ownership.
     stop                      Safely pause and close Kenshi.
@@ -106,6 +107,21 @@ options:
   -h, --help           show this help message and exit
   --watch              Emit newline-delimited snapshots until interrupted. (default: False)
   --interval INTERVAL  Seconds between watched snapshots. (default: 1.0)
+```
+
+## `./dev affordances`
+
+```text
+usage: ./dev affordances [-h] [--watch] [--interval INTERVAL] [--json] [--capture CAPTURE]
+
+options:
+  -h, --help           show this help message and exit
+  --watch              Re-render whenever the menu changes until interrupted. (default: False)
+  --interval INTERVAL  Seconds between telemetry reads while watching. (default: 1.0)
+  --json               Emit newline-delimited menu payloads instead of a rendered menu. (default:
+                       False)
+  --capture CAPTURE    Append every distinct menu to this newline-delimited JSON file. (default:
+                       None)
 ```
 
 ## `./dev snapshot`

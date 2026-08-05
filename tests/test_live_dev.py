@@ -139,6 +139,7 @@ def test_live_dev_exposes_only_the_approved_top_level_commands() -> None:
         "launch",
         "run",
         "telemetry",
+        "affordances",
         "snapshot",
         "recover",
         "stop",
