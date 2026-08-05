@@ -41,6 +41,11 @@ def main() -> int:
     parser.add_argument("--config", default=str(ROOT / "config" / "live.yaml"))
     parser.add_argument("--command", required=True)
     parser.add_argument("--target-id", default="")
+    parser.add_argument(
+        "--context-action",
+        default="",
+        help="Reviewed context semantic, required by perform_context_action.",
+    )
     parser.add_argument("--timeout", type=float, default=15.0)
     args = parser.parse_args()
 
@@ -75,6 +80,7 @@ def main() -> int:
         ),
         selected_character_ids=list(snapshot.ui.selected_character_ids),
         target_id=args.target_id,
+        context_action=args.context_action,
     )
     write_native_command_request_atomic(
         config.telemetry.file.parent / "native_command.request.json",
