@@ -122,6 +122,31 @@ namespace KenshiAgentTelemetry
     {
     }
 
+    bool IsKnownNativeCommand(const std::string& command)
+    {
+        return NativeCommandNamesTarget(command) ||
+               NativeCommandCarriesDirection(command) ||
+               command == "exit_current_building" ||
+               command == "survey_local_resources";
+    }
+
+    bool NativeCommandCarriesDirection(const std::string& command)
+    {
+        return command == "move_in_direction";
+    }
+
+    bool NativeCommandNamesTarget(const std::string& command)
+    {
+        return command == "approach_confirmed_vendor" ||
+               command == "move_to_character" ||
+               command == "select_squad_member" ||
+               command == "regroup_with_squad_member" ||
+               command == "travel_to_map_destination" ||
+               command == "perform_context_action" ||
+               command == "produce_resource_output" ||
+               command == "open_context_inventory";
+    }
+
     bool IsValidCommandId(const std::string& value)
     {
         if (value.size() != 36 || value.compare(0, 4, "cmd-") != 0)
@@ -321,19 +346,12 @@ namespace KenshiAgentTelemetry
                 request.selectedCharacterId = request.selectedCharacterIds[0];
 
             const bool isDirection =
-                request.command == "move_in_direction";
-            const bool isBuildingExit =
-                request.command == "exit_current_building" ||
-                request.command == "survey_local_resources";
+                NativeCommandCarriesDirection(request.command);
             const bool isTargeted =
-                request.command == "approach_confirmed_vendor" ||
-                request.command == "move_to_character" ||
-                request.command == "select_squad_member" ||
-                request.command == "regroup_with_squad_member" ||
-                request.command == "travel_to_map_destination" ||
-                request.command == "perform_context_action" ||
-                request.command == "produce_resource_output" ||
-                request.command == "open_context_inventory";
+                NativeCommandNamesTarget(request.command);
+            const bool isBuildingExit =
+                !isDirection && !isTargeted &&
+                IsKnownNativeCommand(request.command);
             if (isDirection)
             {
                 if (!request.targetId.empty() ||

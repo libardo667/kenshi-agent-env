@@ -920,21 +920,33 @@ class NativeCommandStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+# Every native command the plug-in accepts, defined once.
+#
+# This vocabulary was written out five times - the request schema, the
+# acknowledgement schema, and three signatures in the Kenshi surface - so
+# adding a command meant editing five lists and any miss failed somewhere far
+# from the edit. Adding survey_local_resources to the request and not the
+# acknowledgement meant the plug-in accepted and executed a command Python
+# could not read back, and the readback failure invalidated the whole
+# telemetry snapshot rather than one field.
+NativeWireCommand = Literal[
+    "approach_confirmed_vendor",
+    "move_to_character",
+    "select_squad_member",
+    "regroup_with_squad_member",
+    "move_in_direction",
+    "travel_to_map_destination",
+    "exit_current_building",
+    "perform_context_action",
+    "produce_resource_output",
+    "open_context_inventory",
+    "survey_local_resources",
+]
+
+
 class NativeCommandAcknowledgement(StrictModel):
     command_id: str = Field(pattern=r"^cmd-[0-9a-f]{32}$")
-    command: Literal[
-        "approach_confirmed_vendor",
-        "move_to_character",
-        "select_squad_member",
-        "regroup_with_squad_member",
-        "move_in_direction",
-        "travel_to_map_destination",
-        "exit_current_building",
-        "perform_context_action",
-        "produce_resource_output",
-        "open_context_inventory",
-        "survey_local_resources",
-    ]
+    command: NativeWireCommand
     status: NativeCommandStatus
     reason: str = Field(min_length=1, max_length=200)
     # Targeted commands bind to one stable entity. Directional movement binds
@@ -960,13 +972,13 @@ class NativeCommandAcknowledgement(StrictModel):
             )
         if len(set(self.selected_character_ids)) != len(self.selected_character_ids):
             raise ValueError("native acknowledgement selection basis contains duplicates")
-        if len(self.selected_character_ids) != 1 and self.command not in {
-            "approach_confirmed_vendor",
-            "move_to_character",
-            "select_squad_member",
-            "travel_to_map_destination",
-        }:
-            raise ValueError("this native acknowledgement requires exactly one selected character")
+        # Recipient cardinality is not decided here either. This was the fourth
+        # copy of one command-name fence - after the Python request schema, the
+        # native parser, and the native dispatch allowlist - and being the
+        # readback path made it the worst placed: a command the plug-in had
+        # already accepted and executed could not be read back, so one
+        # unexpected acknowledgement invalidated the entire telemetry snapshot
+        # rather than one field. The operation registry owns recipient scope.
         if self.command == "move_in_direction":
             if self.target_id:
                 raise ValueError("a directional acknowledgement must not name a target")

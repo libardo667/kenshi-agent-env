@@ -260,7 +260,11 @@ def test_targetless_direction_uses_the_shared_native_protocol_module() -> None:
     assert '#include "NativeCommandProtocol.h"' in plugin
     assert "NativeCommandProtocol.cpp" in project
     assert "request.targetId.empty()" in protocol
-    assert 'request.command == "move_in_direction"' in protocol
+    # Command shape is classified once, by the shared module, rather than by
+    # each caller re-spelling the name. The parser and the dispatcher both went
+    # through their own copies until a survey command had to be added to both.
+    assert "NativeCommandCarriesDirection" in protocol
+    assert 'command == "move_in_direction"' in protocol
     assert "request.distanceUnits > 0.0" in protocol
     assert "acknowledgement.bearingDegrees" in protocol
     assert "acknowledgement.distanceUnits" in protocol
@@ -271,7 +275,10 @@ def test_parameterless_building_exit_resolves_a_native_outdoor_door_point() -> N
     plugin = PLUGIN_SOURCE.read_text(encoding="utf-8")
     protocol = PROTOCOL_SOURCE.read_text(encoding="utf-8")
 
-    assert 'request.command == "exit_current_building"' in protocol
+    # Parameterless commands are the ones the shared classifier recognises
+    # while naming neither a target nor a direction.
+    assert "IsKnownNativeCommand" in protocol
+    assert 'command == "exit_current_building"' in protocol
     assert "walker->isIndoors()" in plugin
     assert "building->doors.begin()" in plugin
     assert "door->isLocked()" in plugin

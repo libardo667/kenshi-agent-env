@@ -2999,17 +2999,7 @@ namespace
                        request.bearingDegrees == 0.0 &&
                        request.distanceUnits == 0.0));
             if (IsValidCommandId(request.commandId) &&
-                (request.command == "approach_confirmed_vendor" ||
-                 request.command == "move_to_character" ||
-                 request.command == "select_squad_member" ||
-                 request.command == "regroup_with_squad_member" ||
-                 request.command == "move_in_direction" ||
-                 request.command == "travel_to_map_destination" ||
-                 request.command == "exit_current_building" ||
-                 request.command == "perform_context_action" ||
-                 request.command == "produce_resource_output" ||
-                 request.command == "open_context_inventory" ||
-                 request.command == "survey_local_resources") &&
+                KenshiAgentTelemetry::IsKnownNativeCommand(request.command) &&
                 hasCommandIdentity &&
                 !request.selectedCharacterIds.empty() &&
                 FindNativeAcknowledgement(request.commandId) < 0)

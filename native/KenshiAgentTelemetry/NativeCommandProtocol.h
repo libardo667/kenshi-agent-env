@@ -65,6 +65,21 @@ namespace KenshiAgentTelemetry
         bool hasTerminalSequence;
     };
 
+    // The one native command vocabulary, and the one place a command's
+    // wire shape is classified.
+    //
+    // Both were duplicated: the parser and the dispatcher each carried their
+    // own list of accepted names, and a Python copy of the same vocabulary
+    // lived in three more places. Adding a command meant editing five lists,
+    // and any miss failed somewhere distant from the edit.
+    //
+    // These answer wire *shape* only - whether a command names a target or
+    // carries a direction. Recipient scope is the operation registry's, never
+    // decided from a command name here.
+    bool IsKnownNativeCommand(const std::string& command);
+    bool NativeCommandNamesTarget(const std::string& command);
+    bool NativeCommandCarriesDirection(const std::string& command);
+
     bool IsValidCommandId(const std::string& value);
 
     std::string FormatStableHandleIdentity(

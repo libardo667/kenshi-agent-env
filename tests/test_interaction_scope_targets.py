@@ -176,3 +176,95 @@ def test_native_command_names_remain_the_known_set() -> None:
         "open_context_inventory",
         "survey_local_resources",
     }
+
+
+def test_wire_command_vocabulary_has_exactly_one_python_definition() -> None:
+    """One vocabulary, not five copies that drift apart.
+
+    The request schema, the acknowledgement schema, and three Kenshi-surface
+    signatures each spelled this list out. Adding `survey_local_resources` to
+    the request and missing the acknowledgement meant the plug-in accepted and
+    executed a command Python could not read back - and the readback failure
+    invalidated the entire telemetry snapshot, not one field.
+    """
+
+    import typing
+
+    from kenshi_agent.core.telemetry import NativeCommandAcknowledgement, NativeWireCommand
+
+    vocabulary = set(typing.get_args(NativeWireCommand))
+    assert vocabulary
+
+    request = NativeCommandRequest.model_fields["command"].annotation
+    acknowledgement = NativeCommandAcknowledgement.model_fields["command"].annotation
+
+    assert set(typing.get_args(request)) == vocabulary
+    assert set(typing.get_args(acknowledgement)) == vocabulary
+
+
+def test_no_module_redeclares_the_wire_vocabulary_as_a_type() -> None:
+    """A second `Literal[...]` spelling of the vocabulary is the defect.
+
+    Deliberately not a search for the command *names*: nine of eleven wire
+    commands share a name with an operation kind, so counting string
+    occurrences flags every module that lists operation kinds and proves
+    nothing. What matters is whether a module declares the vocabulary itself.
+    """
+
+    import pathlib
+    import re
+    import typing
+
+    from kenshi_agent.core.telemetry import NativeWireCommand
+    from kenshi_agent.operation_definitions import OPERATION_DEFINITIONS
+
+    names = set(typing.get_args(NativeWireCommand))
+    # Names that exist only on the wire. Most wire commands share a name with
+    # an operation kind, so a block listing operation kinds is not a
+    # respelling; one carrying a wire-only name is.
+    wire_only = names - set(OPERATION_DEFINITIONS)
+    assert wire_only, "expected at least one wire-only command name"
+
+    root = pathlib.Path(__file__).resolve().parents[1] / "src" / "kenshi_agent"
+    literal_block = re.compile(r"Literal\[([^\]]*)\]", re.DOTALL)
+
+    offenders = []
+    for path in root.rglob("*.py"):
+        if path.name == "telemetry.py":
+            continue
+        for block in literal_block.findall(path.read_text(encoding="utf-8")):
+            spelled = {name for name in names if f'"{name}"' in block}
+            # One name is a typed constant for that command, which is fine.
+            # Several, including a wire-only name, is the vocabulary again.
+            if len(spelled) > 1 and spelled & wire_only:
+                offenders.append(
+                    f"{path.name} redeclares {len(spelled)} wire commands"
+                )
+
+    assert not offenders, offenders
+
+
+def test_recipient_cardinality_is_never_decided_by_command_name() -> None:
+    """Section 3.1, enforced at every edge rather than asserted once.
+
+    Four copies of this fence existed: the Python request schema, the native
+    parser, the native dispatch allowlist, and the acknowledgement schema. Each
+    was found only when a group-scoped command hit it, one at a time.
+    """
+
+    import inspect
+    import pathlib
+
+    from kenshi_agent.core.telemetry import NativeCommandAcknowledgement
+
+    for validator in (
+        NativeCommandRequest.validate_native_fences,
+        NativeCommandAcknowledgement.validate_causal_lifecycle,
+    ):
+        source = inspect.getsource(validator)
+        assert "requires exactly one selected character" not in source
+
+    native = pathlib.Path(__file__).resolve().parents[1] / "native" / "KenshiAgentTelemetry"
+    for name in ("NativeCommandProtocol.cpp", "KenshiAgentTelemetry.cpp"):
+        source = (native / name).read_text(encoding="utf-8", errors="replace")
+        assert "allowsGroupSelection" not in source, name

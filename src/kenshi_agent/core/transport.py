@@ -27,6 +27,7 @@ from .planning import ConditionEvaluation
 from .telemetry import (
     ContextActionKind,
     NativeCommandAcknowledgement,
+    NativeWireCommand,
 )
 from .world import WorldStateRevision
 
@@ -87,19 +88,7 @@ class CommandDispatchContext(StrictModel):
 class NativeCommandRequest(StrictModel):
     schema_version: Literal["1.2"]
     command_id: str = Field(pattern=r"^cmd-[0-9a-f]{32}$")
-    command: Literal[
-        "approach_confirmed_vendor",
-        "move_to_character",
-        "select_squad_member",
-        "regroup_with_squad_member",
-        "move_in_direction",
-        "travel_to_map_destination",
-        "exit_current_building",
-        "perform_context_action",
-        "produce_resource_output",
-        "open_context_inventory",
-        "survey_local_resources",
-    ]
+    command: NativeWireCommand
     control_mode: Literal[ControlMode.NATIVE_ASSISTED]
     identity_session_id: str = Field(min_length=1, max_length=200)
     based_on_revision: WorldStateRevision
