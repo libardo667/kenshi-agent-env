@@ -1279,6 +1279,12 @@
           "minLength": 1,
           "title": "Label",
           "type": "string"
+        },
+        "value": {
+          "default": "",
+          "maxLength": 200,
+          "title": "Value",
+          "type": "string"
         }
       },
       "required": [

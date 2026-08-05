@@ -1256,10 +1256,55 @@ namespace
     // resource name and a value, but exposes only the button, so the exact
     // split is unproven; inventing a parse would be asserting a format nobody
     // has confirmed. The agent gets what the window says.
+    std::string StripColourTags(const std::string& value);
+
     struct ProspectReading
     {
         std::string label;
+        std::string value;
     };
+
+    // Kenshi_ProspectingWindowResourceLine.layout, shipped in the game's own
+    // data/gui/layout directory, defines each line exactly:
+    //
+    //   Root (PanelEmpty)
+    //     CheckboxButton (Button)  - the resource name
+    //     ValueText      (TextBox) - the reading
+    //
+    // So the reading is found by name rather than by collecting every caption
+    // and guessing which one it is. MyGUI prefixes layout-loaded widget names,
+    // so match the declared suffix rather than the bare name.
+    const char* PROSPECT_VALUE_WIDGET_SUFFIX = "ValueText";
+
+    bool WidgetNameEndsWith(MyGUI::Widget* widget, const char* suffix)
+    {
+        if (widget == NULL)
+            return false;
+        const std::string name = widget->getName();
+        const std::string wanted(suffix);
+        return name.size() >= wanted.size() &&
+               name.compare(
+                   name.size() - wanted.size(),
+                   wanted.size(),
+                   wanted) == 0;
+    }
+
+    std::string FindProspectLineValue(MyGUI::Widget* panel)
+    {
+        if (panel == NULL)
+            return std::string();
+        for (size_t index = 0; index < panel->getChildCount(); ++index)
+        {
+            MyGUI::Widget* child = panel->getChildAt(index);
+            if (!WidgetNameEndsWith(child, PROSPECT_VALUE_WIDGET_SUFFIX))
+                continue;
+            MyGUI::TextBox* textBox = child->castType<MyGUI::TextBox>(false);
+            if (textBox == NULL)
+                continue;
+            return StripColourTags(textBox->getCaption().asUTF8());
+        }
+        return std::string();
+    }
 
     struct ProspectSurveyRecord
     {
@@ -1319,9 +1364,13 @@ namespace
             if (line == NULL || line->button == NULL)
                 continue;
             ProspectReading reading;
-            reading.label = line->button->getCaption().asUTF8();
+            reading.label = StripColourTags(line->button->getCaption().asUTF8());
             if (reading.label.empty())
                 continue;
+            // ResourceLinePanel::getWidget is declared but not exported, so
+            // reach the line's Root panel through the button's parent instead -
+            // MyGUI's own symbol, and the same widget either way.
+            reading.value = FindProspectLineValue(line->button->getParent());
             g_prospectSurvey.readings.push_back(reading);
         }
         g_prospectSurvey.valid = true;
@@ -1353,6 +1402,8 @@ namespace
                 json << ",";
             json << "{\"label\":\""
                  << JsonEscape(g_prospectSurvey.readings[index].label)
+                 << "\",\"value\":\""
+                 << JsonEscape(g_prospectSurvey.readings[index].value)
                  << "\"}";
         }
         json << "]}";

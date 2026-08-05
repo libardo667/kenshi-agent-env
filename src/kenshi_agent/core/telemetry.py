@@ -332,6 +332,10 @@ class ProspectReading(StrictModel):
     """
 
     label: str = Field(min_length=1, max_length=200)
+    # The reading beside the name, verbatim and colour-tag stripped. Empty when
+    # the line carried no sibling caption, which is a different fact from a
+    # reading of zero.
+    value: str = Field(default="", max_length=200)
 
 
 class ProspectSurvey(StrictModel):
