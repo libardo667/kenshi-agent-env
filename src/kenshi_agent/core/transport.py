@@ -28,6 +28,7 @@ from .telemetry import (
     ContextActionKind,
     NativeCommandAcknowledgement,
     NativeWireCommand,
+    require_consistent_wire_shape,
 )
 from .world import WorldStateRevision
 
@@ -107,33 +108,18 @@ class NativeCommandRequest(StrictModel):
             raise ValueError("native command basis requires a telemetry sequence")
         if len(set(self.selected_character_ids)) != len(self.selected_character_ids):
             raise ValueError("native command selection basis contains duplicates")
-        # Recipient cardinality is not decided here. The operation registry owns
-        # recipient scope, and this schema validates only that a dispatch basis
-        # is internally consistent. A command-name exception set at this edge
-        # was a second selection authority that could disagree with the
-        # definition it was supposed to be enforcing.
-        if self.command == "move_in_direction":
-            if self.target_id:
-                raise ValueError("a directional walk must not name a target")
-            if self.distance_units <= 0.0:
-                raise ValueError("a directional walk requires a distance to walk")
-        elif self.command in ("exit_current_building", "survey_local_resources"):
-            if self.target_id:
-                raise ValueError(f"a {self.command} command must not name a target")
-            if self.bearing_degrees != 0.0 or self.distance_units != 0.0:
-                raise ValueError(f"a {self.command} command must not carry direction fields")
-        else:
-            if not self.target_id:
-                raise ValueError("this native command requires a target")
-            if self.bearing_degrees != 0.0 or self.distance_units != 0.0:
-                raise ValueError("a targeted native command must not carry direction fields")
-        if self.command == "perform_context_action":
-            if not self.context_action:
-                raise ValueError("a context-action command requires its reviewed semantic")
-        elif self.context_action:
-            raise ValueError("only a context-action command may name a context action")
-        if self.command != "produce_resource_output" and self.minimum_output_quantity != 1:
-            raise ValueError("only resource production may request a larger output quantity")
+        # Wire shape is classified once, in telemetry, for both directions of
+        # the protocol. Recipient cardinality is not decided at either edge:
+        # the operation registry owns recipient scope.
+        require_consistent_wire_shape(
+            command=self.command,
+            subject="command",
+            target_id=self.target_id,
+            bearing_degrees=self.bearing_degrees,
+            distance_units=self.distance_units,
+            context_action=str(self.context_action),
+            minimum_output_quantity=self.minimum_output_quantity,
+        )
         return self
 
 

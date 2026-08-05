@@ -920,6 +920,70 @@ class NativeCommandStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+# Wire shape, classified once for both directions of the protocol.
+#
+# The request schema and the acknowledgement schema each carried a full copy of
+# this - which command names a target, which carries a direction, which is
+# parameterless - so a new command had to be taught to both. survey_local_
+# resources was taught to one, and the acknowledgement copy then refused to read
+# back a command the plug-in had already executed. Because that is the readback
+# path, one unexpected acknowledgement invalidated the whole telemetry snapshot.
+#
+# These answer shape only. Recipient scope belongs to the operation registry and
+# is never inferred from a command name here.
+NATIVE_COMMANDS_CARRYING_DIRECTION: frozenset[str] = frozenset({"move_in_direction"})
+
+NATIVE_COMMANDS_NAMING_A_TARGET: frozenset[str] = frozenset(
+    {
+        "approach_confirmed_vendor",
+        "move_to_character",
+        "select_squad_member",
+        "regroup_with_squad_member",
+        "travel_to_map_destination",
+        "perform_context_action",
+        "produce_resource_output",
+        "open_context_inventory",
+    }
+)
+
+
+def require_consistent_wire_shape(
+    *,
+    command: str,
+    subject: str,
+    target_id: str,
+    bearing_degrees: float,
+    distance_units: float,
+    context_action: str,
+    minimum_output_quantity: int,
+) -> None:
+    """Reject a native request or acknowledgement whose fields contradict it."""
+
+    if command in NATIVE_COMMANDS_CARRYING_DIRECTION:
+        if target_id:
+            raise ValueError(f"a directional {subject} must not name a target")
+        if distance_units <= 0.0:
+            raise ValueError(f"a directional {subject} requires a distance")
+    elif command in NATIVE_COMMANDS_NAMING_A_TARGET:
+        if not target_id:
+            raise ValueError(f"this native {subject} requires a target")
+        if bearing_degrees != 0.0 or distance_units != 0.0:
+            raise ValueError(f"a targeted {subject} must not carry direction fields")
+    else:
+        # Parameterless: it names neither a target nor a direction.
+        if target_id:
+            raise ValueError(f"a {command} {subject} must not name a target")
+        if bearing_degrees != 0.0 or distance_units != 0.0:
+            raise ValueError(f"a {command} {subject} must not carry direction fields")
+    if command == "perform_context_action":
+        if not context_action:
+            raise ValueError(f"a context-action {subject} requires its reviewed semantic")
+    elif context_action:
+        raise ValueError(f"only a context-action {subject} may name a context action")
+    if command != "produce_resource_output" and minimum_output_quantity != 1:
+        raise ValueError("only resource production may request a larger output quantity")
+
+
 # Every native command the plug-in accepts, defined once.
 #
 # This vocabulary was written out five times - the request schema, the
@@ -972,33 +1036,15 @@ class NativeCommandAcknowledgement(StrictModel):
             )
         if len(set(self.selected_character_ids)) != len(self.selected_character_ids):
             raise ValueError("native acknowledgement selection basis contains duplicates")
-        # Recipient cardinality is not decided here either. This was the fourth
-        # copy of one command-name fence - after the Python request schema, the
-        # native parser, and the native dispatch allowlist - and being the
-        # readback path made it the worst placed: a command the plug-in had
-        # already accepted and executed could not be read back, so one
-        # unexpected acknowledgement invalidated the entire telemetry snapshot
-        # rather than one field. The operation registry owns recipient scope.
-        if self.command == "move_in_direction":
-            if self.target_id:
-                raise ValueError("a directional acknowledgement must not name a target")
-            if self.distance_units <= 0.0:
-                raise ValueError("a directional acknowledgement requires a distance")
-        elif self.command == "exit_current_building":
-            if self.target_id:
-                raise ValueError("a building-exit acknowledgement must not name a target")
-            if self.bearing_degrees != 0.0 or self.distance_units != 0.0:
-                raise ValueError("a building-exit acknowledgement must not carry direction fields")
-        else:
-            if not self.target_id:
-                raise ValueError("this native acknowledgement requires a target")
-            if self.bearing_degrees != 0.0 or self.distance_units != 0.0:
-                raise ValueError("a targeted acknowledgement must not carry direction fields")
-        if self.command == "perform_context_action":
-            if not self.context_action:
-                raise ValueError("a context-action acknowledgement requires its reviewed semantic")
-        elif self.context_action:
-            raise ValueError("only a context-action acknowledgement may name a context action")
+        require_consistent_wire_shape(
+            command=self.command,
+            subject="acknowledgement",
+            target_id=self.target_id,
+            bearing_degrees=self.bearing_degrees,
+            distance_units=self.distance_units,
+            context_action=str(self.context_action),
+            minimum_output_quantity=self.minimum_output_quantity,
+        )
 
         if self.status == NativeCommandStatus.REJECTED:
             if self.accepted_at_telemetry_sequence is not None:
