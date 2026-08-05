@@ -49,8 +49,15 @@ from .types import (
     OperationStatus,
 )
 
+# The sentence the kernel used to emit for every transition-less failure,
+# regardless of what the handler had already worked out.
+_GENERIC_NO_TRANSITION = "World-command handler returned no causal transition."
 
-def _no_causal_transition_reason(observation: Observation) -> str:
+
+def _no_causal_transition_reason(
+    observation: Observation,
+    handler_reason: str = "",
+) -> str:
     """Say why the world did not change, not merely that it did not.
 
     "World-command handler returned no causal transition" is true and useless:
@@ -62,13 +69,21 @@ def _no_causal_transition_reason(observation: Observation) -> str:
     can ever produce a transition, and the message now says so.
     """
 
+    # The handler usually knows exactly what was wrong and says so. Discarding
+    # that for a generic sentence is how a precise diagnosis - "selection does
+    # not satisfy the action's exact selection-cardinality contract" - reached
+    # the bundle as "no causal transition", which sent a reader to the handler
+    # instead of to the two selected characters that actually caused it.
+    handler_reason = handler_reason.strip()
+    if handler_reason and handler_reason != _GENERIC_NO_TRANSITION:
+        return handler_reason
     telemetry = observation.telemetry
     if telemetry is not None and telemetry.game.paused:
         return (
             "The game is paused, so no world command can change the world. "
             "Resume play before ordering anything that depends on time passing."
         )
-    return "World-command handler returned no causal transition."
+    return _GENERIC_NO_TRANSITION
 
 
 class KernelEventReporter(Protocol):
@@ -516,7 +531,7 @@ class ExecutionKernel:
         latest = handled.observation
         if command is not None:
             if transition is None:
-                no_transition = _no_causal_transition_reason(latest)
+                no_transition = _no_causal_transition_reason(latest, handled.reason)
                 self.state_store.fail_active_command(no_transition)
                 self._reservation_event(event, request, latest, reason)
                 return KernelResult(

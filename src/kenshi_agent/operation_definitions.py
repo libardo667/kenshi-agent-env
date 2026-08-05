@@ -127,6 +127,7 @@ NATIVE_WALK_DESTINATION_REACHED_RESULT = "walk_destination_reached"
 NATIVE_RESOURCE_OUTPUT_READY_RESULT = "resource_output_ready"
 NATIVE_RESOURCE_TASK_RELEASED_RESULT = "resource_output_ready_task_released"
 NATIVE_CONTEXT_ACTION_CAPABILITY = "control.perform_context_action"
+NATIVE_RESOURCE_SURVEY_CAPABILITY = "control.survey_local_resources"
 NATIVE_CONTEXT_TARGETS_CAPABILITY = "world.context_targets"
 WORLD_CONTEXT_TARGET_SCREEN_POSITIONS_CAPABILITY = "world.context_target_screen_positions"
 NATIVE_PRODUCE_RESOURCE_CAPABILITY = "control.produce_resource_output"
@@ -3592,7 +3593,18 @@ SURVEY_LOCAL_RESOURCES_DEFINITION = OperationDefinition(
         "centre."
     ),
     allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
-    required_capabilities=frozenset({"squad.basic", "identity.stable_handles"}),
+    # The survey dispatches a native command, so it must declare the control
+    # capability that command needs. It previously declared none, and option
+    # preparation's private capability map silently fell back to the direction
+    # capability - so a survey was admitted by a capability it never used, and
+    # would have kept being admitted had the plug-in stopped implementing it.
+    required_capabilities=frozenset(
+        {
+            "squad.basic",
+            "identity.stable_handles",
+            NATIVE_RESOURCE_SURVEY_CAPABILITY,
+        }
+    ),
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,

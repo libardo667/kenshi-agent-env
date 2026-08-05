@@ -35,6 +35,7 @@
     "world.context_targets",
     "world.context_target_screen_positions",
     "control.perform_context_action",
+    "control.survey_local_resources",
     "control.produce_resource_output",
     "control.open_context_inventory",
     "identity.stable_handles"

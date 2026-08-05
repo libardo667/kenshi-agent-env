@@ -426,51 +426,64 @@ class StatefulNativeMovementOption:
             return "exit_current_building"
         return "move_in_direction"
 
-    @property
-    def _required_capability(self) -> str:
-        if isinstance(self.action, MoveToCharacterAction):
-            return "control.move_to_character"
-        if isinstance(self.action, RegroupWithSquadMemberAction):
-            return "control.regroup_with_squad_member"
-        if isinstance(self.action, TravelToMapDestinationAction):
-            return "control.travel_to_map_destination"
-        if isinstance(self.action, ProduceResourceOutputAction):
-            return "control.produce_resource_output"
-        if isinstance(self.action, PerformContextAction):
-            return "control.perform_context_action"
-        if isinstance(self.action, ExitCurrentBuildingAction):
-            return "control.exit_current_building"
-        return "control.move_in_direction"
-
     def prepare(self, observation: Observation) -> OptionPoll:
         if self.status is not OptionStatus.CREATED:
             raise OptionLifecycleError("Native movement option can only be prepared once.")
         telemetry = observation.telemetry
-        if (
-            telemetry is None
-            or "game.pause" not in telemetry.capabilities
-            or self._required_capability not in telemetry.capabilities
-        ):
+        if telemetry is None:
             raise OptionLifecycleError("Native movement option requires a capable start state.")
+        # The control capability this action needs is the definition's to
+        # declare. This carried a private action-to-capability mapping whose
+        # final line was an unconditional `return "control.move_in_direction"`,
+        # so any action it did not enumerate was silently gated on an unrelated
+        # capability: `survey_local_resources` was checked against the direction
+        # capability and would have kept passing had the plug-in stopped
+        # advertising a survey command at all. Deriving it means an operation
+        # can no longer be admitted by a capability it does not use.
+        #
+        # Only the control capability is checked here. The definition's full
+        # required set is the run-level gate's business, and enforcing it again
+        # at option preparation would be a second authority for a question
+        # already answered.
+        definition = definition_for(self.action)
+        control_capabilities = frozenset(
+            capability
+            for capability in definition.required_capabilities
+            if capability.startswith("control.")
+        )
+        if "game.pause" not in telemetry.capabilities:
+            raise OptionLifecycleError("Native movement option requires a capable start state.")
+        missing = definition.missing_capabilities(
+            set(telemetry.capabilities) | (definition.required_capabilities - control_capabilities)
+        )
+        if missing:
+            raise OptionLifecycleError(
+                "Native movement option requires a capable start state; the "
+                f"runtime does not advertise {', '.join(missing)}."
+            )
         if self.require_paused_start and telemetry.game.paused is not True:
             raise OptionLifecycleError(
                 "Native movement option requires a capable, confirmed paused start state."
             )
         selected_ids = telemetry.ui.selected_character_ids
-        if (
-            not selected_ids
-            or telemetry.ui.selected_character_id not in selected_ids
-            or (
-                not isinstance(
-                    self.action,
-                    (MoveToCharacterAction, TravelToMapDestinationAction),
-                )
-                and len(selected_ids) != 1
-            )
+        # Selection cardinality is the operation contract's to decide, not this
+        # option's. This carried its own rule - a singleton for anything that
+        # was not a character move or a map travel - which contradicted both the
+        # declared contract and Kenshi itself. The game's ordering API is
+        # selection-based throughout: newPlayerTaskSelectedCharacters,
+        # addOrderSelectedCharacters, addJobSelectedCharacters, and
+        # isOrderValidForSelection all take the selection, and the plug-in has
+        # always issued orders that way. Nothing in Kenshi's order path wants a
+        # singleton. The cost of the private copy was that a two-character party
+        # could not mine: every `operate` on an iron deposit was refused here,
+        # after the contract had already allowed it.
+        if not definition_for(self.action).satisfies_recipient_scope(
+            observation, self.action
         ):
             raise OptionLifecycleError(
                 "Native movement option selection does not satisfy the action's "
-                "exact selection-cardinality contract."
+                f"declared recipient scope; {len(selected_ids)} character(s) are "
+                "selected."
             )
         self.start_observation = observation.model_copy(deep=True)
         self.latest_observation = observation.model_copy(deep=True)
