@@ -1255,19 +1255,24 @@ namespace
     {
         if (ou == NULL || ou->zoneMgr == NULL)
             return false;
-        // The biome argument is passed null deliberately. Weather.h, which
-        // owns the only reachable AreaBiomeGroup accessor, does not parse
-        // standalone - it is a decompiled header that references Season,
-        // Weather, and WeatherRegion before declaring them. getResourceBase
-        // is the pre-biome-modifier reading, so a null biome is the honest
-        // request rather than a missing argument.
+        // Withheld, not guessed.
         //
-        // UNVERIFIED at time of writing: if Kenshi dereferences the biome this
-        // will fault. It is therefore called only on explicit request, never
-        // on the ordinary snapshot path, so the blast radius is one deliberate
-        // survey rather than every telemetry tick.
-        level = ou->zoneMgr->getResourceBase(resource, NULL, position);
-        return true;
+        // ZoneManager::getResource needs an AreaBiomeGroup and Kenshi
+        // dereferences it: passing null crashed the game on the first survey
+        // ever dispatched. Every reachable source of one is currently blocked -
+        // WeatherSystem::ActiveRegion needs Weather.h, which cannot be included
+        // because PhysicsCollection.h already defines WeatherRegion;
+        // ZoneManager::getBiome returns GameData*, a different type; and
+        // Town::getBiome only answers inside a town.
+        //
+        // So the survey reports unavailable rather than sampling. That is the
+        // honest state: the operation exists, its transport works, and its one
+        // missing piece is named. A crash is not an acceptable way to discover
+        // an unmet precondition.
+        (void)resource;
+        (void)position;
+        (void)level;
+        return false;
     }
 
 

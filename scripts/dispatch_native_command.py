@@ -25,13 +25,13 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from kenshi_agent.config import load_config  # noqa: E402
 from kenshi_agent.control.base import HotkeyAction  # noqa: E402
-from kenshi_agent.control.win32 import Win32InputController  # noqa: E402
 from kenshi_agent.core.transport import NativeCommandRequest, new_command_id  # noqa: E402
 from kenshi_agent.core.world import WorldStateRevision  # noqa: E402
 from kenshi_agent.native_commands import (  # noqa: E402
     write_native_command_request_atomic,
 )
 from kenshi_agent.telemetry import TelemetryReader  # noqa: E402
+from kenshi_agent.tooling.live_dev import _controller  # noqa: E402
 
 TRIGGER = HotkeyAction(keys=["ctrl", "shift", "f10"])
 
@@ -66,8 +66,12 @@ def main() -> int:
         control_mode="native_assisted",
         identity_session_id=snapshot.identity_session_id,
         based_on_revision=WorldStateRevision(
+            # The capability epoch is a runtime counter the coordinator owns,
+            # not a snapshot field. The plug-in's transport window checks the
+            # telemetry sequence; zero is the honest value for a one-off
+            # diagnostic that owns no run state.
             telemetry_sequence=snapshot.sequence,
-            capability_epoch=snapshot.capability_epoch,
+            capability_epoch=0,
         ),
         selected_character_ids=list(snapshot.ui.selected_character_ids),
         target_id=args.target_id,
@@ -78,7 +82,9 @@ def main() -> int:
     )
     print(f"wrote request {command_id} for {args.command}")
 
-    controller = Win32InputController(config.controls)
+    # Built exactly as the supported live path builds it, so the trigger
+    # travels the same focus, politeness, and restore discipline.
+    controller = _controller(config)
 
     async def send_trigger() -> None:
         async with controller.input_lease():
