@@ -2912,7 +2912,7 @@ def _agent_argv(
                 "--acknowledge-continuous-live",
             ]
         )
-    if args.control == "exclusive-live":
+    if args.control == "live":
         argv.append("--exclusive-input-session")
     return argv
 
@@ -2967,7 +2967,7 @@ def _run_agent(
         with display_context:
             overlay: subprocess.Popen[bytes] | None = None
             if (
-                args.control == "exclusive-live"
+                args.control == "live"
                 and config.safety.automatic_takeover_enabled
             ):
                 overlay = subprocess.Popen(

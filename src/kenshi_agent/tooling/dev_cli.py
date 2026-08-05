@@ -12,7 +12,19 @@ from collections.abc import Sequence
 from pathlib import Path
 
 LIVE_CONFIG = "config/live.yaml"
-CONTROL_MODES = ("plan-only", "polite-live", "exclusive-live")
+# Two modes, because there were never really three.
+#
+# `polite-live` saved and restored the host cursor and foreground window around
+# every action, so a human could keep using the desktop mid-run. It cost more
+# than it bought: with the configured relative pointer mode each restore left
+# the cursor somewhere the next relative move had to resync from, which is why
+# live actions refused to start under it at all. It also told a second story
+# about who owns input, beside the control-ownership machine that already owns
+# that question.
+#
+# There is no human to be polite to here - the game is a fixture driven by the
+# agent - so a run either sends input or it does not.
+CONTROL_MODES = ("plan-only", "live")
 
 
 class _HelpFormatter(argparse.ArgumentDefaultsHelpFormatter):
@@ -73,8 +85,8 @@ def _add_control_option(parser: argparse.ArgumentParser) -> None:
         choices=CONTROL_MODES,
         default="plan-only",
         help=(
-            "plan-only sends no gameplay actions; polite-live restores host focus and cursor; "
-            "exclusive-live retains desktop ownership."
+            "plan-only sends no gameplay actions; live takes desktop input "
+            "ownership for the run."
         ),
     )
 
@@ -152,7 +164,7 @@ def build_parser(
         epilog=(
             "Examples:\n"
             "  ./dev doctor\n"
-            "  ./dev run --objective 'Reach Squin' --control polite-live\n"
+            "  ./dev run --objective 'Reach Squin' --control live\n"
             "  ./dev telemetry --watch\n"
             "  ./dev recover"
         ),

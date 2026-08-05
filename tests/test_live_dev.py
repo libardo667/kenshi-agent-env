@@ -206,12 +206,7 @@ def test_run_control_mode_is_one_explicit_authority_choice() -> None:
     parser = live_dev.build_parser()
 
     assert parser.parse_args(["run"]).control == "plan-only"
-    assert parser.parse_args(["run", "--control", "polite-live"]).control == (
-        "polite-live"
-    )
-    assert parser.parse_args(["run", "--control", "exclusive-live"]).control == (
-        "exclusive-live"
-    )
+    assert parser.parse_args(["run", "--control", "live"]).control == "live"
 
 
 def test_launch_commands_keep_current_display_by_default_and_expose_focus() -> None:
@@ -375,21 +370,17 @@ def test_run_control_mode_translates_to_the_core_authority_gates() -> None:
     parser = live_dev.build_parser()
 
     plan_only = build_agent_argv(parser.parse_args(["run"]), "plan")
-    polite = build_agent_argv(
-        parser.parse_args(["run", "--control", "polite-live"]),
-        "polite",
-    )
-    exclusive = build_agent_argv(
-        parser.parse_args(["run", "--control", "exclusive-live"]),
-        "exclusive",
-    )
+    live = build_agent_argv(parser.parse_args(["run", "--control", "live"]), "live")
 
     assert "--execute-live-actions" not in plan_only
-    assert "--execute-live-actions" in polite
-    assert "--acknowledge-native-assisted-control" in polite
-    assert "--acknowledge-continuous-live" in polite
-    assert "--exclusive-input-session" not in polite
-    assert "--exclusive-input-session" in exclusive
+    assert "--exclusive-input-session" not in plan_only
+    # A live run owns input outright. The removed middle mode restored the host
+    # cursor and foreground around every action, which the configured relative
+    # pointer mode could not survive - live actions refused to start under it.
+    assert "--execute-live-actions" in live
+    assert "--acknowledge-native-assisted-control" in live
+    assert "--acknowledge-continuous-live" in live
+    assert "--exclusive-input-session" in live
 
 
 def test_safe_close_requires_fresh_paused_idle_telemetry() -> None:
@@ -2155,7 +2146,7 @@ def test_run_parser_combines_start_agent_and_control_options() -> None:
             "--steps",
             "80",
             "--control",
-            "exclusive-live",
+            "live",
         ]
     )
 
@@ -2894,7 +2885,7 @@ def test_run_live_control_passes_every_core_authority_gate() -> None:
     argv = _agent_argv(
         _run_args(
             "--control",
-            "polite-live",
+            "live",
         ),
         "run-4",
     )
@@ -3111,7 +3102,7 @@ def test_run_delegates_final_safety_to_the_core_run(
     )
 
     result = live_dev._run_agent(
-        _run_args("--control", "polite-live")
+        _run_args("--control", "live")
     )
 
     assert result == 6
@@ -3149,12 +3140,15 @@ def test_run_ownership_overlay_follows_exclusive_control(
         lambda argv, **_: opened.append(argv) or OverlayProcess(),
     )
 
-    assert live_dev._run_agent(_run_args("--control", "polite-live")) == 0
+    # A plan-only run sends no input, so nothing owns the desktop and no
+    # ownership companion is shown. The contrast used to be between two live
+    # modes; there is only one now, and it always owns input.
+    assert live_dev._run_agent(_run_args("--control", "plan-only")) == 0
     assert opened == []
 
     assert (
         live_dev._run_agent(
-            _run_args("--control", "exclusive-live")
+            _run_args("--control", "live")
         )
         == 0
     )
@@ -3194,7 +3188,7 @@ def test_run_owned_overlay_escalates_to_kill_when_terminate_stalls(
         lambda *_args, **_kwargs: StuckOverlayProcess(),
     )
 
-    assert live_dev._run_agent(_run_args("--control", "exclusive-live")) == 0
+    assert live_dev._run_agent(_run_args("--control", "live")) == 0
     assert calls == ["terminate", "wait", "kill", "wait"]
 
 

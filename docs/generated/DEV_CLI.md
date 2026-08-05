@@ -28,7 +28,7 @@ options:
 
 Examples:
   ./dev doctor
-  ./dev run --objective 'Reach Squin' --control polite-live
+  ./dev run --objective 'Reach Squin' --control live
   ./dev telemetry --watch
   ./dev recover
 ```
@@ -75,7 +75,7 @@ options:
 ```text
 usage: ./dev run [-h] [--timeout TIMEOUT] [--scenario SCENARIO | --game-start GAME_START]
                  [--objective OBJECTIVE] [--campaign CAMPAIGN] [--steps STEPS] [--run-id RUN_ID]
-                 [--control {plan-only,polite-live,exclusive-live}] [--focus-display]
+                 [--control {plan-only,live}] [--focus-display]
 
 Run the agent in a fresh or already-loaded world. Ambiguous live state fails closed.
 
@@ -90,10 +90,8 @@ options:
                               None)
   --steps STEPS               Override the configured step ceiling. (default: None)
   --run-id RUN_ID             Exact run identifier; generated when omitted. (default: None)
-  --control {plan-only,polite-live,exclusive-live}
-                              plan-only sends no gameplay actions; polite-live restores host focus
-                              and cursor; exclusive-live retains desktop ownership. (default: plan-
-                              only)
+  --control {plan-only,live}  plan-only sends no gameplay actions; live takes desktop input
+                              ownership for the run. (default: plan-only)
   --focus-display             Temporarily switch to the external 1920x1080 display only; the default
                               keeps the internal panel and external display active. (default: False)
 ```
