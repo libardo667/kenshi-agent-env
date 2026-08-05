@@ -137,22 +137,27 @@
   },
   "installation_rollback": {
     "required_by_slice": 2,
-    "status": "incomplete_operator_action_required",
+    "status": "pending",
     "installed_dll": {
       "protocol": "1.12.0",
       "size_bytes": 286720,
       "sha256": "e93d7278fc81c04f562e607322af7f805027fd2523e276bc4ca463e0f54cde77",
       "source": "docs/reconstruction/stage_8_acceptance.md",
       "verified_here": false,
-      "note": "The DLL lives in the Kenshi installation on the Windows host and is not reachable from this WSL working tree. The hash is carried forward from the Stage 8 acceptance report, not re-measured."
+      "note": "Carried forward from the Stage 8 acceptance report, not yet re-measured at this baseline."
     },
-    "operator_actions_before_slice_2": [
-      "Archive the current installed 1.12.0 DLL outside the game directory and re-measure its hash on the Windows host.",
-      "Record the exact reinstall procedure for the archived 1.12.0 artefact.",
+    "build_environment": {
+      "reachable": true,
+      "mechanism": "WSL interop; /mnt/c is mounted and powershell.exe 5.1.26100.8875 responds",
+      "note": "An earlier draft of this manifest claimed the Windows host was unreachable from this working tree. That was wrong. scripts/build_native.ps1, scripts/stage_native.ps1, and scripts/native_doctor.ps1 are all invocable from here, and the Stage 0 baseline recorded Windows toolchain facts the same way."
+    },
+    "actions_before_slice_2": [
+      "Re-measure the installed 1.12.0 DLL hash and confirm it against the Stage 8 value.",
+      "Archive the 1.12.0 artefact outside the game directory and record the exact reinstall procedure.",
       "After the 2.0 build, archive and hash it the same way.",
       "Record which run bundles were produced under which protocol so a rollback does not leave 2.0-shaped evidence being read as 1.12.0."
     ],
-    "note": "A git tag alone does not restore a working system from Slice 2 onward. Rolling Python back without reinstalling the matching plug-in leaves a version mismatch across the telemetry boundary."
+    "note": "A git tag alone does not restore a working system from Slice 2 onward. Rolling Python back without reinstalling the matching plug-in leaves a version mismatch across the telemetry boundary. The work is ordinary, not blocked."
   },
   "preserved_evidence": {
     "note": "Existing durable bundles. None was rerun to produce a newer timestamp, and none is claimed to prove group-scope behaviour.",
