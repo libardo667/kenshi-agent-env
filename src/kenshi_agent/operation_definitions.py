@@ -19,11 +19,13 @@ from pydantic import BaseModel
 
 from .core.affordance import BoundAffordance
 from .core.interaction import (
+    AuthoredRecipientBasis,
     CompletionMilestone,
     OperationInteractionContract,
     PlaybackRequirement,
     RecipientScope,
     SelectionDependency,
+    explicit_recipients_of,
     global_ui,
     ordinary_order,
     runtime_only,
@@ -2643,6 +2645,19 @@ class OperationIdentity:
     operation_fingerprint: str
     affordance_fingerprint: str | None
     binding_fingerprint: str
+    # Who this operation was authored to command. Identity previously covered
+    # the definition, the typed action, the affordance, and the binding - none
+    # of which mention who acts - so an order authored while A and B were
+    # selected could be delivered to C after a lease wait without changing any
+    # fingerprint.
+    #
+    # Deliberately outside structural equality and the fingerprint. A recipient
+    # change has its own typed refusal, which names who the order would have
+    # gone to instead; folding it into the fingerprint as well reported it as a
+    # generic identity change and, worse, made an operation bound without an
+    # observation differ from its own rebind purely because one could capture a
+    # basis and the other could not.
+    recipient_basis: AuthoredRecipientBasis | None = field(default=None, compare=False)
 
 
 _VOLATILE_BINDING_IDENTITY_FIELDS = frozenset(
@@ -2655,6 +2670,41 @@ _VOLATILE_BINDING_IDENTITY_FIELDS = frozenset(
         "source_revision",
     }
 )
+
+
+def capture_recipient_basis(
+    definition: OperationDefinition,
+    action: Action,
+    observation: Observation | None,
+) -> AuthoredRecipientBasis | None:
+    """Record who this operation was authored to command.
+
+    Read from Kenshi's exported primary and selection, not from roster order:
+    `ui.selected_character_id` is the primary, and the first selected member of
+    `telemetry.squad` is merely the first one the exporter happened to walk.
+    """
+
+    scope = definition.recipient_scope_for(action, observation)
+    if scope is RecipientScope.EXPLICIT_RECIPIENTS:
+        return AuthoredRecipientBasis.capture(
+            scope,
+            primary=None,
+            selection=(),
+            explicit_recipients=explicit_recipients_of(action),
+        )
+    if scope is RecipientScope.NONE:
+        return AuthoredRecipientBasis.capture(scope, primary=None, selection=())
+    telemetry = None if observation is None else observation.telemetry
+    if telemetry is None:
+        # No evidence to author against. Recording an empty basis would claim
+        # the operation was authored for nobody, which a later populated basis
+        # would then contradict; absent is the honest answer.
+        return None
+    return AuthoredRecipientBasis.capture(
+        scope,
+        primary=telemetry.ui.selected_character_id,
+        selection=telemetry.ui.selected_character_ids,
+    )
 
 
 def _identity_json(value: object) -> object:
@@ -2683,8 +2733,15 @@ def operation_identity(
     operation: Action,
     binding: OperationBinding,
     affordance: BoundAffordance | None,
+    observation: Observation | None = None,
 ) -> OperationIdentity:
-    """Build the one immutable identity used at scheduling and dispatch."""
+    """Build the one immutable identity used at scheduling and dispatch.
+
+    `observation` supplies the evidence the recipient basis is captured from.
+    Without it the basis is absent rather than empty: an empty basis would
+    claim the operation was authored to command nobody, and a later populated
+    basis would then read as a change that never happened.
+    """
 
     if isinstance(binding, BindingFailure):
         raise ValueError("An unbound operation cannot have execution identity.")
@@ -2718,6 +2775,7 @@ def operation_identity(
     affordance_hash = (
         _fingerprint("affordance", affordance_payload) if affordance_payload is not None else None
     )
+    recipient_basis = capture_recipient_basis(definition, operation, observation)
     identity_payload = {
         "definition": {
             "kind": definition.kind,
@@ -2727,6 +2785,9 @@ def operation_identity(
         "operation": operation_hash,
         "affordance": affordance_hash,
         "binding": binding_hash,
+        # The resolved contract itself, so an operation whose interaction shape
+        # changed between authoring and dispatch is a different operation.
+        "interaction": definition.interaction_for(operation, observation).fingerprint(),
     }
     return OperationIdentity(
         fingerprint=_fingerprint("operation", identity_payload),
@@ -2736,6 +2797,7 @@ def operation_identity(
         operation_fingerprint=operation_hash,
         affordance_fingerprint=affordance_hash,
         binding_fingerprint=binding_hash,
+        recipient_basis=recipient_basis,
     )
 
 

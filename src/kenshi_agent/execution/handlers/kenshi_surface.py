@@ -26,6 +26,7 @@ from ...control.calibration import (
 from ...control.capture import CapturedFrame
 from ...core.authority import InputBoundaryDecision
 from ...core.evidence import SemanticActionReceipt
+from ...core.interaction import AuthoredRecipientBasis
 from ...core.observation import Observation
 from ...core.operation import (
     GAME_SPEED_MULTIPLIER_BY_GEAR,
@@ -717,6 +718,7 @@ class KenshiControlSurface:
                 distance_units=distance_units,
                 minimum_output_quantity=minimum_output_quantity,
                 context_action=context_action,
+                authored_basis=command.authored_basis(),
             )
             if continue_until_terminal
             else None
@@ -746,6 +748,7 @@ class KenshiControlSurface:
             request = self._native_approach_request(
                 target_id,
                 command,
+                action=action,
                 require_vendor_role=require_vendor_role,
                 wire_command=wire_command,
                 require_dialogue_target=require_dialogue_target,
@@ -1030,6 +1033,7 @@ class KenshiControlSurface:
         distance_units: float,
         minimum_output_quantity: int,
         context_action: ContextActionKind | None,
+        authored_basis: AuthoredRecipientBasis | None = None,
     ) -> NativeCommandAcknowledgement | None:
         """An already accepted, still active order with this exact identity.
 
@@ -1085,6 +1089,21 @@ class KenshiControlSurface:
             acknowledgement.selected_character_ids
         ) != set(selected_ids):
             return None
+        # Adoption compared the live order against the *current* selection only,
+        # so it was a way around the recipient check rather than a case of it:
+        # an order authored for A and B could be satisfied by continuing an
+        # order Kenshi holds for A alone, issuing nothing and reporting success.
+        # Declining adoption here lets the request path refuse with the precise
+        # reason instead of quietly commanding the wrong characters.
+        if authored_basis is not None:
+            current = AuthoredRecipientBasis.capture(
+                authored_basis.scope,
+                primary=observation.telemetry.ui.selected_character_id,
+                selection=selected_ids,
+                explicit_recipients=authored_basis.explicit_recipients,
+            )
+            if not authored_basis.matches(current):
+                return None
         return acknowledgement
 
     def _native_approach_request(
@@ -1092,6 +1111,7 @@ class KenshiControlSurface:
         target_id: str,
         command: CommandDispatchContext,
         *,
+        action: Action,
         require_vendor_role: bool,
         wire_command: NativeWireCommand = native_commands.NATIVE_APPROACH_WIRE_COMMAND,
         require_dialogue_target: bool = True,
@@ -1137,20 +1157,42 @@ class KenshiControlSurface:
         if not telemetry.identity_session_id:
             raise RuntimeError("Native command requires a current identity session.")
         selected_ids = telemetry.ui.selected_character_ids
-        group_selection_command = wire_command in {
-            native_commands.NATIVE_APPROACH_WIRE_COMMAND,
-            native_commands.NATIVE_MOVE_WIRE_COMMAND,
-            native_commands.NATIVE_SQUAD_SELECTION_WIRE_COMMAND,
-            native_commands.NATIVE_MAP_TRAVEL_WIRE_COMMAND,
-        }
-        if (
-            not selected_ids
-            or telemetry.ui.selected_character_id not in selected_ids
-            or (not group_selection_command and len(selected_ids) != 1)
-        ):
+        # Selection cardinality is the contract's to decide, and the contract
+        # is resolved in the operation layer - this surface is external
+        # delivery and deliberately knows nothing about definitions. What it
+        # receives is the already-decided recipient basis, and what it does is
+        # prove the world still matches it at the moment the bytes are formed.
+        #
+        # This replaced the fifth private copy of a singleton rule, keyed here
+        # on a hardcoded wire command name set that treated
+        # `perform_context_action` as singleton-only while its contract
+        # declares CURRENT_SELECTION - so a two-character party could not mine
+        # even after option preparation was fixed.
+        authored_basis = command.authored_basis()
+        if authored_basis is None:
+            # No recorded basis means nothing was proven about recipients, and
+            # a command that cannot say who it is for must not be delivered to
+            # whoever happens to be selected.
             raise RuntimeError(
-                "Native command selection does not satisfy the action's exact "
-                "selection-cardinality contract."
+                "Native command carries no authored recipient basis, so the "
+                "characters it would command cannot be proven."
+            )
+        current_basis = AuthoredRecipientBasis.capture(
+            authored_basis.scope,
+            primary=telemetry.ui.selected_character_id,
+            selection=selected_ids,
+            explicit_recipients=authored_basis.explicit_recipients,
+        )
+        drift = authored_basis.differences_from(current_basis)
+        if drift:
+            raise RuntimeError(
+                "Native command would be delivered to different recipients than "
+                f"it was authored for: {'; '.join(drift)}."
+            )
+        if not selected_ids or telemetry.ui.selected_character_id not in selected_ids:
+            raise RuntimeError(
+                "Native command requires a current selection containing Kenshi's "
+                "exported primary."
             )
         if expected_actor_id is not None and selected_ids != [expected_actor_id]:
             raise RuntimeError(

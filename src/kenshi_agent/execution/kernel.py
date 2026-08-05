@@ -54,6 +54,26 @@ from .types import (
 _GENERIC_NO_TRANSITION = "World-command handler returned no causal transition."
 
 
+
+def _authored_recipient_kwargs(bound: BoundOperation) -> dict[str, Any]:
+    """Carry the authored recipient basis into the dispatch context.
+
+    Authorization refuses a changed basis before the input lease releases. This
+    puts the same facts where the request bytes are actually formed, so the two
+    ends of the lease wait can be compared rather than assumed equal.
+    """
+
+    basis = bound.identity.recipient_basis
+    if basis is None:
+        return {}
+    return {
+        "authored_recipient_scope": basis.scope.value,
+        "authored_primary": basis.primary,
+        "authored_selection": list(basis.selection),
+        "authored_explicit_recipients": list(basis.explicit_recipients),
+    }
+
+
 def _no_causal_transition_reason(
     observation: Observation,
     handler_reason: str = "",
@@ -471,6 +491,7 @@ class ExecutionKernel:
             primitive_action_bound=bound.definition.primitive_action_bound_for(
                 bound.operation
             ),
+            **_authored_recipient_kwargs(bound),
         )
         token = ExecutionToken(
             plan_id=request.plan.plan_id,

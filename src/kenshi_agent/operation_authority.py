@@ -85,6 +85,48 @@ class OperationAuthority:
                 operation_fingerprint=fingerprint,
                 details={"violation": str(exc), "operation_kind": bound.operation.kind},
             )
+        # Runnability first. A selection that cannot satisfy the scope at all is
+        # a selection problem, and reporting it as a changed identity would hide
+        # the more specific answer behind a vaguer one.
+        try:
+            self._policy.revalidate_bound(rebound, observation)
+        except SafetyViolation as exc:
+            return AuthorizationDecision(
+                allowed=False,
+                code=exc.code,
+                based_on_revision=observation.world_revision,
+                operation_fingerprint=fingerprint,
+                details={"violation": str(exc), "operation_kind": bound.operation.kind},
+            )
+        # Then who it would command. The operation is runnable here; the
+        # question is whether it is still the same order for the same people.
+        authored = bound.identity.recipient_basis
+        current = rebound.identity.recipient_basis
+        if authored is not None and current is not None:
+            changes = authored.differences_from(current)
+            if changes:
+                return AuthorizationDecision(
+                    allowed=False,
+                    code=AuthorizationCode.STALE_RECIPIENT_BASIS,
+                    based_on_revision=observation.world_revision,
+                    operation_fingerprint=rebound.identity.fingerprint,
+                    details={
+                        "violation": (
+                            "This operation was authored for different recipients: "
+                            + "; ".join(changes)
+                            + "."
+                        ),
+                        "operation_kind": bound.operation.kind,
+                        "scheduled_fingerprint": fingerprint,
+                        "recipient_scope": authored.scope.value,
+                        "authored_primary": authored.primary,
+                        "authored_selection": list(authored.selection),
+                        "authored_explicit_recipients": list(authored.explicit_recipients),
+                        "current_primary": current.primary,
+                        "current_selection": list(current.selection),
+                        "current_explicit_recipients": list(current.explicit_recipients),
+                    },
+                )
         if rebound.identity != bound.identity:
             return AuthorizationDecision(
                 allowed=False,
@@ -96,16 +138,6 @@ class OperationAuthority:
                     "operation_kind": bound.operation.kind,
                     "scheduled_fingerprint": fingerprint,
                 },
-            )
-        try:
-            self._policy.revalidate_bound(rebound, observation)
-        except SafetyViolation as exc:
-            return AuthorizationDecision(
-                allowed=False,
-                code=exc.code,
-                based_on_revision=observation.world_revision,
-                operation_fingerprint=fingerprint,
-                details={"violation": str(exc), "operation_kind": bound.operation.kind},
             )
         return AuthorizationDecision(
             allowed=True,

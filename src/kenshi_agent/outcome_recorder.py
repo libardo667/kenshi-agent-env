@@ -730,7 +730,15 @@ class OutcomeRecorder:
             )
             if selected is not None:
                 return selected
-        return next(
-            (character for character in snapshot.squad if character.selected),
-            snapshot.squad[0] if snapshot.squad else None,
-        )
+        # Without an exported primary, only an unambiguous selection can stand
+        # in for one. The old fallback returned the first `selected` character
+        # of several - which is roster order, not Kenshi's primary - and then,
+        # if none were selected at all, `squad[0]`, who need not be selected in
+        # any sense. Facts about "the selected character" were answered about
+        # somebody else and reported as true.
+        selected_members = [
+            character for character in snapshot.squad if character.selected
+        ]
+        if len(selected_members) == 1:
+            return selected_members[0]
+        return None

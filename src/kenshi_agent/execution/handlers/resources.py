@@ -681,6 +681,27 @@ class HarvestHandler:
                 if context.command is not None
                 else 0
             ),
+            # A harvest phase is a sub-command of the harvest that authorized
+            # it, so it inherits that authorization's recipients rather than
+            # re-reading whoever is selected when the phase begins.
+            authored_recipient_scope=(
+                context.command.authored_recipient_scope
+                if context.command is not None
+                else None
+            ),
+            authored_primary=(
+                context.command.authored_primary if context.command is not None else None
+            ),
+            authored_selection=(
+                list(context.command.authored_selection)
+                if context.command is not None
+                else []
+            ),
+            authored_explicit_recipients=(
+                list(context.command.authored_explicit_recipients)
+                if context.command is not None
+                else []
+            ),
         )
         return command, ExecutionToken(
             plan_id=parent.plan_id,

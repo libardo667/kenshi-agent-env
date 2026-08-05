@@ -35,5 +35,10 @@ class AuthorizationCode(StrEnum):
     POLICY_DISALLOWED = "policy_disallowed"
     TRANSACTION_BUDGET_UNAVAILABLE = "transaction_budget_unavailable"
     STALE_BOUND_IDENTITY = "stale_bound_identity"
+    # The operation is still runnable, but for different characters than it
+    # was authored for. Distinct from STALE_BOUND_IDENTITY so a post-mortem
+    # can tell "the world moved under this plan" from "this order would have
+    # been delivered to somebody else".
+    STALE_RECIPIENT_BASIS = "stale_recipient_basis"
     PRECONDITION_UNTRUE = "precondition_untrue"
     FAILURE_CONDITION_ACTIVE = "failure_condition_active"

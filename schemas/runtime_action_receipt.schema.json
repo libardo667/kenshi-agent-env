@@ -348,6 +348,7 @@
         "policy_disallowed",
         "transaction_budget_unavailable",
         "stale_bound_identity",
+        "stale_recipient_basis",
         "precondition_untrue",
         "failure_condition_active"
       ],

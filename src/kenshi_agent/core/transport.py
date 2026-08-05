@@ -17,6 +17,7 @@ from .advisor import AdvisorConsultEvidence
 from .authority import AuthorizationCode, InputBoundaryDecision
 from .base import StrictModel
 from .evidence import SemanticActionReceipt
+from .interaction import AuthoredRecipientBasis, RecipientScope
 from .observation import Observation
 from .operation import (
     Action,
@@ -84,6 +85,30 @@ class CommandDispatchContext(StrictModel):
     command_id: str = Field(pattern=r"^cmd-[0-9a-f]{32}$")
     based_on_revision: WorldStateRevision
     primitive_action_bound: int = Field(default=0, ge=0, le=100)
+    # Who this command was authored to address, carried from authorization to
+    # the wire. The authority refuses a changed basis before the input lease
+    # releases; this lets the dispatch that actually writes the request prove
+    # the same thing at the point the bytes are formed, so a path that reaches
+    # dispatch around the authority stops rather than being trusted.
+    #
+    # Internal only - `NativeCommandRequest` is the shared wire schema and is
+    # deliberately not changed here.
+    authored_recipient_scope: str | None = None
+    authored_primary: str | None = None
+    authored_selection: list[str] = Field(default_factory=list, max_length=64)
+    authored_explicit_recipients: list[str] = Field(default_factory=list, max_length=64)
+
+    def authored_basis(self) -> AuthoredRecipientBasis | None:
+        """The recipient basis this command was authorized for, if recorded."""
+
+        if self.authored_recipient_scope is None:
+            return None
+        return AuthoredRecipientBasis(
+            scope=RecipientScope(self.authored_recipient_scope),
+            primary=self.authored_primary,
+            selection=tuple(self.authored_selection),
+            explicit_recipients=tuple(self.authored_explicit_recipients),
+        )
 
 
 class NativeCommandRequest(StrictModel):

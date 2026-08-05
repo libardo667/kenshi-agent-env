@@ -229,6 +229,32 @@ class ResizeInsideLeaseController(PulseController):
         yield
 
 
+def _authorized_for(observation, action) -> dict[str, object]:
+    """Recipient basis kwargs for one action against one observation.
+
+    Native dispatch refuses a command that cannot say who it is for, so a test
+    that exercises the wire has to authorize one - which is the point: an
+    unauthorized command reaching delivery is the failure being prevented.
+
+    The scope is read from the action's own definition rather than assumed;
+    assuming `current_selection` here would authorize an explicit-recipient
+    operation against the wrong basis and prove nothing.
+    """
+
+    from kenshi_agent.operation_definitions import capture_recipient_basis, definition_for
+
+    definition = definition_for(action)
+    assert definition is not None
+    basis = capture_recipient_basis(definition, action, observation)
+    assert basis is not None
+    return {
+        "authored_recipient_scope": basis.scope.value,
+        "authored_primary": basis.primary,
+        "authored_selection": list(basis.selection),
+        "authored_explicit_recipients": list(basis.explicit_recipients),
+    }
+
+
 def live_environment(
     tmp_path: Path,
     telemetry: PulseTelemetry,
@@ -260,6 +286,7 @@ def live_environment(
         quicksave_timeout_seconds=quicksave_timeout_seconds,
         quicksave_stable_seconds=quicksave_stable_seconds,
     )
+
 
 def test_semantic_hotkey_binding_dispatches_one_hotkey(tmp_path: Path) -> None:
     async def scenario() -> None:
@@ -1190,6 +1217,7 @@ def test_world_target_command_rebinds_geometry_inside_input_lease(
             command=CommandDispatchContext(
                 command_id="cmd-" + "f" * 32,
                 based_on_revision=initial.world_revision,
+                **_authorized_for(initial, action),
             ),
         )
 
@@ -1238,6 +1266,7 @@ def test_squad_member_selection_rebinds_geometry_inside_input_lease(
             command=CommandDispatchContext(
                 command_id="cmd-" + "e" * 32,
                 based_on_revision=initial.world_revision,
+                **_authorized_for(initial, SelectSquadMemberAction(target_id="entity-ruka")),
             ),
         )
 
@@ -1283,6 +1312,7 @@ def test_squad_member_selection_uses_exact_native_identity_without_pointer_input
             command=CommandDispatchContext(
                 command_id="cmd-" + "f" * 32,
                 based_on_revision=initial.world_revision,
+                **_authorized_for(initial, SelectSquadMemberExactAction(target_id="entity-ruka")),
             ),
         )
 
@@ -1324,6 +1354,7 @@ def test_exact_native_selection_collapses_a_current_squad_group(
             command=CommandDispatchContext(
                 command_id="cmd-" + "a" * 32,
                 based_on_revision=initial.world_revision,
+                **_authorized_for(initial, SelectSquadMemberExactAction(target_id="entity-ruka")),
             ),
         )
 
@@ -1354,6 +1385,7 @@ def test_native_character_movement_carries_the_complete_selected_group(
             command=CommandDispatchContext(
                 command_id="cmd-" + "b" * 32,
                 based_on_revision=initial.world_revision,
+                **_authorized_for(initial, MoveToCharacterAction(target_id="entity-vendor")),
             ),
         )
 
@@ -1387,6 +1419,13 @@ def test_world_target_command_emits_nothing_when_geometry_disappears(
             command=CommandDispatchContext(
                 command_id="cmd-" + "f" * 32,
                 based_on_revision=initial.world_revision,
+                **_authorized_for(
+                    initial,
+                    CommandWorldTargetAction(
+                        target_id="entity-copper",
+                        context_action=ContextActionKind.OPERATE,
+                    ),
+                ),
             ),
         )
 
@@ -1410,6 +1449,7 @@ def test_native_vendor_request_precedes_hotkey_and_matching_later_ack(
         command = CommandDispatchContext(
             command_id="cmd-0123456789abcdef0123456789abcdef",
             based_on_revision=initial.world_revision,
+            **_authorized_for(initial, native_vendor_action()),
         )
 
         transition = await execute_operation(
@@ -1458,6 +1498,7 @@ def test_native_vendor_dispatch_accepts_same_telemetry_without_capture_basis(
                     "observed_at_monotonic": (initial.world_revision.observed_at_monotonic + 1.0),
                 }
             ),
+            **_authorized_for(initial, native_vendor_action()),
         )
 
         transition = await execute_operation(
@@ -1502,6 +1543,7 @@ def test_native_vendor_dispatch_rebases_an_older_authorized_revision(
                 based_on_revision=initial.world_revision.model_copy(
                     update={"telemetry_sequence": sequence - 1}
                 ),
+                **_authorized_for(initial, native_vendor_action()),
             ),
         )
 
@@ -1562,6 +1604,7 @@ def test_old_native_ack_cannot_satisfy_new_command(
                 command=CommandDispatchContext(
                     command_id="cmd-0123456789abcdef0123456789abcdef",
                     based_on_revision=initial.world_revision,
+                    **_authorized_for(initial, native_vendor_action()),
                 ),
             )
 
@@ -1583,6 +1626,7 @@ def test_definitive_native_rejection_does_not_start_movement(
         command = CommandDispatchContext(
             command_id="cmd-0123456789abcdef0123456789abcdef",
             based_on_revision=initial.world_revision,
+            **_authorized_for(initial, native_vendor_action("entity-replaced")),
         )
 
         transition = await execute_operation(
@@ -1622,6 +1666,7 @@ def test_native_target_must_still_match_current_stable_observation(
                 command=CommandDispatchContext(
                     command_id="cmd-0123456789abcdef0123456789abcdef",
                     based_on_revision=initial.world_revision,
+                    **_authorized_for(initial, native_vendor_action("entity-replaced")),
                 ),
             )
 
@@ -1856,6 +1901,7 @@ def test_semantic_approach_adopts_an_already_active_order_for_the_same_target(
             command=CommandDispatchContext(
                 command_id="cmd-" + "c" * 32,
                 based_on_revision=initial.world_revision,
+                **_authorized_for(initial, ApproachDialogueTargetAction(target_id="entity-vendor")),
             ),
         )
 
@@ -1892,6 +1938,7 @@ def test_semantic_approach_issues_one_order_when_none_is_active(tmp_path: Path) 
             command=CommandDispatchContext(
                 command_id="cmd-" + "d" * 32,
                 based_on_revision=initial.world_revision,
+                **_authorized_for(initial, ApproachDialogueTargetAction(target_id="entity-vendor")),
             ),
         )
 
@@ -1933,6 +1980,13 @@ def test_context_action_issues_exact_native_resource_task_without_world_click(
             command=CommandDispatchContext(
                 command_id="cmd-" + "2" * 32,
                 based_on_revision=initial.world_revision,
+                **_authorized_for(
+                    initial,
+                    PerformContextAction(
+                        target_id="entity-copper",
+                        context_action=ContextActionKind.OPERATE,
+                    ),
+                ),
             ),
         )
 
@@ -1985,6 +2039,13 @@ def test_a_started_context_task_leaves_the_world_running(tmp_path: Path) -> None
             command=CommandDispatchContext(
                 command_id="cmd-" + "3" * 32,
                 based_on_revision=initial.world_revision,
+                **_authorized_for(
+                    initial,
+                    PerformContextAction(
+                        target_id="entity-copper",
+                        context_action=ContextActionKind.OPERATE,
+                    ),
+                ),
             ),
         )
 
@@ -2022,6 +2083,13 @@ def test_first_aid_uses_the_same_exact_semantic_native_route(tmp_path: Path) -> 
             command=CommandDispatchContext(
                 command_id="cmd-" + "a" * 32,
                 based_on_revision=initial.world_revision,
+                **_authorized_for(
+                    initial,
+                    PerformContextAction(
+                        target_id="entity-ruka",
+                        context_action=ContextActionKind("first_aid"),
+                    ),
+                ),
             ),
         )
 
@@ -2057,6 +2125,7 @@ def test_resource_production_issues_exact_monitored_native_command(
             command=CommandDispatchContext(
                 command_id="cmd-" + "3" * 32,
                 based_on_revision=initial.world_revision,
+                **_authorized_for(initial, ProduceResourceOutputAction(target_id="entity-copper")),
             ),
         )
 
@@ -2092,6 +2161,7 @@ def test_context_inventory_requires_exact_native_terminal(
             command=CommandDispatchContext(
                 command_id="cmd-" + "4" * 32,
                 based_on_revision=initial.world_revision,
+                **_authorized_for(initial, OpenContextInventoryAction(target_id="entity-copper")),
             ),
         )
 
@@ -2147,6 +2217,16 @@ def test_collect_resource_output_requires_conserved_transfer(
             command=CommandDispatchContext(
                 command_id="cmd-" + "5" * 32,
                 based_on_revision=initial.world_revision,
+                **_authorized_for(
+                    initial,
+                    CollectResourceOutputAction(
+                        target_id="entity-copper",
+                        cell_label="Raw Iron 0",
+                        item_name="Raw Iron",
+                        source_quantity=2,
+                        window="COPPER RESOURCE",
+                    ),
+                ),
             ),
         )
 
@@ -2206,6 +2286,16 @@ def test_collect_resource_output_emits_zero_input_without_destination_window(
                 command=CommandDispatchContext(
                     command_id="cmd-" + "6" * 32,
                     based_on_revision=initial.world_revision,
+                    **_authorized_for(
+                        initial,
+                        CollectResourceOutputAction(
+                            target_id="entity-copper",
+                            cell_label="Raw Iron 0",
+                            item_name="Raw Iron",
+                            source_quantity=2,
+                            window="COPPER RESOURCE",
+                        ),
+                    ),
                 ),
             )
 
@@ -2257,6 +2347,16 @@ def test_collect_resource_output_emits_zero_input_when_destination_rejects_item(
                 command=CommandDispatchContext(
                     command_id="cmd-" + "7" * 32,
                     based_on_revision=initial.world_revision,
+                    **_authorized_for(
+                        initial,
+                        CollectResourceOutputAction(
+                            target_id="entity-copper",
+                            cell_label="Raw Iron 0",
+                            item_name="Raw Iron",
+                            source_quantity=2,
+                            window="COPPER RESOURCE",
+                        ),
+                    ),
                 ),
             )
 
@@ -2289,6 +2389,7 @@ def test_visible_nearby_dialogue_target_still_uses_native_talk_order(
             command=CommandDispatchContext(
                 command_id="cmd-" + "e" * 32,
                 based_on_revision=initial.world_revision,
+                **_authorized_for(initial, ApproachDialogueTargetAction(target_id="entity-vendor")),
             ),
         )
 
@@ -2327,6 +2428,7 @@ def test_paused_native_talk_stops_before_movement_pulse_when_dialogue_opens(
             command=CommandDispatchContext(
                 command_id="cmd-" + "f" * 32,
                 based_on_revision=initial.world_revision,
+                **_authorized_for(initial, ApproachDialogueTargetAction(target_id="entity-vendor")),
             ),
         )
 
@@ -2365,6 +2467,14 @@ def test_direction_request_is_targetless_and_revalidates_its_own_capabilities(
             command=CommandDispatchContext(
                 command_id="cmd-" + "e" * 32,
                 based_on_revision=initial.world_revision,
+                **_authorized_for(
+                    initial,
+                    MoveInDirectionAction(
+                        bearing_degrees=90.0,
+                        distance_units=250.0,
+                        expected_effect="leave the current building",
+                    ),
+                ),
             ),
         )
 
@@ -2418,6 +2528,12 @@ def test_map_travel_issues_one_exact_order_and_establishes_five_x(
             command=CommandDispatchContext(
                 command_id="cmd-" + "d" * 32,
                 based_on_revision=initial.world_revision,
+                **_authorized_for(
+                    initial,
+                    TravelToMapDestinationAction(
+                        destination_id="entity-known-town",
+                    ),
+                ),
             ),
         )
 
@@ -2466,6 +2582,9 @@ def test_map_travel_carries_the_complete_selected_squad_basis(
             command=CommandDispatchContext(
                 command_id="cmd-" + "c" * 32,
                 based_on_revision=initial.world_revision,
+                **_authorized_for(
+                    initial, TravelToMapDestinationAction(destination_id="entity-known-town")
+                ),
             ),
         )
 
@@ -2509,6 +2628,13 @@ def test_squad_regroup_issues_one_global_exact_order_and_establishes_five_x(
             command=CommandDispatchContext(
                 command_id="cmd-" + "b" * 32,
                 based_on_revision=initial.world_revision,
+                **_authorized_for(
+                    initial,
+                    RegroupWithSquadMemberAction(
+                        actor_id="entity-selected",
+                        target_id="entity-ruka",
+                    ),
+                ),
             ),
         )
 
@@ -2548,11 +2674,11 @@ def test_map_arrival_terminal_wins_race_with_running_confirmation(
             "squad.health",
         ]
         telemetry.known_map_destinations = [
-                KnownMapDestination(
-                    id="entity-known-town",
-                    name="The Hub",
-                    distance=75.0,
-                )
+            KnownMapDestination(
+                id="entity-known-town",
+                name="The Hub",
+                distance=75.0,
+            )
         ]
         environment.controls_config = environment.controls_config.model_copy(
             update={
@@ -2581,6 +2707,9 @@ def test_map_arrival_terminal_wins_race_with_running_confirmation(
             command=CommandDispatchContext(
                 command_id="cmd-" + "a" * 32,
                 based_on_revision=initial.world_revision,
+                **_authorized_for(
+                    initial, TravelToMapDestinationAction(destination_id="entity-known-town")
+                ),
             ),
         )
 
@@ -2621,6 +2750,7 @@ def test_building_exit_request_is_parameterless_and_requires_current_indoor_stat
             command=CommandDispatchContext(
                 command_id="cmd-" + "d" * 32,
                 based_on_revision=initial.world_revision,
+                **_authorized_for(initial, ExitCurrentBuildingAction()),
             ),
         )
 
@@ -2640,6 +2770,7 @@ def test_building_exit_request_is_parameterless_and_requires_current_indoor_stat
                 command=CommandDispatchContext(
                     command_id="cmd-" + "c" * 32,
                     based_on_revision=later.world_revision,
+                    **_authorized_for(later, ExitCurrentBuildingAction()),
                 ),
             )
         assert rejected.value.code is AuthorizationCode.BINDING_ABSENT
@@ -2672,6 +2803,7 @@ def test_continuous_native_movement_starts_a_paused_world_without_repausing(
             command=CommandDispatchContext(
                 command_id="cmd-" + "b" * 32,
                 based_on_revision=initial.world_revision,
+                **_authorized_for(initial, ExitCurrentBuildingAction()),
             ),
         )
 
@@ -2702,6 +2834,7 @@ def test_continuous_native_handoff_uses_idempotent_speed_key_not_pointer_unpause
             command=CommandDispatchContext(
                 command_id="cmd-" + "9" * 32,
                 based_on_revision=initial.world_revision,
+                **_authorized_for(initial, ApproachDialogueTargetAction(target_id="entity-vendor")),
             ),
         )
 
@@ -2761,6 +2894,14 @@ def test_direction_does_not_adopt_an_active_order_for_another_vector(
             command=CommandDispatchContext(
                 command_id="cmd-" + "f" * 32,
                 based_on_revision=initial.world_revision,
+                **_authorized_for(
+                    initial,
+                    MoveInDirectionAction(
+                        bearing_degrees=90.0,
+                        distance_units=250.0,
+                        expected_effect="walk east",
+                    ),
+                ),
             ),
         )
 
@@ -2769,5 +2910,91 @@ def test_direction_does_not_adopt_an_active_order_for_another_vector(
         assert (
             len([action for action in controller.actions if isinstance(action, HotkeyAction)]) == 1
         )
+
+    asyncio.run(scenario())
+
+
+def test_two_selected_characters_can_be_ordered_to_mine(tmp_path: Path) -> None:
+    """A broke-pair start could not mine, and the fix was in two places.
+
+    Option preparation carried a private singleton rule, and so did the request
+    builder - keyed there on a hardcoded wire command name set that treated
+    `perform_context_action` as singleton-only while its contract declares
+    CURRENT_SELECTION. Fixing only the first moved the refusal one layer down
+    and reworded it. This proves the order reaches the wire carrying both
+    characters, which is what Kenshi's selection-based ordering API expects.
+    """
+
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(
+            tmp_path,
+            status=NativeCommandStatus.COMPLETED,
+        )
+        telemetry.selected_character_ids = ["entity-selected", "entity-ruka"]
+        initial = await environment.reset()
+        action = PerformContextAction(
+            target_id="entity-copper",
+            context_action=ContextActionKind.OPERATE,
+        )
+
+        await execute_operation(
+            environment,
+            action,
+            command=CommandDispatchContext(
+                command_id="cmd-" + "7" * 32,
+                based_on_revision=initial.world_revision,
+                **_authorized_for(initial, action),
+            ),
+        )
+
+        assert controller.request is not None
+        assert controller.request.command == "perform_context_action"
+        assert sorted(controller.request.selected_character_ids) == [
+            "entity-ruka",
+            "entity-selected",
+        ]
+
+    asyncio.run(scenario())
+
+
+def test_a_recipient_change_during_the_lease_writes_no_request(tmp_path: Path) -> None:
+    """The seam, at the layer that forms the bytes.
+
+    The command is authorized for one pair and dispatched after selection has
+    become somebody else. Nothing may reach the game: not the request file, not
+    the hotkey that tells the plug-in to read it.
+    """
+
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(
+            tmp_path,
+            status=NativeCommandStatus.COMPLETED,
+        )
+        telemetry.selected_character_ids = ["entity-selected", "entity-ruka"]
+        initial = await environment.reset()
+        action = PerformContextAction(
+            target_id="entity-copper",
+            context_action=ContextActionKind.OPERATE,
+        )
+        authorized = _authorized_for(initial, action)
+
+        # The lease wait happens here. One of the two authorized recipients is
+        # deselected, so the order would now command one character instead of
+        # the pair it was authored for.
+        telemetry.selected_character_ids = ["entity-selected"]
+
+        with pytest.raises(RuntimeError, match="different recipients"):
+            await execute_operation(
+                environment,
+                action,
+                command=CommandDispatchContext(
+                    command_id="cmd-" + "8" * 32,
+                    based_on_revision=initial.world_revision,
+                    **authorized,
+                ),
+            )
+
+        assert controller.request is None
+        assert controller.actions == []
 
     asyncio.run(scenario())

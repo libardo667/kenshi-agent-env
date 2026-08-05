@@ -1520,7 +1520,7 @@ def _bind_adapter_selection(
         binding=binding,
         affordance=affordance,
         based_on_revision=observation.world_revision,
-        identity=operation_identity(definition, operation, binding, affordance),
+        identity=operation_identity(definition, operation, binding, affordance, observation),
     )
 
 
@@ -1615,6 +1615,7 @@ def _rebind_affordance_operation(
             rebound.operation,
             rebound.binding,
             affordance,
+            observation,
         ),
     )
 
@@ -1657,7 +1658,7 @@ class OperationBindingAuthority:
             binding=binding,
             affordance=None,
             based_on_revision=observation.world_revision,
-            identity=operation_identity(definition, operation, binding, None),
+            identity=operation_identity(definition, operation, binding, None, observation),
         )
 
     def rebind(

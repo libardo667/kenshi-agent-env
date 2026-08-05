@@ -18,6 +18,8 @@ a different concept and deliberately does not reuse that name.
 from __future__ import annotations
 
 import hashlib
+import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -232,3 +234,125 @@ def ordinary_order(
         conflict_policy=conflict,
         playback_requirement=playback,
     )
+
+
+# Action fields that name explicit character recipients. EXPLICIT_RECIPIENTS
+# operations carry who they act on in the typed action itself, so the basis is
+# read from the action rather than from whatever is selected.
+_EXPLICIT_RECIPIENT_FIELDS: tuple[str, ...] = (
+    "actor_id",
+    "character_id",
+    "owner_id",
+    "recipient_ids",
+    "squad_member_id",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class AuthoredRecipientBasis:
+    """Who an operation was authored to command, captured when it was authored.
+
+    The seam this closes: a planner authors an order while A and B are selected,
+    the operation waits an unbounded interval for the input lease, selection
+    becomes C, and rebinding reads the current selection - so an order authored
+    for A+B is delivered to C. Operation identity covered the definition, the
+    typed action, the affordance, and the binding, and none of those mention who
+    acts, so the substitution changed no fingerprint and raised no objection.
+
+    Only the fields the scope actually uses take part in identity. A survey is
+    `RecipientScope.NONE` and commands nobody, so a selection change must not
+    invalidate it; a `PRIMARY` order does not care how many others are selected
+    alongside its primary. Comparing more than the scope uses would manufacture
+    staleness, which is its own way of being wrong.
+    """
+
+    scope: RecipientScope
+    # Kenshi's exported primary - `ui.selected_character_id` - never whichever
+    # selected roster member happens to sort or arrive first.
+    primary: str | None = None
+    # Sorted, because selection is a set: the same two characters selected in a
+    # different order is the same basis.
+    selection: tuple[str, ...] = ()
+    explicit_recipients: tuple[str, ...] = ()
+
+    @classmethod
+    def capture(
+        cls,
+        scope: RecipientScope,
+        *,
+        primary: str | None,
+        selection: Sequence[str],
+        explicit_recipients: Sequence[str] = (),
+    ) -> AuthoredRecipientBasis:
+        return cls(
+            scope=scope,
+            primary=primary,
+            selection=tuple(sorted(selection)),
+            explicit_recipients=tuple(sorted(explicit_recipients)),
+        )
+
+    @property
+    def identity_fields(self) -> dict[str, object]:
+        """Exactly the fields this scope commands with."""
+
+        if self.scope is RecipientScope.NONE:
+            return {"scope": self.scope.value}
+        if self.scope is RecipientScope.PRIMARY:
+            return {"scope": self.scope.value, "primary": self.primary}
+        if self.scope is RecipientScope.CURRENT_SELECTION:
+            return {
+                "scope": self.scope.value,
+                "primary": self.primary,
+                "selection": list(self.selection),
+            }
+        return {
+            "scope": self.scope.value,
+            "explicit_recipients": list(self.explicit_recipients),
+        }
+
+    def fingerprint(self) -> str:
+        payload = json.dumps(self.identity_fields, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
+
+    def differences_from(self, other: AuthoredRecipientBasis) -> tuple[str, ...]:
+        """What changed, in terms a post-mortem can act on.
+
+        A bare fingerprint mismatch says an operation went stale without saying
+        who it would have commanded instead, which is the one fact needed to
+        tell a real recipient substitution from an unrelated churn.
+        """
+
+        if other.scope is not self.scope:
+            return (f"recipient scope changed from {self.scope.value} to {other.scope.value}",)
+        changes: list[str] = []
+        mine, theirs = self.identity_fields, other.identity_fields
+        if "primary" in mine and mine["primary"] != theirs["primary"]:
+            changes.append(f"primary changed from {mine['primary']!r} to {theirs['primary']!r}")
+        if "selection" in mine and mine["selection"] != theirs["selection"]:
+            changes.append(
+                f"selection changed from {mine['selection']} to {theirs['selection']}"
+            )
+        if "explicit_recipients" in mine and (
+            mine["explicit_recipients"] != theirs["explicit_recipients"]
+        ):
+            changes.append(
+                f"explicit recipients changed from {mine['explicit_recipients']} "
+                f"to {theirs['explicit_recipients']}"
+            )
+        return tuple(changes)
+
+    def matches(self, other: AuthoredRecipientBasis) -> bool:
+        return not self.differences_from(other)
+
+
+def explicit_recipients_of(action: object) -> tuple[str, ...]:
+    """Character IDs an action names directly, if any."""
+
+    found: list[str] = []
+    for name in _EXPLICIT_RECIPIENT_FIELDS:
+        value = getattr(action, name, None)
+        if isinstance(value, str) and value:
+            found.append(value)
+        elif isinstance(value, (list, tuple)):
+            found.extend(str(item) for item in value if item)
+    return tuple(sorted(set(found)))

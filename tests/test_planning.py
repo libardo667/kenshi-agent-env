@@ -441,6 +441,8 @@ def test_every_field_condition_path_resolves_its_observed_scalar() -> None:
 
 
 def test_selected_character_resolution_has_a_total_precedence_order() -> None:
+    """Kenshi's exported primary, or nothing - never roster order."""
+
     current = rich_observation()
     assert current.telemetry is not None
     selected_name = field_condition("selected.current_goal", "Operating machine")
@@ -458,7 +460,12 @@ def test_selected_character_resolution_has_a_total_precedence_order() -> None:
         is ConditionResult.UNKNOWN
     )
 
-    first = current.telemetry.model_copy(
+    # A primary Kenshi names but the roster does not contain is unresolvable.
+    # This used to fall back to the first squad member - who need not be
+    # selected in any sense - so a fact about "the selected character" was
+    # answered about somebody else and reported as TRUE. Kenshi exports its
+    # primary; when that primary cannot be found, the answer is unknown.
+    absent_primary = current.telemetry.model_copy(
         update={
             "ui": UIState(selected_character_id="absent"),
             "squad": [
@@ -473,9 +480,9 @@ def test_selected_character_resolution_has_a_total_precedence_order() -> None:
     assert (
         evaluate_condition(
             field_condition("selected.current_goal", "Fallback goal"),
-            current.model_copy(update={"telemetry": first}),
+            current.model_copy(update={"telemetry": absent_primary}),
         ).result
-        is ConditionResult.TRUE
+        is ConditionResult.UNKNOWN
     )
 
     empty = current.telemetry.model_copy(update={"ui": UIState(), "squad": []})
