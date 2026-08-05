@@ -64,7 +64,7 @@ INTERACTION CONTRACT (resolved from the sole operation registry)
   sell_item                           global_ui          explicit_recipients ui_transaction   world_outcome_observed  unproven
   set_speed                           global_ui          none                none             world_outcome_observed  source_proven
   stop                                runtime_only       none                none             input_delivered         source_proven
-  survey_local_resources              global_ui          primary             none             world_outcome_observed  source_proven
+  survey_local_resources              global_ui          none                none             world_outcome_observed  source_proven
   travel_to_map_destination           ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
   use_game_binding                    global_ui          none                ui_transaction   input_delivered         withheld
   wait                                runtime_only       none                none             input_delivered         source_proven

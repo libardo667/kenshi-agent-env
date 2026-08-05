@@ -111,3 +111,20 @@ def test_coverage_reports_the_declared_interface_as_the_denominator() -> None:
     body = "\n".join(render_gui_coverage(coverage))
     assert "DECLARED INTERFACE" in body
     assert "Kenshi_ProspectingWindow.layout" in body
+
+
+def test_a_survey_commands_nobody_so_it_demands_no_selection() -> None:
+    """Reading the world is not ordering anyone to do something.
+
+    Declared PRIMARY, the authority demanded a singleton selection and a live
+    run rejected every survey a two-character party attempted. The binder still
+    requires an exported primary to locate the survey centre; how many others
+    are selected is irrelevant to reading a resource field.
+    """
+
+    from kenshi_agent.core.interaction import RecipientScope
+    from kenshi_agent.operation_definitions import OPERATION_DEFINITIONS
+
+    definition = OPERATION_DEFINITIONS["survey_local_resources"]
+
+    assert definition.recipient_scope_for() is RecipientScope.NONE

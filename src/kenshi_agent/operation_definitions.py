@@ -3566,11 +3566,16 @@ TRAVEL_TO_MAP_DESTINATION_DEFINITION = OperationDefinition(
 SURVEY_LOCAL_RESOURCES_DEFINITION = OperationDefinition(
     kind="survey_local_resources",
     version="1.0",
-    # A survey reads the world; it commands nobody. Its terminal is the survey
-    # existing, which the controller observes directly, so it claims an
-    # observed outcome rather than mere delivery.
+    # A survey reads the world; it commands nobody, so it has no recipients.
+    #
+    # It was declared PRIMARY, which makes the authority demand a singleton
+    # selection - and a live run rejected every survey the pair attempted with
+    # "requires one exact primary selected character". Reading the resource
+    # field where a character stands needs an exported primary to locate the
+    # centre, which the binder proves, and needs nothing at all about how many
+    # others happen to be selected. Demanding at bind time what no phase uses
+    # is exactly the defect section 19.4 recorded against harvest.
     interaction=global_ui(
-        recipients=RecipientScope.PRIMARY,
         milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
     ),
     operation_type=SurveyLocalResourcesAction,
