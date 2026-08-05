@@ -123,7 +123,8 @@ namespace
     const unsigned int MAX_PROBED_WORLD_TARGETS = 16;
     // Full-discovery scan. Every object category Kenshi declares is asked, so
     // a category nobody anticipated is found rather than excluded by omission.
-    const float DISCOVERY_SCAN_RADIUS = 400.0f;
+    // It reuses the existing radii rather than introducing its own, so
+    // "nearby" means one thing across telemetry, discovery, and command lookup.
     const int MAX_DISCOVERED_PER_CATEGORY = 8;
     // Objects probed per 500ms snapshot. The frontier needs each (category,
     // task) pair once, not every object every snapshot.
@@ -1305,11 +1306,15 @@ namespace
             const KenshiAgentTelemetry::ItemTypeVocabularyEntry& category =
                 categories[categoryIndex];
 
+            // Both bands the world-target scan already uses. Discovery that
+            // only saw the near band was structurally blind to objects the
+            // rest of the system routes on - the iron resource at 1687 units
+            // was in world_targets and absent from discovery.
             lektor<RootObject*> found;
             ou->getObjectsWithinSphere(
                 found,
                 selectedPosition,
-                DISCOVERY_SCAN_RADIUS,
+                WORLD_CONTEXT_TARGET_RADIUS,
                 static_cast<itemType>(category.value),
                 MAX_DISCOVERED_PER_CATEGORY,
                 selected);
@@ -1362,7 +1367,7 @@ namespace
         ou->getCharactersWithinSphere(
             nearbyCharacters,
             selectedPosition,
-            DISCOVERY_SCAN_RADIUS,
+            NEARBY_CHARACTER_RADIUS,
             0.0f,
             30.0f,
             MAX_DISCOVERED_CHARACTERS,
