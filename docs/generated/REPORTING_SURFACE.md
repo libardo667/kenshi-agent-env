@@ -7,31 +7,31 @@ is a good one is not a matter of size - these bundles are large - but
 of which questions survive into it.
 
 Every question below was actually asked of a bundle during
-development. The status is derived by inspecting the most recent real
-bundle, not asserted, so a gap closes here only when the evidence
-genuinely appears.
+development. The status is derived by inspecting a checked-in slice of
+a real live run, so a gap closes here only when the evidence genuinely
+appears in captured telemetry.
 
 ```text
-bundle                playback-reachable-20260805
-events                  3907
-observation share      83.1%
+bundle                live_reporting_surface
+events                    45
+observation share       6.7%
 questions answered      8 of 8
 
 POST-MORTEM COVERAGE
   What did the agent choose, and did it work?
-    answered               via affordance_receipt (14 events)
+    answered               via affordance_receipt (1 events)
   Why did a chosen operation fail?
-    answered               via affordance_receipt (14 events)
+    answered               via affordance_receipt (1 events)
   What else could it have chosen at that moment?
-    answered               via planner_context_prepared (15 events)
+    answered               via planner_context_prepared (1 events)
   Why was an expected affordance not offered?
-    answered               via planner_context_prepared (15 events)
+    answered               via planner_context_prepared (1 events)
   Was Kenshi holding retained work for a character?
-    answered               via observation (1220 events)
+    answered               via observation (1 events)
   What did the native layer actually say?
-    answered               via observation (1220 events)
+    answered               via observation (1 events)
   What was the economic state over time?
-    answered               via observation (1220 events)
+    answered               via observation (1 events)
   What was on screen when a UI choice was made?
-    answered               via observation (1220 events)
+    answered               via observation (1 events)
 ```

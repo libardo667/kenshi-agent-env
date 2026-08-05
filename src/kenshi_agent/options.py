@@ -446,6 +446,16 @@ class StatefulNativeMovementOption:
         # at option preparation would be a second authority for a question
         # already answered.
         definition = definition_for(self.action)
+        if definition is None:
+            # An action with no definition has no declared capabilities and no
+            # declared recipient scope, so there is nothing to check it against.
+            # Failing closed is the only honest answer; the previous private
+            # mapping would have silently admitted it under the direction
+            # capability.
+            raise OptionLifecycleError(
+                f"Native movement option has no operation definition for "
+                f"{self.action.kind!r}, so its requirements cannot be checked."
+            )
         control_capabilities = frozenset(
             capability
             for capability in definition.required_capabilities
@@ -477,9 +487,7 @@ class StatefulNativeMovementOption:
         # singleton. The cost of the private copy was that a two-character party
         # could not mine: every `operate` on an iron deposit was refused here,
         # after the contract had already allowed it.
-        if not definition_for(self.action).satisfies_recipient_scope(
-            observation, self.action
-        ):
+        if not definition.satisfies_recipient_scope(observation, self.action):
             raise OptionLifecycleError(
                 "Native movement option selection does not satisfy the action's "
                 f"declared recipient scope; {len(selected_ids)} character(s) are "

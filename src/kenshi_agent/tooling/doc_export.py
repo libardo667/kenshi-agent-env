@@ -166,11 +166,16 @@ def _reporting_surface() -> str:
     from pathlib import Path as _Path
 
     root = _Path(__file__).resolve().parents[3]
-    bundles = sorted(
-        (path for path in (root / "runs").glob("*/events.jsonl")),
-        key=lambda path: path.stat().st_mtime,
-        reverse=True,
-    )
+    # A checked-in bundle, not whichever run happens to be newest. Generated
+    # documentation has to be reproducible from checked-in inputs: reading
+    # `runs/` made this file depend on local history, so it rendered real
+    # coverage here and "no run bundles present" in a fresh checkout, and the
+    # freshness check could only pass on the machine that last ran the agent.
+    #
+    # The fixture is real captured evidence trimmed to the smallest subset that
+    # still exercises every probe, so the report stays an honest measurement
+    # rather than a restatement.
+    bundle = root / "tests" / "fixtures" / "run_bundles" / "live_reporting_surface" / "events.jsonl"
     lines = [
         GENERATED_MARKER,
         "",
@@ -181,16 +186,16 @@ def _reporting_surface() -> str:
         "of which questions survive into it.",
         "",
         "Every question below was actually asked of a bundle during",
-        "development. The status is derived by inspecting the most recent real",
-        "bundle, not asserted, so a gap closes here only when the evidence",
-        "genuinely appears.",
+        "development. The status is derived by inspecting a checked-in slice of",
+        "a real live run, so a gap closes here only when the evidence genuinely",
+        "appears in captured telemetry.",
         "",
         "```text",
     ]
-    if not bundles:
-        lines.append("no run bundles present")
+    if not bundle.exists():
+        lines.append("reporting-surface fixture is missing")
     else:
-        lines.extend(render_reporting_surface(assess_reporting_surface(bundles[0])))
+        lines.extend(render_reporting_surface(assess_reporting_surface(bundle)))
     lines.extend(["```", ""])
     return "\n".join(lines)
 
