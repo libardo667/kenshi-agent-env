@@ -34,6 +34,13 @@ class OperationRegistryAudit:
     duplicate_handler_keys: tuple[str, ...]
     missing_binders: tuple[str, ...]
     missing_boundaries: tuple[str, ...]
+    # Definitions no adapter claims, and which the agent therefore cannot be
+    # offered no matter what the world looks like. The audit checked the
+    # forward direction only - adapters naming definitions that do not exist -
+    # so an operation could be built end to end and remain unreachable. `pause`,
+    # `set_speed` and `wait` all were, which left an agent handed a paused save
+    # with sixty-four affordances and no way to start the clock.
+    unreachable_definitions: tuple[str, ...] = ()
 
     @property
     def passed(self) -> bool:
@@ -45,8 +52,24 @@ class OperationRegistryAudit:
                 self.duplicate_handler_keys,
                 self.missing_binders,
                 self.missing_boundaries,
+                self.unreachable_definitions,
             )
         )
+
+
+# Operations an adapter never offers on its own because another operation
+# produces them as part of its own execution. Each entry is a claim that the
+# kind is reachable by composition, not an excuse for one that is not: adding a
+# name here says "some offered operation runs this", and that has to be true.
+REACHED_BY_COMPOSITION: frozenset[str] = frozenset(
+    {
+        # harvest_resource opens the context inventory, produces the yield, and
+        # collects it as one controller-owned action.
+        "collect_resource_output",
+        "open_context_inventory",
+        "produce_resource_output",
+    }
+)
 
 
 def audit_operation_registry() -> OperationRegistryAudit:
@@ -120,6 +143,9 @@ def audit_operation_registry() -> OperationRegistryAudit:
                 if not adapter.completeness_boundary.strip()
             )
         ),
+        unreachable_definitions=tuple(
+            sorted(OPERATION_DEFINITIONS.keys() - adapter_kinds - REACHED_BY_COMPOSITION)
+        ),
     )
 
 
@@ -142,7 +168,11 @@ def render_operation_registry_report(audit: OperationRegistryAudit) -> list[str]
         adapters = (
             ", ".join(definition_row.adapters)
             if definition_row.adapters
-            else "internal-only"
+            else (
+                "by-composition"
+                if definition_row.kind in REACHED_BY_COMPOSITION
+                else "UNREACHABLE"
+            )
         )
         lines.append(
             f"  {definition_row.kind:<35} {definition_row.handler_key:<55} "
@@ -158,6 +188,7 @@ def render_operation_registry_report(audit: OperationRegistryAudit) -> list[str]
         ("duplicate handler keys", audit.duplicate_handler_keys),
         ("missing binders", audit.missing_binders),
         ("missing completeness boundaries", audit.missing_boundaries),
+        ("unreachable definitions", audit.unreachable_definitions),
     )
     for label, values in failures:
         if values:

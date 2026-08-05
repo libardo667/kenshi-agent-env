@@ -19,8 +19,8 @@ character selected.
 
 ```text
 operations               34
-planner-visible          28
-internal-only             6
+planner-visible          31
+internal-only             3
 native commands          11
 manifest entries         35
 coverage proof          PASS
@@ -88,7 +88,7 @@ EXECUTION AND ROUTING
   noop                                atomic_handler     any                      -                          runtime
   open_context_inventory              atomic_handler     paused_transaction       open_context_inventory     internal-only
   open_screen                         atomic_handler     paused_transaction       -                          screens
-  pause                               atomic_handler     any                      -                          internal-only
+  pause                               atomic_handler     any                      -                          runtime
   perform_context_action              monitored_option   varies                   perform_context_action     context_orders
   produce_resource_output             monitored_option   running_for_progress     produce_resource_output    internal-only
   purchase_item                       composite_option   paused_transaction       -                          inventory
@@ -102,12 +102,12 @@ EXECUTION AND ROUTING
   select_squad_member                 atomic_handler     any                      select_squad_member        characters
   select_squad_member_exact           atomic_handler     any                      -                          characters
   sell_item                           composite_option   paused_transaction       -                          inventory
-  set_speed                           atomic_handler     any                      -                          internal-only
+  set_speed                           atomic_handler     any                      -                          runtime
   stop                                atomic_handler     any                      -                          runtime
   survey_local_resources              atomic_handler     any                      survey_local_resources     native_and_composite
   travel_to_map_destination           monitored_option   running_for_progress     travel_to_map_destination  map
   use_game_binding                    atomic_handler     any                      -                          characters, game_bindings
-  wait                                atomic_handler     running_for_progress     -                          internal-only
+  wait                                atomic_handler     running_for_progress     -                          runtime
 
 NATIVE COMMAND ROUTES
   approach_confirmed_vendor    -> approach_dialogue_target (vestigial name)

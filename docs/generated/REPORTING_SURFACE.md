@@ -12,32 +12,26 @@ bundle, not asserted, so a gap closes here only when the evidence
 genuinely appears.
 
 ```text
-bundle                20260805T204843.470502Z
-events                   252
-observation share      40.5%
-questions answered      6 of 8
+bundle                reporting-surface-soak-20260805
+events                   489
+observation share      87.9%
+questions answered      8 of 8
 
 POST-MORTEM COVERAGE
->>What did the agent choose, and did it work?
-    no evidence            via affordance_receipt (0 events)
->>Why did a chosen operation fail?
-    no evidence            via affordance_receipt (0 events)
-  What else could it have chosen at that moment?
-    answered               via planner_context_prepared (12 events)
-  Why was an expected affordance not offered?
-    answered               via planner_context_prepared (12 events)
-  Was Kenshi holding retained work for a character?
-    answered               via observation (26 events)
-  What did the native layer actually say?
-    answered               via observation (26 events)
-  What was the economic state over time?
-    answered               via observation (26 events)
-  What was on screen when a UI choice was made?
-    answered               via observation (26 events)
-
-WHY THE GAPS MATTER
   What did the agent choose, and did it work?
-    The minimum account of a run: every decision and its outcome.
+    answered               via affordance_receipt (3 events)
   Why did a chosen operation fail?
-    Distinguishes a refusal from a stall from a handler error, which otherwise all read as 'failed'.
+    answered               via affordance_receipt (3 events)
+  What else could it have chosen at that moment?
+    answered               via planner_context_prepared (3 events)
+  Why was an expected affordance not offered?
+    answered               via planner_context_prepared (3 events)
+  Was Kenshi holding retained work for a character?
+    answered               via observation (158 events)
+  What did the native layer actually say?
+    answered               via observation (158 events)
+  What was the economic state over time?
+    answered               via observation (158 events)
+  What was on screen when a UI choice was made?
+    answered               via observation (158 events)
 ```

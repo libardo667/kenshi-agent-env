@@ -134,7 +134,15 @@ INTERFACE_SCOPED_OPERATION_KINDS: frozenset[str] = frozenset(
         "dismiss_screen",
         "equip_item",
         "noop",
+        # Playback is declared global_ui: it suspends the whole world and is
+        # orthogonal to what is on screen, exactly as it is for a player, who
+        # can pause with the inventory open. Gating it behind a clear interface
+        # would let a modal strand an agent in a world whose clock it cannot
+        # start. `wait` is deliberately not here - it is only meaningful while
+        # the world both runs and is being watched.
+        "pause",
         "purchase_item",
+        "set_speed",
         "read_fieldbook",
         "recall_memory",
         "scroll_screen",
@@ -278,6 +286,71 @@ def _runtime_offers(observation: Observation) -> Iterable[AffordanceOffer]:
         operation_kind="stop",
         arguments={"reason": "The selected objective is terminal."},
     )
+    telemetry = observation.telemetry
+    if telemetry is not None and telemetry.game.loaded:
+        # Playback control. Kenshi loads paused, and every operation whose
+        # milestone is a world outcome needs game time to advance before it can
+        # reach one. Without these offered, an agent handed a paused save has no
+        # move that can ever succeed: a live run spent all three of its plans on
+        # world commands, reported "no causal transition" each time, and aborted
+        # with elapsed_minutes frozen at its starting value. Sixty-four
+        # affordances were on the menu and not one of them could start the clock.
+        if telemetry.game.paused:
+            yield _offer(
+                observation,
+                source=AffordanceSource.RUNTIME,
+                semantic="resume_game",
+                description=(
+                    "Resume play. The world is paused, so nothing that depends "
+                    "on the world changing can complete until it runs."
+                ),
+                operation_kind="pause",
+                arguments={"paused": False},
+            )
+        else:
+            yield _offer(
+                observation,
+                source=AffordanceSource.RUNTIME,
+                semantic="pause_game",
+                description="Pause play to decide without the world moving on.",
+                operation_kind="pause",
+                arguments={"paused": True},
+            )
+            # Gears only mean anything while the world is running, and waiting
+            # through a paused world burns real seconds for no game time.
+            yield _offer(
+                observation,
+                source=AffordanceSource.RUNTIME,
+                semantic="set_game_speed",
+                description="Choose an exact Kenshi playback gear.",
+                operation_kind="set_speed",
+                parameters=(
+                    AffordanceParameterSpec(
+                        name="speed",
+                        kind=AffordanceParameterKind.INTEGER,
+                        description="Playback gear: 1 normal, 2 fast, 3 fastest.",
+                        minimum=1,
+                        maximum=3,
+                    ),
+                ),
+            )
+            yield _offer(
+                observation,
+                source=AffordanceSource.RUNTIME,
+                semantic="wait",
+                description=(
+                    "Let the running world advance for a bounded interval "
+                    "without sending input."
+                ),
+                operation_kind="wait",
+                parameters=(
+                    AffordanceParameterSpec(
+                        name="seconds",
+                        kind=AffordanceParameterKind.NUMBER,
+                        description="Seconds of real time to observe.",
+                    ),
+                ),
+            )
     if observation.advisor is not None and observation.advisor.may_request:
         yield _offer(
             observation,
@@ -1084,9 +1157,22 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
         name="runtime",
         sources=frozenset({AffordanceSource.RUNTIME}),
         operation_kinds=frozenset(
-            {"noop", "stop", "consult_advisor", "recall_memory", "read_fieldbook"}
+            {
+                "noop",
+                "stop",
+                "consult_advisor",
+                "recall_memory",
+                "read_fieldbook",
+                # Playback. Offered here rather than through a game binding
+                # because pausing is a run-state decision, not a keystroke: the
+                # agent needs to be able to start the clock it is being asked
+                # to act inside.
+                "pause",
+                "set_speed",
+                "wait",
+            }
         ),
-        denominator="Runtime control, advisor, memory, and fieldbook state.",
+        denominator="Runtime control, playback, advisor, memory, and fieldbook state.",
         completeness_boundary="Only choices applicable to the current run state.",
         enumerate=_runtime_offers,
     ),

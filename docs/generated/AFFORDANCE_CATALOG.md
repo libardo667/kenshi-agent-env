@@ -6,7 +6,7 @@ Regenerate with `python scripts/export_docs.py`.
 
 | adapter | sources | private operations | denominator | completeness boundary |
 | --- | --- | --- | --- | --- |
-| `runtime` | `runtime` | `consult_advisor`, `noop`, `read_fieldbook`, `recall_memory`, `stop` | Runtime control, advisor, memory, and fieldbook state. | Only choices applicable to the current run state. |
+| `runtime` | `runtime` | `consult_advisor`, `noop`, `pause`, `read_fieldbook`, `recall_memory`, `set_speed`, `stop`, `wait` | Runtime control, playback, advisor, memory, and fieldbook state. | Only choices applicable to the current run state. |
 | `game_bindings` | `game_binding` | `use_game_binding` | Every captured-default-keymap binding not owned by another adapter. | Witnessed bindings use effect terminals; unwitnessed bindings stop at accepted delivery plus a later observation. Playback, stateful screens, and camera rotation route through semantic adapters. |
 | `screens` | `game_binding`, `visible_control` | `dismiss_screen`, `open_screen` | Observable named-screen states and currently open window captions. | Opening requires an observable exact terminal. Named-window dismissal uses a count terminal; uncaptained dismissal stops at delivery. Dialogue is excluded. |
 | `visible_controls` | `dialogue`, `visible_control` | `activate_visible_control` | Every current non-item, non-runtime-owned visible control. | Ambiguous or stale controls fail exact rebinding. Activation proves exact delivery and a later observation, not the gameplay meaning of the result. |

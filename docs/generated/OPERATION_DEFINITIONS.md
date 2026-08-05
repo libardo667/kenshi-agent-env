@@ -13,15 +13,15 @@ they still bind through this registry but are not planner-visible offers.
 
 ```text
 definitions             34
-adapter operation kinds  28
-adapter routes           29
+adapter operation kinds  31
+adapter routes           32
 adapters                 10
 ownership proof         PASS
 
 DEFINITIONS
   activate_visible_control            screens.activate_visible_control                        ActivateVisibleControlAction [visible_controls]
   approach_dialogue_target            dialogue.approach_dialogue_target                       ApproachDialogueTargetAction [dialogue_targets]
-  collect_resource_output             resources.collect_resource_output                       CollectResourceOutputAction [internal-only]
+  collect_resource_output             resources.collect_resource_output                       CollectResourceOutputAction [by-composition]
   command_world_target                dialogue.command_world_target                           CommandWorldTargetAction [context_orders]
   consult_advisor                     cognition.advisor                                       ConsultAdvisorAction [runtime]
   dismiss_screen                      screens.dismiss_screen                                  DismissScreenAction [screens]
@@ -31,11 +31,11 @@ DEFINITIONS
   move_in_direction                   movement.move_in_direction                              MoveInDirectionAction [native_and_composite]
   move_to_character                   movement.move_to_character                              MoveToCharacterAction [characters]
   noop                                runtime.noop                                            NoopAction [runtime]
-  open_context_inventory              resources.open_context_inventory                        OpenContextInventoryAction [internal-only]
+  open_context_inventory              resources.open_context_inventory                        OpenContextInventoryAction [by-composition]
   open_screen                         screens.open_screen                                     OpenScreenAction [screens]
-  pause                               runtime.pause                                           PauseAction [internal-only]
+  pause                               runtime.pause                                           PauseAction [runtime]
   perform_context_action              resources.perform_context_action                        PerformContextAction [context_orders]
-  produce_resource_output             resources.produce_resource_output                       ProduceResourceOutputAction [internal-only]
+  produce_resource_output             resources.produce_resource_output                       ProduceResourceOutputAction [by-composition]
   purchase_item                       trade.purchase_item                                     PurchaseItemAction [inventory]
   read_fieldbook                      cognition.fieldbook                                     ReadFieldbookAction [runtime]
   recall_memory                       cognition.memory                                        RecallMemoryAction [runtime]
@@ -47,12 +47,12 @@ DEFINITIONS
   select_squad_member                 movement.select_squad_member                            SelectSquadMemberAction [characters]
   select_squad_member_exact           movement.select_squad_member_exact                      SelectSquadMemberExactAction [characters]
   sell_item                           trade.sell_item                                         SellItemAction [inventory]
-  set_speed                           runtime.set_speed                                       SetSpeedAction [internal-only]
+  set_speed                           runtime.set_speed                                       SetSpeedAction [runtime]
   stop                                runtime.stop                                            StopAction [runtime]
   survey_local_resources              movement.survey_local_resources                         SurveyLocalResourcesAction [native_and_composite]
   travel_to_map_destination           movement.travel_to_map_destination                      TravelToMapDestinationAction [map]
   use_game_binding                    screens.use_game_binding                                UseGameBindingAction [characters, game_bindings]
-  wait                                runtime.wait                                            WaitAction [internal-only]
+  wait                                runtime.wait                                            WaitAction [runtime]
 
 SOURCE-SPECIFIC COMPLETENESS BOUNDARIES
   runtime: Only choices applicable to the current run state.

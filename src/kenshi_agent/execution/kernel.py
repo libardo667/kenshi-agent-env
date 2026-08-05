@@ -50,6 +50,27 @@ from .types import (
 )
 
 
+def _no_causal_transition_reason(observation: Observation) -> str:
+    """Say why the world did not change, not merely that it did not.
+
+    "World-command handler returned no causal transition" is true and useless:
+    it names the check that failed rather than the condition that failed it. A
+    live run spent every plan it had on world commands against a paused save,
+    got this sentence three times, and aborted - while the actual cause,
+    elapsed_minutes frozen because the game was paused, sat in every one of the
+    158 observations in the bundle. When the world is stopped, no world command
+    can ever produce a transition, and the message now says so.
+    """
+
+    telemetry = observation.telemetry
+    if telemetry is not None and telemetry.game.paused:
+        return (
+            "The game is paused, so no world command can change the world. "
+            "Resume play before ordering anything that depends on time passing."
+        )
+    return "World-command handler returned no causal transition."
+
+
 class KernelEventReporter(Protocol):
     def __call__(
         self,
@@ -495,15 +516,14 @@ class ExecutionKernel:
         latest = handled.observation
         if command is not None:
             if transition is None:
-                self.state_store.fail_active_command(
-                    "World-command handler returned no causal transition."
-                )
+                no_transition = _no_causal_transition_reason(latest)
+                self.state_store.fail_active_command(no_transition)
                 self._reservation_event(event, request, latest, reason)
                 return KernelResult(
                     observation=latest,
                     succeeded=False,
                     actions_completed=1,
-                    reason="World-command handler returned no causal transition.",
+                    reason=no_transition,
                 )
             receipt = transition.receipt
             if receipt.command_id not in {None, command.command_id}:
