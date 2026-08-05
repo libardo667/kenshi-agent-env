@@ -65,3 +65,40 @@ def test_render_names_the_ceiling_and_the_mechanism() -> None:
     assert "MECHANISM AVAILABLE" in body
     assert "natural_resource" in body
     assert "first_aid" in body
+
+
+def test_task_vocabulary_reaches_cpp_from_the_captured_enum() -> None:
+    """The probe's task list is source-derived, not a curated guess.
+
+    If the plug-in iterated a hand-picked subset, the ceiling would move rather
+    than lift. This header is generated from the same `TaskType.h` capture the
+    parity report parses, so the runtime probe and the Python reconciliation are
+    bounded by one vocabulary with one provenance.
+    """
+
+    from kenshi_agent.tooling.context_action_vocabulary import load_task_types
+
+    header = (
+        NATIVE_TARGET_SOURCES[0].parent / "TaskTypeVocabulary.generated.h"
+    ).read_text(encoding="utf-8")
+    entries = load_task_types().entries
+
+    assert len(entries) == 291
+    for entry in entries:
+        assert f'{{ {entry.value}, "{entry.name}" }}' in header
+
+
+def test_generated_vocabulary_header_is_not_stale() -> None:
+    import tempfile
+    from pathlib import Path
+
+    from kenshi_agent.tooling.native_contract_export import (
+        export_task_type_vocabulary_header,
+    )
+
+    committed = (
+        NATIVE_TARGET_SOURCES[0].parent / "TaskTypeVocabulary.generated.h"
+    ).read_text(encoding="utf-8")
+    with tempfile.TemporaryDirectory() as directory:
+        regenerated = export_task_type_vocabulary_header(Path(directory))
+        assert regenerated.read_text(encoding="utf-8") == committed

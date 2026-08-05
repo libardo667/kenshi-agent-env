@@ -50,6 +50,65 @@ def _quoted_lines(values: tuple[str, ...]) -> list[str]:
     return [f'            "{value}",' for value in values]
 
 
+def export_task_type_vocabulary_header(output_dir: Path) -> Path:
+    """Carry Kenshi's own task vocabulary into the plug-in as source-derived data.
+
+    The plug-in currently states what a target affords, using two hardcoded
+    string literals. It should ask, and the API to ask with -
+    `getPlayerTaskProbability(TaskType, target, out)` - needs a list of task
+    values to iterate. That list must come from the game, not from a curated
+    guess, or the ceiling simply moves rather than lifting.
+
+    `game_sources/kenshi/TaskType.h` is a verbatim capture of KenshiLib's enum,
+    already parsed for the parity report. This emits the same entries as C++
+    data so the runtime probe and the Python reconciliation are bounded by one
+    vocabulary with one provenance.
+    """
+
+    from .context_action_vocabulary import load_task_types
+
+    source = load_task_types()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / "TaskTypeVocabulary.generated.h"
+    lines = [
+        "#ifndef KENSHI_AGENT_TASK_TYPE_VOCABULARY_GENERATED_H",
+        "#define KENSHI_AGENT_TASK_TYPE_VOCABULARY_GENERATED_H",
+        "",
+        "// Generated from game_sources/kenshi/TaskType.h; edits are overwritten.",
+        "// Upper-bound vocabulary of Kenshi task types. Membership here does not",
+        "// mean a task is player-orderable against any given target; it means the",
+        "// value exists and may be probed. Kenshi answers the actual question.",
+        "",
+        "namespace KenshiAgentTelemetry",
+        "{",
+        "    struct TaskTypeVocabularyEntry",
+        "    {",
+        "        int value;",
+        "        const char* name;",
+        "    };",
+        "",
+        "    inline const TaskTypeVocabularyEntry* TaskTypeVocabulary(",
+        "        unsigned int& count)",
+        "    {",
+        "        static const TaskTypeVocabularyEntry entries[] =",
+        "        {",
+        *(
+            f'            {{ {entry.value}, "{entry.name}" }},'
+            for entry in source.entries
+        ),
+        "        };",
+        "        count = sizeof(entries) / sizeof(entries[0]);",
+        "        return entries;",
+        "    }",
+        "}",
+        "",
+        "#endif",
+        "",
+    ]
+    path.write_text("\n".join(lines), encoding="utf-8")
+    return path
+
+
 def export_gameplay_capabilities_header(
     manifest_path: Path,
     output_dir: Path,
