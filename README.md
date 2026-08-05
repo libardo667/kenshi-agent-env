@@ -34,7 +34,9 @@ Read [ARCHITECTURE.md](ARCHITECTURE.md) for the implemented design. The complete
 [reconstruction plan](docs/ARCHITECTURE_RECONSTRUCTION.md) explains the ownership
 changes and their stage gates; the
 [Stage 8 acceptance report](docs/reconstruction/stage_8_acceptance.md) records the
-portable, native, and supervised-live evidence.
+portable, native, and supervised-live evidence. The active authority for current
+work is the
+[interaction scope and order lifecycle plan](docs/KENSHI_INTERACTION_SCOPE_ORDER_LIFECYCLE_PLAN.md).
 
 ## Portable quick start
 

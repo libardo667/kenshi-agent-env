@@ -137,8 +137,11 @@ inventory list.
 
 ## Build
 
-The active [reconstruction authority](../../docs/ARCHITECTURE_RECONSTRUCTION.md)
-preserves native protocol compatibility. Exact contributor-supplied media identities
+The completed [reconstruction](../../docs/ARCHITECTURE_RECONSTRUCTION.md)
+preserved native protocol compatibility. The active
+[interaction-scope authority](../../docs/KENSHI_INTERACTION_SCOPE_ORDER_LIFECYCLE_PLAN.md)
+plans a deliberate breaking bump to telemetry `2.0.0` and native request schema
+`2.0` in its Slice 2; until that lands, protocol compatibility still holds. Exact contributor-supplied media identities
 remain recorded in [`docs/native-media.lock.json`](../../docs/native-media.lock.json),
 and the checked-in diagnostic script verifies the installed build prerequisites.
 
