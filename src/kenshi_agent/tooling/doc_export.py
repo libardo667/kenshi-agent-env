@@ -10,6 +10,7 @@ from .context_action_parity import (
     load_witnesses,
     render_context_action_parity,
 )
+from .coverage_frontier import assess_coverage_frontier, render_coverage_frontier
 from .interaction_catalog import (
     audit_interaction_catalog,
     render_interaction_catalog,
@@ -157,6 +158,32 @@ def _interaction_catalog() -> str:
     return "\n".join(lines)
 
 
+def _coverage_frontier() -> str:
+    """Why the world-target surface is the size it is, derived from source."""
+
+    lines = [
+        GENERATED_MARKER,
+        "",
+        "# World-target coverage frontier",
+        "",
+        "The binding surface has a source-derived denominator (`controls.cfg`)",
+        "and the order vocabulary has one (`TaskType.h`). The world-target",
+        "surface has neither: the plug-in emits fixed context-action literals",
+        "instead of asking Kenshi what a target affords.",
+        "",
+        "That makes coverage a property of the exporter rather than of",
+        "exploration. Three wired pairs is not a young witness set that more",
+        "runs would grow; it is the ceiling. This report derives that ceiling",
+        "from the native source, so it stops being true as soon as the",
+        "hardcoding does.",
+        "",
+        "```text",
+    ]
+    lines.extend(render_coverage_frontier(assess_coverage_frontier()))
+    lines.extend(["```", ""])
+    return "\n".join(lines)
+
+
 def _modeled_interface_audit() -> str:
     """Navigation checks within already modeled interfaces, never a denominator."""
 
@@ -186,6 +213,7 @@ def export_docs(output_dir: Path) -> list[Path]:
         "CONTEXT_ACTION_PARITY.md": render_context_action_parity(
             load_witnesses(WITNESSES_PATH)
         ),
+        "COVERAGE_FRONTIER.md": _coverage_frontier(),
         "GAME_BINDING_PARITY.md": _game_binding_parity(),
         "INTERACTION_CATALOG.md": _interaction_catalog(),
         "OPERATION_DEFINITIONS.md": _operation_definitions(),
