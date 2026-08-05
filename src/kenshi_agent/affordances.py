@@ -483,17 +483,44 @@ def _visible_control_offers(observation: Observation) -> Iterable[AffordanceOffe
             else AffordanceSource.VISIBLE_CONTROL
         )
         target_id = f"{control.window}\x1f{control.role}\x1f{control.label}"
+        # A caption-less widget arrives with its raw MyGUI name as the label -
+        # '0,000,000,08D,29A,5E0_FloorArrowUp' - which was offered to the
+        # planner verbatim. Kenshi's shipped layouts name that widget
+        # FloorArrowUp and call it a Button, so say so. The binding identity is
+        # unchanged; only what the planner can understand about the choice is.
+        declaration = control.declaration
+        described = control.label
+        if declaration.resolved:
+            declared = declaration.layout_widget_name
+            # A caption-less control's label *is* its raw widget name, so
+            # showing both repeated it: '0,000,...,160_FloorArrowUp
+            # [FloorArrowUp]'. When the label carries no caption of its own,
+            # the declared name replaces it outright.
+            described = (
+                declared
+                if control.label.endswith(declared)
+                else f"{control.label} [{declared}]"
+            )
+        where = control.window or "the current UI"
+        kind = f" ({declaration.widget_type})" if declaration.widget_type else ""
         yield _offer(
             observation,
             source=source,
             semantic="choose_dialogue" if source is AffordanceSource.DIALOGUE else "activate",
-            description=f"Activate {control.label!r} in {control.window or 'the current UI'}.",
+            description=f"Activate {described!r}{kind} in {where}.",
             operation_kind="activate_visible_control",
             target=AffordanceTarget(
                 target_id=target_id,
-                label=control.label,
+                # The target reads as what Kenshi calls the control. target_id
+                # is untouched: it is the binding identity, and rebinding
+                # matches on it.
+                label=described,
                 kind=control.role,
             ),
+            # Operation arguments are the action's own fields, so the declared
+            # identity cannot ride here - it is perception, not a parameter of
+            # the click. It reaches the planner through the description and the
+            # target label, which is what planner_digest projects.
             arguments={
                 "exact_label": control.label,
                 "role": control.role,
