@@ -10,6 +10,10 @@ from .context_action_parity import (
     load_witnesses,
     render_context_action_parity,
 )
+from .interaction_catalog import (
+    audit_interaction_catalog,
+    render_interaction_catalog,
+)
 from .operation_registry_audit import (
     audit_operation_registry,
     render_operation_registry_report,
@@ -123,6 +127,36 @@ def _operation_definitions() -> str:
     return "\n".join(lines)
 
 
+def _interaction_catalog() -> str:
+    """How each operation addresses Kenshi, and how much of that is proven."""
+
+    lines = [
+        GENERATED_MARKER,
+        "",
+        "# Interaction catalog",
+        "",
+        "Slice 0 inventory for the interaction-scope and order-lifecycle stage.",
+        "",
+        "The first table is derived from the sole operation registry and states",
+        "only what the code says today, including the `SelectionRequirement`",
+        "this stage exists to delete. The second table is the hand-authored",
+        "proposal in `docs/reconstruction/interaction_proof_status.json`, kept",
+        "separate so the proposal and the implementation cannot silently",
+        "converge. Slice 1 moves the proposed contract into the registry, after",
+        "which the manifest may carry only proof status and evidence.",
+        "",
+        "Neither table is an authority over Kenshi's behavior. `unproven` is the",
+        "honest majority: no group-scope behavior is live-proven anywhere in this",
+        "repository, and every captured context-menu witness had exactly one",
+        "character selected.",
+        "",
+        "```text",
+    ]
+    lines.extend(render_interaction_catalog(audit_interaction_catalog()))
+    lines.extend(["```", ""])
+    return "\n".join(lines)
+
+
 def _modeled_interface_audit() -> str:
     """Navigation checks within already modeled interfaces, never a denominator."""
 
@@ -153,6 +187,7 @@ def export_docs(output_dir: Path) -> list[Path]:
             load_witnesses(WITNESSES_PATH)
         ),
         "GAME_BINDING_PARITY.md": _game_binding_parity(),
+        "INTERACTION_CATALOG.md": _interaction_catalog(),
         "OPERATION_DEFINITIONS.md": _operation_definitions(),
         "MODELED_INTERFACE_AUDIT.md": _modeled_interface_audit(),
     }

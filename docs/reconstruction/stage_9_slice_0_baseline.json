@@ -1,0 +1,223 @@
+{
+  "schema_version": 1,
+  "stage": "interaction-scope-and-order-lifecycle",
+  "slice": 0,
+  "authority": "docs/KENSHI_INTERACTION_SCOPE_ORDER_LIFECYCLE_PLAN.md",
+  "captured_at_utc": "2026-08-04T00:00:00Z",
+  "source": {
+    "baseline_commit": "3b472bbb153dcc4bfec6810a2391a6cfe1406479",
+    "branch": "main",
+    "rollback_tag": "reconstruction-stage-8-accepted",
+    "rollback_commit": "51403270af13b93b7cc49e264f99b85a50d7c9cb",
+    "note": [
+      "The baseline is HEAD, not the Stage 8 acceptance tag. Six commits land",
+      "between them and four are inside this stage's territory, so inheriting",
+      "the tag as the baseline would silently absorb them. Section 2.4 of the",
+      "plan records the delta."
+    ]
+  },
+  "post_acceptance_delta": {
+    "commits": [
+      {
+        "sha": "d6fcbfd",
+        "subject": "Recognize squad selection set changes",
+        "relevance": "outcome_recorder now notices selection-set changes; touches the selection semantics this stage redefines"
+      },
+      {
+        "sha": "43e00ce",
+        "subject": "Preserve complete speech narration",
+        "relevance": "unrelated to this stage"
+      },
+      {
+        "sha": "97a2909",
+        "subject": "Release controller-owned resource jobs",
+        "relevance": "introduced the ordinary-order release path that calls removeJob/clearOrders under a claimed ownership argument"
+      },
+      {
+        "sha": "9f971e4",
+        "subject": "Reintroduce the project README",
+        "relevance": "unrelated to this stage"
+      },
+      {
+        "sha": "5b97e31",
+        "subject": "Fully release resource orders and require whole-group travel",
+        "relevance": "extended the release path and added the selected_count travel gate"
+      },
+      {
+        "sha": "3b472bb",
+        "subject": "Make map travel group-aware",
+        "relevance": "threaded selected_count through map destination availability"
+      }
+    ],
+    "known_residue": [
+      {
+        "id": "selected-count-outside-registry",
+        "location": "src/kenshi_agent/core/telemetry.py map_destination_already_reached",
+        "description": "A selection-cardinality rule now lives in a telemetry helper rather than the operation registry. Slice 1 must absorb it; its gate forbids recipient scope being inferred outside the registry or resolver.",
+        "owner_slice": 1
+      },
+      {
+        "id": "unproven-resource-order-ownership",
+        "location": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp resource release path",
+        "description": "removeJob/clearOrders/halt run on the theory that the controller's ordinary order owns the Jobs entry it clears. Argued in a comment, not proven live. Section 13.6 is the proof; Slice 6 either earns it or narrows the release.",
+        "owner_slice": 6
+      },
+      {
+        "id": "vestigial-approach-wire-command",
+        "location": "src/kenshi_agent/core/transport.py NativeCommandRequest.command",
+        "description": "approach_dialogue_target still dispatches under the wire name approach_confirmed_vendor, left over from the Stage 7 vendor macro deletion. Renaming is a protocol change and belongs to the Slice 2 bump.",
+        "owner_slice": 2
+      }
+    ]
+  },
+  "environment": {
+    "python": "3.12.13",
+    "uv": "0.11.28",
+    "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+    "dependency_lock": {
+      "path": "uv.lock",
+      "sha256": "419a6d4d052759cab9f7ffe2b6a62bed938d976705484f05f9f948e4827c81f9"
+    }
+  },
+  "portable_gate": {
+    "pytest": {
+      "result": "pass",
+      "tests_collected": 1749
+    },
+    "ruff": "pass",
+    "mypy": {
+      "result": "pass",
+      "source_files": 143
+    },
+    "note": "Captured at the baseline commit before Slice 0 artefacts were added."
+  },
+  "canonical_live_config": {
+    "path": "config/live.yaml",
+    "sha256": "99cffdc498d4b07ca2ac7156a1b0114adae62c53848d2da47b121a6cd0929454"
+  },
+  "protocol": {
+    "telemetry_protocol_version": "1.12.0",
+    "native_command_schema_version": "1.2",
+    "planned_bump": {
+      "telemetry": "2.0.0",
+      "native_command_schema": "2.0",
+      "slice": 2,
+      "compatibility": "breaking; no dual-read fallback and no squad alias"
+    },
+    "sources": {
+      "native/KenshiAgentTelemetry/NativeCommandProtocol.cpp": "934437242a1e25ad4d2f882ce65232a53b100b565cc708c6ff6439cda257f2c8",
+      "native/KenshiAgentTelemetry/NativeCommandProtocol.h": "e2a19b27b96ce64256334f1cea5f75175951c91bdf1cf13aef8c73f8475a280d",
+      "native/KenshiAgentTelemetry/GameplayCapabilities.json": "89c9c74f3f6e5e456b32c45a0555dc5fe83ad93c8c545412e67add5c4a4d6a50",
+      "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp": "c4ca7a3bfe81ed42c6b1573258eb5a18b5f951f2943c942ec8025308bcd2dc79"
+    },
+    "source_drift_note": "The three protocol sources are byte-identical to the Stage 0 baseline. KenshiAgentTelemetry.cpp is not: the two resource-release commits changed it after Stage 8 acceptance."
+  },
+  "schemas": {
+    "affordance_receipt.schema.json": "1446e7148015722c013dc09bf43b4ca334cac6db353decb9a4452bcd2e321946",
+    "affordance_selection.schema.json": "833074c538f94dfc363eef48720998553303dae7f773b4122d08c6fef563b8a2",
+    "decision_proposal.schema.json": "cdc0cc0e03f35da1e6a8b4f0c0274fe4dee5534cd956abb71141166e77c352a5",
+    "native_command_request.schema.json": "7455d1efab32e787790522b75e56dd4cd309c6bf1a931b9358b6b16c6088f6a7",
+    "observation.schema.json": "f9bf1c3b7e553ad6b1904e2439daaa3a9180f0b12aa97c1e454ad91aa9be1b2e",
+    "plan_proposal.schema.json": "3d15c92a17e3a999931fe4ec76dfe8e62ad8759e4038b7b8182461bf6f97b4b6",
+    "runtime_action_receipt.schema.json": "fbcacd6b5860af53ed208397898b0a7858a00f59a1d2c00eb18100cd0d57514f",
+    "runtime_decision.schema.json": "e0006997ce263481cd563f0ec6e4dcb9f3f6969135567a618d46f55599957a08",
+    "runtime_operation.schema.json": "adf556333ccbb68f8aa03ba089b35faa6206e3ebd2a6d38ee338abb47e762a6b",
+    "runtime_plan.schema.json": "6b34f6f5ad82b3ce3973a49d1e3718fda1c3a58afb23096cb5cb352e12b2c21f",
+    "runtime_plan_patch.schema.json": "138d48c57ba9c75df98c650b60d35484dfd1dbcb4bf5ca795e3fec24bfdf9721",
+    "telemetry.schema.json": "764aa35c3553da7389a8264994c46c13b9f72f64ec7bf32a434be60e5b4cf887"
+  },
+  "generated_documents": {
+    "AFFORDANCE_CATALOG.md": "2769bf7f5d79478b033d51eb38295e44d88ed33ca1e1624c1fd3550c752fa2cb",
+    "AFFORDANCE_SURFACES.md": "75387605e23df2347b2e0fccd24519a263e6c923eafd6563a872a061c997d86a",
+    "CONTEXT_ACTION_PARITY.md": "40832f8ea290fc24b0fb5fc0f3731c1aede807791fa95b6e2dc640022508adf4",
+    "DEV_CLI.md": "7f1dd7a8370bca96e824a2d9105251a912efad9f9c48dfc07d5fa118687cc89c",
+    "GAME_BINDING_PARITY.md": "fa4c24af5f1e46aaba546ac5092a5bed115c82d0a45cf7f09a2b9ee0cbba3223",
+    "MODELED_INTERFACE_AUDIT.md": "33e51f3a267a52dee3e4d24b6cc40cd990c3eec692c987fb57fd330bd83e8720",
+    "OPERATION_DEFINITIONS.md": "046723c5a33a05cb7ced91da92fdbe290f4d92bc8c2348f156695b9f20155e9b"
+  },
+  "installation_rollback": {
+    "required_by_slice": 2,
+    "status": "incomplete_operator_action_required",
+    "installed_dll": {
+      "protocol": "1.12.0",
+      "size_bytes": 286720,
+      "sha256": "e93d7278fc81c04f562e607322af7f805027fd2523e276bc4ca463e0f54cde77",
+      "source": "docs/reconstruction/stage_8_acceptance.md",
+      "verified_here": false,
+      "note": "The DLL lives in the Kenshi installation on the Windows host and is not reachable from this WSL working tree. The hash is carried forward from the Stage 8 acceptance report, not re-measured."
+    },
+    "operator_actions_before_slice_2": [
+      "Archive the current installed 1.12.0 DLL outside the game directory and re-measure its hash on the Windows host.",
+      "Record the exact reinstall procedure for the archived 1.12.0 artefact.",
+      "After the 2.0 build, archive and hash it the same way.",
+      "Record which run bundles were produced under which protocol so a rollback does not leave 2.0-shaped evidence being read as 1.12.0."
+    ],
+    "note": "A git tag alone does not restore a working system from Slice 2 onward. Rolling Python back without reinstalling the matching plug-in leaves a version mismatch across the telemetry boundary."
+  },
+  "preserved_evidence": {
+    "note": "Existing durable bundles. None was rerun to produce a newer timestamp, and none is claimed to prove group-scope behaviour.",
+    "bundles": [
+      {
+        "id": "live-one-choice-group-movement-soak-20260803-r1",
+        "covers": "current affordance offer, exact stable-identity rebind, native whole-party regroup terminal",
+        "relevance": "closest existing thing to a group-order trace"
+      },
+      {
+        "id": "live-hub-survival-pair-20260729-r3",
+        "covers": "conserved harvest, sale, purchase, causal final pause",
+        "relevance": "the economic vertical this stage must not regress"
+      },
+      {
+        "id": "reconstruction-stage-3-run-coordinator-r3",
+        "covers": "monitored native movement with progress observations and an exact success terminal",
+        "relevance": "native order dispatch and terminal behaviour"
+      },
+      {
+        "id": "reconstruction-stage-4-control-boundary-r5",
+        "covers": "human-input preemption, cancellation, confirmed pause, handoff countdown, F12, second pause",
+        "relevance": "human handoff and F12 baseline for section 13.10"
+      },
+      {
+        "id": "stage7-tooling-live-proof-20260804c",
+        "covers": "public launch/run/recover/stop path, typed screen transition, clean final pause",
+        "relevance": "operator workflow baseline"
+      },
+      {
+        "id": "live-party-control-set-aware-soak-20260803-r1",
+        "covers": "47 strategic selections, 52 succeeded steps, 60 affordance receipts",
+        "relevance": "soak comparison point for section 13 closure"
+      }
+    ],
+    "restart_continuity_evidence_id": "reconstruction-stage-0-restart-continuity"
+  },
+  "interaction_inventory": {
+    "operations": 33,
+    "planner_visible": 27,
+    "internal_only": 6,
+    "native_commands": 10,
+    "manifest_entries": 34,
+    "catalog": "docs/generated/INTERACTION_CATALOG.md",
+    "proof_manifest": "docs/reconstruction/interaction_proof_status.json",
+    "proof_status_counts": {
+      "source_proven": 12,
+      "unit_proven": 0,
+      "live_proven": 0,
+      "unproven": 20,
+      "withheld": 2
+    },
+    "headline_finding": [
+      "No group-scope behaviour is live-proven anywhere in this repository.",
+      "Every context-menu witness in game_sources/kenshi/context_menu_witnesses.json",
+      "was captured with exactly one character selected, and the only witnessed",
+      "context action is 'operate'. Twenty of thirty-four manifest entries are",
+      "unproven proposals. The plan's section 10.1 map is therefore a starting",
+      "classification, as it says, and not a description of known behaviour."
+    ]
+  },
+  "target_scenarios": {
+    "path": "tests/test_interaction_scope_targets.py",
+    "count": 9,
+    "mechanism": "pytest.mark.xfail(strict=True)",
+    "note": "Each encodes a target behaviour and fails today. Strict marking turns the suite red on XPASS, so the slice that implements a behaviour must deliberately retire its marker rather than leave a gate silently passing. All nine must be resolved, converted to an explicitly withheld-capability test, or deleted before stage closure."
+  }
+}
