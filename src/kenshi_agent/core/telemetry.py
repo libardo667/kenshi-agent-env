@@ -309,6 +309,19 @@ class AdvertisedTask(StrictModel):
     name: str = Field(min_length=1, max_length=80)
 
 
+class GroundPosition(StrictModel):
+    """A position on Kenshi's ground plane.
+
+    Kenshi's world is x/z at ground level with y as altitude, so a
+    two-component ground position is x and z. `Vec2` is a screen-space x/y and
+    means something different; reusing it here would have quietly relabelled an
+    axis.
+    """
+
+    x: float
+    z: float
+
+
 class ProspectReading(StrictModel):
     """One line as Kenshi's Prospecting window displays it.
 
@@ -336,11 +349,15 @@ class ProspectSurvey(StrictModel):
     """
 
     command_id: str = Field(pattern=r"^cmd-[0-9a-f]{32}$")
-    center: Vec2
+    center: GroundPosition
     # The surveying character's science skill, which bounds what the window
     # reveals.
     skill: float = Field(ge=0.0)
     surveyed_name: str = Field(default="", max_length=200)
+    # Whether Kenshi's prospecting window was actually showing when read.
+    # An empty reading list with the window hidden is a different fact from
+    # an empty list with it open.
+    window_visible: bool = False
     readings: list[ProspectReading] = Field(default_factory=list, max_length=32)
 
 
@@ -916,6 +933,7 @@ class NativeCommandAcknowledgement(StrictModel):
         "perform_context_action",
         "produce_resource_output",
         "open_context_inventory",
+        "survey_local_resources",
     ]
     status: NativeCommandStatus
     reason: str = Field(min_length=1, max_length=200)

@@ -1264,6 +1264,7 @@ namespace
     struct ProspectSurveyRecord
     {
         bool valid;
+        bool windowVisible;
         std::string commandId;
         double centerX;
         double centerZ;
@@ -1272,7 +1273,8 @@ namespace
         std::vector<ProspectReading> readings;
 
         ProspectSurveyRecord()
-            : valid(false), centerX(0.0), centerZ(0.0), skill(0.0)
+            : valid(false), windowVisible(false),
+              centerX(0.0), centerZ(0.0), skill(0.0)
         {
         }
     };
@@ -1295,6 +1297,11 @@ namespace
         // action, not a simulation of it, so what comes back is what a player
         // would be looking at.
         window->showT(position, skill, surveyor->getName());
+        // showT records the survey parameters; the resource lines are built
+        // when the window actually shows. Reading immediately after showT
+        // returned an empty list with lastPos/lastSkill correctly set, so the
+        // panel build is a separate step.
+        window->_show();
 
         g_prospectSurvey = ProspectSurveyRecord();
         g_prospectSurvey.commandId = commandId;
@@ -1302,6 +1309,7 @@ namespace
         g_prospectSurvey.centerZ = window->lastPos.z;
         g_prospectSurvey.skill = window->lastSkill;
         g_prospectSurvey.surveyedName = window->lastName;
+        g_prospectSurvey.windowVisible = window->getVisible();
 
         const unsigned int lineCount =
             static_cast<unsigned int>(window->lines.size());
@@ -1334,6 +1342,8 @@ namespace
         json << "\"skill\":" << g_prospectSurvey.skill << ",";
         json << "\"surveyed_name\":\""
              << JsonEscape(g_prospectSurvey.surveyedName) << "\",";
+        json << "\"window_visible\":"
+             << JsonBool(g_prospectSurvey.windowVisible) << ",";
         json << "\"readings\":[";
         for (unsigned int index = 0;
              index < g_prospectSurvey.readings.size();

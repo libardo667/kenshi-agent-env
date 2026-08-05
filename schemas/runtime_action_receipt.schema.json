@@ -1805,7 +1805,8 @@
             "exit_current_building",
             "perform_context_action",
             "produce_resource_output",
-            "open_context_inventory"
+            "open_context_inventory",
+            "survey_local_resources"
           ],
           "title": "Command",
           "type": "string"
