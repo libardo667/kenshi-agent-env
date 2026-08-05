@@ -1,5 +1,6 @@
 #include <Debug.h>
 #include <core/Functions.h>
+#include <kenshi/CharStats.h>
 #include <kenshi/Character.h>
 #include <kenshi/CharMovement.h>
 #define CharacterMessage KenshiAgentAICharacterMessage
@@ -55,6 +56,7 @@
 #include <kenshi/RootObject.h>
 #include <kenshi/ShopTrader.h>
 #include <kenshi/gui/DialogueWindow.h>
+#include <kenshi/gui/ProspectingWindow.h>
 #include <kenshi/gui/ForgottenGUI.h>
 #include <kenshi/gui/InventoryGUI.h>
 #include <kenshi/gui/ManagementScreen.h>
@@ -1241,197 +1243,107 @@ namespace
         }
     }
 
-    // Sample Kenshi's own resource field at one world position.
+    // One completed prospecting survey, held until the next replaces it.
     //
-    // This is what the Prospecting window reads. Sampling it directly means a
-    // survey needs no button, no skill formula, and no interpretation of a
-    // rendered panel - and unlike the window's single scalar, a grid of these
-    // shows *where* a resource is, which is the thing the scalar hides.
-    bool SampleResourceAt(
-        GameWorld* ou,
-        MiningResource resource,
-        const Ogre::Vector3& position,
-        float& level)
-    {
-        if (ou == NULL || ou->zoneMgr == NULL)
-            return false;
-        // Withheld, not guessed.
-        //
-        // ZoneManager::getResource needs an AreaBiomeGroup and Kenshi
-        // dereferences it: passing null crashed the game on the first survey
-        // ever dispatched. Every reachable source of one is currently blocked -
-        // WeatherSystem::ActiveRegion needs Weather.h, which cannot be included
-        // because PhysicsCollection.h already defines WeatherRegion;
-        // ZoneManager::getBiome returns GameData*, a different type; and
-        // Town::getBiome only answers inside a town.
-        //
-        // So the survey reports unavailable rather than sampling. That is the
-        // honest state: the operation exists, its transport works, and its one
-        // missing piece is named. A crash is not an acceptable way to discover
-        // an unmet precondition.
-        (void)resource;
-        (void)position;
-        (void)level;
-        return false;
-    }
-
-
-    // One completed resource survey, held until the next one replaces it.
+    // Read from Kenshi's own Prospecting window rather than from the terrain
+    // field underneath it. An earlier attempt sampled ZoneManager::getResource
+    // directly and crashed: it needs an AreaBiomeGroup that nothing reachable
+    // provides. It was also the wrong target - the window is what a player
+    // sees, so reading it is faithful by construction instead of by
+    // reimplementation.
     //
-    // A survey is a pulse, not continuous perception: it reports what the
-    // character could learn by prospecting where it stands, and it exists only
-    // because an operation asked for it. That keeps the information earned
-    // rather than ambient, which is the whole difference between giving the
-    // agent a map and giving it a prospecting tool.
-    struct ResourceSurveyLayer
+    // Captions are reported verbatim. The window builds each line from a
+    // resource name and a value, but exposes only the button, so the exact
+    // split is unproven; inventing a parse would be asserting a format nobody
+    // has confirmed. The agent gets what the window says.
+    struct ProspectReading
     {
-        std::string resource;
-        std::vector<float> cells;
-        float peak;
-        double peakX;
-        double peakZ;
-
-        ResourceSurveyLayer() : peak(0.0f), peakX(0.0), peakZ(0.0) {}
+        std::string label;
     };
 
-    struct ResourceSurvey
+    struct ProspectSurveyRecord
     {
         bool valid;
         std::string commandId;
         double centerX;
         double centerZ;
-        double radius;
-        unsigned int resolution;
-        double cellSize;
-        std::vector<ResourceSurveyLayer> layers;
+        double skill;
+        std::string surveyedName;
+        std::vector<ProspectReading> readings;
 
-        ResourceSurvey()
-            : valid(false),
-              centerX(0.0),
-              centerZ(0.0),
-              radius(0.0),
-              resolution(0),
-              cellSize(0.0)
+        ProspectSurveyRecord()
+            : valid(false), centerX(0.0), centerZ(0.0), skill(0.0)
         {
         }
     };
 
-    ResourceSurvey g_resourceSurvey;
+    ProspectSurveyRecord g_prospectSurvey;
 
-    // Nine cells a side over the near band: coarse enough that this is a
-    // prospecting reading rather than a mining map, fine enough to say which
-    // way a deposit lies. The scalar the Prospecting window shows is the whole
-    // area averaged into one number, which is exactly why it read "Iron: 0"
-    // beside two visible deposits.
-    const unsigned int RESOURCE_SURVEY_RESOLUTION = 9;
-
-    struct SurveyedResource
+    bool RunProspectSurvey(Character* surveyor, const std::string& commandId)
     {
-        MiningResource resource;
-        const char* name;
-    };
+        if (surveyor == NULL || !surveyor->isValid())
+            return false;
+        ProspectingWindow* window = ProspectingWindow::getSingleton();
+        if (window == NULL)
+            return false;
 
-    void RunResourceSurvey(
-        GameWorld* ou,
-        const std::string& commandId,
-        const Ogre::Vector3& center)
-    {
-        static const SurveyedResource surveyed[] =
+        CharStats* stats = surveyor->getStats();
+        const float skill = stats != NULL ? stats->science : 0.0f;
+        const Ogre::Vector3 position = surveyor->getPosition();
+
+        // The same call the game's own prospecting button ends in. This is the
+        // action, not a simulation of it, so what comes back is what a player
+        // would be looking at.
+        window->showT(position, skill, surveyor->getName());
+
+        g_prospectSurvey = ProspectSurveyRecord();
+        g_prospectSurvey.commandId = commandId;
+        g_prospectSurvey.centerX = window->lastPos.x;
+        g_prospectSurvey.centerZ = window->lastPos.z;
+        g_prospectSurvey.skill = window->lastSkill;
+        g_prospectSurvey.surveyedName = window->lastName;
+
+        const unsigned int lineCount =
+            static_cast<unsigned int>(window->lines.size());
+        for (unsigned int index = 0; index < lineCount; ++index)
         {
-            { IRON, "iron" },
-            { COPPER, "copper" },
-            { STONE, "stone" },
-            { WATER, "water" },
-            { CARBON, "carbon" },
-            { GROUND, "fertility" }
-        };
-
-        g_resourceSurvey = ResourceSurvey();
-        g_resourceSurvey.commandId = commandId;
-        g_resourceSurvey.centerX = center.x;
-        g_resourceSurvey.centerZ = center.z;
-        g_resourceSurvey.radius = NEAR_WORLD_CONTEXT_TARGET_RADIUS;
-        g_resourceSurvey.resolution = RESOURCE_SURVEY_RESOLUTION;
-        const double span = NEAR_WORLD_CONTEXT_TARGET_RADIUS * 2.0;
-        const double cell = span / (RESOURCE_SURVEY_RESOLUTION - 1);
-        g_resourceSurvey.cellSize = cell;
-
-        const unsigned int count =
-            sizeof(surveyed) / sizeof(surveyed[0]);
-        for (unsigned int index = 0; index < count; ++index)
-        {
-            ResourceSurveyLayer layer;
-            layer.resource = surveyed[index].name;
-            bool sampledAny = false;
-            for (unsigned int row = 0; row < RESOURCE_SURVEY_RESOLUTION; ++row)
-            {
-                for (unsigned int col = 0;
-                     col < RESOURCE_SURVEY_RESOLUTION;
-                     ++col)
-                {
-                    Ogre::Vector3 at = center;
-                    at.x = static_cast<float>(
-                        center.x - NEAR_WORLD_CONTEXT_TARGET_RADIUS + col * cell);
-                    at.z = static_cast<float>(
-                        center.z - NEAR_WORLD_CONTEXT_TARGET_RADIUS + row * cell);
-                    float level = 0.0f;
-                    if (!SampleResourceAt(ou, surveyed[index].resource, at, level))
-                    {
-                        layer.cells.push_back(0.0f);
-                        continue;
-                    }
-                    sampledAny = true;
-                    layer.cells.push_back(level);
-                    if (level > layer.peak)
-                    {
-                        layer.peak = level;
-                        layer.peakX = at.x;
-                        layer.peakZ = at.z;
-                    }
-                }
-            }
-            if (sampledAny)
-                g_resourceSurvey.layers.push_back(layer);
+            ProspectingWindow::ResourceLinePanel* line = window->lines[index];
+            if (line == NULL || line->button == NULL)
+                continue;
+            ProspectReading reading;
+            reading.label = line->button->getCaption().asUTF8();
+            if (reading.label.empty())
+                continue;
+            g_prospectSurvey.readings.push_back(reading);
         }
-        g_resourceSurvey.valid = !g_resourceSurvey.layers.empty();
+        g_prospectSurvey.valid = true;
+        return true;
     }
 
-    void AppendResourceSurvey(std::ostringstream& json)
+    void AppendProspectSurvey(std::ostringstream& json)
     {
-        if (!g_resourceSurvey.valid)
+        if (!g_prospectSurvey.valid)
         {
             json << "null";
             return;
         }
         json << "{";
-        json << "\"command_id\":\"" << g_resourceSurvey.commandId << "\",";
-        json << "\"center\":{\"x\":" << g_resourceSurvey.centerX
-             << ",\"z\":" << g_resourceSurvey.centerZ << "},";
-        json << "\"radius\":" << g_resourceSurvey.radius << ",";
-        json << "\"resolution\":" << g_resourceSurvey.resolution << ",";
-        json << "\"cell_size\":" << g_resourceSurvey.cellSize << ",";
-        json << "\"layers\":[";
+        json << "\"command_id\":\"" << g_prospectSurvey.commandId << "\",";
+        json << "\"center\":{\"x\":" << g_prospectSurvey.centerX
+             << ",\"z\":" << g_prospectSurvey.centerZ << "},";
+        json << "\"skill\":" << g_prospectSurvey.skill << ",";
+        json << "\"surveyed_name\":\""
+             << JsonEscape(g_prospectSurvey.surveyedName) << "\",";
+        json << "\"readings\":[";
         for (unsigned int index = 0;
-             index < g_resourceSurvey.layers.size();
+             index < g_prospectSurvey.readings.size();
              ++index)
         {
-            const ResourceSurveyLayer& layer = g_resourceSurvey.layers[index];
             if (index > 0)
                 json << ",";
-            json << "{\"resource\":\"" << layer.resource << "\",";
-            json << "\"peak\":" << layer.peak << ",";
-            json << "\"peak_position\":{\"x\":" << layer.peakX
-                 << ",\"z\":" << layer.peakZ << "},";
-            json << "\"cells\":[";
-            for (unsigned int cellIndex = 0;
-                 cellIndex < layer.cells.size();
-                 ++cellIndex)
-            {
-                if (cellIndex > 0)
-                    json << ",";
-                json << layer.cells[cellIndex];
-            }
-            json << "]}";
+            json << "{\"label\":\""
+                 << JsonEscape(g_prospectSurvey.readings[index].label)
+                 << "\"}";
         }
         json << "]}";
     }
@@ -3252,8 +3164,8 @@ namespace
                 RejectNativeCommand(request, "selection_not_available");
                 return;
             }
-            RunResourceSurvey(ou, request.commandId, surveyor->getPosition());
-            if (!g_resourceSurvey.valid)
+            RunProspectSurvey(surveyor, request.commandId);
+            if (!g_prospectSurvey.valid)
             {
                 RejectNativeCommand(request, "resource_field_unavailable");
                 return;
@@ -4556,7 +4468,7 @@ namespace
         }
         json << "],";
         json << "\"prospect_survey\":";
-        AppendResourceSurvey(json);
+        AppendProspectSurvey(json);
         json << ",";
         json << "\"discovered_objects\":[";
         if (ou != NULL && player != NULL && selected != NULL && selected->isValid())

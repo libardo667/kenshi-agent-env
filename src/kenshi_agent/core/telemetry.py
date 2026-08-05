@@ -309,38 +309,39 @@ class AdvertisedTask(StrictModel):
     name: str = Field(min_length=1, max_length=80)
 
 
-class ResourceSurveyLayer(StrictModel):
-    """One resource's readings across a surveyed area.
+class ProspectReading(StrictModel):
+    """One line as Kenshi's Prospecting window displays it.
 
-    `peak` and `peak_position` are the point of this model. The Prospecting
-    window averages a resource over its whole area into one number, which is
-    why it can read `0` beside a visible deposit: a discrete node occupies a
-    trivial fraction of the area. A grid keeps the location, so "iron: 0"
-    becomes "iron peaks 300 units north-east".
+    The label is verbatim. The window builds each line from a resource name and
+    a value but exposes only the button, so the exact split is unproven -
+    parsing it here would assert a format nobody has confirmed. Whatever
+    structure this turns out to have can be modelled once it is observed.
     """
 
-    resource: str = Field(min_length=1, max_length=40)
-    cells: list[float] = Field(default_factory=list, max_length=256)
-    peak: float
-    peak_position: Vec2
+    label: str = Field(min_length=1, max_length=200)
 
 
 class ProspectSurvey(StrictModel):
-    """One completed survey of Kenshi's resource field, tied to the command that asked.
+    """One completed prospecting survey, tied to the command that asked for it.
 
-    Deliberately a pulse rather than continuous perception. The agent knows
-    what it surveyed and where it stood to survey it; it does not get a map of
-    the world for free. That keeps the knowledge earned, which is the
-    difference between modelling a prospecting tool and handing over the
-    terrain data.
+    Read from the game's own window rather than the terrain field beneath it,
+    so the agent sees what a player would see. Deliberately a pulse: it knows
+    what it surveyed and where it stood, not what exists everywhere.
+
+    The readings are area coverage, not deposit counts. A discrete iron node
+    occupies a trivial fraction of the surveyed area, so it can read near zero
+    while the deposit is plainly there - which is why this is not the channel
+    for finding deposits. `world_targets` already carries those by coordinate
+    with quality levels; this is the wider picture around them.
     """
 
     command_id: str = Field(pattern=r"^cmd-[0-9a-f]{32}$")
     center: Vec2
-    radius: float = Field(gt=0.0)
-    resolution: int = Field(ge=2, le=32)
-    cell_size: float = Field(gt=0.0)
-    layers: list[ResourceSurveyLayer] = Field(default_factory=list, max_length=16)
+    # The surveying character's science skill, which bounds what the window
+    # reveals.
+    skill: float = Field(ge=0.0)
+    surveyed_name: str = Field(default="", max_length=200)
+    readings: list[ProspectReading] = Field(default_factory=list, max_length=32)
 
 
 class DiscoveredObject(StrictModel):

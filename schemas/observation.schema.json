@@ -5092,9 +5092,26 @@
       "title": "ProduceResourceOutputAction",
       "type": "object"
     },
+    "ProspectReading": {
+      "additionalProperties": false,
+      "description": "One line as Kenshi's Prospecting window displays it.\n\nThe label is verbatim. The window builds each line from a resource name and\na value but exposes only the button, so the exact split is unproven -\nparsing it here would assert a format nobody has confirmed. Whatever\nstructure this turns out to have can be modelled once it is observed.",
+      "properties": {
+        "label": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "label"
+      ],
+      "title": "ProspectReading",
+      "type": "object"
+    },
     "ProspectSurvey": {
       "additionalProperties": false,
-      "description": "One completed survey of Kenshi's resource field, tied to the command that asked.\n\nDeliberately a pulse rather than continuous perception. The agent knows\nwhat it surveyed and where it stood to survey it; it does not get a map of\nthe world for free. That keeps the knowledge earned, which is the\ndifference between modelling a prospecting tool and handing over the\nterrain data.",
+      "description": "One completed prospecting survey, tied to the command that asked for it.\n\nRead from the game's own window rather than the terrain field beneath it,\nso the agent sees what a player would see. Deliberately a pulse: it knows\nwhat it surveyed and where it stood, not what exists everywhere.\n\nThe readings are area coverage, not deposit counts. A discrete iron node\noccupies a trivial fraction of the surveyed area, so it can read near zero\nwhile the deposit is plainly there - which is why this is not the channel\nfor finding deposits. `world_targets` already carries those by coordinate\nwith quality levels; this is the wider picture around them.",
       "properties": {
         "command_id": {
           "pattern": "^cmd-[0-9a-f]{32}$",
@@ -5104,37 +5121,30 @@
         "center": {
           "$ref": "#/$defs/Vec2"
         },
-        "radius": {
-          "exclusiveMinimum": 0.0,
-          "title": "Radius",
+        "skill": {
+          "minimum": 0.0,
+          "title": "Skill",
           "type": "number"
         },
-        "resolution": {
-          "maximum": 32,
-          "minimum": 2,
-          "title": "Resolution",
-          "type": "integer"
+        "surveyed_name": {
+          "default": "",
+          "maxLength": 200,
+          "title": "Surveyed Name",
+          "type": "string"
         },
-        "cell_size": {
-          "exclusiveMinimum": 0.0,
-          "title": "Cell Size",
-          "type": "number"
-        },
-        "layers": {
+        "readings": {
           "items": {
-            "$ref": "#/$defs/ResourceSurveyLayer"
+            "$ref": "#/$defs/ProspectReading"
           },
-          "maxItems": 16,
-          "title": "Layers",
+          "maxItems": 32,
+          "title": "Readings",
           "type": "array"
         }
       },
       "required": [
         "command_id",
         "center",
-        "radius",
-        "resolution",
-        "cell_size"
+        "skill"
       ],
       "title": "ProspectSurvey",
       "type": "object"
@@ -5667,40 +5677,6 @@
         "compact_summary"
       ],
       "title": "ResolvedEvidenceSnapshot",
-      "type": "object"
-    },
-    "ResourceSurveyLayer": {
-      "additionalProperties": false,
-      "description": "One resource's readings across a surveyed area.\n\n`peak` and `peak_position` are the point of this model. The Prospecting\nwindow averages a resource over its whole area into one number, which is\nwhy it can read `0` beside a visible deposit: a discrete node occupies a\ntrivial fraction of the area. A grid keeps the location, so \"iron: 0\"\nbecomes \"iron peaks 300 units north-east\".",
-      "properties": {
-        "resource": {
-          "maxLength": 40,
-          "minLength": 1,
-          "title": "Resource",
-          "type": "string"
-        },
-        "cells": {
-          "items": {
-            "type": "number"
-          },
-          "maxItems": 256,
-          "title": "Cells",
-          "type": "array"
-        },
-        "peak": {
-          "title": "Peak",
-          "type": "number"
-        },
-        "peak_position": {
-          "$ref": "#/$defs/Vec2"
-        }
-      },
-      "required": [
-        "resource",
-        "peak",
-        "peak_position"
-      ],
-      "title": "ResourceSurveyLayer",
       "type": "object"
     },
     "RespondToImmediateThreatAction": {
