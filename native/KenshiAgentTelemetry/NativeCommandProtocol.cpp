@@ -285,14 +285,16 @@ namespace KenshiAgentTelemetry
                 return false;
             }
 
-            const bool allowsGroupSelection =
-                request.command == "approach_confirmed_vendor" ||
-                request.command == "move_to_character" ||
-                request.command == "select_squad_member" ||
-                request.command == "travel_to_map_destination";
-            if (selectedIds.empty() ||
-                selectedIds.size() > 64 ||
-                (!allowsGroupSelection && selectedIds.size() != 1))
+            // Recipient cardinality is not decided here. The operation
+            // registry owns recipient scope; this parser validates only that a
+            // dispatch basis is structurally coherent.
+            //
+            // A command-name exception set used to live here, the native twin
+            // of one deleted from the Python transport. Keeping it meant two
+            // edges could disagree with the definition they were both meant to
+            // enforce - and it silently rejected any group-scoped command that
+            // had not been added to both lists.
+            if (selectedIds.empty() || selectedIds.size() > 64)
             {
                 rejectionReason = "malformed_request";
                 return false;

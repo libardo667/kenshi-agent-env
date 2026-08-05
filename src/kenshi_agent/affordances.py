@@ -881,6 +881,27 @@ def _native_and_composite_offers(
         return
     selected = next((member for member in telemetry.squad if member.selected), None)
 
+    primary_id = telemetry.ui.selected_character_id
+    if primary_id and primary_id in telemetry.ui.selected_character_ids:
+        primary = next(
+            (member for member in telemetry.squad if member.id == primary_id),
+            None,
+        )
+        if primary is not None:
+            yield _offer(
+                observation,
+                source=AffordanceSource.NATIVE_OPERATION,
+                semantic="survey_local_resources",
+                description=(
+                    f"Survey mineral and water resources around {primary.name!r}'s "
+                    "current position. Returns a grid with each resource's peak "
+                    "location, so a resource present as a discrete deposit is "
+                    "located rather than averaged away to zero."
+                ),
+                operation_kind="survey_local_resources",
+                arguments={},
+            )
+
     for direction in CameraRotationDirection:
         yield _offer(
             observation,
@@ -1153,6 +1174,7 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
         operation_kinds=frozenset(
             {
                 "rotate_camera",
+                "survey_local_resources",
                 "move_in_direction",
                 "exit_current_building",
                 "recover_camera_view",

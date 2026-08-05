@@ -243,6 +243,7 @@ safety:
     - select_squad_member
     - select_squad_member_exact
     - rotate_camera
+    - survey_local_resources
     - move_to_character
     - move_in_direction
     - travel_to_map_destination

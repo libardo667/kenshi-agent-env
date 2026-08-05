@@ -19,8 +19,8 @@ character selected.
 
 ```text
 operations               34
-planner-visible          27
-internal-only             7
+planner-visible          28
+internal-only             6
 native commands          11
 manifest entries         35
 coverage proof          PASS
@@ -104,7 +104,7 @@ EXECUTION AND ROUTING
   sell_item                           composite_option   paused_transaction       -                          inventory
   set_speed                           atomic_handler     any                      -                          internal-only
   stop                                atomic_handler     any                      -                          runtime
-  survey_local_resources              atomic_handler     any                      survey_local_resources     internal-only
+  survey_local_resources              atomic_handler     any                      survey_local_resources     native_and_composite
   travel_to_map_destination           monitored_option   running_for_progress     travel_to_map_destination  map
   use_game_binding                    atomic_handler     any                      -                          characters, game_bindings
   wait                                atomic_handler     running_for_progress     -                          internal-only

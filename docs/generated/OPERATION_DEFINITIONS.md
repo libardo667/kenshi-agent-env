@@ -13,8 +13,8 @@ they still bind through this registry but are not planner-visible offers.
 
 ```text
 definitions             34
-adapter operation kinds  27
-adapter routes           28
+adapter operation kinds  28
+adapter routes           29
 adapters                 10
 ownership proof         PASS
 
@@ -49,7 +49,7 @@ DEFINITIONS
   sell_item                           trade.sell_item                                         SellItemAction [inventory]
   set_speed                           runtime.set_speed                                       SetSpeedAction [internal-only]
   stop                                runtime.stop                                            StopAction [runtime]
-  survey_local_resources              movement.survey_local_resources                         SurveyLocalResourcesAction [internal-only]
+  survey_local_resources              movement.survey_local_resources                         SurveyLocalResourcesAction [native_and_composite]
   travel_to_map_destination           movement.travel_to_map_destination                      TravelToMapDestinationAction [map]
   use_game_binding                    screens.use_game_binding                                UseGameBindingAction [characters, game_bindings]
   wait                                runtime.wait                                            WaitAction [internal-only]
