@@ -11,6 +11,7 @@ from .context_action_parity import (
     render_context_action_parity,
 )
 from .coverage_frontier import assess_coverage_frontier, render_coverage_frontier
+from .gui_coverage import assess_gui_coverage, render_gui_coverage
 from .interaction_catalog import (
     audit_interaction_catalog,
     render_interaction_catalog,
@@ -158,6 +159,31 @@ def _interaction_catalog() -> str:
     return "\n".join(lines)
 
 
+def _gui_coverage() -> str:
+    """Kenshi's declared interface beside what the project models."""
+
+    lines = [
+        GENERATED_MARKER,
+        "",
+        "# Declared GUI coverage",
+        "",
+        "Kenshi ships every window it can draw as MyGUI layout XML in",
+        "`data/gui/layout`. That is the game's own enumeration of its",
+        "interface, so it is the denominator - the same role `controls.cfg`",
+        "plays for bindings and `TaskType.h` for orders.",
+        "",
+        "Captured structurally in `game_sources/kenshi/gui_layouts.json`: the",
+        "widget tree, each part's name and type, and its authored caption.",
+        "Those captions are placeholders (`Day: 12345`, `Unobtainium`), useful",
+        "for identifying a widget's role and never as expected text.",
+        "",
+        "```text",
+    ]
+    lines.extend(render_gui_coverage(assess_gui_coverage()))
+    lines.extend(["```", ""])
+    return "\n".join(lines)
+
+
 def _coverage_frontier() -> str:
     """Why the world-target surface is the size it is, derived from source."""
 
@@ -214,6 +240,7 @@ def export_docs(output_dir: Path) -> list[Path]:
             load_witnesses(WITNESSES_PATH)
         ),
         "COVERAGE_FRONTIER.md": _coverage_frontier(),
+        "GUI_COVERAGE.md": _gui_coverage(),
         "GAME_BINDING_PARITY.md": _game_binding_parity(),
         "INTERACTION_CATALOG.md": _interaction_catalog(),
         "OPERATION_DEFINITIONS.md": _operation_definitions(),

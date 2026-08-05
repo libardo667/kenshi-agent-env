@@ -16,6 +16,7 @@ from pydantic import (
 from pydantic_core import core_schema
 
 from .base import StrictModel
+from .gui_resolution import ResolvedControl, resolve_control
 
 RUNTIME_CONTEXT_MENU_CAPABILITY = "ui.context_menu.orders"
 STABLE_HANDLE_CAPABILITY = "identity.stable_handles"
@@ -746,6 +747,18 @@ class VisibleUIControl(StrictModel):
         """The widget's name inside its layout, joinable to Kenshi's own files."""
 
         return layout_widget_name_of(self.widget_name)
+
+    @property
+    def declaration(self) -> ResolvedControl:
+        """This control matched against Kenshi's shipped GUI declaration.
+
+        Turns a rendered caption into a declared identity: which layouts name
+        this widget, its declared type, and the caption it was authored with.
+        A control matching nothing is `undeclared` - built in code or added by
+        a mod - which is a fact worth having rather than an error.
+        """
+
+        return resolve_control(self.layout_widget_name)
 
     # For `item` cells: what the cell actually holds. Without these the agent
     # can only learn a cell's contents by hovering it, one model round-trip at
