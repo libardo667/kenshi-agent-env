@@ -1334,6 +1334,47 @@ int main(int argc, char** argv)
             "serialized natural resource diverged from fixture");
     }
 
+    // An unprobed target must be distinguishable from one that affords
+    // nothing, so the probed flag travels beside the list rather than the
+    // reader inferring emptiness.
+    const std::string probedResourcePayload =
+        ReadFile(prefix + "valid_probed_natural_resource.json");
+    if (probedResourcePayload.empty())
+    {
+        return Fail(
+            "could not read valid_probed_natural_resource.json");
+    }
+    KenshiAgentTelemetry::NaturalResourceTargetSnapshot probedResource =
+        naturalResource;
+    probedResource.advertisedTasksProbed = true;
+    probedResource.advertisedTasks.push_back(
+        KenshiAgentTelemetry::AdvertisedTask(26, "LOOT_TARGET"));
+    probedResource.advertisedTasks.push_back(
+        KenshiAgentTelemetry::AdvertisedTask(87, "OPERATE_MACHINERY"));
+    const std::string probedResourceSerialized =
+        KenshiAgentTelemetry::SerializeNaturalResourceTarget(probedResource);
+    std::string probedResourceExpected = probedResourcePayload;
+    while (!probedResourceExpected.empty() &&
+           (probedResourceExpected[probedResourceExpected.size() - 1] == '\r' ||
+            probedResourceExpected[probedResourceExpected.size() - 1] == '\n'))
+    {
+        probedResourceExpected.erase(probedResourceExpected.size() - 1);
+    }
+    if (probedResourceSerialized != probedResourceExpected)
+    {
+        return Fail(
+            "serialized probed natural resource diverged from fixture");
+    }
+
+    if (!KenshiAgentTelemetry::IsWithinTargetProbeBudget(0, 16) ||
+        !KenshiAgentTelemetry::IsWithinTargetProbeBudget(15, 16) ||
+        KenshiAgentTelemetry::IsWithinTargetProbeBudget(16, 16) ||
+        KenshiAgentTelemetry::IsWithinTargetProbeBudget(17, 16) ||
+        KenshiAgentTelemetry::IsWithinTargetProbeBudget(0, 0))
+    {
+        return Fail("target probe budget did not bound probing exactly");
+    }
+
     KenshiAgentTelemetry::NativeCommandRequest invalid;
     const std::string invalidPayload =
         ReadFile(prefix + "invalid_direction_target_request.json");

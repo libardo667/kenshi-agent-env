@@ -297,6 +297,18 @@ class ContextActionKind(str):
 ContextActionKind.OPERATE = ContextActionKind("operate")
 
 
+class AdvertisedTask(StrictModel):
+    """One task Kenshi confirms the current selection may issue to a target.
+
+    Discovered through `getPlayerTaskProbability` over the generated TaskType
+    vocabulary. The value and name are the game's own; mapping either onto a
+    controller semantic is the operation registry's job, not this model's.
+    """
+
+    value: int = Field(ge=0)
+    name: str = Field(min_length=1, max_length=80)
+
+
 class WorldTarget(StrictModel):
     """A non-character object with exact reviewed contextual affordances.
 
@@ -316,6 +328,15 @@ class WorldTarget(StrictModel):
     default_task: str
     mining_resource_level: float | None = None
     screen_position: Vec2 | None = None
+    # What Kenshi itself says the current selection may order this target to
+    # do, discovered by probing its TaskType vocabulary rather than by the
+    # plug-in restating a literal. This is reconnaissance, not authority: a
+    # task appearing here means the game answered yes, not that the controller
+    # has a semantic route for it. Routing stays with the operation registry.
+    advertised_tasks: list[AdvertisedTask] = Field(default_factory=list, max_length=64)
+    # False means this target was outside the per-snapshot probe budget, so an
+    # empty `advertised_tasks` says nothing about what it affords.
+    advertised_tasks_probed: bool = False
 
 
 class KnownMapDestination(StrictModel):
@@ -968,7 +989,7 @@ class NativeControlState(StrictModel):
 
 
 class TelemetrySnapshot(StrictModel):
-    protocol_version: str = "1.12.0"
+    protocol_version: str = "1.13.0"
     sequence: int = Field(default=0, ge=0)
     captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = "unknown"

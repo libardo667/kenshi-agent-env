@@ -31,7 +31,7 @@ HARDCODED WORLD-TARGET SURFACE
   decided. Coverage is bounded by the plug-in, not by exploration.
 
 MECHANISM AVAILABLE
-  getPlayerTaskProbability call sites: 2
+  getPlayerTaskProbability call sites: 4
   Kenshi answers, per exact task and exact target, whether the player
   may issue it. Iterating a bounded task vocabulary against each
   nearby target replaces the literals above with the game's own

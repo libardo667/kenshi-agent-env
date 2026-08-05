@@ -80,6 +80,45 @@ namespace KenshiAgentTelemetry
     {
     }
 
+    AdvertisedTask::AdvertisedTask()
+        : value(0)
+    {
+    }
+
+    AdvertisedTask::AdvertisedTask(int taskValue, const std::string& taskName)
+        : value(taskValue),
+          name(taskName)
+    {
+    }
+
+    bool IsWithinTargetProbeBudget(
+        unsigned int probedCount,
+        unsigned int probeBudget)
+    {
+        return probedCount < probeBudget;
+    }
+
+    void AppendAdvertisedTasks(
+        std::ostream& json,
+        bool probed,
+        const std::vector<AdvertisedTask>& tasks)
+    {
+        json << "\"advertised_tasks_probed\":"
+             << (probed ? "true" : "false") << ",";
+        json << "\"advertised_tasks\":[";
+        for (std::vector<AdvertisedTask>::const_iterator it = tasks.begin();
+             it != tasks.end();
+             ++it)
+        {
+            if (it != tasks.begin())
+                json << ",";
+            json << "{\"value\":" << it->value
+                 << ",\"name\":\"" << WorldTargetJsonEscape(it->name)
+                 << "\"}";
+        }
+        json << "]";
+    }
+
     NaturalResourceTargetSnapshot::NaturalResourceTargetSnapshot()
         : positionX(0.0),
           positionY(0.0),
@@ -88,7 +127,8 @@ namespace KenshiAgentTelemetry
           miningResourceLevel(0.0),
           hasScreenPosition(false),
           screenX(0.0),
-          screenY(0.0)
+          screenY(0.0),
+          advertisedTasksProbed(false)
     {
     }
 
@@ -159,7 +199,11 @@ namespace KenshiAgentTelemetry
         json << "\"distance\":" << target.distance << ",";
         json << "\"context_actions\":[\"operate\"],";
         json << "\"default_task\":\"operate_machinery\",";
-        json << "\"mining_resource_level\":"
+        AppendAdvertisedTasks(
+            json,
+            target.advertisedTasksProbed,
+            target.advertisedTasks);
+        json << ",\"mining_resource_level\":"
              << target.miningResourceLevel;
         if (target.hasScreenPosition)
         {

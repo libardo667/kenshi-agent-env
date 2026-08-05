@@ -1,5 +1,28 @@
 {
   "$defs": {
+    "AdvertisedTask": {
+      "additionalProperties": false,
+      "description": "One task Kenshi confirms the current selection may issue to a target.\n\nDiscovered through `getPlayerTaskProbability` over the generated TaskType\nvocabulary. The value and name are the game's own; mapping either onto a\ncontroller semantic is the operation registry's job, not this model's.",
+      "properties": {
+        "value": {
+          "minimum": 0,
+          "title": "Value",
+          "type": "integer"
+        },
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value",
+        "name"
+      ],
+      "title": "AdvertisedTask",
+      "type": "object"
+    },
     "BodyPartState": {
       "additionalProperties": false,
       "properties": {
@@ -1789,6 +1812,19 @@
             }
           ],
           "default": null
+        },
+        "advertised_tasks": {
+          "items": {
+            "$ref": "#/$defs/AdvertisedTask"
+          },
+          "maxItems": 64,
+          "title": "Advertised Tasks",
+          "type": "array"
+        },
+        "advertised_tasks_probed": {
+          "default": false,
+          "title": "Advertised Tasks Probed",
+          "type": "boolean"
         }
       },
       "required": [
@@ -1806,7 +1842,7 @@
   "additionalProperties": false,
   "properties": {
     "protocol_version": {
-      "default": "1.12.0",
+      "default": "1.13.0",
       "title": "Protocol Version",
       "type": "string"
     },

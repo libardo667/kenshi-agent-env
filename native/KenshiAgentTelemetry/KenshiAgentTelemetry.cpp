@@ -77,6 +77,7 @@
 #include <exception>
 #include <iomanip>
 #include <locale>
+#include <map>
 #include <set>
 #include <sstream>
 #include <string>
@@ -84,6 +85,7 @@
 
 #include "AtomicJsonWriter.h"
 #include "GameplayCapabilities.generated.h"
+#include "TaskTypeVocabulary.generated.h"
 #include "InventoryScreenSemantics.h"
 #include "NativeCommandProtocol.h"
 #include "NativeCommandTiming.h"
@@ -114,6 +116,10 @@ namespace
     const int MAX_NEAR_WORLD_CONTEXT_BUILDINGS = 128;
     const int MAX_OUTER_WORLD_CONTEXT_BUILDINGS = 256;
     const unsigned int MAX_WORLD_CONTEXT_TARGETS = 128;
+    // Nearest targets asked what they afford, per snapshot. The frontier
+    // needs each (kind, task) pair once, not every target every 500ms, and
+    // the agent can only act on what is near it. Unprobed targets say so.
+    const unsigned int MAX_PROBED_WORLD_TARGETS = 16;
     const unsigned int MAX_KNOWN_MAP_DESTINATIONS = 64;
     // Raised from 64 after button-priority passes pushed dialogue options -
     // which are TextBox widgets, walked last - out of the export entirely.
@@ -128,7 +134,7 @@ namespace
     const unsigned int MAX_RUNTIME_CONTEXT_MENU_TASK_TYPES = 64;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "1.12.0";
+    const char* PROTOCOL_VERSION = "1.13.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -1179,11 +1185,52 @@ namespace
             defaultTaskOperatesMachinery);
     }
 
+    // Ask Kenshi what the current selection may order this exact target to do.
+    //
+    // This replaces guessing. The plug-in used to state a target's affordances
+    // as fixed literals, which capped discovery at whatever had been written
+    // down: an agent could walk past anything and learn nothing, because
+    // nothing asked. `getPlayerTaskProbability` is the game's own answer, and
+    // the vocabulary iterated here is generated from Kenshi's TaskType enum
+    // rather than curated, so the ceiling is the game's rather than ours.
+    //
+    // `isOrderValidForSelection` is checked first because it is a cheap
+    // selection-level filter, and it is the same pair the existing first-aid
+    // route already uses to authorize a dispatch.
+    void ProbeAdvertisedTasks(
+        PlayerInterface* player,
+        RootObject* target,
+        std::vector<KenshiAgentTelemetry::AdvertisedTask>& advertised)
+    {
+        if (player == NULL || target == NULL)
+            return;
+        unsigned int vocabularyCount = 0;
+        const KenshiAgentTelemetry::TaskTypeVocabularyEntry* vocabulary =
+            KenshiAgentTelemetry::TaskTypeVocabulary(vocabularyCount);
+        for (unsigned int index = 0; index < vocabularyCount; ++index)
+        {
+            const TaskType task =
+                static_cast<TaskType>(vocabulary[index].value);
+            if (!player->isOrderValidForSelection(task))
+                continue;
+            float probability = 0.0f;
+            if (!player->getPlayerTaskProbability(task, target, probability))
+                continue;
+            if (!(probability > 0.0f))
+                continue;
+            advertised.push_back(
+                KenshiAgentTelemetry::AdvertisedTask(
+                    vocabulary[index].value,
+                    vocabulary[index].name));
+        }
+    }
+
     void AppendNaturalResourceCandidates(
         PlayerInterface* player,
         lektor<RootObject*>& buildings,
         const Ogre::Vector3& selectedPosition,
-        std::vector<NaturalResourceTargetSnapshot>& candidates)
+        std::vector<NaturalResourceTargetSnapshot>& candidates,
+        std::map<std::string, RootObject*>& candidateObjects)
     {
         for (lektor<RootObject*>::iterator it = buildings.begin();
              it != buildings.end();
@@ -1224,6 +1271,7 @@ namespace
                 snapshot.screenX = screenX;
                 snapshot.screenY = screenY;
             }
+            candidateObjects[targetId] = *it;
             candidates.push_back(snapshot);
         }
     }
@@ -4096,6 +4144,7 @@ namespace
             player->isOrderValidForSelection(FIRST_AID_ORDER))
         {
             const Ogre::Vector3 selectedPosition = selected->getPosition();
+            unsigned int probedSquadTargets = 0;
             for (unsigned int index = 0; index < characters->size(); ++index)
             {
                 Character* target = (*characters)[index];
@@ -4131,7 +4180,21 @@ namespace
                 json << ",\"distance\":"
                      << Distance(targetPosition, selectedPosition) << ",";
                 json << "\"context_actions\":[\"first_aid\"],";
-                json << "\"default_task\":\"first_aid\"";
+                json << "\"default_task\":\"first_aid\",";
+                std::vector<KenshiAgentTelemetry::AdvertisedTask> advertised;
+                const bool probeSquadTarget =
+                    KenshiAgentTelemetry::IsWithinTargetProbeBudget(
+                        probedSquadTargets,
+                        MAX_PROBED_WORLD_TARGETS);
+                if (probeSquadTarget)
+                {
+                    ++probedSquadTargets;
+                    ProbeAdvertisedTasks(player, target, advertised);
+                }
+                KenshiAgentTelemetry::AppendAdvertisedTasks(
+                    json,
+                    probeSquadTarget,
+                    advertised);
                 json << "}";
             }
         }
@@ -4164,20 +4227,43 @@ namespace
                     static_cast<unsigned int>(
                         MAX_OUTER_WORLD_CONTEXT_BUILDINGS));
             std::vector<NaturalResourceTargetSnapshot> candidates;
+            std::map<std::string, RootObject*> candidateObjects;
             AppendNaturalResourceCandidates(
                 player,
                 nearBuildings,
                 selectedPosition,
-                candidates);
+                candidates,
+                candidateObjects);
             AppendNaturalResourceCandidates(
                 player,
                 outerBuildings,
                 selectedPosition,
-                candidates);
-            const std::vector<NaturalResourceTargetSnapshot> targets =
+                candidates,
+                candidateObjects);
+            std::vector<NaturalResourceTargetSnapshot> targets =
                 SelectNearestNaturalResourceTargets(
                     candidates,
                     MAX_WORLD_CONTEXT_TARGETS);
+            unsigned int probedTargets = 0;
+            for (std::vector<NaturalResourceTargetSnapshot>::iterator it =
+                     targets.begin();
+                 it != targets.end();
+                 ++it)
+            {
+                if (!KenshiAgentTelemetry::IsWithinTargetProbeBudget(
+                        probedTargets,
+                        MAX_PROBED_WORLD_TARGETS))
+                {
+                    break;
+                }
+                const std::map<std::string, RootObject*>::const_iterator found =
+                    candidateObjects.find(it->id);
+                if (found == candidateObjects.end())
+                    continue;
+                ++probedTargets;
+                it->advertisedTasksProbed = true;
+                ProbeAdvertisedTasks(player, found->second, it->advertisedTasks);
+            }
             for (std::vector<NaturalResourceTargetSnapshot>::const_iterator it =
                      targets.begin();
                  it != targets.end();
