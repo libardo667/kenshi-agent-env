@@ -148,6 +148,9 @@
               "$ref": "#/$defs/ExitCurrentBuildingAction"
             },
             {
+              "$ref": "#/$defs/SurveyLocalResourcesAction"
+            },
+            {
               "$ref": "#/$defs/ActivateVisibleControlAction"
             },
             {
@@ -5089,6 +5092,53 @@
       "title": "ProduceResourceOutputAction",
       "type": "object"
     },
+    "ProspectSurvey": {
+      "additionalProperties": false,
+      "description": "One completed survey of Kenshi's resource field, tied to the command that asked.\n\nDeliberately a pulse rather than continuous perception. The agent knows\nwhat it surveyed and where it stood to survey it; it does not get a map of\nthe world for free. That keeps the knowledge earned, which is the\ndifference between modelling a prospecting tool and handing over the\nterrain data.",
+      "properties": {
+        "command_id": {
+          "pattern": "^cmd-[0-9a-f]{32}$",
+          "title": "Command Id",
+          "type": "string"
+        },
+        "center": {
+          "$ref": "#/$defs/Vec2"
+        },
+        "radius": {
+          "exclusiveMinimum": 0.0,
+          "title": "Radius",
+          "type": "number"
+        },
+        "resolution": {
+          "maximum": 32,
+          "minimum": 2,
+          "title": "Resolution",
+          "type": "integer"
+        },
+        "cell_size": {
+          "exclusiveMinimum": 0.0,
+          "title": "Cell Size",
+          "type": "number"
+        },
+        "layers": {
+          "items": {
+            "$ref": "#/$defs/ResourceSurveyLayer"
+          },
+          "maxItems": 16,
+          "title": "Layers",
+          "type": "array"
+        }
+      },
+      "required": [
+        "command_id",
+        "center",
+        "radius",
+        "resolution",
+        "cell_size"
+      ],
+      "title": "ProspectSurvey",
+      "type": "object"
+    },
     "PurchaseItemAction": {
       "additionalProperties": false,
       "description": "Acquire a bounded quantity of one item from exact seller-owned cells.\n\n`expected_price` is the nonnegative per-unit charge reported as buy_price.\nZero is a real free acquisition, not missing price evidence. The controller\nrebinds interchangeable stock after each transfer and proves that carried\ngain exactly matches the quoted charge before attempting the next unit.",
@@ -5619,6 +5669,40 @@
       "title": "ResolvedEvidenceSnapshot",
       "type": "object"
     },
+    "ResourceSurveyLayer": {
+      "additionalProperties": false,
+      "description": "One resource's readings across a surveyed area.\n\n`peak` and `peak_position` are the point of this model. The Prospecting\nwindow averages a resource over its whole area into one number, which is\nwhy it can read `0` beside a visible deposit: a discrete node occupies a\ntrivial fraction of the area. A grid keeps the location, so \"iron: 0\"\nbecomes \"iron peaks 300 units north-east\".",
+      "properties": {
+        "resource": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "Resource",
+          "type": "string"
+        },
+        "cells": {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 256,
+          "title": "Cells",
+          "type": "array"
+        },
+        "peak": {
+          "title": "Peak",
+          "type": "number"
+        },
+        "peak_position": {
+          "$ref": "#/$defs/Vec2"
+        }
+      },
+      "required": [
+        "resource",
+        "peak",
+        "peak_position"
+      ],
+      "title": "ResourceSurveyLayer",
+      "type": "object"
+    },
     "RespondToImmediateThreatAction": {
       "additionalProperties": false,
       "description": "Choose whether one selected actor engages or withdraws from a threat.\n\nThe runtime owns playback, an observed escape vector for withdrawal,\ncontinuous threat and squad-health observation, timeout, interruption, and\nthe terminal pause. The planner chooses only the actor and gameplay policy.",
@@ -6120,6 +6204,20 @@
       "title": "SupersedeMemoryOperation",
       "type": "object"
     },
+    "SurveyLocalResourcesAction": {
+      "additionalProperties": false,
+      "description": "Survey Kenshi's resource field where the selected character stands.\n\nThe prospecting reading the game's own window is built from, returned as a\ngrid rather than the single averaged number that window displays. That\naverage is why a zone can report `Iron: 0` while two iron deposits sit in\nit: a discrete node covers a trivial fraction of the surveyed area. A grid\nkeeps direction and distance.\n\nThe planner supplies nothing. Where the character stands is the survey,\nwhich is what makes this an action with a cost rather than free perception.",
+      "properties": {
+        "kind": {
+          "const": "survey_local_resources",
+          "default": "survey_local_resources",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "SurveyLocalResourcesAction",
+      "type": "object"
+    },
     "TelemetrySnapshot": {
       "additionalProperties": false,
       "properties": {
@@ -6216,6 +6314,17 @@
           "maxItems": 64,
           "title": "Discovered Objects",
           "type": "array"
+        },
+        "prospect_survey": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProspectSurvey"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "known_map_destinations": {
           "items": {

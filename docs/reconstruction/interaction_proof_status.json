@@ -251,6 +251,15 @@
         "docs/generated/GAME_BINDING_PARITY.md distinguishes witnessed from unwitnessed bindings"
       ],
       "note": "Cannot have one universal contract merely because every case shares an input mechanism. Select All is the concrete case: it is currently offered by collecting the whole roster, and section 10.3 requires withholding it until live proof establishes whether the binding is active-platoon scoped."
+    },
+    {
+      "operation_kind": "survey_local_resources",
+      "proof_status": "source_proven",
+      "evidence": [
+        "KenshiLib ZoneManager::getResource/getResourceBase is the resource field the Prospecting window reads",
+        "native survey completes on publication and issues no order, so it commands no recipient"
+      ],
+      "note": "Reads Kenshi's resource field around the primary character and returns a grid rather than the window's area-averaged scalar, which reports 0 for a discrete deposit. Gated on an action deliberately: the agent learns what it surveyed, not what exists everywhere. Two things are unproven and are live-proof items - whether the null biome argument is accepted at runtime, and what the returned value scale means."
     }
   ]
 }

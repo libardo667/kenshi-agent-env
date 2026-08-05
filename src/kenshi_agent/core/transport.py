@@ -98,6 +98,7 @@ class NativeCommandRequest(StrictModel):
         "perform_context_action",
         "produce_resource_output",
         "open_context_inventory",
+        "survey_local_resources",
     ]
     control_mode: Literal[ControlMode.NATIVE_ASSISTED]
     identity_session_id: str = Field(min_length=1, max_length=200)
@@ -127,11 +128,11 @@ class NativeCommandRequest(StrictModel):
                 raise ValueError("a directional walk must not name a target")
             if self.distance_units <= 0.0:
                 raise ValueError("a directional walk requires a distance to walk")
-        elif self.command == "exit_current_building":
+        elif self.command in ("exit_current_building", "survey_local_resources"):
             if self.target_id:
-                raise ValueError("a building-exit command must not name a target")
+                raise ValueError(f"a {self.command} command must not name a target")
             if self.bearing_degrees != 0.0 or self.distance_units != 0.0:
-                raise ValueError("a building-exit command must not carry direction fields")
+                raise ValueError(f"a {self.command} command must not carry direction fields")
         else:
             if not self.target_id:
                 raise ValueError("this native command requires a target")

@@ -1270,6 +1270,167 @@ namespace
         return true;
     }
 
+
+    // One completed resource survey, held until the next one replaces it.
+    //
+    // A survey is a pulse, not continuous perception: it reports what the
+    // character could learn by prospecting where it stands, and it exists only
+    // because an operation asked for it. That keeps the information earned
+    // rather than ambient, which is the whole difference between giving the
+    // agent a map and giving it a prospecting tool.
+    struct ResourceSurveyLayer
+    {
+        std::string resource;
+        std::vector<float> cells;
+        float peak;
+        double peakX;
+        double peakZ;
+
+        ResourceSurveyLayer() : peak(0.0f), peakX(0.0), peakZ(0.0) {}
+    };
+
+    struct ResourceSurvey
+    {
+        bool valid;
+        std::string commandId;
+        double centerX;
+        double centerZ;
+        double radius;
+        unsigned int resolution;
+        double cellSize;
+        std::vector<ResourceSurveyLayer> layers;
+
+        ResourceSurvey()
+            : valid(false),
+              centerX(0.0),
+              centerZ(0.0),
+              radius(0.0),
+              resolution(0),
+              cellSize(0.0)
+        {
+        }
+    };
+
+    ResourceSurvey g_resourceSurvey;
+
+    // Nine cells a side over the near band: coarse enough that this is a
+    // prospecting reading rather than a mining map, fine enough to say which
+    // way a deposit lies. The scalar the Prospecting window shows is the whole
+    // area averaged into one number, which is exactly why it read "Iron: 0"
+    // beside two visible deposits.
+    const unsigned int RESOURCE_SURVEY_RESOLUTION = 9;
+
+    struct SurveyedResource
+    {
+        MiningResource resource;
+        const char* name;
+    };
+
+    void RunResourceSurvey(
+        GameWorld* ou,
+        const std::string& commandId,
+        const Ogre::Vector3& center)
+    {
+        static const SurveyedResource surveyed[] =
+        {
+            { IRON, "iron" },
+            { COPPER, "copper" },
+            { STONE, "stone" },
+            { WATER, "water" },
+            { CARBON, "carbon" },
+            { GROUND, "fertility" }
+        };
+
+        g_resourceSurvey = ResourceSurvey();
+        g_resourceSurvey.commandId = commandId;
+        g_resourceSurvey.centerX = center.x;
+        g_resourceSurvey.centerZ = center.z;
+        g_resourceSurvey.radius = NEAR_WORLD_CONTEXT_TARGET_RADIUS;
+        g_resourceSurvey.resolution = RESOURCE_SURVEY_RESOLUTION;
+        const double span = NEAR_WORLD_CONTEXT_TARGET_RADIUS * 2.0;
+        const double cell = span / (RESOURCE_SURVEY_RESOLUTION - 1);
+        g_resourceSurvey.cellSize = cell;
+
+        const unsigned int count =
+            sizeof(surveyed) / sizeof(surveyed[0]);
+        for (unsigned int index = 0; index < count; ++index)
+        {
+            ResourceSurveyLayer layer;
+            layer.resource = surveyed[index].name;
+            bool sampledAny = false;
+            for (unsigned int row = 0; row < RESOURCE_SURVEY_RESOLUTION; ++row)
+            {
+                for (unsigned int col = 0;
+                     col < RESOURCE_SURVEY_RESOLUTION;
+                     ++col)
+                {
+                    Ogre::Vector3 at = center;
+                    at.x = static_cast<float>(
+                        center.x - NEAR_WORLD_CONTEXT_TARGET_RADIUS + col * cell);
+                    at.z = static_cast<float>(
+                        center.z - NEAR_WORLD_CONTEXT_TARGET_RADIUS + row * cell);
+                    float level = 0.0f;
+                    if (!SampleResourceAt(ou, surveyed[index].resource, at, level))
+                    {
+                        layer.cells.push_back(0.0f);
+                        continue;
+                    }
+                    sampledAny = true;
+                    layer.cells.push_back(level);
+                    if (level > layer.peak)
+                    {
+                        layer.peak = level;
+                        layer.peakX = at.x;
+                        layer.peakZ = at.z;
+                    }
+                }
+            }
+            if (sampledAny)
+                g_resourceSurvey.layers.push_back(layer);
+        }
+        g_resourceSurvey.valid = !g_resourceSurvey.layers.empty();
+    }
+
+    void AppendResourceSurvey(std::ostringstream& json)
+    {
+        if (!g_resourceSurvey.valid)
+        {
+            json << "null";
+            return;
+        }
+        json << "{";
+        json << "\"command_id\":\"" << g_resourceSurvey.commandId << "\",";
+        json << "\"center\":{\"x\":" << g_resourceSurvey.centerX
+             << ",\"z\":" << g_resourceSurvey.centerZ << "},";
+        json << "\"radius\":" << g_resourceSurvey.radius << ",";
+        json << "\"resolution\":" << g_resourceSurvey.resolution << ",";
+        json << "\"cell_size\":" << g_resourceSurvey.cellSize << ",";
+        json << "\"layers\":[";
+        for (unsigned int index = 0;
+             index < g_resourceSurvey.layers.size();
+             ++index)
+        {
+            const ResourceSurveyLayer& layer = g_resourceSurvey.layers[index];
+            if (index > 0)
+                json << ",";
+            json << "{\"resource\":\"" << layer.resource << "\",";
+            json << "\"peak\":" << layer.peak << ",";
+            json << "\"peak_position\":{\"x\":" << layer.peakX
+                 << ",\"z\":" << layer.peakZ << "},";
+            json << "\"cells\":[";
+            for (unsigned int cellIndex = 0;
+                 cellIndex < layer.cells.size();
+                 ++cellIndex)
+            {
+                if (cellIndex > 0)
+                    json << ",";
+                json << layer.cells[cellIndex];
+            }
+            json << "]}";
+        }
+        json << "]}";
+    }
+
     // Which object categories were examined last snapshot, so the next one
     // continues rather than restarting and starving the tail of the list.
     unsigned int g_discoveryCategoryCursor = 0;
@@ -2894,7 +3055,8 @@ namespace
             const bool isDirection =
                 request.command == "move_in_direction";
             const bool isBuildingExit =
-                request.command == "exit_current_building";
+                request.command == "exit_current_building" ||
+                request.command == "survey_local_resources";
             const bool hasCommandIdentity =
                 isDirection
                     ? (request.targetId.empty() &&
@@ -2919,7 +3081,8 @@ namespace
                  request.command == "exit_current_building" ||
                  request.command == "perform_context_action" ||
                  request.command == "produce_resource_output" ||
-                 request.command == "open_context_inventory") &&
+                 request.command == "open_context_inventory" ||
+                 request.command == "survey_local_resources") &&
                 hasCommandIdentity &&
                 !request.selectedCharacterIds.empty() &&
                 FindNativeAcknowledgement(request.commandId) < 0)
@@ -2960,9 +3123,11 @@ namespace
             request.command == "produce_resource_output";
         const bool isContextInventory =
             request.command == "open_context_inventory";
+        const bool isResourceSurvey =
+            request.command == "survey_local_resources";
         if (isApproach || isMove || isSquadSelection || isSquadRegroup ||
             isDirection || isMapTravel || isBuildingExit || isContextAction ||
-            isResourceProduction || isContextInventory)
+            isResourceProduction || isContextInventory || isResourceSurvey)
             g_lastNativeCommand = request.command;
         if (!isApproach &&
             !isMove &&
@@ -2973,7 +3138,8 @@ namespace
             !isBuildingExit &&
             !isContextAction &&
             !isResourceProduction &&
-            !isContextInventory)
+            !isContextInventory &&
+            !isResourceSurvey)
         {
             // The telemetry acknowledgement schema is intentionally limited
             // to reviewed commands. Do not publish an unparseable ack.
@@ -3062,6 +3228,38 @@ namespace
             g_lastNativeCommandResult = "exact_squad_member_selected";
             g_lastNativeCommandTarget = target->getName();
             g_lastNativeCommandTargetId = request.targetId;
+            return;
+        }
+
+        if (isResourceSurvey)
+        {
+            // A survey reads Kenshi's resource field where the character
+            // stands. It issues no order and changes no world state, so it
+            // completes as soon as the reading exists - there is nothing to
+            // monitor and nothing that could later be cancelled.
+            //
+            // It is a command rather than ambient telemetry so the knowledge
+            // stays earned: the agent learns what it surveyed, where it
+            // surveyed, not what exists everywhere.
+            Character* surveyor = selectedHandle.getCharacter();
+            if (surveyor == NULL || !surveyor->isValid())
+            {
+                RejectNativeCommand(request, "selection_not_available");
+                return;
+            }
+            RunResourceSurvey(ou, request.commandId, surveyor->getPosition());
+            if (!g_resourceSurvey.valid)
+            {
+                RejectNativeCommand(request, "resource_field_unavailable");
+                return;
+            }
+            AddNativeAcknowledgement(
+                request,
+                "completed",
+                "resource_survey_published",
+                true,
+                true);
+            g_lastNativeCommandResult = "resource_survey_published";
             return;
         }
 
@@ -4352,6 +4550,9 @@ namespace
             }
         }
         json << "],";
+        json << "\"prospect_survey\":";
+        AppendResourceSurvey(json);
+        json << ",";
         json << "\"discovered_objects\":[";
         if (ou != NULL && player != NULL && selected != NULL && selected->isValid())
         {
@@ -4637,6 +4838,7 @@ namespace
         json << "\"squad\":[],";
         json << "\"active_shop_trader_count\":null,";
         json << "\"nearby_entities\":[],";
+        json << "\"prospect_survey\":null,";
         json << "\"discovered_objects\":[],";
         json << "\"world_targets\":[],";
         json << "\"warnings\":[";

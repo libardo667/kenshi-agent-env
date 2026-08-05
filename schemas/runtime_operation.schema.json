@@ -1285,6 +1285,20 @@
       "title": "StopAction",
       "type": "object"
     },
+    "SurveyLocalResourcesAction": {
+      "additionalProperties": false,
+      "description": "Survey Kenshi's resource field where the selected character stands.\n\nThe prospecting reading the game's own window is built from, returned as a\ngrid rather than the single averaged number that window displays. That\naverage is why a zone can report `Iron: 0` while two iron deposits sit in\nit: a discrete node covers a trivial fraction of the surveyed area. A grid\nkeeps direction and distance.\n\nThe planner supplies nothing. Where the character stands is the survey,\nwhich is what makes this an action with a cost rather than free perception.",
+      "properties": {
+        "kind": {
+          "const": "survey_local_resources",
+          "default": "survey_local_resources",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "SurveyLocalResourcesAction",
+      "type": "object"
+    },
     "ThreatResponseStrategy": {
       "enum": [
         "engage",
@@ -1456,6 +1470,9 @@
     },
     {
       "$ref": "#/$defs/ExitCurrentBuildingAction"
+    },
+    {
+      "$ref": "#/$defs/SurveyLocalResourcesAction"
     },
     {
       "$ref": "#/$defs/ActivateVisibleControlAction"

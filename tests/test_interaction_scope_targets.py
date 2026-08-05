@@ -154,8 +154,8 @@ def test_native_command_request_carries_its_resolved_recipients() -> None:
     assert "recipient_character_ids" in fields
 
 
-def test_native_command_names_remain_the_known_ten() -> None:
-    """Characterization: the Slice 0 native route inventory.
+def test_native_command_names_remain_the_known_set() -> None:
+    """Characterization: the current native route inventory.
 
     Not a target - a baseline. If this changes, the catalog and the proof
     manifest must change with it in the same edit.
@@ -174,4 +174,5 @@ def test_native_command_names_remain_the_known_ten() -> None:
         "perform_context_action",
         "produce_resource_output",
         "open_context_inventory",
+        "survey_local_resources",
     }

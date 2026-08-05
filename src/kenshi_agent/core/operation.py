@@ -450,6 +450,22 @@ class ExitCurrentBuildingAction(StrictModel):
     kind: Literal["exit_current_building"] = "exit_current_building"
 
 
+class SurveyLocalResourcesAction(StrictModel):
+    """Survey Kenshi's resource field where the selected character stands.
+
+    The prospecting reading the game's own window is built from, returned as a
+    grid rather than the single averaged number that window displays. That
+    average is why a zone can report `Iron: 0` while two iron deposits sit in
+    it: a discrete node covers a trivial fraction of the surveyed area. A grid
+    keeps direction and distance.
+
+    The planner supplies nothing. Where the character stands is the survey,
+    which is what makes this an action with a cost rather than free perception.
+    """
+
+    kind: Literal["survey_local_resources"] = "survey_local_resources"
+
+
 class MoveToCharacterAction(StrictModel):
     """Walk to any exact observed nearby character without talking to them.
 
@@ -932,6 +948,7 @@ AtomicRuntimeOperation: TypeAlias = (
     | MoveInDirectionAction
     | TravelToMapDestinationAction
     | ExitCurrentBuildingAction
+    | SurveyLocalResourcesAction
     | ActivateVisibleControlAction
     | DismissScreenAction
     | PurchaseItemAction
@@ -1000,6 +1017,7 @@ Action: TypeAlias = (
     | MoveInDirectionAction
     | TravelToMapDestinationAction
     | ExitCurrentBuildingAction
+    | SurveyLocalResourcesAction
     | ActivateVisibleControlAction
     | DismissScreenAction
     | PurchaseItemAction

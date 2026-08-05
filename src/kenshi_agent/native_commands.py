@@ -33,6 +33,9 @@ NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND: Literal["produce_resource_output"] = (
 NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND: Literal["open_context_inventory"] = (
     "open_context_inventory"
 )
+NATIVE_RESOURCE_SURVEY_WIRE_COMMAND: Literal["survey_local_resources"] = (
+    "survey_local_resources"
+)
 
 
 def write_native_command_request_atomic(

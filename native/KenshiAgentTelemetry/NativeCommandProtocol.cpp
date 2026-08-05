@@ -321,7 +321,8 @@ namespace KenshiAgentTelemetry
             const bool isDirection =
                 request.command == "move_in_direction";
             const bool isBuildingExit =
-                request.command == "exit_current_building";
+                request.command == "exit_current_building" ||
+                request.command == "survey_local_resources";
             const bool isTargeted =
                 request.command == "approach_confirmed_vendor" ||
                 request.command == "move_to_character" ||

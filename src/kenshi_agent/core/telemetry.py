@@ -309,6 +309,40 @@ class AdvertisedTask(StrictModel):
     name: str = Field(min_length=1, max_length=80)
 
 
+class ResourceSurveyLayer(StrictModel):
+    """One resource's readings across a surveyed area.
+
+    `peak` and `peak_position` are the point of this model. The Prospecting
+    window averages a resource over its whole area into one number, which is
+    why it can read `0` beside a visible deposit: a discrete node occupies a
+    trivial fraction of the area. A grid keeps the location, so "iron: 0"
+    becomes "iron peaks 300 units north-east".
+    """
+
+    resource: str = Field(min_length=1, max_length=40)
+    cells: list[float] = Field(default_factory=list, max_length=256)
+    peak: float
+    peak_position: Vec2
+
+
+class ProspectSurvey(StrictModel):
+    """One completed survey of Kenshi's resource field, tied to the command that asked.
+
+    Deliberately a pulse rather than continuous perception. The agent knows
+    what it surveyed and where it stood to survey it; it does not get a map of
+    the world for free. That keeps the knowledge earned, which is the
+    difference between modelling a prospecting tool and handing over the
+    terrain data.
+    """
+
+    command_id: str = Field(pattern=r"^cmd-[0-9a-f]{32}$")
+    center: Vec2
+    radius: float = Field(gt=0.0)
+    resolution: int = Field(ge=2, le=32)
+    cell_size: float = Field(gt=0.0)
+    layers: list[ResourceSurveyLayer] = Field(default_factory=list, max_length=16)
+
+
 class DiscoveredObject(StrictModel):
     """One nearby object and what Kenshi says it can be ordered to do.
 
@@ -1035,6 +1069,10 @@ class TelemetrySnapshot(StrictModel):
         default_factory=list,
         max_length=64,
     )
+    # The most recent survey, or none if this run has not run one. It persists
+    # until another replaces it, so a later observation can still read what the
+    # last survey found.
+    prospect_survey: ProspectSurvey | None = None
     known_map_destinations: list[KnownMapDestination] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 

@@ -52,6 +52,7 @@ _EXACT_METHODS = frozenset(
         "regroup_with_squad_member",
         "respond_to_immediate_threat",
         "rotate_camera",
+        "survey_local_resources",
         "scroll_screen",
         "select_squad_member",
         "select_squad_member_exact",

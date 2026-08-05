@@ -72,6 +72,7 @@ from .core.operation import (
     SellItemAction,
     SetSpeedAction,
     StopAction,
+    SurveyLocalResourcesAction,
     ThreatResponseStrategy,
     TravelToMapDestinationAction,
     UseGameBindingAction,
@@ -614,6 +615,48 @@ def resolve_context_action_interaction(
     return ordinary_order(
         recipients=RecipientScope.CURRENT_SELECTION,
         milestone=milestone,
+    )
+
+
+def bind_survey_local_resources(
+    action: Action,
+    observation: Observation,
+) -> BoundActor | BindingFailure:
+    """Bind the survey to the exact character whose position it will read."""
+
+    if not isinstance(action, SurveyLocalResourcesAction):
+        return _unbound("Action is not a local resource survey.")
+    telemetry = observation.telemetry
+    if telemetry is None or observation.telemetry_stale:
+        return _unbound("A survey requires fresh telemetry.")
+    actor_id = telemetry.ui.selected_character_id
+    if not actor_id:
+        return _unbound("A survey requires an exported primary character.")
+    actor = next(
+        (member for member in telemetry.squad if member.id == actor_id),
+        None,
+    )
+    if actor is None:
+        return _unbound(f"Primary character {actor_id!r} is absent from the roster.")
+    return BoundActor(
+        reason=(
+            f"Bound a resource survey to {actor.name!r} ({actor_id}) at its "
+            "current position."
+        ),
+        target_id=actor_id,
+        source_revision=observation.world_revision,
+    )
+
+
+def survey_local_resources_is_currently_authorable(observation: Observation) -> bool:
+    telemetry = observation.telemetry
+    if telemetry is None or observation.telemetry_stale:
+        return False
+    primary = telemetry.ui.selected_character_id
+    return bool(
+        telemetry.game.loaded is True
+        and primary
+        and primary in telemetry.ui.selected_character_ids
     )
 
 
@@ -3520,6 +3563,49 @@ TRAVEL_TO_MAP_DESTINATION_DEFINITION = OperationDefinition(
     authorable_when=map_travel_is_currently_authorable,
 )
 
+SURVEY_LOCAL_RESOURCES_DEFINITION = OperationDefinition(
+    kind="survey_local_resources",
+    version="1.0",
+    # A survey reads the world; it commands nobody. Its terminal is the survey
+    # existing, which the controller observes directly, so it claims an
+    # observed outcome rather than mere delivery.
+    interaction=global_ui(
+        recipients=RecipientScope.PRIMARY,
+        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
+    ),
+    operation_type=SurveyLocalResourcesAction,
+    summary=(
+        "Survey Kenshi's resource field around the primary character and return "
+        "it as a grid. This is the reading the game's Prospecting window is "
+        "built from, without that window's averaging: a single area-wide number "
+        "reports 0 for a discrete deposit, while a grid keeps which direction "
+        "the deposit lies in. Surveying is an action with a position, so the "
+        "agent learns what it surveyed rather than what exists everywhere."
+    ),
+    argument_source=(
+        "No arguments. The primary character's current position is the survey "
+        "centre."
+    ),
+    allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset({"squad.basic", "identity.stable_handles"}),
+    capability_aliases=frozenset(),
+    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
+    native_assisted=True,
+    # Reading the resource field mutates nothing, so a repeated survey is safe
+    # and costs only the reading.
+    risk=OperationRisk(native_assisted_actions=1),
+    max_primitive_actions=0,
+    reference_fields=(),
+    idempotency=IdempotencyPolicy.SAFE_TO_RETRY,
+    execution=OperationExecution.ATOMIC_HANDLER,
+    receipt_kind="resource_survey",
+    bind=bind_survey_local_resources,
+    handler_key="movement.survey_local_resources",
+    controller_verified=True,
+    native_terminal_success_reasons=frozenset({"resource_survey_published"}),
+    authorable_when=survey_local_resources_is_currently_authorable,
+)
+
 EXIT_CURRENT_BUILDING_DEFINITION = OperationDefinition(
     kind="exit_current_building",
     version="1.0",
@@ -4101,6 +4187,7 @@ OPERATION_DEFINITION_LIST: tuple[OperationDefinition, ...] = (
     MOVE_IN_DIRECTION_DEFINITION,
     TRAVEL_TO_MAP_DESTINATION_DEFINITION,
     EXIT_CURRENT_BUILDING_DEFINITION,
+    SURVEY_LOCAL_RESOURCES_DEFINITION,
     ACTIVATE_VISIBLE_CONTROL_DEFINITION,
     DISMISS_SCREEN_DEFINITION,
     PURCHASE_ITEM_DEFINITION,

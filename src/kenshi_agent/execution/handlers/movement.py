@@ -26,6 +26,7 @@ from ...core.operation import (
     SelectSquadMemberAction,
     SelectSquadMemberExactAction,
     SetSpeedAction,
+    SurveyLocalResourcesAction,
     ThreatResponseStrategy,
     TravelToMapDestinationAction,
 )
@@ -87,6 +88,10 @@ class MovementMechanicsPort(Protocol):
     ) -> Transition: ...
 
     async def exit_current_building(
+        self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
+    ) -> Transition: ...
+
+    async def survey_local_resources(
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
     ) -> Transition: ...
 
@@ -358,6 +363,9 @@ def movement_handlers(
         "movement.exit_current_building": NativeMovementHandler(
             port.exit_current_building, planning_config
         ),
+        "movement.survey_local_resources": NativeMovementHandler(
+            port.survey_local_resources, planning_config
+        ),
         "movement.respond_to_immediate_threat": ThreatResponseHandler(
             port.respond_to_immediate_threat,
             port.move_in_direction,
@@ -433,6 +441,13 @@ class KenshiMovementMechanics:
     ) -> Transition:
         return await self._surface.run_exact(
             action, command=command, token=token, receipt=self._execute_move_operation
+        )
+
+    async def survey_local_resources(
+        self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
+    ) -> Transition:
+        return await self._surface.run_exact(
+            action, command=command, token=token, receipt=self._execute_survey_operation
         )
 
     async def _execute_runtime_threat(
@@ -516,6 +531,15 @@ class KenshiMovementMechanics:
     ) -> ActionReceipt:
         return await self._execute_exit_current_building(
             cast(ExitCurrentBuildingAction, action),
+            started,
+            await self._surface.require_command(command),
+        )
+
+    async def _execute_survey_operation(
+        self, action: Action, started: datetime, command: CommandDispatchContext | None
+    ) -> ActionReceipt:
+        return await self._execute_resource_survey(
+            cast(SurveyLocalResourcesAction, action),
             started,
             await self._surface.require_command(command),
         )
@@ -742,6 +766,41 @@ class KenshiMovementMechanics:
             semantic=semantic,
             continue_until_terminal=True,
             wire_command=native_commands.NATIVE_EXIT_BUILDING_WIRE_COMMAND,
+            require_dialogue_target=False,
+        )
+
+    async def _execute_resource_survey(
+        self,
+        action: SurveyLocalResourcesAction,
+        started: datetime,
+        command: CommandDispatchContext,
+    ) -> ActionReceipt:
+        """Ask native code to read the resource field where the actor stands.
+
+        No pulse and no monitoring: the survey mutates nothing and completes
+        the moment the reading is published, so there is no world change to
+        wait for and nothing that could later be cancelled.
+        """
+
+        semantic = SemanticActionReceipt(
+            action_kind=action.kind,
+            contract_version=operations.SURVEY_LOCAL_RESOURCES_DEFINITION.version,
+            source_revision=command.based_on_revision,
+            revalidation=(
+                "Re-proved an exported primary character, then delegated the "
+                "resource-field reading and its bounds to native code."
+            ),
+        )
+        return await self._surface.run_native_order(
+            action,
+            started,
+            command,
+            target_id="",
+            pulse_seconds=0.0,
+            require_vendor_role=False,
+            semantic=semantic,
+            continue_until_terminal=True,
+            wire_command=native_commands.NATIVE_RESOURCE_SURVEY_WIRE_COMMAND,
             require_dialogue_target=False,
         )
 

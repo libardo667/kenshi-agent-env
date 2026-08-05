@@ -18,15 +18,15 @@ repository, and every captured context-menu witness had exactly one
 character selected.
 
 ```text
-operations               33
+operations               34
 planner-visible          27
-internal-only             6
-native commands          10
-manifest entries         34
+internal-only             7
+native commands          11
+manifest entries         35
 coverage proof          PASS
 
 PROOF STATUS
-  source_proven     12
+  source_proven     13
   unit_proven        0
   live_proven        0
   unproven          20
@@ -64,6 +64,7 @@ INTERACTION CONTRACT (resolved from the sole operation registry)
   sell_item                           global_ui          explicit_recipients ui_transaction   world_outcome_observed  unproven
   set_speed                           global_ui          none                none             world_outcome_observed  source_proven
   stop                                runtime_only       none                none             input_delivered         source_proven
+  survey_local_resources              global_ui          primary             none             world_outcome_observed  source_proven
   travel_to_map_destination           ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
   use_game_binding                    global_ui          none                ui_transaction   input_delivered         withheld
   wait                                runtime_only       none                none             input_delivered         source_proven
@@ -103,6 +104,7 @@ EXECUTION AND ROUTING
   sell_item                           composite_option   paused_transaction       -                          inventory
   set_speed                           atomic_handler     any                      -                          internal-only
   stop                                atomic_handler     any                      -                          runtime
+  survey_local_resources              atomic_handler     any                      survey_local_resources     internal-only
   travel_to_map_destination           monitored_option   running_for_progress     travel_to_map_destination  map
   use_game_binding                    atomic_handler     any                      -                          characters, game_bindings
   wait                                atomic_handler     running_for_progress     -                          internal-only
@@ -117,6 +119,7 @@ NATIVE COMMAND ROUTES
   produce_resource_output      -> produce_resource_output
   regroup_with_squad_member    -> regroup_with_squad_member
   select_squad_member          -> select_squad_member
+  survey_local_resources       -> survey_local_resources
   travel_to_map_destination    -> travel_to_map_destination
 
 SEMANTIC SUBCASES
