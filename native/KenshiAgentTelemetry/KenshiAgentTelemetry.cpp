@@ -13,6 +13,7 @@
 #include <kenshi/Dialogue.h>
 #include <kenshi/Faction.h>
 #include <kenshi/GameWorld.h>
+#include <kenshi/ZoneManager.h>
 #include <kenshi/Globals.h>
 #include <kenshi/Platoon.h>
 // The pinned KenshiLib headers declare BuildingDesignation independently in
@@ -1238,6 +1239,35 @@ namespace
                     vocabulary[index].value,
                     vocabulary[index].name));
         }
+    }
+
+    // Sample Kenshi's own resource field at one world position.
+    //
+    // This is what the Prospecting window reads. Sampling it directly means a
+    // survey needs no button, no skill formula, and no interpretation of a
+    // rendered panel - and unlike the window's single scalar, a grid of these
+    // shows *where* a resource is, which is the thing the scalar hides.
+    bool SampleResourceAt(
+        GameWorld* ou,
+        MiningResource resource,
+        const Ogre::Vector3& position,
+        float& level)
+    {
+        if (ou == NULL || ou->zoneMgr == NULL)
+            return false;
+        // The biome argument is passed null deliberately. Weather.h, which
+        // owns the only reachable AreaBiomeGroup accessor, does not parse
+        // standalone - it is a decompiled header that references Season,
+        // Weather, and WeatherRegion before declaring them. getResourceBase
+        // is the pre-biome-modifier reading, so a null biome is the honest
+        // request rather than a missing argument.
+        //
+        // UNVERIFIED at time of writing: if Kenshi dereferences the biome this
+        // will fault. It is therefore called only on explicit request, never
+        // on the ordinary snapshot path, so the blast radius is one deliberate
+        // survey rather than every telemetry tick.
+        level = ou->zoneMgr->getResourceBase(resource, NULL, position);
+        return true;
     }
 
     // Which object categories were examined last snapshot, so the next one
