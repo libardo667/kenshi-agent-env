@@ -2273,6 +2273,55 @@
       "title": "CurrentObservationEvidence",
       "type": "object"
     },
+    "DiscoveredObject": {
+      "additionalProperties": false,
+      "description": "One nearby object and what Kenshi says it can be ordered to do.\n\nReconnaissance, not a routed affordance. `world_targets` is the surface the\ncontroller has semantic routes for; this is the surface that exists. The\ngap between them is the implementation queue, and it is derived from the\ngame rather than from anyone noticing an absence.\n\nPresence here authorizes nothing. A task appearing means Kenshi answered\nyes to \"may this selection order this object to do that\", which is a fact\nabout the game, not permission for the controller to try it.",
+      "properties": {
+        "id": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Name",
+          "type": "string"
+        },
+        "category": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Category",
+          "type": "string"
+        },
+        "distance": {
+          "minimum": 0.0,
+          "title": "Distance",
+          "type": "number"
+        },
+        "advertised_tasks": {
+          "items": {
+            "$ref": "#/$defs/AdvertisedTask"
+          },
+          "maxItems": 64,
+          "title": "Advertised Tasks",
+          "type": "array"
+        },
+        "advertised_tasks_probed": {
+          "default": true,
+          "title": "Advertised Tasks Probed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "category",
+        "distance"
+      ],
+      "title": "DiscoveredObject",
+      "type": "object"
+    },
     "DismissScreenAction": {
       "additionalProperties": false,
       "description": "Close one exact currently open screen toward the world view.\n\nExiting is as much a part of using an interface as entering it. Naming the\nscreen and, where applicable, the owner window makes the action bind to\nobserved state instead of blindly pressing a key and hoping. Named game\nscreens close through their own toggle binding; trade windows close through\ntheir exact close box. It deliberately does not end an active conversation:\ndialogue must choose an exact visible closing reply.",
@@ -6075,7 +6124,7 @@
       "additionalProperties": false,
       "properties": {
         "protocol_version": {
-          "default": "1.13.0",
+          "default": "1.14.0",
           "title": "Protocol Version",
           "type": "string"
         },
@@ -6158,6 +6207,14 @@
             "$ref": "#/$defs/WorldTarget"
           },
           "title": "World Targets",
+          "type": "array"
+        },
+        "discovered_objects": {
+          "items": {
+            "$ref": "#/$defs/DiscoveredObject"
+          },
+          "maxItems": 64,
+          "title": "Discovered Objects",
           "type": "array"
         },
         "known_map_destinations": {

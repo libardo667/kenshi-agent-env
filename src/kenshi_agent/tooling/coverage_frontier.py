@@ -154,6 +154,92 @@ def assess_coverage_frontier() -> CoverageFrontier:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class DiscoveredPair:
+    """One (category, task) pair Kenshi advertised, and whether it is routed."""
+
+    category: str
+    task_name: str
+    task_value: int
+    example_object: str
+    routed: bool
+
+
+def reconcile_discovered_objects(
+    snapshot: object,
+    *,
+    wired_task_values: frozenset[int] | None = None,
+) -> tuple[DiscoveredPair, ...]:
+    """Turn one snapshot's discovery data into a routed/unrouted queue.
+
+    The frontier report says how big the ceiling is. This says what is actually
+    behind it: pairs Kenshi advertised, marked against the semantic routes the
+    controller has. Unrouted pairs are the implementation queue, derived from
+    the game rather than from anyone noticing an absence.
+
+    Routing is judged by task value only. A pair being unrouted means the
+    controller has no operation for that task at all - it is deliberately not a
+    claim about whether the existing route would work on that category.
+    """
+
+    if wired_task_values is None:
+        wired_task_values = frozenset(
+            task_value for _, task_value in CONTEXT_ACTION_DECISIONS
+        )
+    objects = getattr(snapshot, "discovered_objects", None) or []
+    seen: dict[tuple[str, str], DiscoveredPair] = {}
+    for entry in objects:
+        category = getattr(entry, "category", "")
+        for task in getattr(entry, "advertised_tasks", None) or []:
+            key = (category, task.name)
+            if key in seen:
+                continue
+            seen[key] = DiscoveredPair(
+                category=category,
+                task_name=task.name,
+                task_value=task.value,
+                example_object=getattr(entry, "name", "") or getattr(entry, "id", ""),
+                routed=task.value in wired_task_values,
+            )
+    return tuple(sorted(seen.values(), key=lambda pair: (pair.category, pair.task_name)))
+
+
+def render_discovered_pairs(pairs: tuple[DiscoveredPair, ...]) -> list[str]:
+    """Render the discovery queue: what exists, and what has nowhere to go."""
+
+    if not pairs:
+        return [
+            "no advertised tasks in this snapshot",
+            "",
+            "  Either nothing nearby affords anything to the current selection,",
+            "  or the probe reached nothing. Absence here is not evidence that",
+            "  the world is empty of affordances.",
+        ]
+    unrouted = [pair for pair in pairs if not pair.routed]
+    lines = [
+        f"advertised pairs   {len(pairs):3d}",
+        f"routed             {len(pairs) - len(unrouted):3d}",
+        f"unrouted           {len(unrouted):3d}   <- implementation queue",
+        "",
+        f"  {'category':<18} {'task':<26} {'value':>5}  example",
+    ]
+    for pair in pairs:
+        marker = "   " if pair.routed else ">> "
+        lines.append(
+            f"{marker}{pair.category:<18} {pair.task_name:<26} "
+            f"{pair.task_value:>5}  {pair.example_object[:28]}"
+        )
+    if unrouted:
+        lines.extend(
+            (
+                "",
+                ">> marks a task Kenshi advertises that the controller cannot",
+                "   express. Each is a lever the agent can see and not pull.",
+            )
+        )
+    return lines
+
+
 def render_coverage_frontier(frontier: CoverageFrontier) -> list[str]:
     """Render the ceiling and the mechanism that would lift it."""
 

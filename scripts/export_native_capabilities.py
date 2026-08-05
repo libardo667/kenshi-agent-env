@@ -2,6 +2,7 @@ from pathlib import Path
 
 from kenshi_agent.tooling.native_contract_export import (
     export_gameplay_capabilities_header,
+    export_item_type_vocabulary_header,
     export_task_type_vocabulary_header,
 )
 
@@ -15,3 +16,4 @@ if __name__ == "__main__":
     )
     print(export_gameplay_capabilities_header(manifest, manifest.parent))
     print(export_task_type_vocabulary_header(manifest.parent))
+    print(export_item_type_vocabulary_header(manifest.parent))

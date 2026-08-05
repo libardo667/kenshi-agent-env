@@ -34,6 +34,7 @@ from ..affordances import AFFORDANCE_ADAPTERS, AffordanceOffer
 from ..core.observation import Observation
 from ..core.telemetry import TelemetrySnapshot
 from ..operation_definitions import OPERATION_DEFINITIONS
+from .coverage_frontier import reconcile_discovered_objects, render_discovered_pairs
 
 WATCH_RUN_ID = "affordance-watch"
 
@@ -273,3 +274,16 @@ def render_menu(menu: AffordanceMenu) -> list[str]:
     if menu.adapters_silent:
         header.append(f"silent adapters: {', '.join(menu.adapters_silent)}")
     return header
+
+
+def render_discovery(observation: Observation) -> list[str]:
+    """What Kenshi says is available nearby, beside what the controller routes.
+
+    The menu above is what the agent can choose. This is what the world
+    affords. The difference is the part of Kenshi the agent cannot reach yet.
+    """
+
+    pairs = reconcile_discovered_objects(observation.telemetry)
+    return ["", "WORLD DISCOVERY (asked of Kenshi, not declared here)", ""] + [
+        f"  {line}" for line in render_discovered_pairs(pairs)
+    ]

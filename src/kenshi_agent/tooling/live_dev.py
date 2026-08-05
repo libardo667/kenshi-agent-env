@@ -37,6 +37,7 @@ from ..control_ownership import (
     ControlOwnershipMachine,
     ControlOwnershipState,
 )
+from ..core.observation import Observation
 from ..core.operation import (
     ClickAction,
     HotkeyAction,
@@ -69,6 +70,7 @@ from .affordance_watch import (
     current_menu,
     menu_payload,
     observation_from_snapshot,
+    render_discovery,
     render_menu,
 )
 from .authored_starts import (
@@ -2683,10 +2685,8 @@ def _telemetry(args: argparse.Namespace) -> int:
         return status
 
 
-def _affordance_menu(result: TelemetryRead) -> AffordanceMenu:
-    return current_menu(
-        observation_from_snapshot(result.snapshot, stale=result.stale)
-    )
+def _affordance_observation(result: TelemetryRead) -> Observation:
+    return observation_from_snapshot(result.snapshot, stale=result.stale)
 
 
 def _emit_affordance_menu(
@@ -2694,12 +2694,16 @@ def _emit_affordance_menu(
     args: argparse.Namespace,
     *,
     capture: Path | None,
+    observation: Observation | None = None,
 ) -> None:
     payload = menu_payload(menu)
     if args.json:
         print(json.dumps(payload, separators=(",", ":")), flush=True)
     else:
-        print("\n".join(render_menu(menu)), flush=True)
+        lines = render_menu(menu)
+        if observation is not None:
+            lines.extend(render_discovery(observation))
+        print("\n".join(lines), flush=True)
     if capture is not None:
         capture.parent.mkdir(parents=True, exist_ok=True)
         with capture.open("a", encoding="utf-8") as handle:
@@ -2719,7 +2723,13 @@ def _affordances(args: argparse.Namespace) -> int:
     capture: Path | None = args.capture
     if not args.watch:
         result = reader.read()
-        _emit_affordance_menu(_affordance_menu(result), args, capture=capture)
+        observation = _affordance_observation(result)
+        _emit_affordance_menu(
+            current_menu(observation),
+            args,
+            capture=capture,
+            observation=observation,
+        )
         return 1 if result.stale else 0
     if args.interval <= 0:
         raise SystemExit("--interval must be greater than zero.")
@@ -2730,11 +2740,17 @@ def _affordances(args: argparse.Namespace) -> int:
         while True:
             result = reader.read()
             status = 1 if result.stale else 0
-            menu = _affordance_menu(result)
+            observation = _affordance_observation(result)
+            menu = current_menu(observation)
             fingerprint = menu.fingerprint()
             if fingerprint != previous:
                 previous = fingerprint
-                _emit_affordance_menu(menu, args, capture=capture)
+                _emit_affordance_menu(
+                    menu,
+                    args,
+                    capture=capture,
+                    observation=observation,
+                )
             time.sleep(args.interval)
     except KeyboardInterrupt:
         return status

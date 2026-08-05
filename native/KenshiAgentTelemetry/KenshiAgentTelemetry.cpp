@@ -85,6 +85,7 @@
 
 #include "AtomicJsonWriter.h"
 #include "GameplayCapabilities.generated.h"
+#include "ItemTypeVocabulary.generated.h"
 #include "TaskTypeVocabulary.generated.h"
 #include "InventoryScreenSemantics.h"
 #include "NativeCommandProtocol.h"
@@ -120,6 +121,19 @@ namespace
     // needs each (kind, task) pair once, not every target every 500ms, and
     // the agent can only act on what is near it. Unprobed targets say so.
     const unsigned int MAX_PROBED_WORLD_TARGETS = 16;
+    // Full-discovery scan. Every object category Kenshi declares is asked, so
+    // a category nobody anticipated is found rather than excluded by omission.
+    const float DISCOVERY_SCAN_RADIUS = 400.0f;
+    const int MAX_DISCOVERED_PER_CATEGORY = 8;
+    // Objects probed per 500ms snapshot. The frontier needs each (category,
+    // task) pair once, not every object every snapshot.
+    const unsigned int MAX_DISCOVERY_PROBES_PER_SNAPSHOT = 48;
+    // Categories examined per snapshot, advancing each time so every one is
+    // reached within a few snapshots instead of the later ones starving.
+    const unsigned int DISCOVERY_CATEGORIES_PER_SNAPSHOT = 24;
+    // Characters live in their own index and are the richest target
+    // class, so they are scanned every snapshot rather than by rotation.
+    const int MAX_DISCOVERED_CHARACTERS = 16;
     const unsigned int MAX_KNOWN_MAP_DESTINATIONS = 64;
     // Raised from 64 after button-priority passes pushed dialogue options -
     // which are TextBox widgets, walked last - out of the export entirely.
@@ -134,7 +148,7 @@ namespace
     const unsigned int MAX_RUNTIME_CONTEXT_MENU_TASK_TYPES = 64;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "1.13.0";
+    const char* PROTOCOL_VERSION = "1.14.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -1223,6 +1237,175 @@ namespace
                     vocabulary[index].value,
                     vocabulary[index].name));
         }
+    }
+
+    // Which object categories were examined last snapshot, so the next one
+    // continues rather than restarting and starving the tail of the list.
+    unsigned int g_discoveryCategoryCursor = 0;
+
+    // The object's own declared type, not the type we happened to query with.
+    //
+    // getObjectsWithinSphere does not honour its itemType argument for most
+    // values: measured live, one object came back under 22 different category
+    // labels depending only on which query found it. Labelling from the query
+    // parameter produced confident fiction. getDataType() is the object
+    // answering for itself.
+    const char* ObjectCategoryName(RootObject* object)
+    {
+        if (object == NULL)
+            return "UNKNOWN";
+        const int declared = static_cast<int>(object->getDataType());
+        unsigned int count = 0;
+        const KenshiAgentTelemetry::ItemTypeVocabularyEntry* categories =
+            KenshiAgentTelemetry::ItemTypeVocabulary(count);
+        for (unsigned int index = 0; index < count; ++index)
+        {
+            if (categories[index].value == declared)
+                return categories[index].name;
+        }
+        return "UNKNOWN";
+    }
+
+    // Ask Kenshi, for every object category it declares and every object near
+    // the selection, what the selection may order that object to do.
+    //
+    // This is the full-discovery pass. The earlier world-target export asked
+    // two curated questions - resources and injured teammates - and so could
+    // only ever confirm what had already been written down. Here the category
+    // list, the task list, and the answers all come from the game; the
+    // plug-in contributes only bounds.
+    //
+    // Nothing here authorizes anything. It reports what exists so the
+    // operation registry has something truthful to route.
+    void AppendDiscoveredObjects(
+        std::ostringstream& json,
+        PlayerInterface* player,
+        GameWorld* ou,
+        RootObject* selected,
+        const Ogre::Vector3& selectedPosition)
+    {
+        unsigned int categoryCount = 0;
+        const KenshiAgentTelemetry::ItemTypeVocabularyEntry* categories =
+            KenshiAgentTelemetry::ItemTypeVocabulary(categoryCount);
+        if (categoryCount == 0)
+            return;
+
+        unsigned int probes = 0;
+        bool first = true;
+        std::set<std::string> emitted;
+        for (unsigned int step = 0;
+             step < DISCOVERY_CATEGORIES_PER_SNAPSHOT && step < categoryCount;
+             ++step)
+        {
+            const unsigned int categoryIndex =
+                (g_discoveryCategoryCursor + step) % categoryCount;
+            // A query hint only. Kenshi does not filter reliably on it, so
+            // it decides which objects this pass happens to reach, never what
+            // they are; each object reports its own type below.
+            const KenshiAgentTelemetry::ItemTypeVocabularyEntry& category =
+                categories[categoryIndex];
+
+            lektor<RootObject*> found;
+            ou->getObjectsWithinSphere(
+                found,
+                selectedPosition,
+                DISCOVERY_SCAN_RADIUS,
+                static_cast<itemType>(category.value),
+                MAX_DISCOVERED_PER_CATEGORY,
+                selected);
+
+            for (lektor<RootObject*>::iterator it = found.begin();
+                 it != found.end();
+                 ++it)
+            {
+                if (!KenshiAgentTelemetry::IsWithinTargetProbeBudget(
+                        probes,
+                        MAX_DISCOVERY_PROBES_PER_SNAPSHOT))
+                {
+                    break;
+                }
+                RootObject* object = *it;
+                if (object == NULL || object == selected)
+                    continue;
+                const std::string objectId = StableEntityId(object->getHandle());
+                if (objectId.empty() || emitted.count(objectId) != 0)
+                    continue;
+                emitted.insert(objectId);
+                ++probes;
+
+                std::vector<KenshiAgentTelemetry::AdvertisedTask> advertised;
+                ProbeAdvertisedTasks(player, object, advertised);
+
+                if (!first)
+                    json << ",";
+                first = false;
+                json << "{";
+                json << "\"id\":\"" << objectId << "\",";
+                json << "\"name\":\"" << JsonEscape(object->getName()) << "\",";
+                json << "\"category\":\"" << ObjectCategoryName(object) << "\",";
+                json << "\"distance\":"
+                     << Distance(object->getPosition(), selectedPosition) << ",";
+                KenshiAgentTelemetry::AppendAdvertisedTasks(
+                    json,
+                    true,
+                    advertised);
+                json << "}";
+            }
+        }
+        // Characters are not reachable through getObjectsWithinSphere at all.
+        // Measured live: 25 characters stood within the scan radius while the
+        // object scan returned zero of them across six full category cycles.
+        // Kenshi keeps them in a separate index with its own accessor, so the
+        // richest target class in the game would have been silently absent
+        // from discovery - the exact failure this scan exists to prevent.
+        lektor<RootObject*> nearbyCharacters;
+        ou->getCharactersWithinSphere(
+            nearbyCharacters,
+            selectedPosition,
+            DISCOVERY_SCAN_RADIUS,
+            0.0f,
+            30.0f,
+            MAX_DISCOVERED_CHARACTERS,
+            0,
+            selected);
+        for (lektor<RootObject*>::iterator it = nearbyCharacters.begin();
+             it != nearbyCharacters.end();
+             ++it)
+        {
+            if (!KenshiAgentTelemetry::IsWithinTargetProbeBudget(
+                    probes,
+                    MAX_DISCOVERY_PROBES_PER_SNAPSHOT))
+            {
+                break;
+            }
+            RootObject* object = *it;
+            if (object == NULL || object == selected)
+                continue;
+            const std::string objectId = StableEntityId(object->getHandle());
+            if (objectId.empty() || emitted.count(objectId) != 0)
+                continue;
+            emitted.insert(objectId);
+            ++probes;
+
+            std::vector<KenshiAgentTelemetry::AdvertisedTask> advertised;
+            ProbeAdvertisedTasks(player, object, advertised);
+
+            if (!first)
+                json << ",";
+            first = false;
+            json << "{";
+            json << "\"id\":\"" << objectId << "\",";
+            json << "\"name\":\"" << JsonEscape(object->getName()) << "\",";
+            json << "\"category\":\"" << ObjectCategoryName(object) << "\",";
+            json << "\"distance\":"
+                 << Distance(object->getPosition(), selectedPosition) << ",";
+            KenshiAgentTelemetry::AppendAdvertisedTasks(json, true, advertised);
+            json << "}";
+        }
+
+        g_discoveryCategoryCursor =
+            (g_discoveryCategoryCursor + DISCOVERY_CATEGORIES_PER_SNAPSHOT) %
+            categoryCount;
     }
 
     void AppendNaturalResourceCandidates(
@@ -4134,6 +4317,17 @@ namespace
             }
         }
         json << "],";
+        json << "\"discovered_objects\":[";
+        if (ou != NULL && player != NULL && selected != NULL && selected->isValid())
+        {
+            AppendDiscoveredObjects(
+                json,
+                player,
+                ou,
+                selected,
+                selected->getPosition());
+        }
+        json << "],";
         bool worldTargetScanAtCapacity = false;
         json << "\"world_targets\":[";
         bool firstWorldTarget = true;
@@ -4408,6 +4602,7 @@ namespace
         json << "\"squad\":[],";
         json << "\"active_shop_trader_count\":null,";
         json << "\"nearby_entities\":[],";
+        json << "\"discovered_objects\":[],";
         json << "\"world_targets\":[],";
         json << "\"warnings\":[";
         json << "\"Title-screen snapshot: loaded-game, entity, command, and "

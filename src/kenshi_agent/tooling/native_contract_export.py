@@ -109,6 +109,59 @@ def export_task_type_vocabulary_header(output_dir: Path) -> Path:
     return path
 
 
+def export_item_type_vocabulary_header(output_dir: Path) -> Path:
+    """Carry Kenshi's object-type vocabulary into the plug-in.
+
+    Which categories the world scan asks about decides what can ever be
+    discovered. Curating that list is how the surface became two hardcoded
+    kinds. This emits every member so the scan asks the game about all of
+    them and keeps whatever has spatial instances.
+    """
+
+    from .item_type_vocabulary import load_item_types
+
+    source = load_item_types()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / "ItemTypeVocabulary.generated.h"
+    lines = [
+        "#ifndef KENSHI_AGENT_ITEM_TYPE_VOCABULARY_GENERATED_H",
+        "#define KENSHI_AGENT_ITEM_TYPE_VOCABULARY_GENERATED_H",
+        "",
+        "// Generated from game_sources/kenshi/ItemType.h; edits are overwritten.",
+        "// Every scannable object category Kenshi declares. Most have no spatial",
+        "// instances and simply return nothing, which is the game answering",
+        "// rather than this plug-in assuming.",
+        "",
+        "namespace KenshiAgentTelemetry",
+        "{",
+        "    struct ItemTypeVocabularyEntry",
+        "    {",
+        "        int value;",
+        "        const char* name;",
+        "    };",
+        "",
+        "    inline const ItemTypeVocabularyEntry* ItemTypeVocabulary(",
+        "        unsigned int& count)",
+        "    {",
+        "        static const ItemTypeVocabularyEntry entries[] =",
+        "        {",
+        *(
+            f'            {{ {entry.value}, "{entry.name}" }},'
+            for entry in source.scannable
+        ),
+        "        };",
+        "        count = sizeof(entries) / sizeof(entries[0]);",
+        "        return entries;",
+        "    }",
+        "}",
+        "",
+        "#endif",
+        "",
+    ]
+    path.write_text("\n".join(lines), encoding="utf-8")
+    return path
+
+
 def export_gameplay_capabilities_header(
     manifest_path: Path,
     output_dir: Path,

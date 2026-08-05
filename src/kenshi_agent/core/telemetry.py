@@ -309,6 +309,28 @@ class AdvertisedTask(StrictModel):
     name: str = Field(min_length=1, max_length=80)
 
 
+class DiscoveredObject(StrictModel):
+    """One nearby object and what Kenshi says it can be ordered to do.
+
+    Reconnaissance, not a routed affordance. `world_targets` is the surface the
+    controller has semantic routes for; this is the surface that exists. The
+    gap between them is the implementation queue, and it is derived from the
+    game rather than from anyone noticing an absence.
+
+    Presence here authorizes nothing. A task appearing means Kenshi answered
+    yes to "may this selection order this object to do that", which is a fact
+    about the game, not permission for the controller to try it.
+    """
+
+    id: str = Field(min_length=1, max_length=500)
+    name: str = Field(default="", max_length=500)
+    # Kenshi's own object-category name, from its `itemType` enum.
+    category: str = Field(min_length=1, max_length=80)
+    distance: float = Field(ge=0.0)
+    advertised_tasks: list[AdvertisedTask] = Field(default_factory=list, max_length=64)
+    advertised_tasks_probed: bool = True
+
+
 class WorldTarget(StrictModel):
     """A non-character object with exact reviewed contextual affordances.
 
@@ -989,7 +1011,7 @@ class NativeControlState(StrictModel):
 
 
 class TelemetrySnapshot(StrictModel):
-    protocol_version: str = "1.13.0"
+    protocol_version: str = "1.14.0"
     sequence: int = Field(default=0, ge=0)
     captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = "unknown"
@@ -1006,6 +1028,13 @@ class TelemetrySnapshot(StrictModel):
     active_shop_trader_count: int | None = Field(default=None, ge=0)
     nearby_entities: list[NearbyEntity] = Field(default_factory=list)
     world_targets: list[WorldTarget] = Field(default_factory=list)
+    # Every nearby object the discovery scan reached this snapshot, with what
+    # Kenshi says it affords. Bounded and rotating, so this is a moving window
+    # over the world rather than a complete inventory of it.
+    discovered_objects: list[DiscoveredObject] = Field(
+        default_factory=list,
+        max_length=64,
+    )
     known_map_destinations: list[KnownMapDestination] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
