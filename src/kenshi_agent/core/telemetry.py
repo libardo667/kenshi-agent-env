@@ -164,6 +164,70 @@ class InventoryItem(StrictModel):
         return self
 
 
+class TaskEntry(StrictModel):
+    """One task, in whichever list Kenshi keeps it."""
+
+    # Kenshi's own TaskType value and name. The value is authoritative; the name
+    # comes from the generated vocabulary so consumers need no copy of the enum.
+    task_value: int | None = None
+    task_name: str = Field(default="", max_length=80)
+    # What the task acts on, when it names something.
+    subject_id: str = Field(default="", max_length=500)
+    description: str = Field(default="", max_length=300)
+
+
+class CharacterTaskState(StrictModel):
+    """What a character has been told to do, by channel.
+
+    Kenshi keeps ordinary orders, Jobs, permajobs, and the AI's current goal in
+    four separate structures with different lifetimes, and none may be inferred
+    from another: a mining animation is not evidence of a Job, and an entry in
+    the Jobs list is not evidence of an ordinary order.
+
+    Exporting none of this had teeth. An `operate` order was accepted and
+    retained by Kenshi while the controller reported it failed and retried it
+    eight times, and a character holding a retained mining Job walked out of a
+    trade conversation because the Job pulled him back to the node. Both were
+    invisible.
+    """
+
+    # Whether Kenshi considers this character to be under player orders at all.
+    has_player_orders: bool = False
+    # The ordinary order queue - what a player fills by right-clicking.
+    orders: list[TaskEntry] = Field(default_factory=list, max_length=8)
+    orders_count: int = Field(default=0, ge=0)
+    # False when the export truncated the list, so a bounded list is never
+    # mistaken for a short one.
+    orders_complete: bool = True
+
+    # Jobs: repeating assignments, with their own switch. A character can hold
+    # Jobs while they are disabled, which is why the flag is separate from the
+    # list rather than implied by it being empty.
+    jobs_enabled: bool = False
+    jobs: list[TaskEntry] = Field(default_factory=list, max_length=8)
+    jobs_count: int = Field(default=0, ge=0)
+    jobs_complete: bool = True
+
+    # Permajobs: a distinct list with its own slot API and its own clear.
+    permajobs: list[TaskEntry] = Field(default_factory=list, max_length=8)
+    permajobs_count: int = Field(default=0, ge=0)
+    permajobs_complete: bool = True
+
+    # What the AI settled on doing now. Neither an order nor a Job, and not to
+    # be read as either - it is the goal the task system currently scores best.
+    current_activity: TaskEntry | None = None
+
+    @property
+    def has_retained_work(self) -> bool:
+        """Whether Kenshi is holding work for this character.
+
+        The question the controller could not previously ask, and the one that
+        explains a character leaving a conversation on his own.
+        """
+
+        return bool(self.orders_count or self.jobs_count or self.permajobs_count)
+
+
 class CharacterState(StrictModel):
     id: str
     name: str
@@ -206,6 +270,10 @@ class CharacterState(StrictModel):
     # False means the bounded native export omitted one or more items. Absence
     # from `inventory` is therefore usable as zero only when this is true.
     inventory_complete: bool | None = None
+    # Orders, Jobs, permajobs, and current activity, kept apart. None means the
+    # character's task system was unreachable, which is a different fact from
+    # holding no work.
+    task_state: CharacterTaskState | None = None
 
 
 class NearbyEntity(StrictModel):
@@ -1139,7 +1207,7 @@ class NativeControlState(StrictModel):
 
 
 class TelemetrySnapshot(StrictModel):
-    protocol_version: str = "1.14.0"
+    protocol_version: str = "1.15.0"
     sequence: int = Field(default=0, ge=0)
     captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = "unknown"

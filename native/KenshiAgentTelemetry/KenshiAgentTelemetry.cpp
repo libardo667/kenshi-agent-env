@@ -7,6 +7,27 @@
 #include <kenshi/AI/AI.h>
 #undef CharacterMessage
 #include <kenshi/AI/AITaskSystem.h>
+// The pinned KenshiLib headers declare taskPriority independently in
+// AITaskSystem.h and Tasker.h, byte-identical in both. Rename the Tasker copy
+// in this one translation unit, exactly as Platoon.h/Building.h's
+// BuildingDesignation is handled below; the plugin passes neither across its
+// boundary. Tasker is needed for the order and Job entries - key(), subject,
+// and getDescription() all live on it.
+#define taskPriority KenshiAgentTaskPriority
+#define TP_JUST_ACTION KENSHI_AGENT_TP_JUST_ACTION
+#define TP_FLUFF KENSHI_AGENT_TP_FLUFF
+#define TP_NON_URGENT KENSHI_AGENT_TP_NON_URGENT
+#define TP_URGENT KENSHI_AGENT_TP_URGENT
+#define TP_OBEDIENCE KENSHI_AGENT_TP_OBEDIENCE
+#define TP_MAX_SIZE KENSHI_AGENT_TP_MAX_SIZE
+#include <kenshi/Tasker.h>
+#undef taskPriority
+#undef TP_JUST_ACTION
+#undef TP_FLUFF
+#undef TP_NON_URGENT
+#undef TP_URGENT
+#undef TP_OBEDIENCE
+#undef TP_MAX_SIZE
 #include <kenshi/Item.h>
 #include <kenshi/Inventory.h>
 #include <kenshi/MedicalSystem.h>
@@ -79,6 +100,7 @@
 #include <cmath>
 #include <exception>
 #include <iomanip>
+#include <deque>
 #include <locale>
 #include <map>
 #include <set>
@@ -152,7 +174,7 @@ namespace
     const unsigned int MAX_RUNTIME_CONTEXT_MENU_TASK_TYPES = 64;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "1.14.0";
+    const char* PROTOCOL_VERSION = "1.15.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -1407,6 +1429,133 @@ namespace
                  << "\"}";
         }
         json << "]}";
+    }
+
+    // Kenshi's own name for a task value, from the generated vocabulary.
+    // A bare integer would make every consumer keep its own copy of the enum.
+    const char* TaskTypeName(int value)
+    {
+        unsigned int count = 0;
+        const KenshiAgentTelemetry::TaskTypeVocabularyEntry* vocabulary =
+            KenshiAgentTelemetry::TaskTypeVocabulary(count);
+        for (unsigned int index = 0; index < count; ++index)
+        {
+            if (vocabulary[index].value == value)
+                return vocabulary[index].name;
+        }
+        return "UNKNOWN";
+    }
+
+    // Four channels Kenshi keeps apart, exported apart.
+    //
+    // An ordinary order, a Job, a permajob, and the AI's current goal are
+    // different things with different lifetimes, and the controller previously
+    // read none of them. That blindness had teeth: an `operate` order was
+    // accepted and retained by Kenshi while the controller reported it failed
+    // and retried it eight times, and a character with a retained mining Job
+    // walked out of a trade conversation because the Job pulled him back to the
+    // node. Neither was visible in telemetry.
+    //
+    // Nothing here infers one channel from another. A mining animation is not
+    // evidence of a Job, and an entry in the Jobs list is not evidence of an
+    // ordinary order. Each is reported from its own accessor or not at all.
+    const unsigned int MAX_EXPORTED_TASK_ENTRIES = 8;
+
+    void AppendTaskEntry(std::ostringstream& json, Tasker* task)
+    {
+        json << "{";
+        if (task == NULL)
+        {
+            json << "\"task_value\":null,\"task_name\":\"\",";
+            json << "\"subject_id\":\"\",\"description\":\"\"}";
+            return;
+        }
+        const int value = static_cast<int>(task->key());
+        json << "\"task_value\":" << value << ",";
+        json << "\"task_name\":\"" << TaskTypeName(value) << "\",";
+        json << "\"subject_id\":\"" << StableEntityId(task->subject) << "\",";
+        json << "\"description\":\""
+             << JsonEscape(task->getDescription()) << "\"";
+        json << "}";
+    }
+
+    // Serialize one bounded task list with its own completeness flag, so a
+    // truncated list is never mistaken for a short one.
+    void AppendTaskList(
+        std::ostringstream& json,
+        const char* key,
+        const std::vector<Tasker*>& tasks)
+    {
+        const unsigned int total = static_cast<unsigned int>(tasks.size());
+        const unsigned int retained =
+            total < MAX_EXPORTED_TASK_ENTRIES ? total : MAX_EXPORTED_TASK_ENTRIES;
+        json << "\"" << key << "\":[";
+        for (unsigned int index = 0; index < retained; ++index)
+        {
+            if (index > 0)
+                json << ",";
+            AppendTaskEntry(json, tasks[index]);
+        }
+        json << "],";
+        json << "\"" << key << "_count\":" << total << ",";
+        json << "\"" << key << "_complete\":"
+             << (retained == total ? "true" : "false");
+    }
+
+    void AppendCharacterTaskState(std::ostringstream& json, Character* character)
+    {
+        AI* ai = character != NULL ? character->getAI() : NULL;
+        AITaskSytem* tasks = ai != NULL ? ai->getTaskSystem() : NULL;
+        if (tasks == NULL)
+        {
+            // No task system reachable. Absent, not empty - an empty order list
+            // and an unreadable one are different facts.
+            json << "\"task_state\":null";
+            return;
+        }
+
+        json << "\"task_state\":{";
+
+        // Ordinary orders: the queue a player fills by right-clicking.
+        std::vector<Tasker*> orders;
+        for (std::deque<Tasker*>::const_iterator it = tasks->orders.list.begin();
+             it != tasks->orders.list.end();
+             ++it)
+        {
+            orders.push_back(*it);
+        }
+        json << "\"has_player_orders\":"
+             << JsonBool(tasks->hasPlayerOrders()) << ",";
+        AppendTaskList(json, "orders", orders);
+        json << ",";
+
+        // Jobs: the repeating assignments the Jobs panel lists, with their own
+        // enabled switch. A character can hold Jobs while they are switched off.
+        std::vector<Tasker*> jobs;
+        for (unsigned int index = 0; index < tasks->jobs.size(); ++index)
+            jobs.push_back(tasks->jobs[index]);
+        json << "\"jobs_enabled\":" << JsonBool(tasks->isJobsEnabled()) << ",";
+        AppendTaskList(json, "jobs", jobs);
+        json << ",";
+
+        // Permajobs: a separate list with its own slot API and its own clear.
+        std::vector<Tasker*> permajobs;
+        for (unsigned int index = 0; index < tasks->permajobs.size(); ++index)
+            permajobs.push_back(tasks->permajobs[index]);
+        AppendTaskList(json, "permajobs", permajobs);
+        json << ",";
+
+        // Current activity: what the AI settled on doing, which is neither an
+        // order nor a Job and must not be read as either.
+        const TaskMatch& goal = tasks->getCurrentGoal();
+        const int goalValue = static_cast<int>(goal.key());
+        json << "\"current_activity\":{";
+        json << "\"task_value\":" << goalValue << ",";
+        json << "\"task_name\":\"" << TaskTypeName(goalValue) << "\",";
+        json << "\"subject_id\":\"" << StableEntityId(goal.subject) << "\"";
+        json << "}";
+
+        json << "}";
     }
 
     // Which object categories were examined last snapshot, so the next one
@@ -4420,6 +4569,8 @@ namespace
                 {
                     json << "null";
                 }
+                json << ",";
+                AppendCharacterTaskState(json, character);
                 json << "}";
             }
         }
