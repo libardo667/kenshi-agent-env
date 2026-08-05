@@ -128,3 +128,62 @@ def test_a_survey_commands_nobody_so_it_demands_no_selection() -> None:
     definition = OPERATION_DEFINITIONS["survey_local_resources"]
 
     assert definition.recipient_scope_for() is RecipientScope.NONE
+
+
+def test_a_partially_known_order_queue_is_never_reported_as_a_total() -> None:
+    """Kenshi exports the head and tail of the order queue, and no size().
+
+    A queue of three sampled as two would otherwise arrive as `orders_count: 2`
+    with nothing marking it a floor - the same shape of misreport as a bounded
+    list read as a short one. The digest names the channel as bounded instead.
+    """
+
+    from kenshi_agent.core.observation import Observation
+    from kenshi_agent.core.telemetry import (
+        CharacterState,
+        CharacterTaskState,
+        GameState,
+        TaskEntry,
+        TelemetrySnapshot,
+    )
+
+    def digest_for(**task_state: object) -> dict[str, object]:
+        observation = Observation(
+            run_id="r",
+            step_index=0,
+            mode="mock",
+            telemetry=TelemetrySnapshot(
+                sequence=1,
+                game=GameState(loaded=True, paused=True),
+                squad=[
+                    CharacterState(
+                        id="barth",
+                        name="Barth",
+                        selected=True,
+                        task_state=CharacterTaskState(**task_state),
+                    )
+                ],
+            ),
+        )
+        entries = observation.log_digest()["telemetry"]["retained_work"]
+        assert len(entries) == 1
+        return entries[0]
+
+    proven = TaskEntry(task_name="TASK_MINE", task_value=1)
+
+    partial = digest_for(
+        has_player_orders=True,
+        orders=[proven, proven],
+        orders_count=2,
+        orders_complete=False,
+    )
+    assert partial["orders_count"] == 2
+    assert partial["bounded_counts"] == ["orders"]
+
+    whole = digest_for(
+        has_player_orders=True,
+        orders=[proven],
+        orders_count=1,
+        orders_complete=True,
+    )
+    assert whole["bounded_counts"] == []

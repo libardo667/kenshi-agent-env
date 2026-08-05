@@ -196,8 +196,11 @@ class CharacterTaskState(StrictModel):
     # The ordinary order queue - what a player fills by right-clicking.
     orders: list[TaskEntry] = Field(default_factory=list, max_length=8)
     orders_count: int = Field(default=0, ge=0)
-    # False when the export truncated the list, so a bounded list is never
-    # mistaken for a short one.
+    # False when the export could not prove it had the whole queue, so a
+    # bounded list is never mistaken for a short one. Kenshi exports the head
+    # and the tail of the order queue and no size(), so any queue of two or
+    # more arrives incomplete: the count means "at least this many, each one
+    # proven", not a total.
     orders_complete: bool = True
 
     # Jobs: repeating assignments, with their own switch. A character can hold

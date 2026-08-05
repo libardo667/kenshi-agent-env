@@ -782,9 +782,14 @@ def test_log_digest_conserves_the_complete_bounded_logging_contract() -> None:
         "world_target_count",
         "context_targets",
         "selected",
+        # What Kenshi is holding for every selected character. A digest that
+        # dropped it could not explain an accepted order reported as failed, or
+        # a move that looked stalled because retained work fought it.
+        "retained_work",
     }
     assert {
-        key: telemetry_digest[key] for key in set(telemetry_digest) - {"game", "ui", "selected"}
+        key: telemetry_digest[key]
+        for key in set(telemetry_digest) - {"game", "ui", "selected", "retained_work"}
     } == {
         "sequence": 20,
         "source": "rich-fixture",

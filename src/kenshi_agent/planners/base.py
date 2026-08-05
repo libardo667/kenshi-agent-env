@@ -86,6 +86,45 @@ def _string_ids(items: Any, key: str) -> set[str]:
     }
 
 
+def _offer_menu(observation: Observation) -> tuple[list[str], list[str]]:
+    """The affordance menu this context was built against, and what it withheld.
+
+    Recorded so a post-mortem can tell an ignored option from an absent one.
+    Enumeration is a pure function of the observation, so this re-derives the
+    menu rather than threading it through - the adapters are the same ones the
+    planner's payload was built from, at the same revision.
+
+    Withholding is only partially explainable: an enumerator that returns early
+    leaves no trace. What is recoverable is which registered operations their
+    own definition currently refuses, which separates "refused" from "never
+    enumerated" and was previously indistinguishable.
+    """
+
+    from ..affordances import AFFORDANCE_ADAPTERS
+    from ..operation_definitions import OPERATION_DEFINITION_LIST
+
+    if getattr(observation, "telemetry", None) is None:
+        return [], []
+    offered: list[str] = []
+    seen: set[str] = set()
+    offered_kinds: set[str] = set()
+    for adapter in AFFORDANCE_ADAPTERS:
+        for offer in adapter.offers(observation):
+            offered_kinds.add(offer.operation_kind)
+            entry = f"{offer.semantic}:{offer.operation_kind}"
+            if entry in seen:
+                continue
+            seen.add(entry)
+            offered.append(entry)
+    withheld = sorted(
+        definition.kind
+        for definition in OPERATION_DEFINITION_LIST
+        if definition.kind not in offered_kinds
+        and not definition.is_currently_authorable(observation)
+    )
+    return sorted(offered), withheld
+
+
 def _payload_target_ids(payload: dict[str, Any], observation: Observation) -> set[str]:
     """Current entity IDs actually present in world-facing payload fields."""
 
@@ -322,6 +361,12 @@ def planner_context_manifest(
         current_target_ids = _payload_target_ids(payload, observation)
         current_observation_delivered = "world_revision" in payload
 
+    try:
+        offered, withheld = _offer_menu(observation)
+    except (AttributeError, TypeError, ValueError):
+        # The menu is evidence about the run, not part of it. An observation
+        # shape that enumeration cannot read costs the record, never the run.
+        offered, withheld = [], []
     return PlannerContextManifest(
         context_id=context_id,
         run_id=observation.run_id,
@@ -342,6 +387,9 @@ def planner_context_manifest(
         fieldbook_receipt_ids=sorted(fieldbook_receipt_ids),
         fieldbook_read_receipt_ids=sorted(fieldbook_read_receipt_ids),
         advisor_brief_ids=sorted(advisor_brief_ids),
+        offered=offered,
+        offered_count=len(offered),
+        withheld_unauthorable=withheld,
         candidate_memory_count=len(candidate_memory_ids),
         payload_characters=payload_characters,
         context_capacity_source=context_capacity_source,

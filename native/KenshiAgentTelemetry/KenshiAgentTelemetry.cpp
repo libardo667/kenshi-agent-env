@@ -1481,10 +1481,14 @@ namespace
 
     // Serialize one bounded task list with its own completeness flag, so a
     // truncated list is never mistaken for a short one.
+    // `wholeListKnown` is false when the caller sampled a container it cannot
+    // enumerate. The count then means "at least this many, each one proven"
+    // rather than a total, and the _complete flag is what says so.
     void AppendTaskList(
         std::ostringstream& json,
         const char* key,
-        const std::vector<Tasker*>& tasks)
+        const std::vector<Tasker*>& tasks,
+        bool wholeListKnown = true)
     {
         const unsigned int total = static_cast<unsigned int>(tasks.size());
         const unsigned int retained =
@@ -1499,7 +1503,7 @@ namespace
         json << "],";
         json << "\"" << key << "_count\":" << total << ",";
         json << "\"" << key << "_complete\":"
-             << (retained == total ? "true" : "false");
+             << (wholeListKnown && retained == total ? "true" : "false");
     }
 
     void AppendCharacterTaskState(std::ostringstream& json, Character* character)
@@ -1517,16 +1521,33 @@ namespace
         json << "\"task_state\":{";
 
         // Ordinary orders: the queue a player fills by right-clicking.
+        //
+        // Read through the game's own accessors rather than by walking
+        // ActionDeque::list. That member is a std::deque in a decompiled
+        // header, and iterating it means trusting that this plug-in's idea of
+        // std::deque's internal layout matches the one Kenshi was built with.
+        // getFirstTask/getSecondTask/getLastTask are exported functions and
+        // cost nothing but completeness, which the flag already reports
+        // honestly. A queue longer than three is marked incomplete rather than
+        // guessed at.
         std::vector<Tasker*> orders;
-        for (std::deque<Tasker*>::const_iterator it = tasks->orders.list.begin();
-             it != tasks->orders.list.end();
-             ++it)
-        {
-            orders.push_back(*it);
-        }
+        Tasker* firstOrder = tasks->orders.getFirstTask();
+        if (firstOrder != NULL)
+            orders.push_back(firstOrder);
+        Tasker* secondOrder = tasks->orders.getSecondTask();
+        if (secondOrder != NULL && secondOrder != firstOrder)
+            orders.push_back(secondOrder);
+        Tasker* lastOrder = tasks->orders.getLastTask();
+        if (lastOrder != NULL && lastOrder != firstOrder && lastOrder != secondOrder)
+            orders.push_back(lastOrder);
         json << "\"has_player_orders\":"
              << JsonBool(tasks->hasPlayerOrders()) << ",";
-        AppendTaskList(json, "orders", orders);
+        // The accessors reach the head and the tail, never the middle, and
+        // ActionDeque exports no size(). A queue of two or more is therefore
+        // reported as "at least these, proven" - never as a total, which is
+        // the misreport that makes a bounded list look like a short one.
+        const bool ordersFullyKnown = tasks->orders.isEmpty() || tasks->orders.isOnlyOne();
+        AppendTaskList(json, "orders", orders, ordersFullyKnown);
         json << ",";
 
         // Jobs: the repeating assignments the Jobs panel lists, with their own
