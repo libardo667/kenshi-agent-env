@@ -29,8 +29,13 @@ class PostMortemQuestion:
     question: str
     # The event type that carries the answer, when one does.
     event_type: str
-    # A payload probe: the key path or literal whose presence proves the answer
-    # is recorded. Checked against the real bundle rather than trusted.
+    # The dotted key path within the payload whose presence proves the answer is
+    # recorded. Resolved structurally, not by substring: searching the rendered
+    # JSON for "offers" quietly matched nothing while the field was named
+    # "offered", and three built-and-working channels were reported as gaps. A
+    # measuring tool that manufactures gaps is worse than no measurement, so a
+    # path that resolves in no bundle is reported as a broken probe rather than
+    # as missing evidence.
     probe: str
     why_it_matters: str
 
@@ -40,13 +45,13 @@ POST_MORTEM_QUESTIONS: tuple[PostMortemQuestion, ...] = (
     PostMortemQuestion(
         question="What did the agent choose, and did it work?",
         event_type="affordance_receipt",
-        probe="affordance",
+        probe="receipt.affordance",
         why_it_matters="The minimum account of a run: every decision and its outcome.",
     ),
     PostMortemQuestion(
         question="Why did a chosen operation fail?",
         event_type="affordance_receipt",
-        probe="lifecycle",
+        probe="receipt.lifecycle",
         why_it_matters=(
             "Distinguishes a refusal from a stall from a handler error, which "
             "otherwise all read as 'failed'."
@@ -55,7 +60,7 @@ POST_MORTEM_QUESTIONS: tuple[PostMortemQuestion, ...] = (
     PostMortemQuestion(
         question="What else could it have chosen at that moment?",
         event_type="planner_context_prepared",
-        probe="offers",
+        probe="offered",
         why_it_matters=(
             "Separates 'the model ignored a good option' from 'the option was "
             "never on the menu'. These have completely different fixes, and "
@@ -65,7 +70,7 @@ POST_MORTEM_QUESTIONS: tuple[PostMortemQuestion, ...] = (
     PostMortemQuestion(
         question="Why was an expected affordance not offered?",
         event_type="planner_context_prepared",
-        probe="withheld",
+        probe="withheld_unauthorable",
         why_it_matters=(
             "The most common question after a disappointing run, and the one "
             "that currently costs an hour of reading enumeration code."
@@ -74,7 +79,7 @@ POST_MORTEM_QUESTIONS: tuple[PostMortemQuestion, ...] = (
     PostMortemQuestion(
         question="Was Kenshi holding retained work for a character?",
         event_type="observation",
-        probe="task_state",
+        probe="telemetry.retained_work",
         why_it_matters=(
             "A retained order pulled a character out of a trade conversation "
             "and made a move order look stalled. Neither was diagnosable from "
@@ -84,7 +89,7 @@ POST_MORTEM_QUESTIONS: tuple[PostMortemQuestion, ...] = (
     PostMortemQuestion(
         question="What did the native layer actually say?",
         event_type="observation",
-        probe="native_control",
+        probe="telemetry.native_control",
         why_it_matters=(
             "Command results like target_already_reached are correct refusals "
             "that the plan layer reports as failures."
@@ -93,13 +98,13 @@ POST_MORTEM_QUESTIONS: tuple[PostMortemQuestion, ...] = (
     PostMortemQuestion(
         question="What was the economic state over time?",
         event_type="observation",
-        probe="money",
+        probe="telemetry.game.money",
         why_it_matters="Proves a sale moved money rather than merely returning success.",
     ),
     PostMortemQuestion(
         question="What was on screen when a UI choice was made?",
         event_type="observation",
-        probe="item_cells",
+        probe="telemetry.ui.item_cells",
         why_it_matters=(
             "Item cells are kept because a post-mortem must be able to say what "
             "was for sale. Other controls are not, so 'which buttons existed' "
@@ -109,14 +114,37 @@ POST_MORTEM_QUESTIONS: tuple[PostMortemQuestion, ...] = (
 )
 
 
+def resolve_probe(payload: Any, path: str) -> bool:
+    """Whether a dotted key path is present in one payload.
+
+    Lists are descended into, because the evidence for several questions lives
+    inside repeated entries. Presence is what is measured, not truthiness: a
+    recorded `money: 0` answers "what was the economic state" exactly as well
+    as a recorded `money: 4000`.
+    """
+
+    head, _, rest = path.partition(".")
+    if isinstance(payload, list):
+        return any(resolve_probe(entry, path) for entry in payload)
+    if not isinstance(payload, dict) or head not in payload:
+        return False
+    return True if not rest else resolve_probe(payload[head], rest)
+
+
 @dataclass(frozen=True, slots=True)
 class QuestionCoverage:
     question: PostMortemQuestion
     events_present: int
     answered: bool
+    # False when the probe resolved in no bundle anywhere, which means the path
+    # is wrong rather than the evidence missing. Kept distinct so a typo can
+    # never be read as a gap in the run bundle.
+    probe_resolvable: bool = True
 
     @property
     def status(self) -> str:
+        if not self.probe_resolvable:
+            return "BROKEN PROBE"
         if not self.events_present:
             return "no evidence"
         return "answered" if self.answered else "recorded but silent"
@@ -182,11 +210,10 @@ def assess_reporting_surface(bundle: Path) -> ReportingSurface:
         payload = event.get("payload")
         if not isinstance(payload, dict):
             continue
-        rendered = json.dumps(payload)
         for question in POST_MORTEM_QUESTIONS:
             if question.event_type != name or probes_seen[question.probe]:
                 continue
-            if f'"{question.probe}"' in rendered:
+            if resolve_probe(payload, question.probe):
                 probes_seen[question.probe] = True
 
     coverage = tuple(

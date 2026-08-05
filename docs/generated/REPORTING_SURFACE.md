@@ -12,34 +12,32 @@ bundle, not asserted, so a gap closes here only when the evidence
 genuinely appears.
 
 ```text
-bundle                gui-perception-soak-20260805-r2
-events                 12695
-observation share      79.6%
-questions answered      5 of 8
+bundle                20260805T204843.470502Z
+events                   252
+observation share      40.5%
+questions answered      6 of 8
 
 POST-MORTEM COVERAGE
-  What did the agent choose, and did it work?
-    answered               via affordance_receipt (60 events)
-  Why did a chosen operation fail?
-    answered               via affordance_receipt (60 events)
->>What else could it have chosen at that moment?
-    recorded but silent    via planner_context_prepared (62 events)
->>Why was an expected affordance not offered?
-    recorded but silent    via planner_context_prepared (62 events)
->>Was Kenshi holding retained work for a character?
-    recorded but silent    via observation (3779 events)
+>>What did the agent choose, and did it work?
+    no evidence            via affordance_receipt (0 events)
+>>Why did a chosen operation fail?
+    no evidence            via affordance_receipt (0 events)
+  What else could it have chosen at that moment?
+    answered               via planner_context_prepared (12 events)
+  Why was an expected affordance not offered?
+    answered               via planner_context_prepared (12 events)
+  Was Kenshi holding retained work for a character?
+    answered               via observation (26 events)
   What did the native layer actually say?
-    answered               via observation (3779 events)
+    answered               via observation (26 events)
   What was the economic state over time?
-    answered               via observation (3779 events)
+    answered               via observation (26 events)
   What was on screen when a UI choice was made?
-    answered               via observation (3779 events)
+    answered               via observation (26 events)
 
 WHY THE GAPS MATTER
-  What else could it have chosen at that moment?
-    Separates 'the model ignored a good option' from 'the option was never on the menu'. These have completely different fixes, and guessing between them was wrong more than once in one session.
-  Why was an expected affordance not offered?
-    The most common question after a disappointing run, and the one that currently costs an hour of reading enumeration code.
-  Was Kenshi holding retained work for a character?
-    A retained order pulled a character out of a trade conversation and made a move order look stalled. Neither was diagnosable from the bundle, because the digest keeps no task state.
+  What did the agent choose, and did it work?
+    The minimum account of a run: every decision and its outcome.
+  Why did a chosen operation fail?
+    Distinguishes a refusal from a stall from a handler error, which otherwise all read as 'failed'.
 ```
