@@ -137,14 +137,15 @@
   },
   "installation_rollback": {
     "required_by_slice": 2,
-    "status": "pending",
+    "status": "archived",
     "installed_dll": {
       "protocol": "1.12.0",
-      "size_bytes": 286720,
-      "sha256": "e93d7278fc81c04f562e607322af7f805027fd2523e276bc4ca463e0f54cde77",
-      "source": "docs/reconstruction/stage_8_acceptance.md",
-      "verified_here": false,
-      "note": "Carried forward from the Stage 8 acceptance report, not yet re-measured at this baseline."
+      "size_bytes": 289792,
+      "sha256": "9cec38fafd0906a47651773af95112a613ef1673ab5550d54ffd973503c11f0e",
+      "path": "C:/Program Files (x86)/Steam/steamapps/common/Kenshi/mods/KenshiAgentTelemetry/KenshiAgentTelemetry.dll",
+      "modified_utc": "2026-08-04T15:55:41Z",
+      "verified_here": true,
+      "note": "Measured, not carried forward. The Stage 8 acceptance report records 286720 bytes / e93d7278...; the installed artefact is neither, because the three post-acceptance native commits (97a2909, 5b97e31, 3b472bb) were built and installed. Any rollback target taken from the Stage 8 report would restore a plug-in older than the current Python."
     },
     "build_environment": {
       "reachable": true,
@@ -152,12 +153,17 @@
       "note": "An earlier draft of this manifest claimed the Windows host was unreachable from this working tree. That was wrong. scripts/build_native.ps1, scripts/stage_native.ps1, and scripts/native_doctor.ps1 are all invocable from here, and the Stage 0 baseline recorded Windows toolchain facts the same way."
     },
     "actions_before_slice_2": [
-      "Re-measure the installed 1.12.0 DLL hash and confirm it against the Stage 8 value.",
-      "Archive the 1.12.0 artefact outside the game directory and record the exact reinstall procedure.",
-      "After the 2.0 build, archive and hash it the same way.",
-      "Record which run bundles were produced under which protocol so a rollback does not leave 2.0-shaped evidence being read as 1.12.0."
+      "DONE: measure the installed DLL hash and archive it with verification.",
+      "After the next native build, archive and hash it the same way before installing.",
+      "Record which run bundles were produced under which protocol so a rollback does not leave newer-shaped evidence being read as older."
     ],
-    "note": "A git tag alone does not restore a working system from Slice 2 onward. Rolling Python back without reinstalling the matching plug-in leaves a version mismatch across the telemetry boundary. The work is ordinary, not blocked."
+    "note": "A git tag alone does not restore a working system from Slice 2 onward. Rolling Python back without reinstalling the matching plug-in leaves a version mismatch across the telemetry boundary. The work is ordinary, not blocked.",
+    "archive": {
+      "path": "C:/Users/levib/AppData/Local/KenshiAgent/backups/native/20260805-pre-coverage-probe/KenshiAgentTelemetry.dll",
+      "sha256": "9cec38fafd0906a47651773af95112a613ef1673ab5550d54ffd973503c11f0e",
+      "verified_after_copy": true,
+      "restore": "Copy back over the mods/KenshiAgentTelemetry path above; no other file changes."
+    }
   },
   "preserved_evidence": {
     "note": "Existing durable bundles. None was rerun to produce a newer timestamp, and none is claimed to prove group-scope behaviour.",
