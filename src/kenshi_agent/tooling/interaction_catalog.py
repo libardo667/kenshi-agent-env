@@ -89,8 +89,36 @@ NATIVE_COMMAND_OWNERS: dict[str, str] = {
 VESTIGIAL_NATIVE_COMMAND_NAMES = frozenset(NATIVE_COMMAND_OWNERS)
 
 
+DIAGNOSTIC_ONLY_NATIVE_COMMANDS: frozenset[str] = frozenset({"shift_body_platoon"})
+"""Wire commands with no owning operation, on purpose.
+
+A route here is reachable only through `scripts/dispatch_native_command.py`,
+which is diagnostic tooling that never runs inside a run. No affordance offers
+it, no `OperationDefinition` issues it, and the planner cannot name it.
+
+This exists so "has no owning operation" stays a hard failure for everything
+else. Adding a name here is a deliberate, reviewed act, and the set is asserted
+exactly - a second entry cannot arrive quietly.
+"""
+
+
 def native_command_names() -> tuple[str, ...]:
-    """Every native command the transport schema admits."""
+    """Every native command an operation may issue.
+
+    Diagnostic-only routes are excluded: they are answerable by the plug-in but
+    unreachable by the agent, so demanding an owning operation for them would
+    force a real operation into existence to satisfy a catalog.
+    """
+
+    return tuple(
+        name
+        for name in all_native_command_names()
+        if name not in DIAGNOSTIC_ONLY_NATIVE_COMMANDS
+    )
+
+
+def all_native_command_names() -> tuple[str, ...]:
+    """Every native command the transport schema admits, diagnostics included."""
 
     annotation = NativeCommandRequest.model_fields["command"].annotation
     return tuple(str(value) for value in typing.get_args(annotation))

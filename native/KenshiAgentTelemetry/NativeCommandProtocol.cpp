@@ -139,6 +139,11 @@ namespace KenshiAgentTelemetry
     {
         return command == "approach_confirmed_vendor" ||
                command == "move_to_character" ||
+               // Diagnostic probe for the body-shift plan: moves one character
+               // between the player's active platoon and the dead squad, which
+               // is the same (faction, platoon) rewrite the engine performs on
+               // every death. Proves whether that rewrite works on the living.
+               command == "shift_body_platoon" ||
                command == "select_squad_member" ||
                command == "regroup_with_squad_member" ||
                command == "travel_to_map_destination" ||

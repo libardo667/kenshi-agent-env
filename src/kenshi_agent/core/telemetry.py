@@ -1037,6 +1037,8 @@ NATIVE_COMMANDS_NAMING_A_TARGET: frozenset[str] = frozenset(
         "perform_context_action",
         "produce_resource_output",
         "open_context_inventory",
+        # Diagnostic probe: names the exact body to move between platoons.
+        "shift_body_platoon",
     }
 )
 
@@ -1091,6 +1093,9 @@ NativeWireCommand = Literal[
     "approach_confirmed_vendor",
     "move_to_character",
     "select_squad_member",
+    # Diagnostic probe only; no operation definition maps to it. See
+    # docs/KENSHI_BODY_SHIFT_PLAN.md.
+    "shift_body_platoon",
     "regroup_with_squad_member",
     "move_in_direction",
     "travel_to_map_destination",

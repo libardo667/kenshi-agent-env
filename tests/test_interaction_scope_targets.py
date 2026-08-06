@@ -166,6 +166,8 @@ def test_native_command_names_remain_the_known_set() -> None:
     assert set(typing.get_args(annotation)) == {
         "approach_confirmed_vendor",
         "move_to_character",
+        # Diagnostic-only; see DIAGNOSTIC_ONLY_NATIVE_COMMANDS.
+        "shift_body_platoon",
         "select_squad_member",
         "regroup_with_squad_member",
         "move_in_direction",

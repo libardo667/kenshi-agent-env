@@ -111,6 +111,47 @@ first thing to prove is a *round trip* — release a living body to a non-player
 platoon and seize it back — since anything the engine only ever does to corpses
 may behave differently on the living.
 
+## Proven live: release works, and control is not roster membership
+
+The probe (`shift_body_platoon`, diagnostic-only wire command) released a living
+Bombingham out of the active platoon into the dead squad, same faction. It
+completed. What the resulting game state showed:
+
+- He left the squad roster while alive — confirmed in Kenshi's own squad screen,
+  and he appeared in no squad at all.
+- Squad movement orders moved only the remaining roster member.
+- **Left-clicking his model selected him and moved him normally.** A released
+  body is still fully controllable.
+
+That last point reshapes the design. **Control follows selection, not roster
+membership.** The roster is bookkeeping and UI. A shift therefore does not need
+roster manipulation to *command* a body — it needs it for the squad UI to make
+sense and for selection-scoped orders to stay coherent.
+
+### The invariant the probe found by breaking it
+
+Releasing without deselecting leaves a selection entry with no roster slot, and
+three things break at once:
+
+1. `selected_character_ids` (built from `player->selectedCharacters`) and the
+   per-character `selected` flags contradict each other, which fails
+   `TelemetrySnapshot`'s own validator — telemetry stops being readable at all.
+2. Kenshi's squad portraits desynchronize: the portrait list maps index onto the
+   selection set, so clicking one character's portrait focuses a different
+   character. Recovering required clicking the character's model, not the
+   portrait.
+3. It is exactly the `selection_size_differs` condition the native command
+   validator refuses on, which would make every subsequent order unauthorizable.
+
+**Invariant: `player->selectedCharacters` must remain a subset of the active
+roster.** Release deselects; seize reselects. `RootObject::unselect()` and
+`PlayerInterface::_selectPlayerCharacter` are the two halves.
+
+This is the fourth instance today of two authorities disagreeing about "the
+selection" — after the affordance gate, the boundary observation, and
+`selection_mismatch`. The pattern is worth naming as a standing hazard rather
+than a series of coincidences.
+
 ## The remaining hard part
 
 **Faction consequence.** Recruiting pulls a character out of their faction.

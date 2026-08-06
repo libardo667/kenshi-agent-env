@@ -255,6 +255,9 @@ namespace
         g_nativeAcknowledgements[MAX_NATIVE_ACKNOWLEDGEMENTS];
     unsigned int g_nativeAcknowledgementCount = 0;
     ActiveNativeCommand g_activeNativeCommand;
+    // Body-shift probe only: the last body released out of the active
+    // roster, so it can be seized back without searching a roster it left.
+    hand g_shiftProbeReleased;
     KenshiAgentTelemetry::RuntimeContextMenuTargetOwnership
         g_runtimeContextMenuTarget;
     std::wstring g_outputDirectory;
@@ -3307,7 +3310,9 @@ namespace
             request.command == "open_context_inventory";
         const bool isResourceSurvey =
             request.command == "survey_local_resources";
-        if (isApproach || isMove || isSquadSelection || isSquadRegroup ||
+        const bool isBodyShiftProbe =
+            request.command == "shift_body_platoon";
+        if (isBodyShiftProbe || isApproach || isMove || isSquadSelection || isSquadRegroup ||
             isDirection || isMapTravel || isBuildingExit || isContextAction ||
             isResourceProduction || isContextInventory || isResourceSurvey)
             g_lastNativeCommand = request.command;
@@ -3321,7 +3326,8 @@ namespace
             !isContextAction &&
             !isResourceProduction &&
             !isContextInventory &&
-            !isResourceSurvey)
+            !isResourceSurvey &&
+            !isBodyShiftProbe)
         {
             // The telemetry acknowledgement schema is intentionally limited
             // to reviewed commands. Do not publish an unparseable ack.
@@ -3356,6 +3362,91 @@ namespace
                 return;
             }
             RejectNativeCommand(request, "stale_revision");
+            return;
+        }
+
+        if (isBodyShiftProbe)
+        {
+            // Diagnostic probe for docs/KENSHI_BODY_SHIFT_PLAN.md. Kenshi moves
+            // a dead player character out of the active roster by rewriting its
+            // (faction, platoon) coordinate - same faction, the dead squad - so
+            // the corpse stays inspectable while leaving the squad. This asks
+            // whether that same rewrite works on someone still using their body.
+            //
+            // Deliberately the smallest possible question: one player character,
+            // both platoons inside the player faction, so nothing about faction
+            // relations moves and the platoon coordinate is the only variable.
+            // Issuing it twice for the same character is a round trip.
+            //
+            // The released handle is remembered rather than searched for,
+            // because getAllPlayerCharacters() is the active roster - a
+            // released body leaves it, which is the whole point and also why it
+            // cannot be found again by the usual lookup.
+            Faction* playerFaction = player->getFaction();
+            RootObjectContainer* activeSquad =
+                player->getCurrentActivePlatoon();
+            ActivePlatoon* deadSquad = player->getDeadSquad();
+            if (playerFaction == NULL || activeSquad == NULL || deadSquad == NULL)
+            {
+                RejectNativeCommand(request, "shift_platoons_unavailable");
+                return;
+            }
+
+            Character* released = g_shiftProbeReleased.getCharacter();
+            if (released != NULL &&
+                released->isValid() &&
+                StableEntityId(released) == request.targetId)
+            {
+                released->setFaction(
+                    playerFaction,
+                    static_cast<ActivePlatoon*>(activeSquad));
+                // Rejoin the selection as well as the roster. Selection and
+                // roster are separate in Kenshi and control follows selection,
+                // but the squad UI maps portrait index onto the selection set,
+                // so leaving them out of step desynchronizes the portraits.
+                player->_selectPlayerCharacter(released, false, false);
+                g_shiftProbeReleased = hand();
+                AddNativeAcknowledgement(
+                    request,
+                    "completed",
+                    "shift_seized_into_active_squad",
+                    true,
+                    true);
+                g_lastNativeCommandResult = "shift_seized_into_active_squad";
+                return;
+            }
+
+            bool exactIdentityFound = false;
+            Character* subject = FindExactSquadMember(
+                player,
+                request.targetId,
+                exactIdentityFound);
+            if (subject == NULL || !subject->isValid())
+            {
+                RejectNativeCommand(request, "shift_subject_absent");
+                return;
+            }
+            g_shiftProbeReleased = subject->getHandle();
+            // Deselect before releasing. A body that leaves the roster while
+            // still in player->selectedCharacters is a selection entry with no
+            // roster slot: proven live to leave `selected_character_ids` and
+            // the per-character `selected` flags contradicting each other -
+            // which fails the telemetry snapshot's own validator - and to
+            // desynchronize Kenshi's squad portraits, so clicking one
+            // character's portrait focuses a different character.
+            //
+            // It is also the exact `selection_size_differs` condition the
+            // command validator refuses on, which would have made every
+            // subsequent order unauthorizable.
+            subject->unselect();
+            subject->setFaction(playerFaction, deadSquad);
+            AddNativeAcknowledgement(
+                request,
+                "completed",
+                "shift_released_from_active_squad",
+                true,
+                true);
+            g_lastNativeCommandResult = "shift_released_from_active_squad";
             return;
         }
 

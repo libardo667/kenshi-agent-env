@@ -96,3 +96,39 @@ def test_catalog_renders_the_contract_execution_and_native_routes() -> None:
     assert "EXECUTION AND ROUTING" in body
     assert "NATIVE COMMAND ROUTES" in body
     assert "coverage proof          PASS" in body
+
+
+def test_diagnostic_only_routes_are_exactly_the_reviewed_set() -> None:
+    """An unowned wire command is a hole in the catalog, so name every one.
+
+    `shift_body_platoon` is the body-shift probe: the plug-in answers it, but no
+    affordance offers it and no operation issues it, so the "every route has an
+    owning operation" check would otherwise force a real operation into
+    existence purely to satisfy a catalog. Pinning the set keeps that escape
+    hatch one entry wide.
+    """
+
+    from kenshi_agent.tooling.interaction_catalog import (
+        DIAGNOSTIC_ONLY_NATIVE_COMMANDS,
+        all_native_command_names,
+    )
+
+    assert DIAGNOSTIC_ONLY_NATIVE_COMMANDS == {"shift_body_platoon"}
+    assert DIAGNOSTIC_ONLY_NATIVE_COMMANDS <= set(all_native_command_names())
+
+
+def test_no_operation_can_issue_a_diagnostic_only_route() -> None:
+    """The exemption is only honest while nothing agent-reachable uses it."""
+
+    from kenshi_agent.operation_definitions import (
+        OPERATION_DEFINITION_LIST,
+        native_wire_command_for,
+    )
+    from kenshi_agent.tooling.interaction_catalog import (
+        DIAGNOSTIC_ONLY_NATIVE_COMMANDS,
+    )
+
+    issued = {
+        native_wire_command_for(definition) for definition in OPERATION_DEFINITION_LIST
+    }
+    assert not (issued & DIAGNOSTIC_ONLY_NATIVE_COMMANDS)
