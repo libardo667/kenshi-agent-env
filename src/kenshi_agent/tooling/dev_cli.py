@@ -249,7 +249,7 @@ def build_parser(
     _add_display_option(run)
     run.set_defaults(resume_launcher=False, preflight_only=False)
 
-    tui = commands.add_parser(
+    commands.add_parser(
         "tui",
         parents=[common],
         help="Launch an interactive terminal UI for composing a run configuration.",

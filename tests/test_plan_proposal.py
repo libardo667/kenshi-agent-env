@@ -9,7 +9,6 @@ from kenshi_agent.config import PlanningConfig
 from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.operation import (
     ControlMode,
-    PlanningMode,
 )
 from kenshi_agent.core.telemetry import (
     CharacterState,
@@ -54,7 +53,6 @@ def _observation(
         step_index=4,
         mode="live",
         control_mode=ControlMode.NATIVE_ASSISTED,
-        planning_mode=PlanningMode.CONTINUOUS,
         world_revision=WorldStateRevision(
             telemetry_sequence=41,
             frame_sequence=7,

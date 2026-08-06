@@ -29,7 +29,7 @@ from .operation import (
     IdempotencyPolicy,
     InterruptPolicy,
     ObservationPolicy,
-    SingleStepRuntimeAction,
+    UnmonitoredRuntimeAction,
 )
 from .telemetry import TelemetrySnapshot
 from .world import WorldStateRevision
@@ -821,7 +821,7 @@ class ActivePlanContext(StrictModel):
 class PlannerDecision(StrictModel):
     intent: str = Field(min_length=1, max_length=1000)
     rationale: str = Field(min_length=1, max_length=1500)
-    action: SingleStepRuntimeAction
+    action: UnmonitoredRuntimeAction
     # Present for hosted play. Deterministic safety/reflex decisions remain
     # runtime-internal and therefore do not pretend to have been offered.
     affordance: BoundAffordance | None = None

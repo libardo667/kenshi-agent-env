@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Low-impact terminal UI for launching a ``./dev run`` session.
 
 The UI keeps one place for run-level configuration that is usually assembled from
@@ -7,27 +5,34 @@ many separate CLI flags and keeps launch behavior unchanged by delegating to the
 existing ``./dev`` run path.
 """
 
+from __future__ import annotations
+
 import argparse
 import os
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
-if TYPE_CHECKING:
-    import curses
-
-try:
-    import curses
-except ModuleNotFoundError:  # pragma: no cover - optional dependency for tui path only
-    curses: Any = None
-
+from ..config import AppConfig
 from .authored_starts import load_authored_starts_bundle
 from .dev_cli import LIVE_CONFIG
 from .scenario_fixtures import load_scenario_fixture
 
+if TYPE_CHECKING:
+    import curses
 
-TuiWindow = "curses._CursesWindow"
+    # The window type only has to be real for the checker; at runtime curses
+    # may not be importable at all, and this module is still importable so the
+    # dev CLI can report that rather than fail to load.
+    TuiWindow: TypeAlias = curses.window
+else:
+    TuiWindow = Any
+
+    try:
+        import curses
+    except ModuleNotFoundError:  # pragma: no cover - the tui path alone needs it
+        curses = None
 
 
 @dataclass
@@ -121,7 +126,7 @@ def _display_path(path: Path, root: Path) -> str:
         return str(path)
 
 
-def _build_choices(config, root: Path) -> _TuiChoices:
+def _build_choices(config: AppConfig, root: Path) -> _TuiChoices:
     prompt_files = set(_prompt_candidates(root))
     prompt_files.add(str(config.paths.prompt_file))
     advisor_files = set(_advisor_candidates(root))
@@ -292,7 +297,7 @@ def _normalize_choices(state: _TuiState, choices: _TuiChoices) -> _TuiState:
 def run_from_dev_args(
     args: argparse.Namespace,
     *,
-    config_loader: Callable[[Path], object],
+    config_loader: Callable[[Path], AppConfig],
     run_command: Callable[[argparse.Namespace], int],
 ) -> int:
     if curses is None:

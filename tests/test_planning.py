@@ -22,7 +22,6 @@ from kenshi_agent.core.operation import (
     IdempotencyPolicy,
     InterruptPolicy,
     PauseAction,
-    PlanningMode,
     PurchaseItemAction,
     SetSpeedAction,
     StopAction,
@@ -52,7 +51,7 @@ from kenshi_agent.core.telemetry import (
 )
 from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.planners import HeuristicPlanner, ScriptedPlanner
-from kenshi_agent.planners.plan_proposal import DecisionProposal, PlanProposal
+from kenshi_agent.planners.plan_proposal import PlanProposal
 from kenshi_agent.planning import (
     PlanBudgetLedger,
     PlanValidationError,
@@ -1872,11 +1871,8 @@ def test_plan_budget_reservations_release_or_commit_transactionally() -> None:
     assert ledger.committed_actions == 1
 
 
-@pytest.mark.parametrize("model", [DecisionProposal, PlanProposal])
-def test_hosted_affordance_contract_is_an_openai_compatible_strict_schema(
-    model: type[DecisionProposal] | type[PlanProposal],
-) -> None:
-    schema = to_strict_json_schema(model)
+def test_hosted_affordance_contract_is_an_openai_compatible_strict_schema() -> None:
+    schema = to_strict_json_schema(PlanProposal)
 
     def assert_supported_nodes(value: object) -> None:
         if isinstance(value, dict):
@@ -1897,7 +1893,7 @@ def test_hosted_affordance_contract_is_an_openai_compatible_strict_schema(
 
 
 def test_builtin_heuristic_emits_a_two_step_continuous_plan() -> None:
-    current = observation().model_copy(update={"planning_mode": PlanningMode.CONTINUOUS})
+    current = observation()
 
     output = asyncio.run(HeuristicPlanner().decide(current))
 
@@ -1909,7 +1905,7 @@ def test_builtin_heuristic_emits_a_two_step_continuous_plan() -> None:
 def test_scripted_adapter_parses_continuous_plan(
     tmp_path: Path,
 ) -> None:
-    current = observation().model_copy(update={"planning_mode": PlanningMode.CONTINUOUS})
+    current = observation()
     plan = plan_for(current.world_revision)
     script_path = tmp_path / "plan.jsonl"
     script_path.write_text(plan.model_dump_json() + "\n", encoding="utf-8")

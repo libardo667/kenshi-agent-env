@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 
 import pytest
-from operation_test_support import operation_port
+from operation_test_support import one_step_plan, operation_port
 
 from kenshi_agent.config import SafetyConfig
 from kenshi_agent.core.evidence import (
@@ -21,7 +21,7 @@ from kenshi_agent.core.operation import (
     SelectSquadMemberExactAction,
     StopAction,
 )
-from kenshi_agent.core.planning import PlannerDecision
+from kenshi_agent.core.planning import PlanEnvelope, PlannerDecision
 from kenshi_agent.core.telemetry import (
     GameState,
     TelemetrySnapshot,
@@ -517,8 +517,10 @@ def test_a_recorded_outcome_remembers_the_game_session_it_happened_in(
                 telemetry=TelemetrySnapshot(
                     sequence=3,
                     identity_session_id=session,
-                    game=GameState(loaded=True, paused=True),
+                    capabilities=["game.pause", "game.time"],
+                    game=GameState(loaded=True, paused=True, elapsed_minutes=0.0),
                 ),
+                telemetry_age_seconds=0.0,
             )
 
         async def reset(self, *, seed: int | None = None) -> Observation:
@@ -549,13 +551,12 @@ def test_a_recorded_outcome_remembers_the_game_session_it_happened_in(
             )
 
     class PausePlanner(Planner):
-        async def decide(self, observation: Observation) -> PlannerDecision:
-            del observation
-            return PlannerDecision(
-                intent="Pause.",
-                rationale="Exercise one recorded outcome.",
-                action=PauseAction(paused=True),
-                confidence=1.0,
+        async def decide(self, observation: Observation) -> PlanEnvelope:
+            return one_step_plan(
+                PauseAction(paused=True),
+                observation,
+                objective="Exercise one recorded outcome.",
+                plan_id="pause-plan",
             )
 
     async def scenario() -> None:

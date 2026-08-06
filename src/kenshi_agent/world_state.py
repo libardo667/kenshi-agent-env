@@ -394,7 +394,6 @@ class WorldStateStore:
                 "Planner context must decorate the current world-state revision."
             )
         contextual_fields = (
-            "planning_mode",
             "objective",
             "recent_action_outcomes",
             "recent_plan_outcomes",
@@ -440,7 +439,6 @@ class WorldStateStore:
                 update={
                     field_name: getattr(previous, field_name)
                     for field_name in (
-                        "planning_mode",
                         "objective",
                         "recent_action_outcomes",
                         "memories",

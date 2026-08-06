@@ -15,7 +15,6 @@ from kenshi_agent.core.continuity import (
     MemoryStatus,
 )
 from kenshi_agent.core.observation import Observation
-from kenshi_agent.core.operation import PlanningMode
 from kenshi_agent.core.planner_context import PlannerContextManifest
 from kenshi_agent.core.telemetry import (
     CharacterState,
@@ -33,7 +32,6 @@ def _observation() -> Observation:
         run_id="manifest-run",
         step_index=0,
         mode="live",
-        planning_mode=PlanningMode.SINGLE_STEP,
         world_revision=WorldStateRevision(
             telemetry_sequence=17,
             frame_sequence=19,

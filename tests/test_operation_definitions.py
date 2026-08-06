@@ -23,7 +23,6 @@ from kenshi_agent.core.operation import (
     MoveToCharacterAction,
     OpenContextInventoryAction,
     PerformContextAction,
-    PlanningMode,
     PointerActionClass,
     ProduceResourceOutputAction,
     PurchaseItemAction,
@@ -1519,7 +1518,7 @@ class TestAffordancesAreAdvertised:
                 selected_character_ids=["entity-bark"],
             ),
             game=GameState(loaded=True, paused=True, speed_multiplier=1.0),
-        ).model_copy(update={"planning_mode": PlanningMode.CONTINUOUS})
+        )
 
         assert "respond_to_immediate_threat" in {
             offer.operation_kind for offer in offered_affordances(threatened)
@@ -1583,7 +1582,7 @@ class TestAffordancesAreAdvertised:
             capabilities=capabilities,
             squad=[selected],
             world_targets=[target],
-        ).model_copy(update={"planning_mode": PlanningMode.CONTINUOUS})
+        )
         inventory = observation(
             ui=UIState(
                 active_screen="inventory",
@@ -1596,7 +1595,7 @@ class TestAffordancesAreAdvertised:
             capabilities=capabilities,
             squad=[selected],
             world_targets=[target],
-        ).model_copy(update={"planning_mode": PlanningMode.CONTINUOUS})
+        )
 
         world_kinds = {offer.operation_kind for offer in offered_affordances(world)}
         inventory_kinds = {

@@ -288,3 +288,72 @@ def plan_executor(
         planning_config=planning_config,
         event=events,
     )
+
+
+def one_step_plan(
+    action: Any,
+    observation: Observation,
+    *,
+    objective: str,
+    plan_id: str = "test-plan",
+    continuity_operations: Any = None,
+    fieldbook_operations: Any = None,
+) -> Any:
+    """Wrap one action in the smallest plan the continuous scheduler accepts.
+
+    There is one schedule, so a planner that wants a single action still says
+    it as a plan. Tests that are about something other than scheduling use this
+    rather than restating the envelope's ceilings each time.
+    """
+
+    from kenshi_agent.core.planning import (
+        Condition,
+        ConditionKind,
+        ConditionOperator,
+        PlanEnvelope,
+        PlanStep,
+        RiskBudget,
+    )
+
+    return PlanEnvelope(
+        schema_version="1.0",
+        plan_id=plan_id,
+        objective=objective,
+        control_mode=observation.control_mode,
+        based_on_revision=observation.world_revision,
+        assumptions=[
+            Condition(
+                kind=ConditionKind.TELEMETRY_FRESH,
+                operator=ConditionOperator.EQUALS,
+                expected=True,
+                max_age_seconds=3.0,
+            )
+        ],
+        steps=[
+            PlanStep(
+                step_id="only",
+                action=action,
+                preconditions=[
+                    Condition(
+                        kind=ConditionKind.TELEMETRY_FRESH,
+                        operator=ConditionOperator.EQUALS,
+                        expected=True,
+                        max_age_seconds=3.0,
+                    )
+                ],
+                success_conditions=[],
+                timeout_seconds=10.0,
+            )
+        ],
+        entry_step_id="only",
+        max_actions=1,
+        max_wall_seconds=8.0,
+        max_game_seconds=10.0,
+        risk_budget=RiskBudget(
+            max_pointer_actions=0,
+            max_purchase_actions=0,
+            max_native_assisted_actions=0,
+        ),
+        continuity_operations=list(continuity_operations or []),
+        fieldbook_operations=list(fieldbook_operations or []),
+    )

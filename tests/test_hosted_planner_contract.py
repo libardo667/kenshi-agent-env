@@ -26,12 +26,10 @@ from kenshi_agent.core.continuity import (
 from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.operation import (
     ControlMode,
-    PlanningMode,
 )
 from kenshi_agent.core.planning import (
     ActivePlanContext,
     PlanEnvelope,
-    PlannerDecision,
     PlanPatch,
 )
 from kenshi_agent.core.telemetry import (
@@ -64,7 +62,6 @@ from kenshi_agent.planners.openai_planner import OpenAIPlanner
 from kenshi_agent.planners.openrouter_planner import OpenRouterPlanner
 from kenshi_agent.planners.plan_proposal import (
     ContinuityProposal,
-    DecisionProposal,
     PlanProposal,
     ProposedPlanStep,
 )
@@ -73,7 +70,6 @@ from kenshi_agent.planners.schema_dialect import projected_response_format
 
 def observation(
     *,
-    planning_mode: PlanningMode = PlanningMode.CONTINUOUS,
     screen: str = "world",
     active_plan: ActivePlanContext | None = None,
 ) -> Observation:
@@ -81,7 +77,6 @@ def observation(
         run_id="hosted-contract",
         step_index=0,
         mode="live",
-        planning_mode=planning_mode,
         telemetry=TelemetrySnapshot(ui=UIState(active_screen=screen)),
         active_plan=active_plan,
     )
@@ -97,12 +92,10 @@ def _proposal_step(semantic: str = "stop_run") -> ProposedPlanStep:
     return ProposedPlanStep(selection=_selection(semantic))
 
 
-def _decision_proposal(semantic: str = "stop_run") -> DecisionProposal:
-    return DecisionProposal(
-        intent="Choose one exact current affordance.",
-        rationale="The fake hosted response is complete.",
-        selection=_selection(semantic),
-        confidence=1.0,
+def _decision_proposal(semantic: str = "stop_run") -> PlanProposal:
+    return PlanProposal(
+        objective="Choose one exact current affordance.",
+        steps=[ProposedPlanStep(selection=_selection(semantic))],
     )
 
 
@@ -457,10 +450,6 @@ def test_context_envelope_rejects_zero_room_after_static_reservations() -> None:
 
 
 def test_hosted_output_model_switches_to_future_only_patch_for_active_plan() -> None:
-    assert (
-        hosted_proposal_model(observation(planning_mode=PlanningMode.SINGLE_STEP))
-        is DecisionProposal
-    )
     assert hosted_proposal_model(observation()) is PlanProposal
     assert (
         hosted_proposal_model(
@@ -487,15 +476,8 @@ def test_output_token_budget_tracks_structured_response_complexity() -> None:
 
     config = PlannerConfig()
 
-    # One decision needs only the base budget.
-    assert (
-        output_token_budget(
-            config,
-            observation(planning_mode=PlanningMode.SINGLE_STEP),
-            max_plan_steps=4,
-        )
-        == 4096
-    )
+    # Every hosted turn is one choice, so every turn gets the one-choice budget.
+    assert output_token_budget(config, observation(), max_plan_steps=4) == 6144
 
     # Screen and legacy runtime plan ceilings do not enlarge the hosted schema.
     for screen in ("trade", "dialogue", "world"):
@@ -559,13 +541,13 @@ def test_openai_request_receives_the_computed_output_token_limit() -> None:
     planner.client = SimpleNamespace(responses=responses)
     planner.max_plan_steps = 4
 
-    oversized = observation(planning_mode=PlanningMode.SINGLE_STEP).model_copy(
+    oversized = observation().model_copy(
         update={"events": ["nested Unicode 食料 " + "x" * 500 for _ in range(20)]}
     )
     result = asyncio.run(planner.decide(oversized))
 
-    assert isinstance(result, PlannerDecision)
-    assert responses.kwargs["max_output_tokens"] == 4096
+    assert isinstance(result, PlanEnvelope)
+    assert responses.kwargs["max_output_tokens"] == 6144
     assert responses.kwargs["reasoning"] == {"effort": "low"}
     input_text = responses.kwargs["input"][0]["content"][0]["text"]
     planner_payload = input_text.split("\n\n", maxsplit=1)[1]
@@ -642,12 +624,12 @@ def test_openrouter_request_receives_the_same_valid_budgeted_json() -> None:
         chat=SimpleNamespace(completions=completions),
     )
 
-    oversized = observation(planning_mode=PlanningMode.SINGLE_STEP).model_copy(
+    oversized = observation().model_copy(
         update={"events": ["nested Unicode 食料 " + "x" * 500 for _ in range(20)]}
     )
     result = asyncio.run(planner.decide(oversized))
 
-    assert isinstance(result, PlannerDecision)
+    assert isinstance(result, PlanEnvelope)
     input_text = completions.kwargs["messages"][1]["content"][0]["text"]
     planner_payload = input_text.split("\n\n", maxsplit=1)[1]
     parsed_payload = json.loads(planner_payload)
@@ -657,7 +639,7 @@ def test_openrouter_request_receives_the_same_valid_budgeted_json() -> None:
 
 
 def test_openrouter_request_carries_its_configured_generation_contract() -> None:
-    current = observation(planning_mode=PlanningMode.CONTINUOUS)
+    current = observation()
 
     class FakeCompletions:
         def __init__(self) -> None:
@@ -843,18 +825,29 @@ def test_openrouter_turns_malformed_plan_proposal_into_safe_reobservation() -> N
     assert "delimiter" in diagnostics.proposal_fallback_reason
 
 
-def test_openrouter_rejects_an_unadvertised_action_even_if_the_model_emits_it() -> None:
-    current = observation(planning_mode=PlanningMode.SINGLE_STEP)
+def test_openrouter_never_executes_an_unadvertised_action_the_model_emits() -> None:
+    """The model cannot smuggle an affordance the observation never offered.
+
+    Continuous play answers this by recovering rather than by dying: the
+    unusable proposal is replaced with an observe turn and the reason is
+    recorded, so the next turn gets fresh evidence instead of the session
+    ending. What must never happen is the absent affordance being executed.
+    """
+
+    current = observation()
 
     class IgnoresProjectedSchema:
         async def create(self, **kwargs: Any) -> SimpleNamespace:
             del kwargs
-            decision = DecisionProposal(
-                intent="Use an unavailable affordance.",
-                rationale="The provider ignored the current offer set.",
-                selection=_selection("observe").model_copy(
-                    update={"affordance_id": "aff-00000000000000000000"}
-                ),
+            decision = PlanProposal(
+                objective="Use an unavailable affordance.",
+                steps=[
+                    ProposedPlanStep(
+                        selection=_selection("observe").model_copy(
+                            update={"affordance_id": "aff-00000000000000000000"}
+                        )
+                    )
+                ],
             )
             return SimpleNamespace(
                 choices=[
@@ -869,27 +862,28 @@ def test_openrouter_rejects_an_unadvertised_action_even_if_the_model_emits_it() 
         chat=SimpleNamespace(completions=IgnoresProjectedSchema()),
     )
 
-    with pytest.raises(HostedPlannerResponseError) as captured:
-        asyncio.run(planner.decide(current))
+    result = asyncio.run(planner.decide(current))
 
-    # A well-formed plan naming an action the observation does not allow is a
-    # different failure from JSON that does not fit the model, and needs a
-    # different answer. They arrived as one category until
-    # live-hub-survival-pair-20260729-r1 died on three of them at step zero with
-    # nothing recorded about which had happened.
-    assert captured.value.category == "malformed_structured_output"
-    assert captured.value.detail
-    assert captured.value.response_excerpt
+    # The absent affordance reached no step, and the recovery says why.
+    assert isinstance(result, PlanEnvelope)
+    assert result.steps[0].action.reason == "Re-evaluate current evidence."
+    diagnostics = planner.take_call_diagnostics()
+    assert diagnostics is not None
+    assert diagnostics.proposal_fallback_reason is not None
+    assert "absent" in diagnostics.proposal_fallback_reason
 
 
 def test_openai_rejects_an_unadvertised_action_after_sdk_parsing() -> None:
-    current = observation(planning_mode=PlanningMode.SINGLE_STEP)
-    decision = DecisionProposal(
-        intent="Use an unavailable affordance.",
-        rationale="The schema cannot prove current offer membership.",
-        selection=_selection("observe").model_copy(
-            update={"affordance_id": "aff-00000000000000000000"}
-        ),
+    current = observation()
+    decision = PlanProposal(
+        objective="Use an unavailable affordance.",
+        steps=[
+            ProposedPlanStep(
+                selection=_selection("observe").model_copy(
+                    update={"affordance_id": "aff-00000000000000000000"}
+                )
+            )
+        ],
     )
 
     class ParsedUnavailableAction:
@@ -1149,7 +1143,7 @@ def test_hosted_manifests_name_only_memories_in_the_final_budgeted_json() -> Non
         )
         for index in range(8)
     ]
-    oversized = observation(planning_mode=PlanningMode.SINGLE_STEP).model_copy(
+    oversized = observation().model_copy(
         update={
             "events": ["nested Unicode 食料 " + "x" * 500 for _ in range(20)],
             "memories": memories,
@@ -1193,7 +1187,7 @@ def test_memory_text_cannot_smuggle_target_authority_into_a_budgeted_input() -> 
             )
         ],
     )
-    current = observation(planning_mode=PlanningMode.SINGLE_STEP).model_copy(
+    current = observation().model_copy(
         update={
             "world_revision": WorldStateRevision(telemetry_sequence=7),
             "telemetry": telemetry,
@@ -1223,7 +1217,7 @@ def test_memory_text_cannot_smuggle_target_authority_into_a_budgeted_input() -> 
 
 
 def test_manifest_names_only_continuity_receipts_in_the_final_payload() -> None:
-    current = observation(planning_mode=PlanningMode.SINGLE_STEP)
+    current = observation()
     receipts = [
         ContinuityReceiptDigest(
             receipt_id=f"cor-{index:032x}",
@@ -1325,7 +1319,7 @@ def test_every_code_derived_static_prompt_surface_stays_inside_the_budget() -> N
 
     root = Path(__file__).resolve().parents[1]
     instructions = (root / "prompts" / "planner_system.md").read_text(encoding="utf-8")
-    for model in (DecisionProposal, PlanProposal):
+    for model in (PlanProposal,):
         schema = projected_response_format(model)["json_schema"]["schema"]
         validate_planner_prompt_budget(
             system_characters=len(instructions),
@@ -1343,7 +1337,7 @@ def test_the_planner_schema_avoids_keywords_providers_reject() -> None:
     """
     from kenshi_agent.planners.schema_dialect import portable_response_format
 
-    for model in (DecisionProposal, PlanProposal):
+    for model in (PlanProposal,):
         schema = portable_response_format(model)["json_schema"]["schema"]
         blob = json.dumps(schema)
         for rejected in ("const", "minimum", "maximum", "pattern", "multipleOf"):
@@ -1369,7 +1363,6 @@ def test_the_planner_schema_avoids_keywords_providers_reject() -> None:
 
 def test_hosted_schemas_contain_only_affordance_choice_not_operation_unions() -> None:
     proposal_schema = projected_response_format(PlanProposal)["json_schema"]["schema"]
-    decision_schema = projected_response_format(DecisionProposal)["json_schema"]["schema"]
 
     assert set(proposal_schema["properties"]) == {
         "objective",
@@ -1378,8 +1371,7 @@ def test_hosted_schemas_contain_only_affordance_choice_not_operation_unions() ->
         "fieldbook_operations",
     }
     assert set(proposal_schema["$defs"]["ProposedPlanStep"]["properties"]) == {"selection"}
-    assert "selection" in decision_schema["properties"]
-    blob = json.dumps({"plan": proposal_schema, "decision": decision_schema})
+    blob = json.dumps({"plan": proposal_schema})
     for superseded in (
         "PurchaseItemAction",
         "ActivateVisibleControlAction",
@@ -1499,8 +1491,8 @@ def test_a_provider_that_will_not_compile_the_schema_is_asked_in_the_prompt() ->
     planner.instructions = "Return the requested schema."
     planner.client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
 
-    single_step = observation(planning_mode=PlanningMode.SINGLE_STEP)
-    assert isinstance(asyncio.run(planner.decide(single_step)), PlannerDecision)
+    current_observation = observation()
+    assert isinstance(asyncio.run(planner.decide(current_observation)), PlanEnvelope)
 
     # Constrained first, then the same ask with the schema in the prompt.
     assert len(completions.calls) == 2
@@ -1513,13 +1505,13 @@ def test_a_provider_that_will_not_compile_the_schema_is_asked_in_the_prompt() ->
     }
 
     # The lesson sticks: the second decision does not retry the refused form.
-    assert isinstance(asyncio.run(planner.decide(single_step)), PlannerDecision)
+    assert isinstance(asyncio.run(planner.decide(current_observation)), PlanEnvelope)
     assert len(completions.calls) == 3
     assert "response_format" not in completions.calls[2]
 
     # Offer changes do not change the one selection schema, so the learned
     # provider fallback applies without another refused request.
-    expanded = single_step.model_copy(
+    expanded = current_observation.model_copy(
         update={
             "telemetry": TelemetrySnapshot(
                 ui=UIState(active_screen="world"),
@@ -1527,7 +1519,7 @@ def test_a_provider_that_will_not_compile_the_schema_is_asked_in_the_prompt() ->
             )
         }
     )
-    assert isinstance(asyncio.run(planner.decide(expanded)), PlannerDecision)
+    assert isinstance(asyncio.run(planner.decide(expanded)), PlanEnvelope)
     assert len(completions.calls) == 4
     assert "response_format" not in completions.calls[3]
 

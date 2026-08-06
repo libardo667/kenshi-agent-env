@@ -136,7 +136,6 @@ class PlannerContextAssembler:
 
         authority = self._continuity.authority
         updates: dict[str, object] = {
-            "planning_mode": self._planning_config.mode,
             "recent_action_outcomes": self._ledger.recent_action_outcomes,
             "recent_plan_outcomes": self._ledger.recent_plan_outcomes,
             "recent_continuity_receipts": self._continuity.recent_receipts,

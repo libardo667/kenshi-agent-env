@@ -9,7 +9,6 @@ from kenshi_agent.core.operation import (
     HarvestResourceAction,
     MoveToCharacterAction,
     PauseAction,
-    PlanningMode,
     StopAction,
 )
 from kenshi_agent.core.planning import (
@@ -186,7 +185,6 @@ def test_single_step_refuses_the_continuous_harvest_option() -> None:
 def test_active_native_smoke_preserves_only_its_future_pause_handoff() -> None:
     state = observation(indoors=False).model_copy(
         update={
-            "planning_mode": PlanningMode.CONTINUOUS,
             "active_plan": ActivePlanContext(
                 plan_id="live-harvest-resource-smoke",
                 plan_version=1,

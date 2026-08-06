@@ -26,7 +26,6 @@ from kenshi_agent.core.operation import (
     ControlMode,
     GameBinding,
     GameScreen,
-    PlanningMode,
     UseGameBindingAction,
 )
 from kenshi_agent.core.telemetry import (
@@ -92,7 +91,6 @@ def _observation(
         step_index=1,
         mode="live",
         control_mode=ControlMode.NATIVE_ASSISTED,
-        planning_mode=PlanningMode.CONTINUOUS,
         world_revision=WorldStateRevision(telemetry_sequence=41, capability_epoch=2),
         telemetry=TelemetrySnapshot(
             sequence=41,

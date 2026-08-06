@@ -2848,9 +2848,8 @@ def _run_args(*extra: str) -> object:
     )
 
 
-def test_run_defaults_to_plan_only_and_leaves_planning_mode_to_the_config() -> None:
+def test_run_defaults_to_plan_only_until_execution_is_asked_for() -> None:
     argv = _agent_argv(_run_args(), "run-1")
-    assert "--planning-mode" not in argv
     assert "--acknowledge-continuous-live" not in argv
     assert "--execute-live-actions" not in argv
 
@@ -2882,7 +2881,9 @@ def test_run_passes_prompt_and_advisor_overrides() -> None:
     )
 
 
-def test_run_does_not_offer_a_second_planning_mode_authority() -> None:
+def test_dev_run_does_not_invent_a_scheduling_flag() -> None:
+    """There is one schedule. `./dev` must not imply it can be chosen."""
+
     with pytest.raises(SystemExit):
         _run_args("--continuous")
 

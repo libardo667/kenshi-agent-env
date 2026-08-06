@@ -25,7 +25,6 @@ from kenshi_agent.core.operation import (
     ControlMode,
     IdempotencyPolicy,
     MouseButton,
-    PlanningMode,
     SellItemAction,
 )
 from kenshi_agent.core.planning import (
@@ -532,7 +531,6 @@ def test_continuous_executor_completes_only_the_full_sale_terminal(
             state_store=store,
             observe_transition=observe_transition,
             planning_config=PlanningConfig(
-                mode=PlanningMode.CONTINUOUS,
                 max_purchase_actions_per_plan=3,
             ),
         )

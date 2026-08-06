@@ -91,6 +91,7 @@ class PulseTelemetry:
         self.native_control = NativeControlState()
         self.path = Path("telemetry.json")
         self.max_age_seconds = 3.0
+        self.elapsed_minutes = 0.0
 
     def read(self) -> TelemetryRead:
         self.sequence += 1
@@ -109,6 +110,7 @@ class PulseTelemetry:
                     loaded=True,
                     paused=self.paused,
                     speed_multiplier=self.speed_multiplier,
+                    elapsed_minutes=self.elapsed_minutes,
                 ),
                 native_control=self.native_control,
             ),

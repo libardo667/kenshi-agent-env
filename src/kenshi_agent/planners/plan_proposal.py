@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
-from pydantic import Field, TypeAdapter
+from pydantic import Field
 
 from ..affordances import (
     AffordanceSelection,
@@ -51,12 +51,10 @@ from ..core.evidence import (
 from ..core.observation import Observation
 from ..core.operation import (
     PurchaseItemAction,
-    SingleStepRuntimeAction,
 )
 from ..core.planning import (
     Condition,
     PlanEnvelope,
-    PlannerDecision,
     PlanPatch,
     PlanStep,
     RiskBudget,
@@ -120,24 +118,6 @@ class PlanProposal(StrictModel):
     )
 
 
-class DecisionProposal(StrictModel):
-    """One hosted-model choice using the same current affordance contract."""
-
-    intent: str = Field(min_length=1, max_length=1000)
-    rationale: str = Field(min_length=1, max_length=1500)
-    selection: AffordanceSelection
-    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
-    expected_observation: str | None = Field(default=None, max_length=1000)
-    continuity_operations: list[ContinuityProposal] = Field(
-        default_factory=list,
-        max_length=6,
-    )
-    fieldbook_operations: list[FieldbookProposal] = Field(
-        default_factory=list,
-        max_length=4,
-    )
-
-
 @dataclass(frozen=True, slots=True)
 class RejectedProposalSidecar:
     surface: Literal["continuity_operations", "fieldbook_operations"]
@@ -160,12 +140,6 @@ class CompiledPlanPatchProposal:
 @dataclass(frozen=True, slots=True)
 class CompiledHostedPlanProposal:
     output: PlanEnvelope | PlanPatch
-    rejected_sidecars: tuple[RejectedProposalSidecar, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
-class CompiledDecisionProposal:
-    decision: PlannerDecision
     rejected_sidecars: tuple[RejectedProposalSidecar, ...] = ()
 
 
@@ -518,41 +492,6 @@ def compile_plan_proposal(
     )
     return CompiledPlanProposal(
         plan=plan,
-        rejected_sidecars=tuple([*continuity_rejected, *fieldbook_rejected]),
-    )
-
-
-def compile_decision_proposal(
-    document: object,
-    *,
-    observation: Observation,
-) -> CompiledDecisionProposal:
-    """Compile one hosted single-step selection into a runtime decision."""
-
-    if not isinstance(document, Mapping):
-        raise ValueError("DecisionProposal must be one JSON object")
-    proposal = DecisionProposal.model_validate(document)
-    bound = bind_affordance(proposal.selection, observation)
-    action: SingleStepRuntimeAction = TypeAdapter(
-        SingleStepRuntimeAction
-    ).validate_python(bound.operation)
-    continuity, continuity_rejected = _compile_continuity_sidecars(
-        document.get("continuity_operations")
-    )
-    fieldbook, fieldbook_rejected = _compile_fieldbook_sidecars(
-        document.get("fieldbook_operations")
-    )
-    return CompiledDecisionProposal(
-        decision=PlannerDecision(
-            intent=proposal.intent,
-            rationale=proposal.rationale,
-            action=action,
-            affordance=bound_affordance(bound),
-            confidence=proposal.confidence,
-            expected_observation=proposal.expected_observation,
-            continuity_operations=continuity,
-            fieldbook_operations=fieldbook,
-        ),
         rejected_sidecars=tuple([*continuity_rejected, *fieldbook_rejected]),
     )
 

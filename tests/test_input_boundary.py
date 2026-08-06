@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from operation_test_support import execute_operation
+from operation_test_support import execute_operation, one_step_plan
 from test_live_env import (
     PulseController,
     PulseTelemetry,
@@ -45,7 +45,7 @@ from kenshi_agent.core.planning import (
     ConditionOperator,
     ConditionPath,
     ConditionResult,
-    PlannerDecision,
+    PlanEnvelope,
 )
 from kenshi_agent.core.telemetry import CharacterState
 from kenshi_agent.core.transport import (
@@ -686,7 +686,7 @@ def test_action_authority_change_at_boundary_blocks_input() -> None:
     assert "exact target disappeared" in boundary.reason
 
 
-def test_single_step_live_dispatch_carries_boundary_authority(
+def test_live_dispatch_carries_boundary_authority(
     tmp_path: Path,
 ) -> None:
     class OverageOnceTelemetry(PulseTelemetry):
@@ -696,7 +696,6 @@ def test_single_step_live_dispatch_carries_boundary_authority(
             result = super().read()
             if not self.overage_once:
                 return result
-            self.overage_once = False
             return replace(
                 result,
                 age_seconds=self.max_age_seconds + 0.001,
@@ -704,18 +703,17 @@ def test_single_step_live_dispatch_carries_boundary_authority(
             )
 
     class OneMovePlanner(Planner):
-        async def decide(self, current: Observation) -> PlannerDecision:
-            del current
-            return PlannerDecision(
-                intent="Move once.",
-                rationale="Exercise single-step boundary authority.",
-                action=boundary_action(),
-                confidence=1.0,
+        async def decide(self, current: Observation) -> PlanEnvelope:
+            return one_step_plan(
+                boundary_action(),
+                current,
+                objective="Exercise live boundary authority with one action.",
+                plan_id="boundary-plan",
             )
 
     async def scenario() -> None:
         telemetry = OverageOnceTelemetry()
-        telemetry.capabilities = ["game.pause"]
+        telemetry.capabilities = ["game.pause", "game.time"]
         controller = BlockingLeaseController(telemetry)
         live = environment(tmp_path, telemetry, controller)
         logger = SessionLogger(tmp_path / "single-step-boundary.jsonl", "boundary-test")

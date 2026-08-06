@@ -16,7 +16,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from operation_test_support import operation_port
+from operation_test_support import one_step_plan, operation_port
 
 from kenshi_agent.campaign import CampaignScope, CampaignScopeOrigin
 from kenshi_agent.continuity import (
@@ -2345,11 +2345,10 @@ def test_degraded_writer_does_not_record_later_planner_delivery(
         async def decide(self, current: Observation) -> Any:
             self.calls += 1
             if self.calls == 1:
-                return PlannerDecision(
-                    intent="Continue after the continuity failure.",
-                    rationale="Gameplay remains valid even if memory writing fails.",
-                    action=NoopAction(reason="continue"),
-                    confidence=1.0,
+                return one_step_plan(
+                    NoopAction(reason="continue"),
+                    current,
+                    objective="Continue after the continuity failure.",
                     continuity_operations=[keep(MemoryKind.COMMITMENT, "Deliver the copper.")],
                 )
             return PlannerDecision(
@@ -2406,11 +2405,10 @@ def test_delivery_diagnostic_failure_never_cancels_gameplay_and_reaches_next_pla
         async def decide(self, current: Observation) -> Any:
             self.seen_degraded_reasons.append(current.continuity_writes_degraded_reason)
             if len(self.seen_degraded_reasons) == 1:
-                return PlannerDecision(
-                    intent="Continue despite a diagnostic write failure.",
-                    rationale="World control does not depend on delivery bookkeeping.",
-                    action=NoopAction(reason="continue"),
-                    confidence=1.0,
+                return one_step_plan(
+                    NoopAction(reason="continue"),
+                    current,
+                    objective="Continue despite a diagnostic write failure.",
                 )
             return PlannerDecision(
                 intent="Stop after observing the quarantined store.",
@@ -2482,11 +2480,10 @@ def test_automatic_recall_failure_quarantines_reads_and_writes_without_stopping_
                 )
             )
             if len(self.seen_health) == 1:
-                return PlannerDecision(
-                    intent="Continue after recall became unavailable.",
-                    rationale="Current world control remains independent.",
-                    action=NoopAction(reason="continue"),
-                    confidence=1.0,
+                return one_step_plan(
+                    NoopAction(reason="continue"),
+                    current,
+                    objective="Continue after recall became unavailable.",
                 )
             return PlannerDecision(
                 intent="Stop after the health state remained stable.",
@@ -3330,18 +3327,18 @@ def test_a_requested_read_reaches_exactly_the_next_planner_and_touches_no_game(
             self.calls += 1
             seen.append(current.memory_search)
             if self.calls == 1:
-                return PlannerDecision(
-                    intent="Look up what I know about the gate.",
-                    rationale="Automatic recall did not surface it.",
-                    action=RecallMemoryAction(query="gate", max_records=2),
-                    confidence=1.0,
+                return one_step_plan(
+                    RecallMemoryAction(query="gate", max_records=2),
+                    current,
+                    objective="Look up what I know about the gate.",
+                    plan_id="read-plan",
                 )
             if self.calls == 2:
-                return PlannerDecision(
-                    intent="Use one deliberation turn.",
-                    rationale="The next call must not inherit this read.",
-                    action=NoopAction(reason="continue"),
-                    confidence=1.0,
+                return one_step_plan(
+                    NoopAction(reason="continue"),
+                    current,
+                    objective="Use one deliberation turn.",
+                    plan_id="deliberate-plan",
                 )
             return PlannerDecision(
                 intent="Stop.",

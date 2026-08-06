@@ -21,7 +21,6 @@ from pydantic import (
     Field,
     JsonValue,
     TypeAdapter,
-    ValidationError,
 )
 
 from .core.affordance import (
@@ -43,8 +42,6 @@ from .core.operation import (
     ControlMode,
     GameBinding,
     GameScreen,
-    PlanningMode,
-    SingleStepRuntimeAction,
     ThreatResponseStrategy,
 )
 from .core.planning import screen_is_open
@@ -1360,11 +1357,6 @@ def _offer_binds_now(offer: AffordanceOffer, observation: Observation) -> bool:
     operation = _operation_for(offer, _sample_parameters(offer))
     if unchanged_definitive_no_op_reason(operation, observation) is not None:
         return False
-    if observation.planning_mode is PlanningMode.SINGLE_STEP:
-        try:
-            TypeAdapter(SingleStepRuntimeAction).validate_python(operation)
-        except ValidationError:
-            return False
     definition = definition_for(operation)
     if definition is None:
         raise RuntimeError(f"adapter emitted {operation.kind!r} without an operation definition")

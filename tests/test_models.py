@@ -10,7 +10,6 @@ from kenshi_agent.core.operation import (
     ControlMode,
     NoopAction,
     PerformContextAction,
-    PlanningMode,
     ScrollAction,
     parse_action,
 )
@@ -430,7 +429,6 @@ def test_reviewed_world_target_is_an_exact_attemptable_affordance() -> None:
         step_index=0,
         mode="mock",
         control_mode=ControlMode.NATIVE_ASSISTED,
-        planning_mode=PlanningMode.CONTINUOUS,
         telemetry=TelemetrySnapshot(
             protocol_version="1.0.0",
             identity_session_id="resource-affordance-test",
@@ -478,7 +476,6 @@ def test_schema_export_separates_affordance_contract_from_runtime_internals(
     exported = {path.name for path in export_schemas(tmp_path)}
 
     assert "affordance_selection.schema.json" in exported
-    assert "decision_proposal.schema.json" in exported
     assert "plan_proposal.schema.json" in exported
     assert "affordance_receipt.schema.json" in exported
     assert "runtime_operation.schema.json" in exported

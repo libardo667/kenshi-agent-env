@@ -25,7 +25,7 @@ from .context_capacity import (
     conservative_text_token_estimate,
     hosted_context_envelope,
 )
-from .plan_proposal import PlanProposal, compile_decision_proposal, compile_hosted_plan_proposal
+from .plan_proposal import PlanProposal, compile_hosted_plan_proposal
 
 
 def _planner_request_text(output_model: type[BaseModel]) -> str:
@@ -177,30 +177,20 @@ class OpenAIPlanner(Planner):
                 raise RuntimeError("OpenAI response contained neither parsed output nor text.")
             parsed = response_model.model_validate_json(response.output_text)
         output: PlannerOutput
-        if response_model is PlanProposal:
-            if isinstance(parsed, BaseModel):
-                document = parsed.model_dump(mode="json")
-            else:
-                document = parsed
-            output = compile_hosted_plan_proposal(
-                document,
-                observation=observation,
-                context_id=prepared.context.manifest.context_id,
-                planning=getattr(
-                    self,
-                    "planning",
-                    PlanningConfig(max_plan_steps=self.max_plan_steps),
-                ),
-            ).output
+        if isinstance(parsed, BaseModel):
+            document = parsed.model_dump(mode="json")
         else:
-            if isinstance(parsed, BaseModel):
-                document = parsed.model_dump(mode="json")
-            else:
-                document = parsed
-            output = compile_decision_proposal(
-                document,
-                observation=observation,
-            ).decision
+            document = parsed
+        output = compile_hosted_plan_proposal(
+            document,
+            observation=observation,
+            context_id=prepared.context.manifest.context_id,
+            planning=getattr(
+                self,
+                "planning",
+                PlanningConfig(max_plan_steps=self.max_plan_steps),
+            ),
+        ).output
         return output
 
     @staticmethod

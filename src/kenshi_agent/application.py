@@ -25,10 +25,7 @@ from .campaign import (
 from .config import AppConfig, load_config
 from .control import Win32InputController
 from .core.continuity import MemoryCompactionCandidate
-from .core.operation import (
-    ControlMode,
-    PlanningMode,
-)
+from .core.operation import ControlMode
 from .core.scenario import ScenarioAttestation
 from .core.telemetry import ScenarioIdentity
 from .env.base import AgentEnvironment
@@ -182,7 +179,6 @@ def _apply_run_overrides(
     scenario_proof_loader: ScenarioProofLoader | None = None,
 ) -> AppConfig:
     objective = getattr(args, "objective", None)
-    planning_mode = getattr(args, "planning_mode", None)
     campaign = getattr(args, "campaign", None)
     prompt_file = getattr(args, "prompt_file", None)
     advisor_corpus_file = getattr(args, "advisor_corpus_file", None)
@@ -235,7 +231,6 @@ def _apply_run_overrides(
 
     if (
         objective is None
-        and planning_mode is None
         and campaign is None
         and scenario is None
         and prompt_file is None
@@ -252,10 +247,6 @@ def _apply_run_overrides(
         runtime_updates["scenario_attestation"] = scenario_attestation
     if runtime_updates:
         updates["runtime"] = config.runtime.model_copy(update=runtime_updates)
-    if planning_mode is not None:
-        updates["planning"] = config.planning.model_copy(
-            update={"mode": PlanningMode(planning_mode)}
-        )
     if prompt_file is not None:
         updates["paths"] = config.paths.model_copy(
             update={"prompt_file": Path(prompt_file)},
@@ -290,7 +281,7 @@ def _live_actions_enabled(config: AppConfig, args: argparse.Namespace) -> bool:
             raise SystemExit(
                 "Native-assisted live execution requires --acknowledge-native-assisted-control."
             )
-    if config.planning.mode == PlanningMode.CONTINUOUS and not args.acknowledge_continuous_live:
+    if not args.acknowledge_continuous_live:
         raise SystemExit("Continuous live execution requires --acknowledge-continuous-live.")
     return True
 
@@ -697,7 +688,6 @@ async def _run_command(
             "run_id": summary.run_id,
             "run_dir": str(run_dir),
             "control_mode": summary.control_mode.value,
-            "planning_mode": config.planning.mode.value,
             "scenario": (
                 config.runtime.scenario.model_dump(mode="json")
                 if config.runtime.scenario is not None
@@ -731,7 +721,6 @@ def _doctor(args: argparse.Namespace) -> int:
     checks.append(("runs_dir", True, str(config.paths.runs_dir)))
     checks.append(("mode", True, args.mode or config.mode))
     checks.append(("control_mode", True, config.control.mode.value))
-    checks.append(("planning_mode", True, config.planning.mode.value))
     if config.advisor.enabled:
         checks.append(
             (
@@ -832,11 +821,6 @@ def build_parser() -> argparse.ArgumentParser:
     run = subparsers.add_parser("run", help="Run an agent episode.")
     run.add_argument("--config", default="config/default.yaml")
     run.add_argument("--mode", choices=["mock", "live", "replay"])
-    run.add_argument(
-        "--planning-mode",
-        choices=[mode.value for mode in PlanningMode],
-        help="Override the configured single_step or continuous scheduler.",
-    )
     run.add_argument("--steps", type=int)
     run.add_argument("--seed", type=int)
     run.add_argument("--run-id")

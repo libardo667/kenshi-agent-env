@@ -5172,14 +5172,6 @@
       "title": "PlanOutcomeEvidence",
       "type": "object"
     },
-    "PlanningMode": {
-      "enum": [
-        "single_step",
-        "continuous"
-      ],
-      "title": "PlanningMode",
-      "type": "string"
-    },
     "ProduceResourceOutputAction": {
       "additionalProperties": false,
       "description": "Internal production phase retained until a bounded output yield exists.",
@@ -7263,10 +7255,6 @@
     "control_mode": {
       "$ref": "#/$defs/ControlMode",
       "default": "interface_only"
-    },
-    "planning_mode": {
-      "$ref": "#/$defs/PlanningMode",
-      "default": "single_step"
     },
     "world_revision": {
       "$ref": "#/$defs/WorldStateRevision"

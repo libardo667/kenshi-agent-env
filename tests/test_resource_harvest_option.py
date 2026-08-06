@@ -23,7 +23,6 @@ from kenshi_agent.core.operation import (
     HarvestResourceAction,
     IdempotencyPolicy,
     OpenContextInventoryAction,
-    PlanningMode,
     ProduceResourceOutputAction,
     SetSpeedAction,
     UseGameBindingAction,
@@ -168,7 +167,6 @@ class HarvestEnvironment(AgentEnvironment):
             step_index=self.sequence,
             mode="live",
             control_mode=self.control_mode,
-            planning_mode=PlanningMode.CONTINUOUS,
             world_revision=_revision(self.sequence),
             telemetry_age_seconds=0.0,
             telemetry=TelemetrySnapshot(
@@ -518,7 +516,6 @@ def test_harvest_is_one_planner_action_with_controller_owned_transfer(
             state_store=store,
             observe_transition=observe_transition,
             planning_config=PlanningConfig(
-                mode=PlanningMode.CONTINUOUS,
                 max_plan_wall_seconds=360.0,
                 max_native_assisted_actions_per_plan=2,
                 require_paused_between_actions=False,

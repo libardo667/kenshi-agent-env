@@ -11,7 +11,6 @@ from kenshi_agent.core.operation import (
     IdempotencyPolicy,
     InterruptPolicy,
     MoveToCharacterAction,
-    PlanningMode,
     RegroupWithSquadMemberAction,
     RespondToImmediateThreatAction,
     RuntimeAction,
@@ -245,18 +244,12 @@ def build_output(
 ) -> PlannerOutput:
     """Follow the continuous planner state machine without reissuing the action."""
 
-    if observation.planning_mode == PlanningMode.CONTINUOUS:
-        return (
-            preserve_pause_handoff_patch(observation)
-            if observation.active_plan is not None
-            else build_plan(
-                observation,
-                action_kind=action_kind,
-                target_id=target_id,
-            )
+    return (
+        preserve_pause_handoff_patch(observation)
+        if observation.active_plan is not None
+        else build_plan(
+            observation,
+            action_kind=action_kind,
+            target_id=target_id,
         )
-    return build_decision(
-        observation,
-        action_kind=action_kind,
-        target_id=target_id,
     )

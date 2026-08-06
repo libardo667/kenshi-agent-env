@@ -37,7 +37,7 @@ from .context_capacity import (
     hosted_context_envelope,
     resolve_openrouter_model_capacity,
 )
-from .plan_proposal import PlanProposal, compile_decision_proposal, compile_hosted_plan_proposal
+from .plan_proposal import PlanProposal, compile_hosted_plan_proposal
 from .schema_dialect import projected_response_format
 
 # Phrases providers use when the request was fine but the schema was not. They
@@ -476,35 +476,22 @@ class OpenRouterPlanner(Planner):
         )
         try:
             document = json.loads(_json_body(combined_response))
-            if response_model is PlanProposal:
-                compiled = compile_hosted_plan_proposal(
-                    document,
-                    observation=observation,
-                    context_id=prepared.context.manifest.context_id,
-                    planning=planning,
-                )
-                output = compiled.output
-                if compiled.rejected_sidecars:
-                    self._last_call_diagnostics = replace(
-                        diagnostics,
-                        proposal_sidecar_rejections=tuple(
-                            f"{item.surface}[{item.index}]: {item.detail}"
-                            for item in compiled.rejected_sidecars
-                        ),
-                    )
-            else:
-                output = compile_decision_proposal(
-                    document,
-                    observation=observation,
-                ).decision
-        except ValueError as exc:
-            if response_model is not PlanProposal:
-                raise HostedPlannerResponseError(
-                    "malformed_structured_output",
+            compiled = compile_hosted_plan_proposal(
+                document,
+                observation=observation,
+                context_id=prepared.context.manifest.context_id,
+                planning=planning,
+            )
+            output = compiled.output
+            if compiled.rejected_sidecars:
+                self._last_call_diagnostics = replace(
                     diagnostics,
-                    detail=str(exc),
-                    response_excerpt=combined_response,
-                ) from exc
+                    proposal_sidecar_rejections=tuple(
+                        f"{item.surface}[{item.index}]: {item.detail}"
+                        for item in compiled.rejected_sidecars
+                    ),
+                )
+        except ValueError as exc:
             output = compile_hosted_plan_proposal(
                 {
                     "objective": "Regain a fresh planning turn after an unusable proposal.",

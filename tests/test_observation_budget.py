@@ -26,7 +26,6 @@ from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.operation import (
     ApproachDialogueTargetAction,
     ControlMode,
-    PlanningMode,
 )
 from kenshi_agent.core.planning import ActivePlanContext
 from kenshi_agent.core.telemetry import (
@@ -271,7 +270,6 @@ def _oversized_observation(*, reverse_low_priority: bool = False) -> Observation
         observed_at=_NOW,
         mode="live",
         control_mode=ControlMode.NATIVE_ASSISTED,
-        planning_mode=PlanningMode.CONTINUOUS,
         world_revision=WorldStateRevision(
             telemetry_sequence=42,
             frame_sequence=9,
@@ -322,7 +320,6 @@ def _path(document: dict[str, object], path: str) -> object:
 
 def _assert_critical_envelope(document: dict[str, object]) -> None:
     assert document["control_mode"] == "native_assisted"
-    assert document["planning_mode"] == "continuous"
     assert "live_execution_policy" not in document
     assert _path(document, "world_revision.telemetry_sequence") == 42
     assert _path(document, "world_revision.capability_epoch") == 3

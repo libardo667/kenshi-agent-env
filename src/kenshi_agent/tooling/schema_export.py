@@ -17,14 +17,13 @@ from ..core.transport import (
     ActionReceipt,
     NativeCommandRequest,
 )
-from ..planners.plan_proposal import DecisionProposal, PlanProposal
+from ..planners.plan_proposal import PlanProposal
 
 
 def export_schemas(output_dir: Path) -> list[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     schemas = {
         "affordance_selection.schema.json": AffordanceSelection.model_json_schema(),
-        "decision_proposal.schema.json": DecisionProposal.model_json_schema(),
         "plan_proposal.schema.json": PlanProposal.model_json_schema(),
         "affordance_receipt.schema.json": AffordanceReceipt.model_json_schema(),
         "telemetry.schema.json": TelemetrySnapshot.model_json_schema(),

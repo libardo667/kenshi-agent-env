@@ -11,7 +11,6 @@ from kenshi_agent.config import (
 from kenshi_agent.core.continuity import MemoryRetrievalPolicy
 from kenshi_agent.core.operation import (
     ControlMode,
-    PlanningMode,
 )
 
 
@@ -22,7 +21,6 @@ def test_default_config_loads_and_resolves_paths(monkeypatch: pytest.MonkeyPatch
     assert config.mode == "mock"
     assert config.control.mode == ControlMode.INTERFACE_ONLY
     assert not config.control.native_assisted_actions_enabled
-    assert config.planning.mode == PlanningMode.SINGLE_STEP
     assert config.planning.max_plan_steps == 4
     assert config.planning.max_actions_per_plan == 8
     assert config.planning.max_native_assisted_actions_per_plan == 0
@@ -85,8 +83,6 @@ def test_canonical_live_config_has_no_selectable_execution_policy(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
 
     config = load_config(root / "config" / "live.yaml")
-
-    assert config.planning.mode is PlanningMode.CONTINUOUS
     assert config.planner.kind == "openrouter"
     assert not hasattr(config.planning, "live_execution_policy")
 
@@ -101,7 +97,6 @@ def test_canonical_live_config_keeps_calibrated_host_and_input_invariants(
 
     assert config.safety.live_actions_enabled
     assert config.control.mode == ControlMode.NATIVE_ASSISTED
-    assert config.planning.mode is PlanningMode.CONTINUOUS
     assert config.control.native_assisted_actions_enabled
     assert "require_cli_execute_flag" not in type(config.safety).model_fields
     assert not set(config.safety.allow_action_kinds) & {
@@ -171,7 +166,6 @@ def test_canonical_live_config_authorizes_semantic_actions_not_raw_input(
     config = load_config(root / "config" / "live.yaml")
 
     assert config.control.mode == ControlMode.NATIVE_ASSISTED
-    assert config.planning.mode is PlanningMode.CONTINUOUS
     # Both live gates are still required before any input is emitted.
     assert config.safety.live_actions_enabled
     assert "require_cli_execute_flag" not in type(config.safety).model_fields

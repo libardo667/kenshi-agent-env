@@ -8,15 +8,14 @@ from typing import Any, Literal
 
 from ..config import PlannerConfig
 from ..core.observation import Observation
-from ..core.operation import PlanningMode
 from ..core.planner_context import (
     AuthoredPlannerContext,
     PlannerContextManifest,
 )
 from ..core.planning import PlannerOutput
-from .plan_proposal import DecisionProposal, PlanProposal
+from .plan_proposal import PlanProposal
 
-HostedProposalModel = type[DecisionProposal] | type[PlanProposal]
+HostedProposalModel = type[PlanProposal]
 HostedPlannerFailureCategory = Literal[
     "output_truncated",
     "empty_response",
@@ -29,8 +28,7 @@ PLANNER_STATIC_PREFIX_CHARACTER_BUDGET = 50_000
 def hosted_proposal_model(observation: Observation) -> HostedProposalModel:
     """The only schema a hosted playing model can return."""
 
-    if observation.planning_mode != PlanningMode.CONTINUOUS:
-        return DecisionProposal
+    del observation
     return PlanProposal
 
 
@@ -60,13 +58,11 @@ def output_token_budget(
     *,
     max_plan_steps: int,
 ) -> int:
-    del max_plan_steps
-    expected_steps = 0
-    if observation.planning_mode == PlanningMode.CONTINUOUS:
-        # Hosted play chooses one current affordance, then receives a fresh
-        # observation. Runtime-owned options may run for minutes, but their
-        # duration does not enlarge the model's response contract.
-        expected_steps = 1
+    del max_plan_steps, observation
+    # Hosted play chooses one current affordance, then receives a fresh
+    # observation. Runtime-owned options may run for minutes, but their
+    # duration does not enlarge the model's response contract.
+    expected_steps = 1
     return min(
         config.max_output_tokens_ceiling,
         config.max_output_tokens_base

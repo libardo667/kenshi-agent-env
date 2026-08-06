@@ -31,7 +31,6 @@ from .evidence import (
 )
 from .operation import (
     ControlMode,
-    PlanningMode,
 )
 from .planning import ActivePlanContext
 from .telemetry import (
@@ -61,7 +60,6 @@ class Observation(StrictModel):
     observed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     mode: Literal["mock", "live", "replay"]
     control_mode: ControlMode = ControlMode.INTERFACE_ONLY
-    planning_mode: PlanningMode = PlanningMode.SINGLE_STEP
     world_revision: WorldStateRevision = Field(default_factory=WorldStateRevision)
     telemetry: TelemetrySnapshot | None = None
     telemetry_stale: bool = False
@@ -473,7 +471,6 @@ class Observation(StrictModel):
             "step_index": self.step_index,
             "mode": self.mode,
             "control_mode": self.control_mode.value,
-            "planning_mode": self.planning_mode.value,
             "world_revision": _json_model(self.world_revision),
             "telemetry_stale": self.telemetry_stale,
             "telemetry_age_seconds": self.telemetry_age_seconds,

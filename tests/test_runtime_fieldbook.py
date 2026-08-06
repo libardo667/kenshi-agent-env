@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from operation_test_support import operation_port
+from operation_test_support import one_step_plan, operation_port
 
 from kenshi_agent.campaign import CampaignScope, CampaignScopeOrigin
 from kenshi_agent.config import MockConfig, SafetyConfig
@@ -82,10 +82,11 @@ def test_fieldbook_write_and_read_reach_exactly_the_next_planner_without_game_in
             seen.append(current)
             call = len(seen)
             if call == 1:
-                return PlannerDecision(
-                    intent="Create a delivery docket.",
-                    rationale="The delivery spans more than one plan.",
-                    action=NoopAction(reason="write private context"),
+                return one_step_plan(
+                    NoopAction(reason="write private context"),
+                    current,
+                    objective="Create a delivery docket.",
+                    plan_id="docket-plan",
                     fieldbook_operations=[
                         CreateFieldbookProjectOperation(
                             kind=FieldbookProjectKind.DELIVERY_DOCKET,
@@ -96,10 +97,11 @@ def test_fieldbook_write_and_read_reach_exactly_the_next_planner_without_game_in
                 )
             project_id = current.fieldbook_projects[0].project_id
             if call == 2:
-                return PlannerDecision(
-                    intent="Record the open route question.",
-                    rationale="It belongs in the continuing delivery docket.",
-                    action=NoopAction(reason="append private context"),
+                return one_step_plan(
+                    NoopAction(reason="append private context"),
+                    current,
+                    objective="Record the open route question.",
+                    plan_id="entry-plan",
                     fieldbook_operations=[
                         AppendFieldbookEntryOperation(
                             project_id=project_id,
@@ -109,19 +111,18 @@ def test_fieldbook_write_and_read_reach_exactly_the_next_planner_without_game_in
                     ],
                 )
             if call == 3:
-                return PlannerDecision(
-                    intent="Read the docket.",
-                    rationale="The bounded index says it now has one entry.",
-                    action=ReadFieldbookAction(
-                        project_id=project_id,
-                        max_entries=4,
-                    ),
+                return one_step_plan(
+                    ReadFieldbookAction(project_id=project_id, max_entries=4),
+                    current,
+                    objective="Read the docket.",
+                    plan_id="read-plan",
                 )
             if call == 4:
-                return PlannerDecision(
-                    intent="Use one turn after the read.",
-                    rationale="The next call must not inherit the elective read.",
-                    action=NoopAction(reason="continue"),
+                return one_step_plan(
+                    NoopAction(reason="continue"),
+                    current,
+                    objective="Use one turn after the read.",
+                    plan_id="after-read-plan",
                 )
             return PlannerDecision(
                 intent="Stop.",

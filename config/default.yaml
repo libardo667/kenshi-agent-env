@@ -6,7 +6,6 @@ control:
   native_assisted_actions_enabled: false
 
 planning:
-  mode: single_step
   observation_pump_enabled: true
   concurrent_option_planning_enabled: true
   concurrent_option_planning_delay_seconds: 20

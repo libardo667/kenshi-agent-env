@@ -4,10 +4,8 @@ from ..core.observation import Observation
 from ..core.operation import (
     IdempotencyPolicy,
     PauseAction,
-    PlanningMode,
     SetSpeedAction,
     StopAction,
-    WaitAction,
 )
 from ..core.planning import (
     Condition,
@@ -27,63 +25,17 @@ class HeuristicPlanner(Planner):
     """Auditable baseline policy used for smoke tests and benchmark control."""
 
     async def decide(self, observation: Observation) -> PlannerOutput:
-        if observation.planning_mode == PlanningMode.CONTINUOUS:
-            continuous = self._continuous_setup_plan(observation)
-            if continuous is not None:
-                return continuous
-            return PlannerDecision(
-                intent="Stop after the bounded continuous setup proof.",
-                rationale=(
-                    "The heuristic continuous baseline has no further typed plan "
-                    "whose postconditions it can prove."
-                ),
-                action=StopAction(reason="Continuous heuristic setup complete."),
-                confidence=1.0,
-            )
-
-        telemetry = observation.telemetry
-        if telemetry is None:
-            return PlannerDecision(
-                intent="Stop rather than operate blindly.",
-                rationale="The observation contains no telemetry.",
-                action=StopAction(reason="No telemetry available."),
-                confidence=1.0,
-            )
-        if telemetry.game.elapsed_minutes is not None and telemetry.game.elapsed_minutes >= 1440:
-            return PlannerDecision(
-                intent="Finish the survival episode.",
-                rationale="At least one in-game day has elapsed.",
-                action=StopAction(reason="One-day survival objective reached."),
-                confidence=1.0,
-            )
-        if not telemetry.squad:
-            return PlannerDecision(
-                intent="Stop because no controlled character is visible.",
-                rationale="The telemetry squad list is empty.",
-                action=StopAction(reason="No squad members observed."),
-                confidence=0.95,
-            )
-        if telemetry.game.paused is True:
-            return PlannerDecision(
-                intent="Resume controlled time progression.",
-                rationale="No urgent condition requires the mock world to remain paused.",
-                action=PauseAction(paused=False),
-                confidence=0.9,
-            )
-        if telemetry.game.speed_multiplier is not None and telemetry.game.speed_multiplier < 3:
-            return PlannerDecision(
-                intent="Advance a low-risk routine efficiently.",
-                rationale=(
-                    "The situation is stable and the baseline benchmark benefits from faster time."
-                ),
-                action=SetSpeedAction(speed=3),
-                confidence=0.8,
-            )
+        continuous = self._continuous_setup_plan(observation)
+        if continuous is not None:
+            return continuous
         return PlannerDecision(
-            intent="Observe a small amount of world progression.",
-            rationale="No higher-priority action is supported by current evidence.",
-            action=WaitAction(seconds=10.0),
-            confidence=0.6,
+            intent="Stop after the bounded continuous setup proof.",
+            rationale=(
+                "The heuristic continuous baseline has no further typed plan "
+                "whose postconditions it can prove."
+            ),
+            action=StopAction(reason="Continuous heuristic setup complete."),
+            confidence=1.0,
         )
 
     @classmethod

@@ -13,7 +13,6 @@ from kenshi_agent import application as cli
 from kenshi_agent.config import load_config
 from kenshi_agent.core.operation import (
     ControlMode,
-    PlanningMode,
 )
 from kenshi_agent.core.telemetry import TelemetrySnapshot
 from kenshi_agent.final_safe_state import (
@@ -164,7 +163,6 @@ def test_run_prompt_and_advisor_file_overrides_are_ephemeral() -> None:
         config,
         SimpleNamespace(
             objective=None,
-            planning_mode=None,
             prompt_file=Path("prompts/example.md"),
             advisor_corpus_file=Path("knowledge/example.yaml"),
         ),
@@ -192,26 +190,12 @@ def test_run_campaign_override_is_explicit_and_ephemeral() -> None:
         config,
         SimpleNamespace(
             objective=None,
-            planning_mode=None,
             campaign="ladle-css-01",
         ),
     )
 
     assert overridden.memory.campaign_id == "ladle-css-01"
     assert config.memory.campaign_id is None
-
-
-def test_run_planning_mode_override_is_ephemeral() -> None:
-    root = Path(__file__).resolve().parents[1]
-    config = load_config(root / "config" / "default.yaml")
-
-    overridden = cli._apply_run_overrides(
-        config,
-        SimpleNamespace(objective=None, planning_mode="continuous"),
-    )
-
-    assert overridden.planning.mode is PlanningMode.CONTINUOUS
-    assert config.planning.mode is PlanningMode.SINGLE_STEP
 
 
 def test_run_scenario_override_is_typed_and_ephemeral() -> None:
@@ -222,7 +206,6 @@ def test_run_scenario_override_is_typed_and_ephemeral() -> None:
         config,
         SimpleNamespace(
             objective=None,
-            planning_mode=None,
             scenario_id="hub-outdoor-safe-day",
             save_id="hub-start-v1",
             scenario_environment="outdoor",
@@ -288,7 +271,6 @@ def test_run_uses_fixture_attestation_as_scenario_source(
         config,
         SimpleNamespace(
             objective=None,
-            planning_mode=None,
             scenario_attestation=str(attestation),
         ),
         scenario_proof_loader=load_scenario_attestation,
@@ -313,7 +295,6 @@ def test_attested_scenario_refuses_parallel_manual_labels(
             config,
             SimpleNamespace(
                 objective=None,
-                planning_mode=None,
                 scenario_attestation=str(path),
                 scenario_id="fabricated",
             ),
@@ -329,7 +310,6 @@ def test_run_scenario_override_refuses_partial_declarations() -> None:
             config,
             SimpleNamespace(
                 objective=None,
-                planning_mode=None,
                 scenario_id="hub-outdoor-safe-day",
             ),
         )
@@ -400,6 +380,13 @@ def test_native_assisted_execution_requires_dedicated_cli_acknowledgement() -> N
 
 
 def test_interface_only_execution_never_requires_native_acknowledgement() -> None:
+    """Interface-only is exempt from the native gate, not from every gate.
+
+    There is one schedule now, so every live run is a continuous one and owes
+    that acknowledgement. What interface-only still does not owe is the
+    native-assisted one, which is what this has always been about.
+    """
+
     root = Path(__file__).resolve().parents[1]
     config = load_config(root / "config" / "default.yaml")
     config = config.model_copy(
@@ -408,7 +395,7 @@ def test_interface_only_execution_never_requires_native_acknowledgement() -> Non
     args = SimpleNamespace(
         execute_live_actions=True,
         acknowledge_native_assisted_control=False,
-        acknowledge_continuous_live=False,
+        acknowledge_continuous_live=True,
     )
 
     assert config.control.mode == ControlMode.INTERFACE_ONLY
@@ -418,13 +405,6 @@ def test_interface_only_execution_never_requires_native_acknowledgement() -> Non
 def test_continuous_live_policy_requires_its_own_cli_acknowledgement() -> None:
     root = Path(__file__).resolve().parents[1]
     config = load_config(root / "config" / "live.yaml")
-    config = config.model_copy(
-        update={
-            "planning": config.planning.model_copy(
-                update={"mode": PlanningMode.CONTINUOUS}
-            )
-        }
-    )
     args = SimpleNamespace(
         execute_live_actions=True,
         acknowledge_native_assisted_control=True,

@@ -48,7 +48,6 @@ from .core.operation import (
     ControlMode,
     IdempotencyPolicy,
     PauseAction,
-    PlanningMode,
     StopAction,
 )
 from .core.planner_context import AuthoredPlannerContext
@@ -241,11 +240,7 @@ class RunCoordinator:
         self.final_safe_state: FinalSafeStateOutcome | None = None
 
     async def run(self, *, max_steps: int, seed: int | None = None) -> RunSummary:
-        return await self._run_scheduled(
-            max_steps=max_steps,
-            seed=seed,
-            accepts_plans=self.planning_config.mode == PlanningMode.CONTINUOUS,
-        )
+        return await self._run_scheduled(max_steps=max_steps, seed=seed)
 
     def _log_observation(self, observation: Observation) -> None:
         """Record an observation at the configured level of detail."""
@@ -283,7 +278,6 @@ class RunCoordinator:
                 "max_steps": max_steps,
                 "seed": seed,
                 "control_mode": self.control_mode.value,
-                "planning_mode": self.planning_config.mode.value,
                 "memory_retrieval_policy": (self.memory_retrieval_policy.value),
                 "scenario": (
                     self.scenario.model_dump(mode="json") if self.scenario is not None else None
@@ -346,18 +340,10 @@ class RunCoordinator:
         *,
         max_steps: int,
         seed: int | None = None,
-        accepts_plans: bool,
     ) -> RunSummary:
-        """Observe, plan, execute, record, repeat, under one scheduling policy.
-
-        `accepts_plans` is the whole difference between the continuous and
-        single-step schedules: which planner output shape this run will act on,
-        and therefore whether an independent supervisor and observation pump are
-        worth attaching. Every other responsibility is shared.
-        """
+        """Observe, plan, execute, record, repeat."""
 
         started = datetime.now(UTC)
-        cycles = 0
         steps_completed = 0
         terminated = False
         success: bool | None = None
@@ -399,19 +385,12 @@ class RunCoordinator:
 
         session: _RunSession | None = None
         try:
-            session = await self._begin_run(
-                max_steps=max_steps, seed=seed, supervised=accepts_plans
-            )
+            session = await self._begin_run(max_steps=max_steps, seed=seed, supervised=True)
             state_store = session.state_store
             observation = session.observation
             safety_supervisor = session.safety_supervisor
-            if not accepts_plans:
-                self._log_observation(observation)
 
-            while not terminated and (
-                cycles < max_steps if not accepts_plans else steps_completed < max_steps
-            ):
-                cycles += 1
+            while not terminated and steps_completed < max_steps:
                 observation = state_store.latest or observation
                 if safety_supervisor is not None and safety_supervisor.preempted:
                     pending_preemption = await safety_supervisor.wait_for_preemption()
@@ -584,43 +563,6 @@ class RunCoordinator:
                     },
                 )
                 observation = state_store.latest or observation
-
-                if not accepts_plans:
-                    # This schedule acts on one authored decision per turn; a
-                    # plan is the wrong shape here, so stop rather than run it.
-                    if isinstance(output, PlannerDecision):
-                        decision = output
-                        decision_source = planner_source
-                    else:
-                        decision = PlannerDecision(
-                            intent="Stop after incompatible planner output.",
-                            rationale=(
-                                "Single-step mode requires PlannerDecision, but "
-                                f"received {type(output).__name__}."
-                            ),
-                            action=StopAction(
-                                reason="Planner output did not match single-step mode."
-                            ),
-                            confidence=1.0,
-                        )
-                        decision_source = "planner_error"
-                    (
-                        observation,
-                        completed,
-                        terminated,
-                        success,
-                        stop_reason,
-                    ) = await self._execute_continuous_decision(
-                        decision,
-                        observation,
-                        source=decision_source,
-                        planner_latency_seconds=planner_latency_seconds,
-                        authored_context=authored_context,
-                    )
-                    steps_completed += completed
-                    observation = self.planner_context.decorate(observation)
-                    self._log_observation(observation)
-                    continue
 
                 if isinstance(output, PlannerDecision):
                     if not isinstance(output.action, StopAction):
@@ -1873,7 +1815,6 @@ class RunCoordinator:
             planning_config=(
                 self.planning_config
                 if observation.telemetry is not None
-                and self.planning_config.mode is not PlanningMode.SINGLE_STEP
                 else self.planning_config.model_copy(
                     update={"require_paused_between_actions": False}
                 )
@@ -2061,7 +2002,6 @@ class RunCoordinator:
             payload={
                 "steps_completed": summary.steps_completed,
                 "control_mode": summary.control_mode.value,
-                "planning_mode": self.planning_config.mode.value,
                 "terminated": summary.terminated,
                 "success": summary.success,
                 "stop_reason": summary.stop_reason,

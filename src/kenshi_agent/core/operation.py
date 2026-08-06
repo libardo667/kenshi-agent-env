@@ -23,11 +23,6 @@ class ControlMode(StrEnum):
     NATIVE_ASSISTED = "native_assisted"
 
 
-class PlanningMode(StrEnum):
-    SINGLE_STEP = "single_step"
-    CONTINUOUS = "continuous"
-
-
 class PointerActionClass(StrEnum):
     """How an action's coordinates are derived, which decides what must match.
 
@@ -983,7 +978,7 @@ SemanticAction: TypeAlias = RuntimeSemanticOperation | InternalRuntimeOperation
 RuntimeAction: TypeAlias = RuntimeControlAction | RuntimeSemanticOperation
 """Executor operations that can appear in a continuously supervised plan."""
 
-SingleStepRuntimeAction: TypeAlias = RuntimeControlAction | AtomicRuntimeOperation
+UnmonitoredRuntimeAction: TypeAlias = RuntimeControlAction | AtomicRuntimeOperation
 """Executor operations that do not require continuous option ownership."""
 
 Action: TypeAlias = (

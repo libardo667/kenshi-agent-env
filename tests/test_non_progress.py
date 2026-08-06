@@ -19,7 +19,6 @@ from kenshi_agent.core.operation import (
     ActivateVisibleControlAction,
     ControlMode,
     HarvestResourceAction,
-    PlanningMode,
     PurchaseItemAction,
 )
 from kenshi_agent.core.planning import PlannerDecision
@@ -123,7 +122,6 @@ def _trade_observation(
         observed_at=datetime(2026, 7, 30, 12, sequence, tzinfo=UTC),
         mode="live",
         control_mode=ControlMode.NATIVE_ASSISTED,
-        planning_mode=PlanningMode.CONTINUOUS,
         world_revision=WorldStateRevision(
             telemetry_sequence=sequence,
             frame_sequence=sequence,
@@ -223,7 +221,6 @@ def _harvest_observation(
         observed_at=datetime(2026, 8, 3, 8, 24, tzinfo=UTC),
         mode="live",
         control_mode=ControlMode.NATIVE_ASSISTED,
-        planning_mode=PlanningMode.CONTINUOUS,
         world_revision=WorldStateRevision(
             telemetry_sequence=2,
             frame_sequence=2,

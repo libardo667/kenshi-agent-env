@@ -34,7 +34,6 @@ from kenshi_agent.core.operation import (
     ConsultAdvisorAction,
     ControlMode,
     IdempotencyPolicy,
-    PlanningMode,
     StopAction,
     WaitAction,
 )
@@ -192,7 +191,6 @@ def observation(step_index: int = 0) -> Observation:
         step_index=step_index,
         mode="mock",
         control_mode=ControlMode.INTERFACE_ONLY,
-        planning_mode=PlanningMode.CONTINUOUS,
         world_revision=WorldStateRevision(
             telemetry_sequence=1,
             frame_sequence=1,
@@ -347,7 +345,6 @@ def test_foreground_world_action_runs_while_advisor_is_still_thinking(
             memory_limit=0,
             minimum_memory_salience=0.0,
             planning_config=PlanningConfig(
-                mode=PlanningMode.CONTINUOUS,
                 observation_pump_enabled=False,
                 max_plan_steps=2,
                 max_actions_per_plan=2,
@@ -416,7 +413,6 @@ def test_run_end_cancels_a_pending_advisor_without_leaving_session_state(
             memory_limit=0,
             minimum_memory_salience=0.0,
             planning_config=PlanningConfig(
-                mode=PlanningMode.CONTINUOUS,
                 observation_pump_enabled=False,
                 max_plan_steps=2,
                 max_actions_per_plan=2,
@@ -732,7 +728,6 @@ def test_continuous_runtime_never_dispatches_consult_to_the_environment(
             memory_limit=0,
             minimum_memory_salience=0.0,
             planning_config=PlanningConfig(
-                mode=PlanningMode.CONTINUOUS,
                 observation_pump_enabled=False,
                 max_plan_steps=2,
                 max_actions_per_plan=2,
@@ -825,7 +820,7 @@ def test_advisor_handoff_rebases_context_after_telemetry_advances(
             memory=None,
             memory_limit=0,
             minimum_memory_salience=0.0,
-            planning_config=PlanningConfig(mode=PlanningMode.CONTINUOUS),
+            planning_config=PlanningConfig(),
         )
         runtime.coordinator._state_store = store
         try:

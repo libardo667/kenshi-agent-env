@@ -11,7 +11,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from .core.continuity import MemoryRetrievalPolicy
 from .core.operation import (
     ControlMode,
-    PlanningMode,
 )
 from .core.scenario import ScenarioAttestation
 from .core.telemetry import ScenarioIdentity
@@ -54,7 +53,6 @@ class ControlConfig(ConfigModel):
 
 
 class PlanningConfig(ConfigModel):
-    mode: PlanningMode = PlanningMode.SINGLE_STEP
     observation_pump_enabled: bool = True
     # Arrival/threat radii for the contracted semantic approach. The monitored
     # option is not optional for that action, so these are thresholds, not a

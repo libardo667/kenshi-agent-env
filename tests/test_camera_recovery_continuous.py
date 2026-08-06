@@ -23,7 +23,6 @@ from kenshi_agent.core.operation import (
     ControlMode,
     IdempotencyPolicy,
     OpenContextInventoryAction,
-    PlanningMode,
     RecoverCameraViewAction,
 )
 from kenshi_agent.core.planning import (
@@ -92,7 +91,6 @@ class CameraVerdictEnvironment(AgentEnvironment):
             step_index=self.step_index,
             mode="live",
             control_mode=self.control_mode,
-            planning_mode=PlanningMode.CONTINUOUS,
             world_revision=WorldStateRevision(
                 telemetry_sequence=self.sequence,
                 frame_sequence=self.sequence,
@@ -564,7 +562,7 @@ def test_continuous_executor_uses_controller_verdict_without_postconditions(
             clock=clock,
             state_store=store,
             observe_transition=observe_transition,
-            planning_config=PlanningConfig(mode=PlanningMode.CONTINUOUS),
+            planning_config=PlanningConfig(),
         )
         try:
             result = await executor.execute(

@@ -23,7 +23,6 @@ from kenshi_agent.core.operation import (
     ClickAction,
     ControlMode,
     PerformContextAction,
-    PlanningMode,
     is_semantic_action,
 )
 from kenshi_agent.core.planning import (
@@ -122,7 +121,6 @@ def _rich_observation(*, item_control_count: int = 61) -> Observation:
         observed_at=NOW,
         mode="live",
         control_mode=ControlMode.NATIVE_ASSISTED,
-        planning_mode=PlanningMode.CONTINUOUS,
         world_revision=WorldStateRevision(
             telemetry_sequence=20,
             frame_sequence=21,
@@ -741,7 +739,6 @@ def test_log_digest_conserves_the_complete_bounded_logging_contract() -> None:
         "step_index",
         "mode",
         "control_mode",
-        "planning_mode",
         "world_revision",
         "telemetry_stale",
         "telemetry_age_seconds",
@@ -756,7 +753,6 @@ def test_log_digest_conserves_the_complete_bounded_logging_contract() -> None:
         "step_index": 17,
         "mode": "live",
         "control_mode": "native_assisted",
-        "planning_mode": "continuous",
         "world_revision": observation.world_revision.model_dump(mode="json"),
         "telemetry_stale": True,
         "telemetry_age_seconds": 4.25,
@@ -876,7 +872,6 @@ def test_log_digest_marks_absent_telemetry_without_inventing_nested_state() -> N
         "step_index",
         "mode",
         "control_mode",
-        "planning_mode",
         "world_revision",
         "telemetry_stale",
         "telemetry_age_seconds",

@@ -37,7 +37,6 @@ from kenshi_agent.core.operation import (
     InterruptPolicy,
     MoveInDirectionAction,
     PauseAction,
-    PlanningMode,
     ReadFieldbookAction,
     RespondToImmediateThreatAction,
     SelectSquadMemberExactAction,
@@ -171,7 +170,6 @@ class RevisionEnvironment(AgentEnvironment):
             step_index=self.step_index,
             mode="mock",
             control_mode=self.control_mode,
-            planning_mode=PlanningMode.CONTINUOUS,
             world_revision=WorldStateRevision(
                 telemetry_sequence=self.sequence,
                 frame_sequence=self.sequence,
@@ -481,7 +479,6 @@ def runtime_for(
         memory_limit=0 if memory is None else 12,
         minimum_memory_salience=0.0,
         planning_config=PlanningConfig(
-            mode=PlanningMode.CONTINUOUS,
             max_plan_steps=4,
             max_actions_per_plan=8,
             max_plan_wall_seconds=30.0,
@@ -928,7 +925,6 @@ def test_one_strategic_call_executes_two_guarded_actions_and_replays(
             PauseAction,
             SetSpeedAction,
         ]
-        assert planner.observations[0].planning_mode is PlanningMode.CONTINUOUS
 
         metrics = evaluate_log(tmp_path / "events.jsonl")
         assert metrics.strategic_planner_calls == 1

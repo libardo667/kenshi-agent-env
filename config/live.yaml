@@ -8,7 +8,6 @@ control:
   native_assisted_actions_enabled: true
 
 planning:
-  mode: continuous
   observation_pump_enabled: true
   # The contracted semantic approach always runs as a monitored option; these
   # are its arrival/threat radii, not a feature flag.
