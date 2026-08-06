@@ -511,6 +511,39 @@ namespace
                left.serial == right.serial;
     }
 
+    // Whether two handles name the same character, tolerating a container move.
+    //
+    // `SameHandleIdentity` compares all five fields of a `hand`, two of which -
+    // `container` and `containerSerial` - describe where the object currently
+    // lives rather than who it is. A character who changes platoon keeps its
+    // `type`, `index` and `serial` and gets a new container, measured live:
+    //
+    //   stored = 1/ 1/2795410176/2/931152320
+    //   current= 1/39/2860473600/2/931152320
+    //
+    // Selection survives that move: the released body stayed selected and stayed
+    // controllable, taking orders while absent from the squad menu. So asking
+    // membership with the strict compare returns a false negative, which is what
+    // made `selected_character_ids` and the per-character `selected` flag
+    // contradict each other and fail the telemetry snapshot's own validator.
+    //
+    // Only for membership - "is this character in this set". Target identity and
+    // object lifetime still use the strict compare, because there the question
+    // really is whether this exact reference is still the one.
+    bool SameCharacterIdentity(const hand& left, const hand& right)
+    {
+        if (SameHandleIdentity(left, right))
+            return true;
+        Character* leftCharacter = left.getCharacter();
+        Character* rightCharacter = right.getCharacter();
+        if (leftCharacter == NULL || rightCharacter == NULL)
+            return false;
+        const std::string leftId = StableEntityId(leftCharacter);
+        if (leftId.empty())
+            return false;
+        return leftId == StableEntityId(rightCharacter);
+    }
+
     bool IsSelected(PlayerInterface* player, const hand& handle)
     {
         if (player == NULL)
@@ -520,7 +553,7 @@ namespace
              it != player->selectedCharacters.end();
              ++it)
         {
-            if (SameHandleIdentity(*it, handle))
+            if (SameCharacterIdentity(*it, handle))
                 return true;
         }
         return false;
@@ -803,7 +836,7 @@ namespace
         if (selected == NULL ||
             !selected->isValid() ||
             !selected->isPlayerCharacter() ||
-            !SameHandleIdentity(*it, player->selectedCharacter))
+            !SameCharacterIdentity(*it, player->selectedCharacter))
         {
             return false;
         }
@@ -874,7 +907,7 @@ namespace
             if (!observed.insert(id).second)
                 return "selection_member_duplicate";
             selectedHandles.push_back(*it);
-            if (SameHandleIdentity(*it, player->selectedCharacter))
+            if (SameCharacterIdentity(*it, player->selectedCharacter))
             {
                 primaryId = id;
                 primaryHandle = *it;
