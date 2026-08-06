@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.2",
+  "command_id": "cmd-0123456789abcdef0123456789abcdef",
+  "command": "shift_into_body",
+  "control_mode": "native_assisted",
+  "identity_session_id": "session-0000000000000001-0000000000000001",
+  "based_on_revision": {
+    "telemetry_sequence": 17,
+    "frame_sequence": 5,
+    "capability_epoch": 2,
+    "observed_at_monotonic": 19.25
+  },
+  "selected_character_ids": [
+    "entity-selected",
+    "entity-companion"
+  ],
+  "target_id": "entity-body-to-enter",
+  "context_action": "",
+  "bearing_degrees": 0.0,
+  "distance_units": 0.0,
+  "minimum_output_quantity": 1
+}

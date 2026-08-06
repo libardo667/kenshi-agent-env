@@ -54,6 +54,7 @@ from .core.telemetry import (
 )
 from .non_progress import unchanged_definitive_no_op_reason
 from .operation_definitions import (
+    NATIVE_SHIFT_BODY_CAPABILITY,
     OPERATION_DEFINITIONS,
     SQUAD_REGROUP_ARRIVAL_DISTANCE,
     BindingFailure,
@@ -61,6 +62,7 @@ from .operation_definitions import (
     OperationDefinition,
     OperationExecution,
     TerminalOwner,
+    _body_is_shiftable,
     definition_for,
     operation_identity,
 )
@@ -650,6 +652,49 @@ def _context_order_offers(observation: Observation) -> Iterable[AffordanceOffer]
             )
 
 
+def _body_shift_offers(observation: Observation) -> Iterable[AffordanceOffer]:
+    """Offer every body the agent could currently become.
+
+    Enumerated rather than left to the planner to name, for the same reason
+    every other target is: an operation proposed against an entity the
+    observation does not currently offer is a plan that cannot bind, and the
+    planner learns nothing useful from the refusal.
+    """
+
+    telemetry = observation.telemetry
+    if telemetry is None or observation.control_mode is not ControlMode.NATIVE_ASSISTED:
+        return
+    capabilities = set(telemetry.capabilities)
+    required = {
+        NATIVE_SHIFT_BODY_CAPABILITY,
+        "identity.stable_handles",
+        "nearby.characters",
+    }
+    if not required <= capabilities:
+        return
+    if telemetry.ui.active_screen != "world":
+        return
+    for entity in telemetry.nearby_entities:
+        if not _body_is_shiftable(entity):
+            continue
+        faction = entity.faction or "no faction"
+        yield _offer(
+            observation,
+            source=AffordanceSource.NEARBY_CHARACTER,
+            semantic="shift_into_body",
+            description=(
+                f"Become {entity.name!r} of {faction}, leaving the current body behind."
+            ),
+            operation_kind="shift_into_body",
+            target=AffordanceTarget(
+                target_id=entity.id,
+                label=entity.name,
+                kind="character",
+            ),
+            arguments={"target_id": entity.id},
+        )
+
+
 def _dialogue_target_offers(observation: Observation) -> Iterable[AffordanceOffer]:
     telemetry = observation.telemetry
     if telemetry is None or observation.control_mode is not ControlMode.NATIVE_ASSISTED:
@@ -1236,6 +1281,20 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
             "geometry and stop at the generic UI delivery boundary."
         ),
         enumerate=_context_order_offers,
+    ),
+    AffordanceAdapter(
+        name="body_shift",
+        sources=frozenset({AffordanceSource.NEARBY_CHARACTER}),
+        operation_kinds=frozenset({"shift_into_body"}),
+        denominator=(
+            "Every exact current conscious, non-animal, non-hostile nearby character."
+        ),
+        completeness_boundary=(
+            "Native-assisted stable identity and nearby-character evidence; a body "
+            "outside the reported radius cannot be offered and a hostile one is "
+            "deliberately withheld."
+        ),
+        enumerate=_body_shift_offers,
     ),
     AffordanceAdapter(
         name="dialogue_targets",

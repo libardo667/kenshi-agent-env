@@ -1586,6 +1586,9 @@
               "$ref": "#/$defs/RotateCameraAction"
             },
             {
+              "$ref": "#/$defs/ShiftIntoBodyAction"
+            },
+            {
               "$ref": "#/$defs/PerformContextAction"
             },
             {
@@ -2442,6 +2445,29 @@
         "speed"
       ],
       "title": "SetSpeedAction",
+      "type": "object"
+    },
+    "ShiftIntoBodyAction": {
+      "additionalProperties": false,
+      "description": "Become one exact currently observed character.\n\nControl in Kenshi follows selection rather than roster membership - a\ncharacter released from the active platoon keeps taking orders while absent\nfrom the squad menu - so entering a body means belonging to the player\nfaction and being the selected primary. The body is placed in its own squad:\ninhabiting someone is not gaining a follower, and the bodies left behind\nstay their own unit rather than accumulating into a retinue of former hosts.\n\nThis is the operation that makes a total party loss survivable. It is not\nrestricted to that case, because an agent that can only change bodies while\ndying cannot practise the thing it will need to do while dying.",
+      "properties": {
+        "kind": {
+          "const": "shift_into_body",
+          "default": "shift_into_body",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id"
+      ],
+      "title": "ShiftIntoBodyAction",
       "type": "object"
     },
     "StopAction": {

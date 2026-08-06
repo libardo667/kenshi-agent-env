@@ -12,10 +12,10 @@ Internal-only definitions are controller phases or runtime operations;
 they still bind through this registry but are not planner-visible offers.
 
 ```text
-definitions             34
-adapter operation kinds  31
-adapter routes           32
-adapters                 10
+definitions             35
+adapter operation kinds  32
+adapter routes           33
+adapters                 11
 ownership proof         PASS
 
 DEFINITIONS
@@ -48,6 +48,7 @@ DEFINITIONS
   select_squad_member_exact           movement.select_squad_member_exact                      SelectSquadMemberExactAction [characters]
   sell_item                           trade.sell_item                                         SellItemAction [inventory]
   set_speed                           runtime.set_speed                                       SetSpeedAction [runtime]
+  shift_into_body                     movement.shift_into_body                                ShiftIntoBodyAction [body_shift]
   stop                                runtime.stop                                            StopAction [runtime]
   survey_local_resources              movement.survey_local_resources                         SurveyLocalResourcesAction [native_and_composite]
   travel_to_map_destination           movement.travel_to_map_destination                      TravelToMapDestinationAction [map]
@@ -60,6 +61,7 @@ SOURCE-SPECIFIC COMPLETENESS BOUNDARIES
   screens: Opening requires an observable exact terminal. Named-window dismissal uses a count terminal; uncaptained dismissal stops at delivery. Dialogue is excluded.
   visible_controls: Ambiguous or stale controls fail exact rebinding. Activation proves exact delivery and a later observation, not the gameplay meaning of the result.
   context_orders: Native execution proves the reviewed natural-resource operate and squad-character first_aid semantics; other orders require current screen geometry and stop at the generic UI delivery boundary.
+  body_shift: Native-assisted stable identity and nearby-character evidence; a body outside the reported radius cannot be offered and a hostile one is deliberately withheld.
   dialogue_targets: Native-assisted stable identity and dialogue-role evidence.
   inventory: Transactions require unambiguous counterpart identity and conservation evidence. Equip currently proves exact delivery, not final equipment state.
   characters: Offers require the source-specific selection, identity, geometry, and safety facts.

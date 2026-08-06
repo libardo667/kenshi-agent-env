@@ -73,6 +73,7 @@ from .core.operation import (
     SelectSquadMemberExactAction,
     SellItemAction,
     SetSpeedAction,
+    ShiftIntoBodyAction,
     StopAction,
     SurveyLocalResourcesAction,
     ThreatResponseStrategy,
@@ -96,6 +97,7 @@ from .core.telemetry import (
     CharacterState,
     ContextActionKind,
     Disposition,
+    NearbyEntity,
     NormalizedPointerBounds,
     WorldTarget,
     dialogue_targets,
@@ -129,6 +131,7 @@ NATIVE_WALK_DESTINATION_REACHED_RESULT = "walk_destination_reached"
 NATIVE_RESOURCE_OUTPUT_READY_RESULT = "resource_output_ready"
 NATIVE_RESOURCE_TASK_RELEASED_RESULT = "resource_output_ready_task_released"
 NATIVE_CONTEXT_ACTION_CAPABILITY = "control.perform_context_action"
+NATIVE_SHIFT_BODY_CAPABILITY = "control.shift_into_body"
 NATIVE_RESOURCE_SURVEY_CAPABILITY = "control.survey_local_resources"
 
 NATIVE_CONTEXT_TARGETS_CAPABILITY = "world.context_targets"
@@ -157,6 +160,7 @@ WIRE_COMMAND_BY_CONTROL_CAPABILITY: dict[str, str] = {
     NATIVE_CONTEXT_ACTION_CAPABILITY: "perform_context_action",
     NATIVE_PRODUCE_RESOURCE_CAPABILITY: "produce_resource_output",
     NATIVE_OPEN_CONTEXT_INVENTORY_CAPABILITY: "open_context_inventory",
+    NATIVE_SHIFT_BODY_CAPABILITY: "shift_into_body",
     NATIVE_RESOURCE_SURVEY_CAPABILITY: "survey_local_resources",
 }
 
@@ -627,6 +631,84 @@ def bind_move_to_character(
             f"distance {target.distance if target.distance is not None else 'unknown'}."
         ),
         target_id=target.id,
+        source_revision=observation.world_revision,
+    )
+
+
+def shift_into_body_is_currently_authorable(observation: Observation) -> bool:
+    """Whether any body is currently observable to shift into."""
+
+    telemetry = observation.telemetry
+    if telemetry is None or observation.telemetry_stale:
+        return False
+    if telemetry.ui.active_screen != "world":
+        return False
+    return any(_body_is_shiftable(entity) for entity in telemetry.nearby_entities)
+
+
+def _body_is_shiftable(entity: NearbyEntity) -> bool:
+    """Whether one observed character could be entered right now.
+
+    Refuses hostiles deliberately. A hostile body is the case most likely to
+    have consequences nobody has measured - the faction it is being taken from
+    is already fighting - and the plug-in refuses it too, so offering it would
+    only manufacture a rejected plan.
+    """
+
+    return bool(
+        entity.kind == "character"
+        and entity.is_animal is False
+        and entity.conscious is True
+        and entity.disposition is not Disposition.HOSTILE
+        and entity.id
+    )
+
+
+def bind_shift_into_body(
+    action: Action,
+    observation: Observation,
+) -> BoundNamedTarget | BindingFailure:
+    """Bind the shift to one exact currently observed body.
+
+    The same exactness every other target binding holds to: the id must match
+    one current entity, and an absent or ambiguous one fails closed. Becoming
+    the wrong person is not a recoverable mistake - there is no undo that
+    restores a faction you were pulled out of.
+    """
+
+    if not isinstance(action, ShiftIntoBodyAction):
+        return _unbound("Action is not a shift_into_body action.")
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return _unbound("No telemetry is available to bind the body.")
+    if observation.telemetry_stale:
+        return _unbound("Telemetry is stale, so the body cannot be bound.")
+    if failure := _world_interface_error(observation):
+        return _unbound(failure)
+    matches = [entity for entity in telemetry.nearby_entities if entity.id == action.target_id]
+    if not matches:
+        return _unbound(
+            f"Body {action.target_id!r} is not a currently observed nearby character."
+        )
+    if len(matches) > 1:
+        return _unbound(
+            f"Body {action.target_id!r} matches {len(matches)} current entities; "
+            "an ambiguous reference fails closed."
+        )
+    target = matches[0]
+    if not _body_is_shiftable(target):
+        return _unbound(
+            f"Body {target.name!r} ({target.id}) is not currently enterable: it must be "
+            "a conscious, non-animal, non-hostile character."
+        )
+    return BoundNamedTarget(
+        reason=(
+            f"Bound a body shift to current {target.faction or 'unaffiliated'} character "
+            f"{target.name!r} ({target.id}) at distance "
+            f"{target.distance if target.distance is not None else 'unknown'}."
+        ),
+        target_id=target.id,
+        resolved_label=target.name,
         source_revision=observation.world_revision,
     )
 
@@ -3774,6 +3856,52 @@ EXIT_CURRENT_BUILDING_DEFINITION = OperationDefinition(
     controller_verified=True,
 )
 
+SHIFT_INTO_BODY_DEFINITION = OperationDefinition(
+    kind="shift_into_body",
+    version="1.0",
+    interaction=ordinary_order(
+        recipients=RecipientScope.EXPLICIT_RECIPIENTS,
+        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
+    ),
+    operation_type=ShiftIntoBodyAction,
+    summary=(
+        "Become one exact currently observed conscious, non-hostile character. "
+        "Control follows selection rather than roster membership, so entering a "
+        "body means joining the player faction and becoming the selected "
+        "primary; the body is placed in its own squad, so the bodies left "
+        "behind stay their own unit instead of accumulating as followers. This "
+        "is what makes losing every character survivable rather than terminal."
+    ),
+    argument_source=(
+        "target_id must be an exact id from the observation's telemetry.nearby_entities, "
+        "naming a conscious non-animal character who is not hostile."
+    ),
+    allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset(
+        {
+            NATIVE_SHIFT_BODY_CAPABILITY,
+            "identity.stable_handles",
+            "nearby.characters",
+        }
+    ),
+    capability_aliases=frozenset(),
+    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
+    native_assisted=True,
+    risk=OperationRisk(native_assisted_actions=1),
+    max_primitive_actions=4,
+    reference_fields=("target_id",),
+    # Entering a body is not repeatable against the same evidence: once it
+    # succeeds the observation that authorized it describes a world the agent is
+    # no longer standing in.
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=OperationExecution.ATOMIC_HANDLER,
+    receipt_kind="semantic_body_shift",
+    bind=bind_shift_into_body,
+    handler_key="movement.shift_into_body",
+    controller_verified=True,
+    authorable_when=shift_into_body_is_currently_authorable,
+)
+
 MOVE_TO_CHARACTER_DEFINITION = OperationDefinition(
     kind="move_to_character",
     version="1.0",
@@ -4309,6 +4437,7 @@ OPERATION_DEFINITION_LIST: tuple[OperationDefinition, ...] = (
     OPEN_CONTEXT_INVENTORY_DEFINITION,
     REGROUP_WITH_SQUAD_MEMBER_DEFINITION,
     MOVE_TO_CHARACTER_DEFINITION,
+    SHIFT_INTO_BODY_DEFINITION,
     MOVE_IN_DIRECTION_DEFINITION,
     TRAVEL_TO_MAP_DESTINATION_DEFINITION,
     EXIT_CURRENT_BUILDING_DEFINITION,

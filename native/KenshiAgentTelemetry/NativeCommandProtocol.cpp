@@ -144,6 +144,7 @@ namespace KenshiAgentTelemetry
                // is the same (faction, platoon) rewrite the engine performs on
                // every death. Proves whether that rewrite works on the living.
                command == "shift_body_platoon" ||
+               command == "shift_into_body" ||
                command == "select_squad_member" ||
                command == "regroup_with_squad_member" ||
                command == "travel_to_map_destination" ||

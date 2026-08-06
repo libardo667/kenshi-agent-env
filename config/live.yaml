@@ -262,6 +262,7 @@ safety:
     - equip_item
     - collect_resource_output
     - recover_camera_view
+    - shift_into_body
     - consult_advisor
     - recall_memory
     - read_fieldbook

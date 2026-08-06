@@ -283,6 +283,7 @@ class MockOperationPort:
     select_squad_member = _record
     select_squad_member_exact = _record
     sell_item = _record
+    shift_into_body = _record
     survey_local_resources = _record
     travel_to_map_destination = _record
     use_game_binding = _record

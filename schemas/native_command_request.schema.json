@@ -63,6 +63,7 @@
         "move_to_character",
         "select_squad_member",
         "shift_body_platoon",
+        "shift_into_body",
         "regroup_with_squad_member",
         "move_in_direction",
         "travel_to_map_destination",

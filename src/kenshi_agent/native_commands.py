@@ -18,6 +18,7 @@ NATIVE_SQUAD_REGROUP_WIRE_COMMAND: Literal["regroup_with_squad_member"] = (
 )
 NATIVE_DIRECTION_WIRE_COMMAND: Literal["move_in_direction"] = "move_in_direction"
 NATIVE_MOVE_WIRE_COMMAND: Literal["move_to_character"] = "move_to_character"
+NATIVE_SHIFT_BODY_WIRE_COMMAND: Literal["shift_into_body"] = "shift_into_body"
 NATIVE_MAP_TRAVEL_WIRE_COMMAND: Literal["travel_to_map_destination"] = (
     "travel_to_map_destination"
 )

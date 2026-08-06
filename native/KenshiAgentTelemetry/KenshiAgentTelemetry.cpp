@@ -3345,7 +3345,9 @@ namespace
             request.command == "survey_local_resources";
         const bool isBodyShiftProbe =
             request.command == "shift_body_platoon";
-        if (isBodyShiftProbe || isApproach || isMove || isSquadSelection || isSquadRegroup ||
+        const bool isBodyShift =
+            request.command == "shift_into_body";
+        if (isBodyShift || isBodyShiftProbe || isApproach || isMove || isSquadSelection || isSquadRegroup ||
             isDirection || isMapTravel || isBuildingExit || isContextAction ||
             isResourceProduction || isContextInventory || isResourceSurvey)
             g_lastNativeCommand = request.command;
@@ -3360,7 +3362,8 @@ namespace
             !isResourceProduction &&
             !isContextInventory &&
             !isResourceSurvey &&
-            !isBodyShiftProbe)
+            !isBodyShiftProbe &&
+            !isBodyShift)
         {
             // The telemetry acknowledgement schema is intentionally limited
             // to reviewed commands. Do not publish an unparseable ack.
@@ -3395,6 +3398,117 @@ namespace
                 return;
             }
             RejectNativeCommand(request, "stale_revision");
+            return;
+        }
+
+        if (isBodyShift)
+        {
+            // Become another body. Control in Kenshi follows *selection*, not
+            // roster membership - proven live: a character released from the
+            // active platoon kept taking orders while absent from the squad
+            // menu. So entering a body is two things: belong to the player
+            // faction, and be the selected primary.
+            //
+            // `recruit` is the engine's own join path and is used in preference
+            // to rewriting the (faction, platoon) coordinate by hand, because
+            // it owns whatever bookkeeping that transition needs. The manual
+            // rewrite is what the diagnostic probe does, and it is deliberately
+            // not what this does.
+            Faction* playerFaction = player->getFaction();
+            if (playerFaction == NULL)
+            {
+                RejectNativeCommand(request, "shift_player_faction_unavailable");
+                return;
+            }
+
+            bool exactIdentityFound = false;
+            Character* target = FindExactNearbyCharacter(
+                player,
+                request.targetId,
+                exactIdentityFound);
+            if (target == NULL)
+            {
+                // Shifting between bodies already held is legitimate and does
+                // not go through the nearby sphere.
+                target = FindExactSquadMember(
+                    player,
+                    request.targetId,
+                    exactIdentityFound);
+            }
+            if (target == NULL || !target->isValid())
+            {
+                RejectNativeCommand(request, "shift_target_absent");
+                return;
+            }
+            if (target->isDestroyed())
+            {
+                RejectNativeCommand(request, "shift_target_dead");
+                return;
+            }
+            if (target->isUnconcious())
+            {
+                RejectNativeCommand(request, "shift_target_unconscious");
+                return;
+            }
+
+            Character* observer = player->selectedCharacter.getCharacter();
+            if (observer != NULL &&
+                observer->isValid() &&
+                observer->isEnemy(target, false))
+            {
+                // Refuse rather than press-gang an enemy: a hostile body is the
+                // case most likely to have consequences nobody has measured.
+                RejectNativeCommand(request, "shift_target_hostile");
+                return;
+            }
+
+            const char* joinReason = "shift_body_already_held";
+            if (target->getFaction() != playerFaction)
+            {
+                if (player->recruit(target, false))
+                    joinReason = "shift_body_recruited";
+                else if (player->recruit(target, true))
+                    joinReason = "shift_body_recruited_forced";
+                else
+                {
+                    RejectNativeCommand(request, "shift_recruit_refused");
+                    return;
+                }
+            }
+
+            // The body gets its own squad rather than joining the one already
+            // held. Inhabiting a body is not gaining a follower: the bodies
+            // left behind stay their own unit, and the squad menu shows who is
+            // currently being worn instead of a growing retinue of former
+            // hosts.
+            ActivePlatoon* ownSquad = player->createSquad();
+            if (ownSquad == NULL)
+            {
+                RejectNativeCommand(request, "shift_squad_unavailable");
+                return;
+            }
+            // Moving containers changes the handle, so the selection has to be
+            // carried across it - the engine's own repair, not a tolerated
+            // mismatch.
+            const hand beforeSquadMove = target->getHandle();
+            target->setFaction(playerFaction, ownSquad);
+            player->updatePlayerSelection(beforeSquadMove, target->getHandle());
+            if (ownSquad->me != NULL)
+                player->setCurrentPlatoon(ownSquad->me);
+
+            // Exclusive selection, primary, and camera follow in one call:
+            // modifier=false replaces the selection rather than adding to it,
+            // which is what "I am now this character" means, and track=true
+            // moves the view to the body being entered.
+            player->_selectPlayerCharacter(target, false, true);
+            if (!player->isObjectSelected(target))
+            {
+                RejectNativeCommand(request, "shift_selection_refused");
+                return;
+            }
+
+            AddNativeAcknowledgement(request, "completed", joinReason, true, true);
+            g_lastNativeCommandResult = joinReason;
             return;
         }
 

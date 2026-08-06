@@ -56,6 +56,7 @@ _EXACT_METHODS = frozenset(
         "scroll_screen",
         "select_squad_member",
         "select_squad_member_exact",
+        "shift_into_body",
         "sell_item",
         "set_speed",
         "travel_to_map_destination",

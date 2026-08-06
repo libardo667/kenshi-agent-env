@@ -461,6 +461,25 @@ class SurveyLocalResourcesAction(StrictModel):
     kind: Literal["survey_local_resources"] = "survey_local_resources"
 
 
+class ShiftIntoBodyAction(StrictModel):
+    """Become one exact currently observed character.
+
+    Control in Kenshi follows selection rather than roster membership - a
+    character released from the active platoon keeps taking orders while absent
+    from the squad menu - so entering a body means belonging to the player
+    faction and being the selected primary. The body is placed in its own squad:
+    inhabiting someone is not gaining a follower, and the bodies left behind
+    stay their own unit rather than accumulating into a retinue of former hosts.
+
+    This is the operation that makes a total party loss survivable. It is not
+    restricted to that case, because an agent that can only change bodies while
+    dying cannot practise the thing it will need to do while dying.
+    """
+
+    kind: Literal["shift_into_body"] = "shift_into_body"
+    target_id: str = Field(min_length=1, max_length=200)
+
+
 class MoveToCharacterAction(StrictModel):
     """Walk to any exact observed nearby character without talking to them.
 
@@ -940,6 +959,7 @@ AtomicRuntimeOperation: TypeAlias = (
     | SelectSquadMemberExactAction
     | RotateCameraAction
     | MoveToCharacterAction
+    | ShiftIntoBodyAction
     | MoveInDirectionAction
     | TravelToMapDestinationAction
     | ExitCurrentBuildingAction
@@ -1002,6 +1022,7 @@ Action: TypeAlias = (
     | SelectSquadMemberAction
     | SelectSquadMemberExactAction
     | RotateCameraAction
+    | ShiftIntoBodyAction
     | PerformContextAction
     | ProduceResourceOutputAction
     | OpenContextInventoryAction
@@ -1009,6 +1030,7 @@ Action: TypeAlias = (
     | RespondToImmediateThreatAction
     | RegroupWithSquadMemberAction
     | MoveToCharacterAction
+    | ShiftIntoBodyAction
     | MoveInDirectionAction
     | TravelToMapDestinationAction
     | ExitCurrentBuildingAction

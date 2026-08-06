@@ -48,6 +48,7 @@ namespace KenshiAgentTelemetry
             "control.survey_local_resources",
             "control.produce_resource_output",
             "control.open_context_inventory",
+            "control.shift_into_body",
             "identity.stable_handles",
         };
         static const char* const conditional[] =

@@ -20,28 +20,30 @@
   ],
   "entries": [
     {
-      "operation_kind": "noop",
-      "proof_status": "source_proven",
+      "operation_kind": "activate_visible_control",
+      "proof_status": "withheld",
       "evidence": [
-        "operation_definitions.py NOOP_DEFINITION emits no world command"
+        "docs/generated/OPERATION_DEFINITIONS.md visible_controls boundary: activation proves delivery and a later observation, not the gameplay meaning of the result"
       ],
-      "note": "No Kenshi input and no recipient."
+      "note": "Section 10.4 forbids this remaining a universal gameplay escape hatch. It has no semantic contract because its effect boundary is deliberately generic; Slice 7 either narrows it to bounded UI delivery or removes the offer. Prospect is the concrete case that must not be activated through it."
     },
     {
-      "operation_kind": "stop",
-      "proof_status": "source_proven",
-      "evidence": [
-        "operation_definitions.py STOP_DEFINITION ends the run, touches no character"
-      ],
-      "note": "Run control, not a game order."
+      "operation_kind": "approach_dialogue_target",
+      "proof_status": "unproven",
+      "evidence": [],
+      "note": "Movement is plausibly group-scoped while the dialogue outcome belongs to one participant. Which character becomes that participant is unproven; section 13.9 is its proof. Its wire command is still named approach_confirmed_vendor."
     },
     {
-      "operation_kind": "wait",
-      "proof_status": "source_proven",
-      "evidence": [
-        "operation_definitions.py WAIT_DEFINITION is internal-only run control"
-      ],
-      "note": "Waiting is only meaningful while the world runs; the playback requirement is the honest declaration of that, not a licence to toggle pause."
+      "operation_kind": "collect_resource_output",
+      "proof_status": "unproven",
+      "evidence": [],
+      "note": "Internal harvest phase. One explicit collection recipient; section 10.5 requires that this phase stop imposing singleton selection on the whole composite."
+    },
+    {
+      "operation_kind": "command_world_target",
+      "proof_status": "unproven",
+      "evidence": [],
+      "note": "Generic world-target order. Its contract may need to resolve per semantic rather than once for the operation."
     },
     {
       "operation_kind": "consult_advisor",
@@ -52,20 +54,60 @@
       "note": "Read-only strategic call."
     },
     {
-      "operation_kind": "recall_memory",
-      "proof_status": "source_proven",
-      "evidence": [
-        "cognition.memory handler performs no Kenshi input"
-      ],
-      "note": "Continuity read."
+      "operation_kind": "dismiss_screen",
+      "proof_status": "unproven",
+      "evidence": [],
+      "note": "Same open question as open_screen."
     },
     {
-      "operation_kind": "read_fieldbook",
+      "operation_kind": "equip_item",
+      "proof_status": "unproven",
+      "evidence": [],
+      "note": "The inventory window belongs to one character. Whether that character is Kenshi's primary or the first selected roster member is the section 13.7 proof; today affordances.py resolves it by roster iteration, which is the defect."
+    },
+    {
+      "operation_kind": "exit_current_building",
+      "proof_status": "unproven",
+      "evidence": [],
+      "note": "Mixed-building group behavior is unknown: recipients inside different buildings, or some already outside, have never been observed."
+    },
+    {
+      "operation_kind": "harvest_resource",
+      "proof_status": "unproven",
+      "evidence": [],
+      "note": "One planner-visible intent whose phases have different scopes. Its contract declares current_selection, but harvest_resource_is_currently_authorable still hard-requires a singleton selection - a gate that belongs to the late inventory-transfer phase, not to travelling or mining. Slice 1 stopped the menu offering it to a group it would refuse; it did not make a group able to harvest. Section 10.5 and Slice 6 own phase-scoped descriptors and the actual capability."
+    },
+    {
+      "operation_kind": "move_in_direction",
+      "proof_status": "unproven",
+      "evidence": [],
+      "note": "A directional walk plausibly broadcasts to the whole selection in Kenshi, but that has not been proven here. Before Slice 1 its cardinality gate made it unauthorable whenever a pair was selected, while still appearing on the planner's menu."
+    },
+    {
+      "operation_kind": "move_to_character",
+      "proof_status": "unproven",
+      "evidence": [],
+      "note": "Group arrival semantics and per-recipient aggregation are unproven. Section 13.1 is its proof."
+    },
+    {
+      "operation_kind": "noop",
       "proof_status": "source_proven",
       "evidence": [
-        "cognition.fieldbook handler performs no Kenshi input"
+        "operation_definitions.py NOOP_DEFINITION emits no world command"
       ],
-      "note": "Continuity read."
+      "note": "No Kenshi input and no recipient."
+    },
+    {
+      "operation_kind": "open_context_inventory",
+      "proof_status": "unproven",
+      "evidence": [],
+      "note": "Internal harvest phase. Opens the container window for one exact actor."
+    },
+    {
+      "operation_kind": "open_screen",
+      "proof_status": "unproven",
+      "evidence": [],
+      "note": "Screen opening is global today. Whether any specific screen is primary-scoped rather than global is exactly the question section 10.1 leaves open; no screen has been proven primary-owned."
     },
     {
       "operation_kind": "pause",
@@ -76,20 +118,45 @@
       "note": "Slice 7 moves ordinary in-run pause behind the playback coordinator; FinalSafeStateOwner keeps the terminal pause decision. Its milestone is a real observed world state, not delivery."
     },
     {
-      "operation_kind": "set_speed",
-      "proof_status": "source_proven",
-      "evidence": [
-        "operation_definitions.py SET_SPEED_DEFINITION is internal-only"
-      ],
-      "note": "Global playback affects every character and every retained order. Slice 7 owner."
+      "operation_kind": "perform_context_action",
+      "proof_status": "unproven",
+      "evidence": [],
+      "note": "Section 4.7 requires this operation to resolve its contract dynamically per context semantic; the base row is the fallback, not a universal answer."
     },
     {
-      "operation_kind": "rotate_camera",
+      "operation_kind": "perform_context_action",
+      "subcase": "operate",
+      "proof_status": "unproven",
+      "evidence": [],
+      "note": "The only witnessed context action. All four operate witnesses in context_menu_witnesses.json had exactly one character selected, so group operate behavior and resource operator capacity are unobserved."
+    },
+    {
+      "operation_kind": "produce_resource_output",
+      "proof_status": "unproven",
+      "evidence": [],
+      "note": "Holds an ordinary order until output exists. Its release path calls removeJob/clearOrders/halt on a claimed-owned queue; that ownership claim is unproven and is the section 13.6 obligation."
+    },
+    {
+      "operation_kind": "purchase_item",
+      "proof_status": "unproven",
+      "evidence": [],
+      "note": "Bounded trade transaction against one owned window pair. Recipient resolution shares the section 13.7 proof."
+    },
+    {
+      "operation_kind": "read_fieldbook",
       "proof_status": "source_proven",
       "evidence": [
-        "camera.rotate_camera handler drives the view, never a character"
+        "cognition.fieldbook handler performs no Kenshi input"
       ],
-      "note": "View state only."
+      "note": "Continuity read."
+    },
+    {
+      "operation_kind": "recall_memory",
+      "proof_status": "source_proven",
+      "evidence": [
+        "cognition.memory handler performs no Kenshi input"
+      ],
+      "note": "Continuity read."
     },
     {
       "operation_kind": "recover_camera_view",
@@ -100,16 +167,24 @@
       "note": "Recovery is verified against observed camera state, hence the outcome milestone."
     },
     {
-      "operation_kind": "open_screen",
+      "operation_kind": "regroup_with_squad_member",
       "proof_status": "unproven",
       "evidence": [],
-      "note": "Screen opening is global today. Whether any specific screen is primary-scoped rather than global is exactly the question section 10.1 leaves open; no screen has been proven primary-owned."
+      "note": "The action already carries actor_id, so it names its recipient rather than inheriting the selection. Converting it is Slice 5 work."
     },
     {
-      "operation_kind": "dismiss_screen",
+      "operation_kind": "respond_to_immediate_threat",
       "proof_status": "unproven",
       "evidence": [],
-      "note": "Same open question as open_screen."
+      "note": "Explicit actor. Whether engage/withdraw broadcasts to a group is proof-required and must not be inherited from current selection."
+    },
+    {
+      "operation_kind": "rotate_camera",
+      "proof_status": "source_proven",
+      "evidence": [
+        "camera.rotate_camera handler drives the view, never a character"
+      ],
+      "note": "View state only."
     },
     {
       "operation_kind": "scroll_screen",
@@ -134,115 +209,50 @@
       "note": "Changing who is selected is not commanding whoever was selected. Its recipients are the characters the action names, and its terminal is the observed selection state."
     },
     {
-      "operation_kind": "equip_item",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "The inventory window belongs to one character. Whether that character is Kenshi's primary or the first selected roster member is the section 13.7 proof; today affordances.py resolves it by roster iteration, which is the defect."
-    },
-    {
-      "operation_kind": "purchase_item",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "Bounded trade transaction against one owned window pair. Recipient resolution shares the section 13.7 proof."
-    },
-    {
       "operation_kind": "sell_item",
       "proof_status": "unproven",
       "evidence": [],
       "note": "Same window ownership and recipient question as purchase_item."
     },
     {
-      "operation_kind": "open_context_inventory",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "Internal harvest phase. Opens the container window for one exact actor."
+      "operation_kind": "set_speed",
+      "proof_status": "source_proven",
+      "evidence": [
+        "operation_definitions.py SET_SPEED_DEFINITION is internal-only"
+      ],
+      "note": "Global playback affects every character and every retained order. Slice 7 owner."
     },
     {
-      "operation_kind": "collect_resource_output",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "Internal harvest phase. One explicit collection recipient; section 10.5 requires that this phase stop imposing singleton selection on the whole composite."
+      "operation_kind": "shift_into_body",
+      "proof_status": "source_proven",
+      "evidence": [
+        "KenshiAgentTelemetry.cpp shift_into_body: PlayerInterface::recruit for a cross-faction body, createSquad + setFaction so the body is its own unit, updatePlayerSelection across the container move, then _selectPlayerCharacter(modifier=false, track=true) for exclusive primary selection",
+        "Dispatched live against Molly of the Drifters: reason shift_body_recruited, selected_character_ids reduced to the entered body, primary resolved to it, and the character left nearby_entities because it became a player character"
+      ],
+      "note": "Refuses a dead, unconscious, or hostile body natively as well as in the binding. Entering a body is not repeatable against the same evidence, so it is at_most_once."
     },
     {
-      "operation_kind": "move_to_character",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "Group arrival semantics and per-recipient aggregation are unproven. Section 13.1 is its proof."
+      "operation_kind": "stop",
+      "proof_status": "source_proven",
+      "evidence": [
+        "operation_definitions.py STOP_DEFINITION ends the run, touches no character"
+      ],
+      "note": "Run control, not a game order."
     },
     {
-      "operation_kind": "move_in_direction",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "A directional walk plausibly broadcasts to the whole selection in Kenshi, but that has not been proven here. Before Slice 1 its cardinality gate made it unauthorable whenever a pair was selected, while still appearing on the planner's menu."
+      "operation_kind": "survey_local_resources",
+      "proof_status": "source_proven",
+      "evidence": [
+        "KenshiLib ZoneManager::getResource/getResourceBase is the resource field the Prospecting window reads",
+        "native survey completes on publication and issues no order, so it commands no recipient"
+      ],
+      "note": "Reads Kenshi's resource field around the primary character and returns a grid rather than the window's area-averaged scalar, which reports 0 for a discrete deposit. Gated on an action deliberately: the agent learns what it surveyed, not what exists everywhere. Two things are unproven and are live-proof items - whether the null biome argument is accepted at runtime, and what the returned value scale means."
     },
     {
       "operation_kind": "travel_to_map_destination",
       "proof_status": "unproven",
       "evidence": [],
       "note": "Issues a delayed interior-leg continuation through newPlayerTaskSelectedCharacters, so it is the clearest case for the captured dispatch basis and the ScopedOrderDispatcher. Section 13.3 is its proof."
-    },
-    {
-      "operation_kind": "regroup_with_squad_member",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "The action already carries actor_id, so it names its recipient rather than inheriting the selection. Converting it is Slice 5 work."
-    },
-    {
-      "operation_kind": "exit_current_building",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "Mixed-building group behavior is unknown: recipients inside different buildings, or some already outside, have never been observed."
-    },
-    {
-      "operation_kind": "respond_to_immediate_threat",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "Explicit actor. Whether engage/withdraw broadcasts to a group is proof-required and must not be inherited from current selection."
-    },
-    {
-      "operation_kind": "approach_dialogue_target",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "Movement is plausibly group-scoped while the dialogue outcome belongs to one participant. Which character becomes that participant is unproven; section 13.9 is its proof. Its wire command is still named approach_confirmed_vendor."
-    },
-    {
-      "operation_kind": "command_world_target",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "Generic world-target order. Its contract may need to resolve per semantic rather than once for the operation."
-    },
-    {
-      "operation_kind": "perform_context_action",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "Section 4.7 requires this operation to resolve its contract dynamically per context semantic; the base row is the fallback, not a universal answer."
-    },
-    {
-      "operation_kind": "perform_context_action",
-      "subcase": "operate",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "The only witnessed context action. All four operate witnesses in context_menu_witnesses.json had exactly one character selected, so group operate behavior and resource operator capacity are unobserved."
-    },
-    {
-      "operation_kind": "produce_resource_output",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "Holds an ordinary order until output exists. Its release path calls removeJob/clearOrders/halt on a claimed-owned queue; that ownership claim is unproven and is the section 13.6 obligation."
-    },
-    {
-      "operation_kind": "harvest_resource",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "One planner-visible intent whose phases have different scopes. Its contract declares current_selection, but harvest_resource_is_currently_authorable still hard-requires a singleton selection - a gate that belongs to the late inventory-transfer phase, not to travelling or mining. Slice 1 stopped the menu offering it to a group it would refuse; it did not make a group able to harvest. Section 10.5 and Slice 6 own phase-scoped descriptors and the actual capability."
-    },
-    {
-      "operation_kind": "activate_visible_control",
-      "proof_status": "withheld",
-      "evidence": [
-        "docs/generated/OPERATION_DEFINITIONS.md visible_controls boundary: activation proves delivery and a later observation, not the gameplay meaning of the result"
-      ],
-      "note": "Section 10.4 forbids this remaining a universal gameplay escape hatch. It has no semantic contract because its effect boundary is deliberately generic; Slice 7 either narrows it to bounded UI delivery or removes the offer. Prospect is the concrete case that must not be activated through it."
     },
     {
       "operation_kind": "use_game_binding",
@@ -253,13 +263,12 @@
       "note": "Cannot have one universal contract merely because every case shares an input mechanism. Select All is the concrete case: it is currently offered by collecting the whole roster, and section 10.3 requires withholding it until live proof establishes whether the binding is active-platoon scoped."
     },
     {
-      "operation_kind": "survey_local_resources",
+      "operation_kind": "wait",
       "proof_status": "source_proven",
       "evidence": [
-        "KenshiLib ZoneManager::getResource/getResourceBase is the resource field the Prospecting window reads",
-        "native survey completes on publication and issues no order, so it commands no recipient"
+        "operation_definitions.py WAIT_DEFINITION is internal-only run control"
       ],
-      "note": "Reads Kenshi's resource field around the primary character and returns a grid rather than the window's area-averaged scalar, which reports 0 for a discrete deposit. Gated on an action deliberately: the agent learns what it surveyed, not what exists everywhere. Two things are unproven and are live-proof items - whether the null biome argument is accepted at runtime, and what the returned value scale means."
+      "note": "Waiting is only meaningful while the world runs; the playback requirement is the honest declaration of that, not a licence to toggle pause."
     }
   ]
 }

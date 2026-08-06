@@ -26,6 +26,7 @@ from ...core.operation import (
     SelectSquadMemberAction,
     SelectSquadMemberExactAction,
     SetSpeedAction,
+    ShiftIntoBodyAction,
     SurveyLocalResourcesAction,
     ThreatResponseStrategy,
     TravelToMapDestinationAction,
@@ -92,6 +93,10 @@ class MovementMechanicsPort(Protocol):
     ) -> Transition: ...
 
     async def survey_local_resources(
+        self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
+    ) -> Transition: ...
+
+    async def shift_into_body(
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
     ) -> Transition: ...
 
@@ -363,6 +368,10 @@ def movement_handlers(
         "movement.exit_current_building": NativeMovementHandler(
             port.exit_current_building, planning_config
         ),
+        "movement.shift_into_body": AtomicMovementHandler(
+            port.shift_into_body,
+            verify_native_terminal=True,
+        ),
         "movement.survey_local_resources": NativeMovementHandler(
             port.survey_local_resources, planning_config
         ),
@@ -448,6 +457,13 @@ class KenshiMovementMechanics:
     ) -> Transition:
         return await self._surface.run_exact(
             action, command=command, token=token, receipt=self._execute_survey_operation
+        )
+
+    async def shift_into_body(
+        self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
+    ) -> Transition:
+        return await self._surface.run_exact(
+            action, command=command, token=token, receipt=self._execute_body_shift
         )
 
     async def _execute_runtime_threat(
@@ -801,6 +817,43 @@ class KenshiMovementMechanics:
             semantic=semantic,
             continue_until_terminal=True,
             wire_command=native_commands.NATIVE_RESOURCE_SURVEY_WIRE_COMMAND,
+            require_dialogue_target=False,
+        )
+
+    async def _execute_body_shift(
+        self, action: Action, started: datetime, command: CommandDispatchContext | None
+    ) -> ActionReceipt:
+        """Become one exact observed body.
+
+        A single native order with no pulse: the plug-in joins the body to the
+        player faction, gives it its own squad, and makes it the selected
+        primary in one pass. There is nothing to walk toward and nothing to keep
+        nudging, so unlike a movement order this neither pulses nor continues
+        until a terminal - it either happened or it did not.
+        """
+
+        typed = cast(ShiftIntoBodyAction, action)
+        authority = await self._surface.require_command(command)
+        semantic = SemanticActionReceipt(
+            action_kind=typed.kind,
+            contract_version=operations.SHIFT_INTO_BODY_DEFINITION.version,
+            target_id=typed.target_id,
+            source_revision=authority.based_on_revision,
+            revalidation=(
+                "Bound to the exact stable nearby body and issued one native shift "
+                "order; the plug-in refuses a dead, unconscious, or hostile body."
+            ),
+        )
+        return await self._surface.run_native_order(
+            typed,
+            started,
+            authority,
+            target_id=typed.target_id,
+            pulse_seconds=0.0,
+            require_vendor_role=False,
+            semantic=semantic,
+            continue_until_terminal=False,
+            wire_command=native_commands.NATIVE_SHIFT_BODY_WIRE_COMMAND,
             require_dialogue_target=False,
         )
 

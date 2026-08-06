@@ -18,15 +18,15 @@ repository, and every captured context-menu witness had exactly one
 character selected.
 
 ```text
-operations               34
-planner-visible          31
+operations               35
+planner-visible          32
 internal-only             3
-native commands          11
-manifest entries         35
+native commands          12
+manifest entries         36
 coverage proof          PASS
 
 PROOF STATUS
-  source_proven     13
+  source_proven     14
   unit_proven        0
   live_proven        0
   unproven          20
@@ -63,6 +63,7 @@ INTERACTION CONTRACT (resolved from the sole operation registry)
   select_squad_member_exact           selection_mutation explicit_recipients none             world_outcome_observed  source_proven
   sell_item                           global_ui          explicit_recipients ui_transaction   world_outcome_observed  unproven
   set_speed                           global_ui          none                none             world_outcome_observed  source_proven
+  shift_into_body                     ordinary_order     explicit_recipients dispatch_only    world_outcome_observed  source_proven
   stop                                runtime_only       none                none             input_delivered         source_proven
   survey_local_resources              global_ui          none                none             world_outcome_observed  source_proven
   travel_to_map_destination           ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
@@ -103,6 +104,7 @@ EXECUTION AND ROUTING
   select_squad_member_exact           atomic_handler     any                      -                          characters
   sell_item                           composite_option   paused_transaction       -                          inventory
   set_speed                           atomic_handler     any                      -                          runtime
+  shift_into_body                     atomic_handler     running_for_progress     shift_into_body            body_shift
   stop                                atomic_handler     any                      -                          runtime
   survey_local_resources              atomic_handler     any                      survey_local_resources     native_and_composite
   travel_to_map_destination           monitored_option   running_for_progress     travel_to_map_destination  map
@@ -119,6 +121,7 @@ NATIVE COMMAND ROUTES
   produce_resource_output      -> produce_resource_output
   regroup_with_squad_member    -> regroup_with_squad_member
   select_squad_member          -> select_squad_member
+  shift_into_body              -> shift_into_body
   survey_local_resources       -> survey_local_resources
   travel_to_map_destination    -> travel_to_map_destination
 
