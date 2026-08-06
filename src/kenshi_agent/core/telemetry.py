@@ -988,6 +988,12 @@ class UIState(StrictModel):
     management_tab: int | None = Field(default=None, ge=-1)
     selected_character_id: str | None = None
     selected_character_ids: list[str] = Field(default_factory=list)
+    # Selected entities Kenshi will deliver an order to but that cannot be named
+    # to the planner: no stable id, not a player character, or absent from the
+    # current squad. Empty is the normal case. A non-empty value means the
+    # command validator is comparing against more members than were authorized,
+    # which it refuses - correctly, since the extra one is a real recipient.
+    selected_character_ids_withheld: list[str] = Field(default_factory=list, max_length=64)
     client_width: int | None = Field(default=None, gt=0)
     client_height: int | None = Field(default=None, gt=0)
 
@@ -1210,7 +1216,7 @@ class NativeControlState(StrictModel):
 
 
 class TelemetrySnapshot(StrictModel):
-    protocol_version: str = "1.15.0"
+    protocol_version: str = "1.16.0"
     sequence: int = Field(default=0, ge=0)
     captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = "unknown"

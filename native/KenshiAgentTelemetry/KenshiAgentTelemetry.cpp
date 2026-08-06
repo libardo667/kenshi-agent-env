@@ -174,7 +174,7 @@ namespace
     const unsigned int MAX_RUNTIME_CONTEXT_MENU_TASK_TYPES = 64;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "1.15.0";
+    const char* PROTOCOL_VERSION = "1.16.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -811,7 +811,26 @@ namespace
         return true;
     }
 
-    bool TryGetExactSelectionBasis(
+    // Why an exact selection basis could not be resolved, in the plug-in's own
+    // words. This was one token - "selection_mismatch" - for six unrelated
+    // conditions, so a live cancellation said only that something about the
+    // selection was wrong and never which thing.
+    //
+    // The one that matters most is `selection_size_differs`. Telemetry exports
+    // `selected_character_ids` by *filtering* player->selectedCharacters: an
+    // entry with no stable id, or that is not a player character, or that is
+    // absent from the current squad, is skipped. This check compares against
+    // the raw, unfiltered set. Python can only ever authorize what it was
+    // shown, so a hidden member makes the two authorities disagree about what
+    // "the selection" is, permanently and with nothing changing.
+    //
+    // Refusing is still correct - newPlayerTaskSelectedCharacters delivers to
+    // the raw set, so a hidden member would receive an order nobody authorized.
+    // What was wrong was being unable to say so. `selected_character_ids_withheld`
+    // now carries the hidden entries, and this names the exact condition.
+    const char* const SELECTION_BASIS_OK = NULL;
+
+    const char* ResolveExactSelectionBasis(
         PlayerInterface* player,
         const std::vector<std::string>& expectedIds,
         std::string& primaryId,
@@ -820,18 +839,18 @@ namespace
     {
         primaryId.clear();
         selectedHandles.clear();
-        if (player == NULL ||
-            expectedIds.empty() ||
-            player->selectedCharacters.size() != expectedIds.size())
-        {
-            return false;
-        }
+        if (player == NULL)
+            return "selection_player_absent";
+        if (expectedIds.empty())
+            return "selection_none_authorized";
+        if (player->selectedCharacters.size() != expectedIds.size())
+            return "selection_size_differs";
 
         std::set<std::string> expected(
             expectedIds.begin(),
             expectedIds.end());
         if (expected.size() != expectedIds.size())
-            return false;
+            return "selection_authorized_duplicate";
 
         std::set<std::string> observed;
         for (ogre_unordered_set<hand>::type::const_iterator it =
@@ -840,19 +859,17 @@ namespace
              ++it)
         {
             Character* selected = it->getCharacter();
-            if (selected == NULL ||
-                !selected->isValid() ||
-                !selected->isPlayerCharacter())
-            {
-                return false;
-            }
+            if (selected == NULL || !selected->isValid())
+                return "selection_member_invalid";
+            if (!selected->isPlayerCharacter())
+                return "selection_member_not_player_character";
             const std::string id = StableEntityId(selected);
-            if (id.empty() ||
-                expected.find(id) == expected.end() ||
-                !observed.insert(id).second)
-            {
-                return false;
-            }
+            if (id.empty())
+                return "selection_member_unidentified";
+            if (expected.find(id) == expected.end())
+                return "selection_member_unauthorized";
+            if (!observed.insert(id).second)
+                return "selection_member_duplicate";
             selectedHandles.push_back(*it);
             if (SameHandleIdentity(*it, player->selectedCharacter))
             {
@@ -860,7 +877,26 @@ namespace
                 primaryHandle = *it;
             }
         }
-        return observed == expected && !primaryId.empty();
+        if (observed != expected)
+            return "selection_incomplete";
+        if (primaryId.empty())
+            return "selection_primary_absent";
+        return SELECTION_BASIS_OK;
+    }
+
+    bool TryGetExactSelectionBasis(
+        PlayerInterface* player,
+        const std::vector<std::string>& expectedIds,
+        std::string& primaryId,
+        hand& primaryHandle,
+        std::vector<hand>& selectedHandles)
+    {
+        return ResolveExactSelectionBasis(
+                   player,
+                   expectedIds,
+                   primaryId,
+                   primaryHandle,
+                   selectedHandles) == SELECTION_BASIS_OK;
     }
 
     bool IsKnownMapDestination(TownBase* town)
@@ -2609,19 +2645,27 @@ namespace
         std::string selectedId;
         hand selectedHandle;
         std::vector<hand> selectedHandles;
-        const bool selectionResolved =
+        const char* selectionReason =
             g_activeNativeCommand.selectedCharacterIds.size() > 1
-                ? TryGetExactSelectionBasis(
+                ? ResolveExactSelectionBasis(
                     player,
                     g_activeNativeCommand.selectedCharacterIds,
                     selectedId,
                     selectedHandle,
                     selectedHandles)
-                : TryGetExactSelection(player, selectedId, selectedHandle);
-        if (!selectionResolved ||
-            selectedId != g_activeNativeCommand.selectedCharacterId)
+                : (TryGetExactSelection(player, selectedId, selectedHandle)
+                       ? SELECTION_BASIS_OK
+                       : "selection_singleton_unresolved");
+        if (selectionReason != SELECTION_BASIS_OK)
         {
-            FinishActiveNativeCommand("cancelled", "selection_mismatch");
+            FinishActiveNativeCommand("cancelled", selectionReason);
+            return;
+        }
+        if (selectedId != g_activeNativeCommand.selectedCharacterId)
+        {
+            // Resolvable, but for someone else: the order outlived the party it
+            // was authored for. Distinct from being unable to resolve at all.
+            FinishActiveNativeCommand("cancelled", "selection_primary_changed");
             return;
         }
         if (selectedHandles.empty())
@@ -3318,14 +3362,15 @@ namespace
         std::string selectedId;
         hand selectedHandle;
         std::vector<hand> selectedHandles;
-        if (!TryGetExactSelectionBasis(
-                player,
-                request.selectedCharacterIds,
-                selectedId,
-                selectedHandle,
-                selectedHandles))
+        const char* submitSelectionReason = ResolveExactSelectionBasis(
+            player,
+            request.selectedCharacterIds,
+            selectedId,
+            selectedHandle,
+            selectedHandles);
+        if (submitSelectionReason != SELECTION_BASIS_OK)
         {
-            RejectNativeCommand(request, "selection_mismatch");
+            RejectNativeCommand(request, submitSelectionReason);
             return;
         }
 
@@ -3622,8 +3667,17 @@ namespace
             g_activeNativeCommand.active = true;
             g_activeNativeCommand.commandId = request.commandId;
             g_activeNativeCommand.targetId = request.targetId;
-            g_activeNativeCommand.selectedCharacterId =
-                request.selectedCharacterId;
+            // The whole authorized party, not just its primary. Submit accepts a
+            // multi-character basis, but this path recorded only the primary and
+            // left the id list cleared, so the monitor read size 0, took the
+            // singleton branch, and cancelled every order the moment a second
+            // character was selected - reported as `selection_mismatch` with no
+            // way to tell that from a genuinely changed selection. Every other
+            // submit path already carried the list; this one is where a
+            // two-character party's mining order died.
+            g_activeNativeCommand.selectedCharacterId = selectedId;
+            g_activeNativeCommand.selectedCharacterIds =
+                request.selectedCharacterIds;
             g_activeNativeCommand.targetHandle = targetHandle;
             g_activeNativeCommand.selectedHandle = selectedHandle;
             g_activeNativeCommand.isWalk = false;
@@ -4393,6 +4447,14 @@ namespace
             json << "\"selected_character_id\":\""
                  << selectedId << "\",";
         }
+        // Two lists, because this export used to be one and the omission was
+        // invisible. Kenshi delivers an order to every member of
+        // selectedCharacters, but only recognizable squad members can be named
+        // to Python, so an unnameable member was silently dropped here while
+        // still being a recipient - and the command validator, which compares
+        // against the unfiltered set, then refused every order with no way to
+        // say what it had seen that this had not.
+        std::vector<std::string> withheldSelection;
         json << "\"selected_character_ids\":[";
         if (player != NULL)
         {
@@ -4407,12 +4469,31 @@ namespace
                 if (id.empty() ||
                     !selectedCharacter->isPlayerCharacter() ||
                     currentSquadIds.find(id) == currentSquadIds.end())
+                {
+                    std::string withheld = id;
+                    if (withheld.empty())
+                        withheld = "unidentified";
+                    else if (selectedCharacter == NULL ||
+                             !selectedCharacter->isPlayerCharacter())
+                        withheld += " (not-player-character)";
+                    else
+                        withheld += " (absent-from-squad)";
+                    withheldSelection.push_back(withheld);
                     continue;
+                }
                 if (!firstSelected)
                     json << ",";
                 firstSelected = false;
                 json << "\"" << id << "\"";
             }
+        }
+        json << "],";
+        json << "\"selected_character_ids_withheld\":[";
+        for (size_t index = 0; index < withheldSelection.size(); ++index)
+        {
+            if (index > 0)
+                json << ",";
+            json << "\"" << JsonEscape(withheldSelection[index]) << "\"";
         }
         json << "]";
         json << "},";

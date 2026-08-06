@@ -56,6 +56,22 @@ NativeMovementAction: TypeAlias = (
 TransitionOperation: TypeAlias = Callable[..., Coroutine[Any, Any, Transition]]
 
 
+def _terminal_state_reason(option_name: str, status: object, reason: str | None) -> str:
+    """Say why the option ended, not merely that it did not succeed.
+
+    The option already holds the environment's own account - "Kenshi ended the
+    native movement as 'cancelled': selection_size_differs" - and this message
+    used to drop it, so a live abort reached the console as "has no successful
+    transition in state 'failed'" and the cause had to be dug out of the event
+    log. That is the same defect as a boundary that refuses without naming the
+    gate; it cost a whole diagnostic session once already.
+    """
+
+    status_value = getattr(status, "value", status)
+    ending = f"{option_name} has no successful transition in state {status_value!r}"
+    return f"{ending}: {reason}" if reason else f"{ending}."
+
+
 class OptionLifecycleError(RuntimeError):
     pass
 
@@ -330,8 +346,7 @@ class StatefulThreatResponseOption:
     def result(self) -> Transition:
         if self.status is not OptionStatus.SUCCEEDED or self.transition is None:
             raise OptionLifecycleError(
-                "Threat-response option has no successful transition in state "
-                f"{self.status.value!r}."
+                _terminal_state_reason("Threat-response option", self.status, self.reason)
             )
         if not self._finished:
             raise OptionLifecycleError(
@@ -761,8 +776,7 @@ class StatefulNativeMovementOption:
                 raise error
         if self.status is not OptionStatus.SUCCEEDED or self.transition is None:
             raise OptionLifecycleError(
-                "Native movement option has no successful transition in state "
-                f"{self.status.value!r}."
+                _terminal_state_reason("Native movement option", self.status, self.reason)
             )
         return self.transition.model_copy(deep=True)
 
@@ -1053,7 +1067,7 @@ class StatefulApproachOption:
                 raise error
         if self.status is not OptionStatus.SUCCEEDED or self.transition is None:
             raise OptionLifecycleError(
-                f"Approach option has no successful transition in state {self.status.value!r}."
+                _terminal_state_reason("Approach option", self.status, self.reason)
             )
         return self.transition.model_copy(deep=True)
 

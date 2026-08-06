@@ -6357,7 +6357,7 @@
       "additionalProperties": false,
       "properties": {
         "protocol_version": {
-          "default": "1.15.0",
+          "default": "1.16.0",
           "title": "Protocol Version",
           "type": "string"
         },
@@ -6816,6 +6816,14 @@
             "type": "string"
           },
           "title": "Selected Character Ids",
+          "type": "array"
+        },
+        "selected_character_ids_withheld": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Selected Character Ids Withheld",
           "type": "array"
         },
         "client_width": {
