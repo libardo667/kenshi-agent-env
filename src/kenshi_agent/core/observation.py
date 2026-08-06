@@ -454,6 +454,20 @@ class Observation(StrictModel):
             digest.append(entry)
         return digest
 
+    def with_world_facts(self, observed: Observation) -> Observation:
+        """Take `observed`'s fresh world facts onto this runtime context.
+
+        The one supported way to build an observation when you have current
+        telemetry but no authority over what the run knows. Constructing a whole
+        `Observation` from a snapshot instead leaves every runtime-owned field at
+        its default, which reads downstream as a deliberate answer.
+        """
+
+        return self.model_copy(
+            update={name: getattr(observed, name) for name in sorted(WORLD_FACT_FIELDS)},
+            deep=True,
+        )
+
     def log_digest(self) -> dict[str, Any]:
         """A compact record of this observation for the session log.
 
@@ -622,3 +636,114 @@ class Observation(StrictModel):
             ],
         }
         return digest
+
+
+# Two owners share this one model, and confusing them is a silent-loss bug.
+#
+# The environment observes the world: it holds a telemetry snapshot and can fill
+# these in from it alone. The runtime knows everything else - what the run is
+# for, what it remembers, what it has already tried - and no amount of telemetry
+# can reconstruct any of it.
+#
+# The distinction stayed implicit while every field carried a default, so code
+# that legitimately had only world facts could build a whole `Observation` and
+# silently assert defaults for the rest. `planning_mode` was the field that made
+# this expensive: the live input boundary builds its observation from a snapshot,
+# so it always claimed the default mode, and affordance enumeration read that as
+# authority and withheld every monitored operation. Mining could not be
+# authorized at all, and said "Affordance is absent from the current observation"
+# while the deposit sat there in every publication.
+#
+# Fresh world facts belong on retained runtime context, never beside invented
+# context - which is what `with_world_facts` is for.
+WORLD_FACT_FIELDS: frozenset[str] = frozenset(
+    {
+        "run_id",
+        "step_index",
+        "observed_at",
+        "mode",
+        "control_mode",
+        "world_revision",
+        "telemetry",
+        "telemetry_stale",
+        "telemetry_age_seconds",
+        "screenshot_path",
+        "screenshot_sha256",
+        "events",
+        "recent_changes",
+    }
+)
+
+RUNTIME_CONTEXT_FIELDS: frozenset[str] = frozenset(
+    {
+        "objective",
+        "active_plan",
+        "recent_action_outcomes",
+        "recent_plan_outcomes",
+        "recent_continuity_receipts",
+        "continuity_writes_degraded_reason",
+        "continuity_reads_degraded_reason",
+        "planner_feedback",
+        "memories",
+        "memory_recall",
+        "memory_search",
+        "fieldbook_projects",
+        "active_fieldbook_project",
+        "recent_fieldbook_receipts",
+        "fieldbook_read",
+        "advisor",
+    }
+)
+
+# Everything the runtime owns and re-derives for each planner call. A subset,
+# because `active_plan` is resolved from the store rather than supplied.
+PLANNER_CONTEXT_FIELDS: frozenset[str] = RUNTIME_CONTEXT_FIELDS - {"active_plan"}
+
+# The runtime-owned fields that must survive a telemetry publication rather than
+# wait to be re-derived, because losing one between two planner calls loses the
+# only copy: a hosted advisor brief, a retained memory, the run's objective.
+PUBLICATION_SURVIVING_FIELDS: frozenset[str] = frozenset(
+    {
+        "objective",
+        "recent_action_outcomes",
+        "memories",
+        "advisor",
+    }
+)
+
+
+def _assert_every_field_has_an_owner() -> None:
+    """A new `Observation` field must be classified, not silently assumed.
+
+    Adding one without saying who owns it is exactly how the boundary came to
+    fabricate planner context, so this fails at import rather than at runtime.
+    """
+
+    declared = set(Observation.model_fields)
+    classified = WORLD_FACT_FIELDS | RUNTIME_CONTEXT_FIELDS
+    unclassified = declared - classified
+    if unclassified:
+        raise RuntimeError(
+            "Observation fields with no declared owner: "
+            + ", ".join(sorted(unclassified))
+            + ". Add each to WORLD_FACT_FIELDS or RUNTIME_CONTEXT_FIELDS."
+        )
+    unknown = classified - declared
+    if unknown:
+        raise RuntimeError(
+            "Ownership declared for fields Observation does not have: "
+            + ", ".join(sorted(unknown))
+        )
+    overlap = WORLD_FACT_FIELDS & RUNTIME_CONTEXT_FIELDS
+    if overlap:
+        raise RuntimeError("Fields claimed by both owners: " + ", ".join(sorted(overlap)))
+    for name, subset in (
+        ("PLANNER_CONTEXT_FIELDS", PLANNER_CONTEXT_FIELDS),
+        ("PUBLICATION_SURVIVING_FIELDS", PUBLICATION_SURVIVING_FIELDS),
+    ):
+        stray = subset - RUNTIME_CONTEXT_FIELDS
+        if stray:
+            raise RuntimeError(f"{name} names non-runtime fields: " + ", ".join(sorted(stray)))
+
+
+_assert_every_field_has_an_owner()

@@ -515,7 +515,22 @@ class ExecutionKernel:
         return dispatch, token
 
     def _latest_input_authority(self) -> Observation | None:
-        return self.input_boundary_observation() or self.state_store.latest
+        """Current world facts, carried on what this run actually knows.
+
+        The environment re-reads telemetry inside the lease, so it can answer
+        for the world and nothing else. Handing that back on its own let the
+        boundary evaluate authority against defaulted runtime context - which is
+        how a monitored operation became unauthorizable at the input boundary
+        while every piece of evidence it needed was present and unchanged.
+        """
+
+        observed = self.input_boundary_observation()
+        retained = self.state_store.latest
+        if observed is None:
+            return retained
+        if retained is None:
+            return observed
+        return retained.with_world_facts(observed)
 
     def _close_reservations(
         self,

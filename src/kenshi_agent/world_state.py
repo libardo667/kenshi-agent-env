@@ -11,7 +11,11 @@ from math import dist
 from typing import TYPE_CHECKING, TypeAlias
 
 from .core.evidence import StateChange
-from .core.observation import Observation
+from .core.observation import (
+    PLANNER_CONTEXT_FIELDS,
+    PUBLICATION_SURVIVING_FIELDS,
+    Observation,
+)
 from .core.telemetry import NearbyEntity
 from .core.transport import new_command_id
 from .core.world import WorldStateRevision
@@ -393,26 +397,10 @@ class WorldStateStore:
             raise RevisionConflictError(
                 "Planner context must decorate the current world-state revision."
             )
-        contextual_fields = (
-            "objective",
-            "recent_action_outcomes",
-            "recent_plan_outcomes",
-            "recent_continuity_receipts",
-            "continuity_writes_degraded_reason",
-            "continuity_reads_degraded_reason",
-            "planner_feedback",
-            "memories",
-            "memory_recall",
-            "memory_search",
-            "fieldbook_projects",
-            "active_fieldbook_project",
-            "recent_fieldbook_receipts",
-            "fieldbook_read",
-            "advisor",
-        )
         decorated = self._latest.model_copy(
             update={
-                field_name: getattr(observation, field_name) for field_name in contextual_fields
+                field_name: getattr(observation, field_name)
+                for field_name in sorted(PLANNER_CONTEXT_FIELDS)
             },
             deep=True,
         )
@@ -438,12 +426,7 @@ class WorldStateStore:
             canonical = canonical.model_copy(
                 update={
                     field_name: getattr(previous, field_name)
-                    for field_name in (
-                        "objective",
-                        "recent_action_outcomes",
-                        "memories",
-                        "advisor",
-                    )
+                    for field_name in sorted(PUBLICATION_SURVIVING_FIELDS)
                 },
                 deep=True,
             )
