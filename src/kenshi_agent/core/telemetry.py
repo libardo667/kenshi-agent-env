@@ -994,6 +994,12 @@ class UIState(StrictModel):
     # command validator is comparing against more members than were authorized,
     # which it refuses - correctly, since the extra one is a real recipient.
     selected_character_ids_withheld: list[str] = Field(default_factory=list, max_length=64)
+    # Diagnostic: each selection entry's stored handle beside the same
+    # character's current handle. A `hand` carries its container, so a character
+    # who changes platoon gets a new one and any selection captured before the
+    # move keeps the old coordinate. Free-form because it is for reading, not
+    # for deciding: nothing branches on it.
+    selection_handle_audit: list[str] = Field(default_factory=list, max_length=64)
     client_width: int | None = Field(default=None, gt=0)
     client_height: int | None = Field(default=None, gt=0)
 

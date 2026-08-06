@@ -6827,6 +6827,14 @@
           "title": "Selected Character Ids Withheld",
           "type": "array"
         },
+        "selection_handle_audit": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Selection Handle Audit",
+          "type": "array"
+        },
         "client_width": {
           "anyOf": [
             {

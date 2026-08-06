@@ -3400,11 +3400,13 @@ namespace
                 released->setFaction(
                     playerFaction,
                     static_cast<ActivePlatoon*>(activeSquad));
-                // Rejoin the selection as well as the roster. Selection and
-                // roster are separate in Kenshi and control follows selection,
-                // but the squad UI maps portrait index onto the selection set,
-                // so leaving them out of step desynchronizes the portraits.
-                player->_selectPlayerCharacter(released, false, false);
+                // Rejoin the selection as well as the roster, additively, so
+                // seizing one body does not silently drop whoever was already
+                // held. Selection and roster are separate - control follows
+                // selection - but the squad UI maps portrait index onto the
+                // selection set, so leaving them out of step desynchronizes
+                // the portraits.
+                player->_selectPlayerCharacter(released, true, false);
                 g_shiftProbeReleased = hand();
                 AddNativeAcknowledgement(
                     request,
@@ -3427,19 +3429,45 @@ namespace
                 return;
             }
             g_shiftProbeReleased = subject->getHandle();
-            // Deselect before releasing. A body that leaves the roster while
-            // still in player->selectedCharacters is a selection entry with no
-            // roster slot: proven live to leave `selected_character_ids` and
-            // the per-character `selected` flags contradicting each other -
-            // which fails the telemetry snapshot's own validator - and to
-            // desynchronize Kenshi's squad portraits, so clicking one
-            // character's portrait focuses a different character.
+            // A `hand` carries its container, so moving a body between platoons
+            // gives it a new handle. Any selection entry captured beforehand
+            // keeps the old address: measured live as
+            //   stored=1/1/301513664/2/...  current=1/39/318969728/2/...
+            // - same type, index and serial, different container. It still
+            // resolves to the right character, so `selected_character_ids`
+            // lists them, while the identity compare behind the per-character
+            // `selected` flag fails. The snapshot then contradicts itself and
+            // fails its own validator, Kenshi's squad portraits desynchronize,
+            // and the command validator's `selection_size_differs` would refuse
+            // every later order.
             //
-            // It is also the exact `selection_size_differs` condition the
-            // command validator refuses on, which would have made every
-            // subsequent order unauthorizable.
-            subject->unselect();
+            // `RootObject::unselect()` was tried here first and is not enough:
+            // it acts on the object, not on the player's selection set, and the
+            // stale entry survived it. `PlayerInterface::unselectAll()` is the
+            // one that empties the set. Rebuilding the selection afterwards
+            // from the authorized ids, minus the body being released, keeps the
+            // player holding exactly who they held before.
+            std::vector<std::string> restoreSelection;
+            for (size_t index = 0;
+                 index < request.selectedCharacterIds.size();
+                 ++index)
+            {
+                if (request.selectedCharacterIds[index] != request.targetId)
+                    restoreSelection.push_back(
+                        request.selectedCharacterIds[index]);
+            }
+            player->unselectAll();
             subject->setFaction(playerFaction, deadSquad);
+            for (size_t index = 0; index < restoreSelection.size(); ++index)
+            {
+                bool restoredFound = false;
+                Character* restored = FindExactSquadMember(
+                    player,
+                    restoreSelection[index],
+                    restoredFound);
+                if (restored != NULL && restored->isValid())
+                    player->_selectPlayerCharacter(restored, true, false);
+            }
             AddNativeAcknowledgement(
                 request,
                 "completed",
@@ -4585,6 +4613,59 @@ namespace
             if (index > 0)
                 json << ",";
             json << "\"" << JsonEscape(withheldSelection[index]) << "\"";
+        }
+        json << "],";
+
+        // Diagnostic: a `hand` is (type, container, containerSerial, index,
+        // serial), so `container` is part of an object's identity and a
+        // character who changes platoon gets a different handle. A selection
+        // entry captured before such a move still names the old container, so
+        // it resolves to the right character while failing an identity compare
+        // against that character's current handle - which is exactly the state
+        // where `selected_character_ids` lists someone the squad flags and the
+        // game itself do not consider selected.
+        //
+        // This prints, per selection entry, the stored handle beside the same
+        // character's current one, so which field actually moved is a fact
+        // rather than an inference.
+        json << "\"selection_handle_audit\":[";
+        if (player != NULL)
+        {
+            bool firstAudit = true;
+            for (ogre_unordered_set<hand>::type::const_iterator it =
+                     player->selectedCharacters.begin();
+                 it != player->selectedCharacters.end();
+                 ++it)
+            {
+                Character* entryCharacter = it->getCharacter();
+                if (entryCharacter == NULL)
+                {
+                    if (!firstAudit)
+                        json << ",";
+                    firstAudit = false;
+                    json << "\"unresolvable-entry\"";
+                    continue;
+                }
+                const hand current = entryCharacter->getHandle();
+                std::ostringstream row;
+                row << StableEntityId(entryCharacter)
+                    << " stored=" << it->type
+                    << "/" << it->container
+                    << "/" << it->containerSerial
+                    << "/" << it->index
+                    << "/" << it->serial
+                    << " current=" << current.type
+                    << "/" << current.container
+                    << "/" << current.containerSerial
+                    << "/" << current.index
+                    << "/" << current.serial
+                    << " match="
+                    << (SameHandleIdentity(*it, current) ? "yes" : "no");
+                if (!firstAudit)
+                    json << ",";
+                firstAudit = false;
+                json << "\"" << JsonEscape(row.str()) << "\"";
+            }
         }
         json << "]";
         json << "},";
