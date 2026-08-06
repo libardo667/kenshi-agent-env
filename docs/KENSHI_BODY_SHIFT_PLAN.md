@@ -80,17 +80,40 @@ Eligibility is computed **native-side** and exported as a candidate list, so the
 planner chooses among offers rather than proposing an arbitrary entity — the
 same discipline as every other affordance.
 
-## The two hard parts
+## Release is already solved, by Kenshi, on every death
 
-**1. Releasing the old body.** `PlayerInterface::recruit(Character*, bool editor)`
-*adds* to the player faction. True shifting also has to let go, or the agent
-accumulates a squad of corpses and hosts instead of moving between them. There
-is no obvious release API; `getDeadSquad()` suggests Kenshi already relocates the
-dead somewhere. **This is the piece to prototype first, because if release is
-not achievable the whole mechanic changes shape** — it becomes possession-by-
-accretion, which is a different (and worse) game.
+The original worry was that `recruit()` only *adds*, so shifting would accrete
+hosts rather than move between them, and that no release API was apparent.
 
-**2. Faction consequence.** Recruiting pulls a character out of their faction.
+Kenshi performs the release itself, constantly. Observed live: when a player
+character dies it leaves the active squad and becomes inspectable exactly like
+any other non-player character — the player ends with an empty roster and two
+bodies still in the world. `PlayerInterface` holds `deadPlayerSquad` and
+`getDeadSquad()`, which returns an `ActivePlatoon*`.
+
+The primitive is `setFaction(Faction*, ActivePlatoon*)`, declared on `RootObject`
+(vtable offset `0x0`) and overridden by `Character`. Membership is a
+**(faction, platoon) coordinate**, and that single call rewrites it. Death is
+that call with the same faction and a different platoon: still player faction,
+which is why the corpses stay inspectable; different platoon, which is why they
+leave the roster.
+
+So the nesting is not a metaphor for the mechanic. It **is** the mechanic:
+
+- **Seize** — `setFaction(playerFaction, playerActivePlatoon)`
+- **Release** — `setFaction(<faction>, <other platoon>)`
+- **Faction hop** — the same call with the outer coordinate changed
+- **Death** — the engine already doing it
+
+One call, four dolls, distinguished only by which coordinates move. Prototype
+order is therefore reversed from the original plan: release is evidenced, so the
+first thing to prove is a *round trip* — release a living body to a non-player
+platoon and seize it back — since anything the engine only ever does to corpses
+may behave differently on the living.
+
+## The remaining hard part
+
+**Faction consequence.** Recruiting pulls a character out of their faction.
 Shifting into a Holy Nation paladin plausibly creates a deserter and makes the
 faction hostile to the body now being worn. That is an *outer doll* moving
 because an inner one did. It must be observed and reported, not assumed benign.
@@ -116,6 +139,10 @@ Both are additive; `CharacterState` already carries `alive`, `conscious`,
   field gets an owner in `WORLD_FACT_FIELDS` / `RUNTIME_CONTEXT_FIELDS`.
 
 ## Acceptance
+
+First, a round trip proven in isolation: a living body released to a non-player
+platoon and seized back, with telemetry showing it leave and rejoin the roster.
+Only then the full case.
 
 One live run, from an authored start, in which the party is deliberately lost
 and the agent continues playing in a new body, with the run bundle showing:
