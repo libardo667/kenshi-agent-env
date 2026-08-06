@@ -546,17 +546,17 @@ namespace
 
     bool IsSelected(PlayerInterface* player, const hand& handle)
     {
+        // Ask the engine rather than re-deriving its answer. Walking
+        // `selectedCharacters` and comparing handles was a reimplementation of
+        // `isObjectSelected`, and a worse one: a `hand` carries its container,
+        // so the comparison returned a false negative for any character who had
+        // changed platoon while selected.
         if (player == NULL)
             return false;
-        for (ogre_unordered_set<hand>::type::const_iterator it =
-                 player->selectedCharacters.begin();
-             it != player->selectedCharacters.end();
-             ++it)
-        {
-            if (SameCharacterIdentity(*it, handle))
-                return true;
-        }
-        return false;
+        Character* character = handle.getCharacter();
+        if (character == NULL)
+            return false;
+        return player->isObjectSelected(character);
     }
 
     int FindNativeAcknowledgement(const std::string& commandId)
@@ -3430,16 +3430,18 @@ namespace
                 released->isValid() &&
                 StableEntityId(released) == request.targetId)
             {
+                // Moving containers gives the body a new handle, so tell the
+                // engine to carry the selection across rather than leaving a
+                // selection entry pointing at the old address.
+                const hand beforeSeize = released->getHandle();
                 released->setFaction(
                     playerFaction,
                     static_cast<ActivePlatoon*>(activeSquad));
-                // Rejoin the selection as well as the roster, additively, so
-                // seizing one body does not silently drop whoever was already
-                // held. Selection and roster are separate - control follows
-                // selection - but the squad UI maps portrait index onto the
-                // selection set, so leaving them out of step desynchronizes
-                // the portraits.
-                player->_selectPlayerCharacter(released, true, false);
+                player->updatePlayerSelection(beforeSeize, released->getHandle());
+                // Then make it selected outright. Control follows selection, so
+                // this is the step that actually hands the body over.
+                if (!player->isObjectSelected(released))
+                    player->objectSelected(released, true);
                 g_shiftProbeReleased = hand();
                 AddNativeAcknowledgement(
                     request,
@@ -3462,45 +3464,16 @@ namespace
                 return;
             }
             g_shiftProbeReleased = subject->getHandle();
-            // A `hand` carries its container, so moving a body between platoons
-            // gives it a new handle. Any selection entry captured beforehand
-            // keeps the old address: measured live as
-            //   stored=1/1/301513664/2/...  current=1/39/318969728/2/...
-            // - same type, index and serial, different container. It still
-            // resolves to the right character, so `selected_character_ids`
-            // lists them, while the identity compare behind the per-character
-            // `selected` flag fails. The snapshot then contradicts itself and
-            // fails its own validator, Kenshi's squad portraits desynchronize,
-            // and the command validator's `selection_size_differs` would refuse
-            // every later order.
-            //
-            // `RootObject::unselect()` was tried here first and is not enough:
-            // it acts on the object, not on the player's selection set, and the
-            // stale entry survived it. `PlayerInterface::unselectAll()` is the
-            // one that empties the set. Rebuilding the selection afterwards
-            // from the authorized ids, minus the body being released, keeps the
-            // player holding exactly who they held before.
-            std::vector<std::string> restoreSelection;
-            for (size_t index = 0;
-                 index < request.selectedCharacterIds.size();
-                 ++index)
-            {
-                if (request.selectedCharacterIds[index] != request.targetId)
-                    restoreSelection.push_back(
-                        request.selectedCharacterIds[index]);
-            }
-            player->unselectAll();
+            // Releasing is the same coordinate rewrite, and the selection has to
+            // be carried across it the same way. `updatePlayerSelection` is the
+            // engine's own repair for a handle that moved; three workarounds
+            // were written here first - a tolerant identity compare,
+            // `RootObject::unselect()`, and `unselectAll()` with a hand-rebuilt
+            // selection - before this was found one grep away in
+            // PlayerInterface.h.
+            const hand beforeRelease = subject->getHandle();
             subject->setFaction(playerFaction, deadSquad);
-            for (size_t index = 0; index < restoreSelection.size(); ++index)
-            {
-                bool restoredFound = false;
-                Character* restored = FindExactSquadMember(
-                    player,
-                    restoreSelection[index],
-                    restoredFound);
-                if (restored != NULL && restored->isValid())
-                    player->_selectPlayerCharacter(restored, true, false);
-            }
+            player->updatePlayerSelection(beforeRelease, subject->getHandle());
             AddNativeAcknowledgement(
                 request,
                 "completed",

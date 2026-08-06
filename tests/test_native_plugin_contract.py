@@ -81,14 +81,18 @@ def test_native_plugin_uses_session_scoped_validated_handle_identity() -> None:
     assert "if (!handle.isValid())" in source
     assert "handle.containerSerial" in source
     assert "handle.serial" in source
-    # Membership asks who, not where. Two of a `hand`'s five fields describe
-    # the container an object currently lives in, so a character who changes
-    # platoon gets a new handle while remaining the same character - and
-    # remaining selected. Comparing all five for membership returned a false
-    # negative that made this plug-in's own selection exports contradict each
-    # other. The strict compare stays, and stays used, for target identity and
-    # object lifetime, where a replaced object must not pass as the original.
-    assert "SameCharacterIdentity(*it, handle)" in source
+    # Selection membership is the engine's answer, not ours. Two of a `hand`'s
+    # five fields describe the container an object currently lives in, so
+    # comparing all five returned a false negative for any character who changed
+    # platoon while selected - which made this plug-in's own selection exports
+    # contradict each other and fail the snapshot validator. `isObjectSelected`
+    # cannot go stale that way, and `updatePlayerSelection` is the engine's own
+    # repair for a handle that moved.
+    assert "player->isObjectSelected(character)" in source
+    assert "updatePlayerSelection(" in source
+    # The strict compare stays for target identity and object lifetime, where the
+    # question really is whether this exact reference is still the one and a
+    # replaced object must not pass as the original.
     assert "bool SameHandleIdentity(" in source
     assert "SameHandleIdentity(\n                        target->getHandle()," in source
     assert "selectedCharacters.find" not in source
