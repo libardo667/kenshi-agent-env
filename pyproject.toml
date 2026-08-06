@@ -24,12 +24,10 @@ dev = [
   "ruff>=0.9,<1",
   "mypy>=1.14,<2",
   "types-PyYAML>=6,<7",
-  "mutmut>=3.5,<4",
 ]
 
 [project.scripts]
 kenshi-agent = "kenshi_agent.cli:main"
-kenshi-mutate = "kenshi_agent.tooling.mutation_campaign:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

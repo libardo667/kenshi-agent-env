@@ -1187,6 +1187,11 @@ def native_vendor_environment(
         controls_config=ControlsConfig(
             post_input_delay_seconds=0.0,
             native_movement_pulse_seconds=0.01,
+            # The continuation budget, not the pulse, is what a test with a
+            # controller that never reaches a terminal actually spends: 30
+            # seconds of it at a 0.01s pulse is 6000 sleeps and was a quarter of
+            # the whole suite's runtime in one test.
+            native_approach_max_seconds=0.2,
         ),
         capture_config=CaptureConfig(enabled=False),
         execute_actions=True,

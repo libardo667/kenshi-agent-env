@@ -3896,6 +3896,18 @@ SHIFT_INTO_BODY_DEFINITION = OperationDefinition(
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
     execution=OperationExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_body_shift",
+    # What Kenshi says when a body has actually been entered. Declaring these is
+    # what lets the handler tell a completed shift from a dispatched one: the
+    # first live run switched bodies three times and recorded three failures,
+    # because the terminal check had nothing to match and correctly refused to
+    # call an unnamed outcome a success.
+    native_terminal_success_reasons=frozenset(
+        {
+            "shift_body_recruited",
+            "shift_body_recruited_forced",
+            "shift_body_already_held",
+        }
+    ),
     bind=bind_shift_into_body,
     handler_key="movement.shift_into_body",
     controller_verified=True,

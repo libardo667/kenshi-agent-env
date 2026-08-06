@@ -30,8 +30,6 @@ RETIRED_MODULES = {
     "graphics_profile.py",
     "live_dev.py",
     "models.py",
-    "mutation_campaign.py",
-    "mutation_ledger.py",
     "native_contract_export.py",
     "operation_registry_audit.py",
     "overlay.py",
