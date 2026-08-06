@@ -20,6 +20,7 @@ from .core.operation import (
     ProduceResourceOutputAction,
     RegroupWithSquadMemberAction,
     RespondToImmediateThreatAction,
+    SurveyLocalResourcesAction,
     ThreatResponseStrategy,
     TravelToMapDestinationAction,
 )
@@ -833,9 +834,21 @@ class StatefulNativeMovementOption:
             )
         if acknowledgement.target_id != "":
             return False
-        if isinstance(self.action, ExitCurrentBuildingAction):
+        if isinstance(self.action, (ExitCurrentBuildingAction, SurveyLocalResourcesAction)):
+            # Targetless and parameterless: the command names nowhere to go.
             return bool(
                 acknowledgement.bearing_degrees == 0.0 and acknowledgement.distance_units == 0.0
+            )
+        if not isinstance(self.action, MoveInDirectionAction):
+            # This chain used to end by reading `bearing_degrees` off whatever
+            # was left, so a survey - which has no such field - reached its own
+            # acknowledgement and died with an AttributeError *after* the game
+            # had already published the reading. Third fallthrough of this shape
+            # in this file; matching an acknowledgement to an action it cannot
+            # describe is not a default anyone wants.
+            raise OptionLifecycleError(
+                f"Operation {self.action.kind!r} has no acknowledgement match rule, "
+                "so a native acknowledgement cannot be attributed to it."
             )
         return bool(
             acknowledgement.bearing_degrees == self.action.bearing_degrees

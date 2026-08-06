@@ -341,3 +341,60 @@ def test_no_operation_is_offered_without_a_dispatch_route() -> None:
         f"these operations declare a native command the request builder cannot "
         f"build: {routeless}"
     )
+
+
+def test_no_acknowledgement_match_rule_falls_through_to_a_direction() -> None:
+    """A survey died *after* Kenshi had already published its reading.
+
+    The acknowledgement matcher ended by reading `bearing_degrees` off whatever
+    action was left, so `survey_local_resources` - which has no such field -
+    raised AttributeError once the native command had already succeeded. The
+    game did the work and the controller threw the result away.
+
+    Third fallthrough of this shape in one file: the wire-command chain ended in
+    `move_in_direction`, the capability map ended in the direction capability,
+    and this ended in the direction geometry.
+    """
+
+    import inspect
+
+    from kenshi_agent.options import StatefulNativeMovementOption
+
+    source = inspect.getsource(StatefulNativeMovementOption)
+    matcher = source[source.index("def _matches_identity") :]
+    matcher = matcher[: matcher.index("\n    def ", 1)]
+
+    # The last statement must not be an unguarded read of direction geometry.
+    assert "MoveInDirectionAction" in matcher, (
+        "the acknowledgement matcher no longer checks that the action is a "
+        "direction before reading direction geometry off it"
+    )
+
+
+def test_every_native_action_can_match_its_own_acknowledgement() -> None:
+    """The general form: every action this option accepts needs a match rule.
+
+    Enumerated from the option's own accepted union rather than restated, so a
+    new member added there without a rule fails here instead of in a live run
+    after the game has already acted.
+    """
+
+    import inspect
+    import typing
+
+    from kenshi_agent import options as options_module
+    from kenshi_agent.options import StatefulNativeMovementOption
+
+    accepted = [
+        member.__name__
+        for member in typing.get_args(options_module.NativeMovementAction)
+    ]
+    assert accepted, "the probe resolved no accepted action types"
+
+    source = inspect.getsource(StatefulNativeMovementOption)
+    unmatched = [name for name in accepted if name not in source]
+
+    assert not unmatched, (
+        f"these actions reach this option with no acknowledgement match rule: "
+        f"{unmatched}"
+    )

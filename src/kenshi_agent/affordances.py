@@ -209,9 +209,26 @@ def _offer_id(
     operation_kind: str,
     operation_arguments: dict[str, JsonValue],
 ) -> str:
+    """Identity of a choice: what it is, not when it was seen.
+
+    `sequence` was part of this hash, so "operate on that iron deposit" had a
+    different identity on every telemetry publication. A planner authored the
+    choice, the input lease waited, telemetry advanced, and the boundary looked
+    for an identity that no longer existed anywhere - reporting "Affordance is
+    absent from the current observation" while the deposit sat there and the
+    same choice was being offered under a new name.
+
+    Any operation whose lease wait spanned a publication was unauthorizable,
+    which is why mining kept failing while paused-world UI actions succeeded.
+
+    When the offer was made is provenance, and `offered_at_telemetry_sequence`
+    already records it; freshness is settled by the world revision, telemetry
+    age, binding, and recipient basis - none of which need identity to rot.
+    """
+
+    del sequence
     identity = json.dumps(
         {
-            "sequence": sequence,
             "source": source.value,
             "semantic": semantic,
             "target_id": target_id,

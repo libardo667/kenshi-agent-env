@@ -366,3 +366,65 @@ def test_an_empty_selection_never_borrows_the_first_roster_member() -> None:
     """The worst of the old fallbacks: `squad[0]`, selected or not."""
 
     assert _condition_subject(None, []) is None
+
+
+# --------------------------------------------------------------------------
+# Affordance identity is what the choice is, not when it was seen
+
+
+def test_the_same_choice_keeps_its_identity_across_telemetry_publications() -> None:
+    """A lease wait that spanned a publication made the choice unauthorizable.
+
+    Observed live: the planner authored `operate` on an iron deposit at
+    telemetry 244, the input lease waited, telemetry advanced to 275, and the
+    boundary refused with "Affordance is absent from the current observation" -
+    while the deposit was still there, both characters were still selected, and
+    the same choice was being offered under a new identity.
+
+    Paused-world UI actions kept succeeding because their waits did not span a
+    publication, which is why this looked like a mining-specific problem.
+    """
+
+    from kenshi_agent.affordances import _offer_id
+    from kenshi_agent.core.affordance import AffordanceSource
+
+    choice = {
+        "source": AffordanceSource.CONTEXT_ORDER,
+        "semantic": "operate",
+        "target_id": "entity-iron",
+        "operation_kind": "perform_context_action",
+        "operation_arguments": {},
+    }
+
+    assert _offer_id(sequence=244, **choice) == _offer_id(sequence=275, **choice)
+
+
+def test_identity_still_separates_genuinely_different_choices() -> None:
+    """Stability must not become collision, or the fix is worse than the bug."""
+
+    from kenshi_agent.affordances import _offer_id
+    from kenshi_agent.core.affordance import AffordanceSource
+
+    base = {
+        "sequence": 1,
+        "source": AffordanceSource.CONTEXT_ORDER,
+        "semantic": "operate",
+        "target_id": "entity-iron",
+        "operation_kind": "perform_context_action",
+        "operation_arguments": {},
+    }
+    identity = _offer_id(**base)
+
+    assert _offer_id(**{**base, "target_id": "entity-copper"}) != identity
+    assert _offer_id(**{**base, "semantic": "survey_local_resources"}) != identity
+    assert _offer_id(**{**base, "operation_kind": "produce_resource_output"}) != identity
+    assert _offer_id(**{**base, "operation_arguments": {"quantity": 2}}) != identity
+    assert _offer_id(**{**base, "source": AffordanceSource.RUNTIME}) != identity
+
+
+def test_when_the_offer_was_made_is_still_recorded() -> None:
+    """Provenance is kept as a field rather than smuggled into identity."""
+
+    from kenshi_agent.core.affordance import BoundAffordance
+
+    assert "offered_at_telemetry_sequence" in BoundAffordance.model_fields
