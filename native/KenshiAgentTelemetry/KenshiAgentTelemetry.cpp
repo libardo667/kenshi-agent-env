@@ -4616,6 +4616,15 @@ namespace
                 {
                     json << "\"hunger\":" << medical->hunger << ",";
                     json << "\"blood\":" << medical->blood << ",";
+                    // Blood alone cannot tell recovering from dying: both look
+                    // like a low number. The rate is the sign. A downed pair
+                    // bled out while the agent waited for them to wake up,
+                    // because waiting is correct for an unconscious character
+                    // and fatal for a bleeding one, and this field - already
+                    // modelled Python-side - read null on all 887 samples of
+                    // that run. Null meant "never exported", and nothing said so.
+                    json << "\"bleeding_rate\":"
+                         << medical->currentBleedRate << ",";
                 }
                 // What it already carries, so it does not go shopping for what
                 // is in its own pack.
@@ -4992,7 +5001,7 @@ namespace
         }
         json << "],";
         json << "\"warnings\":["
-             << "\"Partial telemetry only: body-part wounds, bleeding rate, "
+             << "\"Partial telemetry only: body-part wounds, "
              << "getting-eaten state, imprisonment/enslavement, "
              << "distant world state, and click-target occlusion "
              << "are not exported or validated. "
