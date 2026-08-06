@@ -163,14 +163,45 @@ class AffordanceParameterSpec(_StrictModel):
 
 
 class AffordanceSelection(_StrictModel):
-    """The entire game-action language exposed to the playing model."""
+    """The entire game-action language exposed to the playing model.
 
-    affordance_id: str = Field(pattern=r"^aff-[0-9a-f]{20}$")
+    A choice is named by what it means, not by an opaque handle. The handle
+    remains for runtime provenance and is accepted when a caller has one, but a
+    playing model is never required to reproduce it.
+
+    That requirement was a real failure mode rather than a theoretical one: a
+    live run stopped at step zero three times over because the model emitted
+    `aff-9f556b8eaba80dbfd68c`, a plausible twenty-hex-character id that had
+    never existed in any observation. Every other field it emits is meaningful
+    and it gets those right; a hash is the one thing it cannot check itself
+    against, and an invented one is indistinguishable from a remembered one.
+    """
+
+    semantic: str = Field(min_length=1, max_length=100)
     target_id: str | None = Field(default=None, min_length=1, max_length=500)
+    # Disambiguators, needed only when semantic and target do not pick out one
+    # offer on their own. The resolution error says which to add.
+    source: AffordanceSource | None = None
+    operation_kind: str | None = Field(default=None, min_length=1, max_length=80)
+    # Runtime provenance. Deterministic callers that already hold an exact offer
+    # pass it and skip resolution entirely.
+    affordance_id: str | None = Field(default=None, pattern=r"^aff-[0-9a-f]{20}$")
     parameters: list[AffordanceParameter] = Field(default_factory=list, max_length=8)
 
     def parameter_map(self) -> dict[str, JsonValue]:
         return {parameter.name: parameter.value for parameter in self.parameters}
+
+    def describe(self) -> str:
+        """How this choice reads back in a refusal."""
+
+        parts = [repr(self.semantic)]
+        if self.target_id:
+            parts.append(f"on {self.target_id!r}")
+        if self.source is not None:
+            parts.append(f"from {self.source.value}")
+        if self.operation_kind:
+            parts.append(f"as {self.operation_kind}")
+        return " ".join(parts)
 
 
 class AffordanceOffer(_StrictModel):
@@ -1633,17 +1664,96 @@ def _bind_adapter_selection(
     )
 
 
+class AffordanceChoiceError(ValueError):
+    """A named choice does not pick out exactly one current offer.
+
+    A type rather than a message, because the planner path has to recognise this
+    exact failure to retry usefully, and recognising it by substring is one
+    reworded error away from silently not recognising it at all.
+    """
+
+
+def resolve_selection(
+    selection: AffordanceSelection,
+    observation: Observation,
+) -> AffordanceOffer:
+    """Find the one current offer a named choice refers to.
+
+    Names, not handles. A refusal here says what was asked for, what is
+    available under that name, and which field would disambiguate - because the
+    caller that gets this wrong is usually a model that cannot see why, and
+    "absent" on its own taught it nothing.
+    """
+
+    offers = offered_affordances(observation)
+    if selection.affordance_id is not None:
+        exact = [
+            offer for offer in offers if offer.affordance_id == selection.affordance_id
+        ]
+        if len(exact) == 1:
+            return exact[0]
+        # A supplied handle that does not resolve is not authority to guess:
+        # fall through and resolve by meaning, which is checkable.
+
+    candidates = [offer for offer in offers if offer.semantic == selection.semantic]
+    if not candidates:
+        available = sorted({offer.semantic for offer in offers})
+        raise AffordanceChoiceError(
+            f"no current choice is named {selection.semantic!r}; "
+            f"{len(offers)} are offered"
+            + (f", named: {', '.join(available[:12])}" if available else "")
+        )
+
+    if selection.target_id is not None:
+        narrowed = [
+            offer
+            for offer in candidates
+            if offer.target is not None and offer.target.target_id == selection.target_id
+        ]
+        if not narrowed:
+            targets = sorted(
+                offer.target.target_id for offer in candidates if offer.target is not None
+            )
+            raise AffordanceChoiceError(
+                f"{selection.semantic!r} is offered, but not on {selection.target_id!r}"
+                + (f"; current targets: {', '.join(targets[:6])}" if targets else "")
+            )
+        candidates = narrowed
+
+    if selection.source is not None:
+        candidates = [offer for offer in candidates if offer.source is selection.source]
+    if selection.operation_kind is not None:
+        candidates = [
+            offer for offer in candidates if offer.operation_kind == selection.operation_kind
+        ]
+
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        raise AffordanceChoiceError(
+            f"no current choice matches {selection.describe()}"
+        )
+    kinds = sorted({offer.operation_kind for offer in candidates})
+    sources = sorted({offer.source.value for offer in candidates})
+    raise AffordanceChoiceError(
+        f"{selection.describe()} matches {len(candidates)} current choices; "
+        f"add operation_kind (one of {', '.join(kinds)}) "
+        f"or source (one of {', '.join(sources)}) to name exactly one"
+    )
+
+
 def bind_affordance(
     selection: AffordanceSelection,
     observation: Observation,
 ) -> BoundOperation:
     """Route a selection back to its issuing adapter for exact current binding."""
 
+    resolved = resolve_selection(selection, observation)
     matches = [
         adapter
         for adapter in AFFORDANCE_ADAPTERS
         for offer in adapter.offers(observation)
-        if offer.affordance_id == selection.affordance_id
+        if offer.affordance_id == resolved.affordance_id
     ]
     if len(matches) != 1:
         # Name what was wanted and what was on offer. "Absent" alone cannot
@@ -1658,7 +1768,10 @@ def bind_affordance(
             f"{selection.affordance_id!r}; {len(current)} are offered"
             + (f", for example {', '.join(current[:3])}" if current else "")
         )
-    return matches[0].bind(selection, observation)
+    return matches[0].bind(
+        selection.model_copy(update={"affordance_id": resolved.affordance_id}),
+        observation,
+    )
 
 
 def bound_affordance(bound: BoundOperation) -> BoundAffordance:
@@ -1703,6 +1816,9 @@ def _rebind_affordance_operation(
         ):
             continue
         selection = AffordanceSelection(
+            semantic=offer.semantic,
+            source=offer.source,
+            operation_kind=offer.operation_kind,
             affordance_id=offer.affordance_id,
             target_id=current_target_id,
             parameters=affordance.parameters,
@@ -1879,7 +1995,10 @@ def selection_for(
     """Construct an exact selection for deterministic planners and tests."""
 
     return AffordanceSelection(
+        semantic=offer.semantic,
         affordance_id=offer.affordance_id,
+        operation_kind=offer.operation_kind,
+        source=offer.source,
         target_id=offer.target.target_id if offer.target else None,
         parameters=[
             AffordanceParameter(name=name, value=value) for name, value in parameters.items()

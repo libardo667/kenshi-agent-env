@@ -1024,7 +1024,7 @@ def test_exact_current_offer_is_the_only_action_language() -> None:
     later = observation.model_copy(
         update={"telemetry_stale": True, "telemetry_age_seconds": 9.0}
     )
-    with pytest.raises(ValueError, match="absent"):
+    with pytest.raises(ValueError, match="no current choice is named"):
         bind_affordance(selection, later)
 
 

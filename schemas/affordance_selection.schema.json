@@ -20,14 +20,32 @@
       "title": "AffordanceParameter",
       "type": "object"
     },
+    "AffordanceSource": {
+      "enum": [
+        "runtime",
+        "game_binding",
+        "visible_control",
+        "context_order",
+        "dialogue",
+        "inventory",
+        "squad",
+        "nearby_character",
+        "map",
+        "native_operation",
+        "composite_operation"
+      ],
+      "title": "AffordanceSource",
+      "type": "string"
+    },
     "JsonValue": {}
   },
   "additionalProperties": false,
-  "description": "The entire game-action language exposed to the playing model.",
+  "description": "The entire game-action language exposed to the playing model.\n\nA choice is named by what it means, not by an opaque handle. The handle\nremains for runtime provenance and is accepted when a caller has one, but a\nplaying model is never required to reproduce it.\n\nThat requirement was a real failure mode rather than a theoretical one: a\nlive run stopped at step zero three times over because the model emitted\n`aff-9f556b8eaba80dbfd68c`, a plausible twenty-hex-character id that had\nnever existed in any observation. Every other field it emits is meaningful\nand it gets those right; a hash is the one thing it cannot check itself\nagainst, and an invented one is indistinguishable from a remembered one.",
   "properties": {
-    "affordance_id": {
-      "pattern": "^aff-[0-9a-f]{20}$",
-      "title": "Affordance Id",
+    "semantic": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Semantic",
       "type": "string"
     },
     "target_id": {
@@ -44,6 +62,44 @@
       "default": null,
       "title": "Target Id"
     },
+    "source": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AffordanceSource"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "operation_kind": {
+      "anyOf": [
+        {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Operation Kind"
+    },
+    "affordance_id": {
+      "anyOf": [
+        {
+          "pattern": "^aff-[0-9a-f]{20}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Affordance Id"
+    },
     "parameters": {
       "items": {
         "$ref": "#/$defs/AffordanceParameter"
@@ -54,7 +110,7 @@
     }
   },
   "required": [
-    "affordance_id"
+    "semantic"
   ],
   "title": "AffordanceSelection",
   "type": "object"

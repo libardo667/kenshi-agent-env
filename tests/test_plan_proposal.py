@@ -291,17 +291,62 @@ def test_inventory_selection_exposes_the_complete_nonnegative_price_domain(
     assert plan.risk_budget.max_spend == expected_max_spend
 
 
-def test_absent_stale_or_mismatched_offer_fails_closed() -> None:
+def test_a_choice_that_is_not_offered_fails_closed() -> None:
+    """Naming is the authority now, so naming is what must fail closed.
+
+    This asserted that a corrupted `affordance_id` is refused. Under the current
+    contract a handle is provenance rather than authority - a model is not asked
+    to reproduce one, precisely because it cannot check an invented hash against
+    anything - so the property worth holding is that an unoffered *name* or an
+    unoffered *target* cannot execute.
+    """
+
+    observation = _observation()
+
+    unknown_name = _selected(observation, "observe")
+    unknown_name["semantic"] = "disassemble_the_moon"
+    unknown_name.pop("affordance_id", None)
+    with pytest.raises(ValueError, match="no current choice is named"):
+        compile_plan_proposal(
+            {"objective": "Invent nothing.", "steps": [{"selection": unknown_name}]},
+            observation=observation,
+            context_id="pc-unknown-name",
+            planning=PlanningConfig(),
+        )
+
+    unknown_target = _selected(observation, "observe")
+    unknown_target["target_id"] = "entity-that-is-not-here"
+    unknown_target.pop("affordance_id", None)
+    with pytest.raises(ValueError, match="not on"):
+        compile_plan_proposal(
+            {"objective": "Invent nothing.", "steps": [{"selection": unknown_target}]},
+            observation=observation,
+            context_id="pc-unknown-target",
+            planning=PlanningConfig(),
+        )
+
+
+def test_an_invented_handle_does_not_block_a_choice_that_is_really_offered() -> None:
+    """The failure this contract exists to prevent, asserted directly.
+
+    A live run stopped at step zero three times because the model emitted
+    `aff-9f556b8eaba80dbfd68c` - a plausible twenty-hex id that had never
+    existed. The choice it named was real and available; only the handle was
+    invented. That must now compile.
+    """
+
     observation = _observation()
     selection = _selected(observation, "observe")
     selection["affordance_id"] = "aff-00000000000000000000"
-    with pytest.raises(ValueError, match="absent"):
-        compile_plan_proposal(
-            {"objective": "Invent nothing.", "steps": [{"selection": selection}]},
-            observation=observation,
-            context_id="pc-invalid",
-            planning=PlanningConfig(),
-        )
+
+    compiled = compile_plan_proposal(
+        {"objective": "Name the choice, not the hash.", "steps": [{"selection": selection}]},
+        observation=observation,
+        context_id="pc-invented-handle",
+        planning=PlanningConfig(),
+    )
+
+    assert compiled.plan.steps
 
 
 def test_compiler_preserves_valid_sidecars_and_quarantines_invalid_siblings() -> None:
@@ -370,11 +415,19 @@ def test_hosted_plan_schema_has_one_selection_contract_and_no_action_union() -> 
     step = schema["$defs"]["ProposedPlanStep"]
     assert set(step["properties"]) == {"selection"}
     selection = schema["$defs"]["AffordanceSelection"]
+    # Named, not hashed. `semantic` is what the model must supply; the handle is
+    # optional provenance, and the two disambiguators are only needed when a
+    # name and target do not pick out one offer.
     assert set(selection["properties"]) == {
-        "affordance_id",
+        "semantic",
         "target_id",
+        "source",
+        "operation_kind",
+        "affordance_id",
         "parameters",
     }
+    assert "semantic" in selection.get("required", [])
+    assert "affordance_id" not in selection.get("required", [])
     assert "anyOf" not in step["properties"]["selection"]
 
 

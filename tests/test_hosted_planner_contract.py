@@ -853,7 +853,7 @@ def test_openrouter_never_executes_an_unadvertised_action_the_model_emits() -> N
                 steps=[
                     ProposedPlanStep(
                         selection=_selection("observe").model_copy(
-                            update={"affordance_id": "aff-00000000000000000000"}
+                            update={"semantic": "disassemble_the_moon", "affordance_id": None}
                         )
                     )
                 ],
@@ -881,7 +881,7 @@ def test_openrouter_never_executes_an_unadvertised_action_the_model_emits() -> N
     diagnostics = planner.take_call_diagnostics()
     assert diagnostics is not None
     assert diagnostics.proposal_fallback_reason is not None
-    assert "absent" in diagnostics.proposal_fallback_reason
+    assert "no current choice is named" in diagnostics.proposal_fallback_reason
 
 
 def test_openai_rejects_an_unadvertised_action_after_sdk_parsing() -> None:
@@ -891,7 +891,7 @@ def test_openai_rejects_an_unadvertised_action_after_sdk_parsing() -> None:
         steps=[
             ProposedPlanStep(
                 selection=_selection("observe").model_copy(
-                    update={"affordance_id": "aff-00000000000000000000"}
+                    update={"semantic": "disassemble_the_moon", "affordance_id": None}
                 )
             )
         ],
@@ -908,7 +908,7 @@ def test_openai_rejects_an_unadvertised_action_after_sdk_parsing() -> None:
     planner.client = SimpleNamespace(responses=ParsedUnavailableAction())
     planner.max_plan_steps = 4
 
-    with pytest.raises(ValueError, match="absent"):
+    with pytest.raises(ValueError, match="no current choice is named"):
         asyncio.run(planner.decide(current))
 
 

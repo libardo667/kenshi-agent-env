@@ -11,7 +11,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from ..affordances import offered_affordances, selection_for
+from ..affordances import AffordanceChoiceError, offered_affordances, selection_for
 from ..config import PlannerConfig, PlanningConfig
 from ..core.observation import Observation
 from ..core.planning import PlannerOutput
@@ -504,7 +504,7 @@ class OpenRouterPlanner(Planner):
             # path, which is bounded by max_consecutive_replans and the
             # identical-failure limit, so a genuinely stuck run stops and says
             # why rather than idling until its step ceiling.
-            if "affordance is absent" in str(exc) or "affordance is ambiguous" in str(exc):
+            if isinstance(exc, AffordanceChoiceError):
                 self._last_call_diagnostics = replace(
                     diagnostics,
                     proposal_fallback_reason=str(exc)[:1000],
