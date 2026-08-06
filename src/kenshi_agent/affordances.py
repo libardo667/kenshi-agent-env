@@ -1646,7 +1646,18 @@ def bind_affordance(
         if offer.affordance_id == selection.affordance_id
     ]
     if len(matches) != 1:
-        raise ValueError("affordance is absent from the current observation")
+        # Name what was wanted and what was on offer. "Absent" alone cannot
+        # distinguish an id that has churned from one that was never real -
+        # a model inventing a plausible `aff-...` looks identical in the log to
+        # a control that repainted, and the two need opposite fixes.
+        current = sorted(
+            offer.affordance_id for offer in offered_affordances(observation)
+        )
+        raise ValueError(
+            "affordance is absent from the current observation: wanted "
+            f"{selection.affordance_id!r}; {len(current)} are offered"
+            + (f", for example {', '.join(current[:3])}" if current else "")
+        )
     return matches[0].bind(selection, observation)
 
 
