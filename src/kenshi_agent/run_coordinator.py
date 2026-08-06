@@ -134,6 +134,47 @@ class _RunSession:
     observation_pump: ObservationPump | None
 
 
+
+def _retained_work_at_exit(observation: Observation | None) -> dict[str, object]:
+    """Orders Kenshi still holds as the run ends, and how current that is."""
+
+    telemetry = None if observation is None else observation.telemetry
+    if telemetry is None:
+        return {
+            "orders_at_exit": None,
+            "orders_at_exit_note": (
+                "No final observation, so what Kenshi holds is unknown. Nothing "
+                "was cleared by ending the run."
+            ),
+        }
+    held = [
+        {
+            "character": character.name,
+            "orders": character.task_state.orders_count,
+            "jobs": character.task_state.jobs_count,
+            "permajobs": character.task_state.permajobs_count,
+            "current_activity": (
+                character.task_state.current_activity.task_name
+                if character.task_state.current_activity is not None
+                else None
+            ),
+        }
+        for character in telemetry.squad
+        if character.task_state is not None and character.task_state.has_retained_work
+    ]
+    stale = observation is not None and observation.telemetry_stale
+    return {
+        "orders_at_exit": held,
+        "orders_at_exit_observed_sequence": None if stale else telemetry.sequence,
+        "orders_at_exit_note": (
+            "Read from stale telemetry; treat as a last-known state."
+            if stale
+            else "Ending the run sent no order-clearing input; these remain with "
+            "the characters."
+        ),
+    }
+
+
 class RunCoordinator:
     """Sequence one run, delegating every responsibility it does not own."""
 
@@ -2004,6 +2045,12 @@ class RunCoordinator:
                 "stop_reason": summary.stop_reason,
                 "started_at": summary.started_at.isoformat(),
                 "finished_at": summary.finished_at.isoformat(),
+                # What Kenshi is still holding as the process leaves. The run
+                # ending is not an instruction to anybody: no order-clearing
+                # input is sent on the way out, so a character mid-job keeps
+                # that job. Saying so is the difference between a report that
+                # records the agent stopped and one that implies the world did.
+                **_retained_work_at_exit(observation),
             },
         )
         if self.reporter is not None:

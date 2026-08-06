@@ -6,12 +6,18 @@ import asyncio
 from contextlib import suppress
 from typing import Any, Protocol
 
+from ..core.lifecycle import (
+    LifecycleOutcome,
+    MonitorDisposition,
+    OrderDisposition,
+    order_disposition_from_evidence,
+)
 from ..core.observation import Observation
 from ..core.planning import (
     PlanEnvelope,
     PlanStep,
 )
-from ..core.transport import CommandDispatchContext
+from ..core.transport import CommandDispatchContext, Transition
 from ..future_planning import FuturePlanningPolicy, FuturePlanningSession
 from ..input_boundary import ExecutionToken
 from ..options import OptionStatus
@@ -24,6 +30,57 @@ from .monitor_types import (
     MonitorScope,
     StagedPatch,
 )
+
+
+def _order_disposition_now(
+    observation: Observation | None,
+    expected_task_name: str | None,
+    *,
+    issued: bool,
+) -> tuple[OrderDisposition, int | None]:
+    """Read the order's fate from the freshest evidence, and say how fresh.
+
+    Kept beside the monitor because this is the only place that knows both that
+    Python stopped watching and what the last observation showed. Everything it
+    concludes is qualified by the sequence it read.
+    """
+
+    telemetry = None if observation is None else observation.telemetry
+    fresh = bool(
+        telemetry is not None
+        and observation is not None
+        and not observation.telemetry_stale
+    )
+    retained: set[str] = set()
+    if telemetry is not None:
+        for character in telemetry.squad:
+            state = character.task_state
+            if state is None:
+                continue
+            for entry in (*state.orders, *state.jobs, *state.permajobs):
+                if entry.task_name:
+                    retained.add(entry.task_name)
+            if state.current_activity is not None and state.current_activity.task_name:
+                retained.add(state.current_activity.task_name)
+    disposition = order_disposition_from_evidence(
+        issued=issued,
+        telemetry_fresh=fresh,
+        retained_task_names=retained,
+        expected_task_name=expected_task_name,
+    )
+    sequence = telemetry.sequence if fresh and telemetry is not None else None
+    return disposition, sequence
+
+
+def _expected_task_name(transition: Transition | None) -> str | None:
+    """The Kenshi task this operation asked for, when it named one."""
+
+    if transition is None:
+        return None
+    semantic = transition.receipt.semantic
+    if semantic is None:
+        return None
+    return semantic.resolved_label or None
 
 
 class MonitorEventReporter(Protocol):
@@ -216,15 +273,66 @@ class OperationMonitor:
                 if option.transition is not None
                 else option.result()
             )
+            # Two answers, from two different pieces of evidence. The monitor's
+            # is known exactly; the order's is read from the last observation
+            # and carries the sequence it was read at.
+            if terminal.status is OptionStatus.SUCCEEDED:
+                monitor_disposition = MonitorDisposition.OBSERVED_TERMINAL
+            elif timed_out:
+                monitor_disposition = MonitorDisposition.DETACHED_AFTER_TIMEOUT
+            elif interrupted:
+                monitor_disposition = MonitorDisposition.DETACHED_FOR_REPLAN
+            elif latest is not None and latest.telemetry_stale:
+                monitor_disposition = MonitorDisposition.DETACHED_ON_TELEMETRY_LOSS
+            else:
+                monitor_disposition = MonitorDisposition.OBSERVED_TERMINAL
+            order_disposition, at_sequence = _order_disposition_now(
+                latest,
+                _expected_task_name(transition),
+                issued=bool(transition.receipt.executed or transition.receipt.accepted),
+            )
+            lifecycle = LifecycleOutcome(
+                monitor=monitor_disposition,
+                order=order_disposition,
+                detail=reason,
+                observed_at_sequence=at_sequence,
+            )
+            # Append-only. The receipt for this operation is already written and
+            # says what was true when the operation terminated; what Kenshi did
+            # with the order afterwards is a later fact about the same command,
+            # not a correction to that receipt. Editing the receipt would make
+            # the record of the terminal depend on how long anyone kept
+            # watching afterwards.
+            self.event(
+                "order_disposition_observed",
+                scope.plan,
+                latest,
+                step=scope.step,
+                reason=lifecycle.describe(),
+                evidence={
+                    "option_id": option.option_id,
+                    "command_id": transition.receipt.command_id,
+                    "monitor_disposition": lifecycle.monitor.value,
+                    "order_disposition": lifecycle.order.value,
+                    "observed_at_sequence": lifecycle.observed_at_sequence,
+                    "evidence_semantics_version": lifecycle.evidence_semantics_version,
+                    "order_may_still_be_running": lifecycle.order.order_may_still_be_running,
+                },
+            )
             return MonitoredOperationResult(
                 transition=transition,
                 terminal=terminal,
                 staged_patch=staged_patch,
                 interrupted=interrupted,
+                lifecycle=lifecycle,
             )
         except asyncio.CancelledError:
+            # Detaching, not cancelling the order. `option.cancel` cancels an
+            # asyncio task; it sends nothing to Kenshi, so the character keeps
+            # whatever it was told to do.
             cancelled = await option.cancel(
-                "Independent safety supervision cancelled the monitored operation."
+                "Independent safety supervision detached the monitor. No order "
+                "was sent to Kenshi, so any order the character holds remains."
             )
             self.event(
                 (

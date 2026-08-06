@@ -7,6 +7,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Protocol
 
+from ..core.lifecycle import LifecycleOutcome
 from ..core.observation import Observation
 from ..core.planner_context import AuthoredPlannerContext
 from ..core.planning import (
@@ -41,6 +42,11 @@ class MonitoredOperationResult:
     terminal: OptionPoll
     staged_patch: StagedPatch | None
     interrupted: bool = False
+    # What became of the monitor, and separately what became of the order.
+    # A timeout ends the first and touches nothing about the second, but both
+    # used to arrive as one `CANCELLED`, which reads as "the order was
+    # cancelled" and is almost never what happened.
+    lifecycle: LifecycleOutcome | None = None
 
 
 @dataclass(frozen=True, slots=True)
