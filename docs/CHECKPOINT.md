@@ -10,7 +10,7 @@ was produced by running the thing it describes.
 ## Repository
 
 ```text
-commit                394b677a292c78d2c5c5c9519d4522f5b3a4c1d1
+commit                a5f289d0e4f52778412daaef89f4c71395a4e85f
 branch                interaction-scope-order-lifecycle
 tree state            DIRTY at capture time
 python (gate)         Python 3.12.13
@@ -78,13 +78,17 @@ three targets have been retired and assert plainly.
 These are not covered by any gate above and should not be treated as working:
 
 - **Mining has not been proven live since the fix.** The selection-cardinality
-  fix in `394b677` is proven by unit tests that fail without it, and the live
-  bundle that motivated it is checked in. No live run has issued a successful
-  `operate` on a resource with a two-character party.
-- **The survey capability has never been exercised live.** It is declared,
-  advertised, compiled into the installed binary, and pinned by a wire fixture,
-  but no live run has dispatched `survey_local_resources` and received an
-  acknowledgement. The command counter has never incremented for it.
+  fix needed three passes: option preparation, then the native request builder
+  which held its own singleton rule, then order adoption which compared against
+  the current selection rather than the authored one. All are proven by unit
+  tests that fail without them. No live run has issued a successful `operate`
+  on a resource with a two-character party.
+- **The survey has never been exercised live.** It is declared, advertised,
+  compiled into the installed binary, pinned by a wire fixture, and now has a
+  request-builder branch it previously lacked - without it the command fell
+  through to the targeted route and was refused for having no target_id, which
+  is why the native command counter never incremented for it. The complete
+  route is now checked structurally, but no live run has dispatched it.
 - **Two Kenshi crashes remain unexplained.** One GPU device-removal while
   creating a rasterizer state, one silent termination during asset streaming
   after a map travel. Both occurred with ~1.7 GiB of free host memory against

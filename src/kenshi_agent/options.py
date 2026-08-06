@@ -34,7 +34,7 @@ from .core.transport import (
 from .core.world import WorldStateRevision
 from .input_boundary import ExecutionToken
 from .movement_ownership import has_keyed_native_movement_terminal
-from .operation_definitions import definition_for
+from .operation_definitions import definition_for, native_wire_command_for
 from .threat_response import (
     threat_response_authority_error,
     threat_response_health_error,
@@ -412,19 +412,22 @@ class StatefulNativeMovementOption:
 
     @property
     def _wire_command(self) -> str:
-        if isinstance(self.action, MoveToCharacterAction):
-            return "move_to_character"
-        if isinstance(self.action, RegroupWithSquadMemberAction):
-            return "regroup_with_squad_member"
-        if isinstance(self.action, TravelToMapDestinationAction):
-            return "travel_to_map_destination"
-        if isinstance(self.action, ProduceResourceOutputAction):
-            return "produce_resource_output"
-        if isinstance(self.action, PerformContextAction):
-            return "perform_context_action"
-        if isinstance(self.action, ExitCurrentBuildingAction):
-            return "exit_current_building"
-        return "move_in_direction"
+        """The native command this action dispatches, from its own contract.
+
+        This was an action-class chain ending in an unconditional
+        `return "move_in_direction"`, so any action it did not enumerate was
+        silently attributed to the direction command - the same shape of defect
+        as the capability map that sat beside it.
+        """
+
+        definition = definition_for(self.action)
+        wire = None if definition is None else native_wire_command_for(definition)
+        if wire is None:
+            raise OptionLifecycleError(
+                f"Operation {self.action.kind!r} declares no native command, so "
+                "the option cannot name what it would dispatch."
+            )
+        return wire
 
     def prepare(self, observation: Observation) -> OptionPoll:
         if self.status is not OptionStatus.CREATED:
@@ -535,7 +538,11 @@ class StatefulNativeMovementOption:
                 )
         if isinstance(self.action, ExitCurrentBuildingAction):
             selected = [character for character in telemetry.squad if character.selected]
-            if len(selected) != 1 or selected[0].indoors is not True:
+            # Being indoors is mechanics; how many characters may be ordered
+            # out is the contract's. Requiring one contradicted the
+            # declared CURRENT_SELECTION scope, and Kenshi broadcasts a
+            # move order to the whole selection.
+            if not selected or any(member.indoors is not True for member in selected):
                 raise OptionLifecycleError(
                     "Building-exit option requires one selected character confirmed indoors."
                 )

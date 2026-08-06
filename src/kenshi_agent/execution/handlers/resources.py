@@ -832,11 +832,10 @@ class HarvestHandler:
             for character in telemetry.squad
             if character.selected and character.id == actor_id
         ]
-        if (
-            len(selected) != 1
-            or telemetry.ui.selected_character_id != actor_id
-            or telemetry.ui.selected_character_ids != [actor_id]
-        ):
+        # Who, not how many. The identity comparison already says the actor is
+        # the whole selection; a separate count was a second way to say it that
+        # could drift from the contract.
+        if not selected or telemetry.ui.selected_character_ids != [actor_id]:
             return (
                 AuthorizationCode.SELECTION_INVALID,
                 "The exact harvest actor is no longer solely selected.",

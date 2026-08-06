@@ -3,7 +3,6 @@ from __future__ import annotations
 from .affordances import OPERATION_BINDING_AUTHORITY, OperationBindingError
 from .config import SafetyConfig
 from .core.authority import AuthorizationCode
-from .core.interaction import RecipientScope
 from .core.observation import Observation
 from .core.operation import (
     Action,
@@ -132,17 +131,20 @@ class OperationPolicy:
                 f"Action {definition.kind!r} lacks required capabilities: " + ", ".join(missing),
                 code=AuthorizationCode.CAPABILITY_UNAVAILABLE,
             )
-        scope = definition.recipient_scope_for(bound.operation, observation)
-        if scope is RecipientScope.PRIMARY:
-            try:
-                self._validate_exact_selection(observation)
-            except SafetyViolation as exc:
-                raise SafetyViolation(str(exc), code=AuthorizationCode.SELECTION_INVALID) from exc
-        elif scope is RecipientScope.CURRENT_SELECTION:
-            try:
-                self._validate_squad_selection(observation)
-            except SafetyViolation as exc:
-                raise SafetyViolation(str(exc), code=AuthorizationCode.SELECTION_INVALID) from exc
+        # Safety enforces the resolved contract; it does not keep its own model
+        # of what each scope means. It used to: PRIMARY was read here as "exactly
+        # one selected character", while the registry's own rule is that Kenshi's
+        # exported primary exists and is among the selected. A primary-scoped
+        # order was therefore refused whenever a second character happened to be
+        # selected alongside it - the registry and safety disagreeing about the
+        # same scope, with safety winning silently.
+        if not definition.satisfies_recipient_scope(observation, bound.operation):
+            scope = definition.recipient_scope_for(bound.operation, observation)
+            raise SafetyViolation(
+                f"Action {definition.kind!r} addresses {scope.value!r}, which the "
+                "current selection cannot supply.",
+                code=AuthorizationCode.SELECTION_INVALID,
+            )
 
     def _validate_generic_purchase(
         self,
@@ -210,25 +212,6 @@ class OperationPolicy:
                     "Purchase blocked because the tooltip lacks "  # mutation: reason
                     f"the required marker {marker!r}."  # mutation: reason
                 )
-
-    @staticmethod
-    def _validate_exact_selection(observation: Observation) -> None:
-        assert observation.telemetry is not None
-        telemetry = observation.telemetry
-        selected_ids = telemetry.ui.selected_character_ids
-        if len(selected_ids) != 1 or telemetry.ui.selected_character_id != selected_ids[0]:
-            raise SafetyViolation(  # mutation: reason
-                "Action requires one exact primary "  # mutation: reason
-                "selected character."  # mutation: reason
-            )
-
-    @staticmethod
-    def _validate_squad_selection(observation: Observation) -> None:
-        assert observation.telemetry is not None
-        telemetry = observation.telemetry
-        selected_ids = telemetry.ui.selected_character_ids
-        if not selected_ids or telemetry.ui.selected_character_id not in selected_ids:
-            raise SafetyViolation("Action requires one or more exact selected squad members.")
 
     def validate_safety_pause(
         self,

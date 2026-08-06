@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, Protocol
@@ -44,6 +44,7 @@ from ...core.telemetry import (
     NativeCommandStatus,
     NativeWireCommand,
     TelemetrySnapshot,
+    WorldTarget,
 )
 from ...core.transport import (
     ActionReceipt,
@@ -1076,7 +1077,11 @@ class KenshiControlSurface:
             selected = [
                 character for character in observation.telemetry.squad if character.selected
             ]
-            if len(selected) != 1 or selected[0].indoors is not True:
+            # Being indoors is mechanics; how many characters may be ordered
+            # out is the contract's. Requiring one contradicted the
+            # declared CURRENT_SELECTION scope, and Kenshi broadcasts a
+            # move order to the whole selection.
+            if not selected or any(member.indoors is not True for member in selected):
                 return None
         elif (
             acknowledgement.target_id != target_id
@@ -1105,6 +1110,77 @@ class KenshiControlSurface:
             if not authored_basis.matches(current):
                 return None
         return acknowledgement
+
+    def _context_action_for_target(
+        self,
+        wire_command: NativeWireCommand,
+        target_id: str,
+        world_targets: Sequence[WorldTarget],
+        context_action: ContextActionKind | None,
+    ) -> ContextActionKind | Literal[""] | None:
+        """The context semantic a target must advertise, or None if not this route.
+
+        Deliberately blind to the selection. Classifying which commands need a
+        world target describes what the request looks like, not who receives it,
+        and keeping the two apart is what stops a shape check from quietly
+        becoming a recipient rule - which is how every previous private scope
+        model started.
+        """
+
+        if wire_command not in {
+            native_commands.NATIVE_CONTEXT_ACTION_WIRE_COMMAND,
+            native_commands.NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND,
+            native_commands.NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND,
+        }:
+            return None
+        if wire_command == native_commands.NATIVE_CONTEXT_ACTION_WIRE_COMMAND:
+            if context_action is None:
+                raise RuntimeError("Native context execution requires an exact semantic.")
+            expected: ContextActionKind = context_action
+            requested: ContextActionKind | Literal[""] = context_action
+        else:
+            expected = ContextActionKind.OPERATE
+            requested = ""
+        matches = [
+            target
+            for target in world_targets
+            if target.id == target_id and expected in target.context_actions
+        ]
+        if len(matches) != 1:
+            raise RuntimeError(
+                "Native context target is absent or no longer advertises "
+                f"the exact {expected.value!r} action."
+            )
+        return requested
+
+    def _native_request(
+        self,
+        command: CommandDispatchContext,
+        wire_command: NativeWireCommand,
+        observation: Observation,
+        selected_ids: list[str],
+        **distinguishing: object,
+    ) -> NativeCommandRequest:
+        """One native request, carrying the fields every command shares.
+
+        Each command's branch is then only what makes it that command. The
+        shared six were restated at every construction site, which is how a new
+        command's branch became eight lines of boilerplate and one line of
+        meaning.
+        """
+
+        telemetry = observation.telemetry
+        assert telemetry is not None and telemetry.identity_session_id
+        return NativeCommandRequest(
+            schema_version="1.2",
+            command_id=command.command_id,
+            command=wire_command,
+            control_mode=ControlMode.NATIVE_ASSISTED,
+            identity_session_id=telemetry.identity_session_id,
+            based_on_revision=observation.world_revision,
+            selected_character_ids=list(selected_ids),
+            **distinguishing,  # type: ignore[arg-type]
+        )
 
     def _native_approach_request(
         self,
@@ -1203,32 +1279,43 @@ class KenshiControlSurface:
             # References nobody: the destination is derived from where the
             # character already stands, which is what makes it available in a
             # place a destination list would be empty.
-            return NativeCommandRequest(
-                schema_version="1.2",
-                command_id=command.command_id,
-                command=wire_command,
-                control_mode=ControlMode.NATIVE_ASSISTED,
-                identity_session_id=telemetry.identity_session_id,
-                based_on_revision=observation.world_revision,
-                selected_character_ids=list(selected_ids),
+            return self._native_request(
+                command,
+                wire_command,
+                observation,
+                selected_ids,
                 bearing_degrees=bearing_degrees,
                 distance_units=distance_units,
             )
         if wire_command == native_commands.NATIVE_EXIT_BUILDING_WIRE_COMMAND:
             selected = [character for character in telemetry.squad if character.selected]
-            if len(selected) != 1 or selected[0].indoors is not True:
+            # Being indoors is mechanics; how many characters may be ordered
+            # out is the contract's. Requiring one contradicted the
+            # declared CURRENT_SELECTION scope, and Kenshi broadcasts a
+            # move order to the whole selection.
+            if not selected or any(member.indoors is not True for member in selected):
                 raise RuntimeError(
                     "Native building exit requires the selected character to be "
                     "confirmed indoors at issue time."
                 )
-            return NativeCommandRequest(
-                schema_version="1.2",
-                command_id=command.command_id,
-                command=wire_command,
-                control_mode=ControlMode.NATIVE_ASSISTED,
-                identity_session_id=telemetry.identity_session_id,
-                based_on_revision=observation.world_revision,
-                selected_character_ids=list(selected_ids),
+            return self._native_request(
+                command,
+                wire_command,
+                observation,
+                selected_ids,
+            )
+        if wire_command == native_commands.NATIVE_RESOURCE_SURVEY_WIRE_COMMAND:
+            # A survey references nobody and nothing: it reads Kenshi's resource
+            # field where the primary stands. Without this branch it fell
+            # through to the targeted route and was refused for having no
+            # target_id, so the operation was offered to the agent and could
+            # never be dispatched - the native command counter never
+            # incremented for it across two live runs.
+            return self._native_request(
+                command,
+                wire_command,
+                observation,
+                selected_ids,
             )
         if wire_command == native_commands.NATIVE_MAP_TRAVEL_WIRE_COMMAND:
             map_destinations = [
@@ -1240,14 +1327,11 @@ class KenshiControlSurface:
                 raise RuntimeError(
                     "Native map destination is absent, undiscovered, or ambiguous at issue time."
                 )
-            return NativeCommandRequest(
-                schema_version="1.2",
-                command_id=command.command_id,
-                command=wire_command,
-                control_mode=ControlMode.NATIVE_ASSISTED,
-                identity_session_id=telemetry.identity_session_id,
-                based_on_revision=observation.world_revision,
-                selected_character_ids=list(selected_ids),
+            return self._native_request(
+                command,
+                wire_command,
+                observation,
+                selected_ids,
                 target_id=target_id,
             )
         if wire_command == native_commands.NATIVE_SQUAD_SELECTION_WIRE_COMMAND:
@@ -1256,14 +1340,11 @@ class KenshiControlSurface:
                 raise RuntimeError(
                     "Native squad-selection target is absent or ambiguous at issue time."
                 )
-            return NativeCommandRequest(
-                schema_version="1.2",
-                command_id=command.command_id,
-                command=wire_command,
-                control_mode=ControlMode.NATIVE_ASSISTED,
-                identity_session_id=telemetry.identity_session_id,
-                based_on_revision=observation.world_revision,
-                selected_character_ids=list(selected_ids),
+            return self._native_request(
+                command,
+                wire_command,
+                observation,
+                selected_ids,
                 target_id=target_id,
             )
         if wire_command == native_commands.NATIVE_SQUAD_REGROUP_WIRE_COMMAND:
@@ -1277,49 +1358,27 @@ class KenshiControlSurface:
                     "Native squad-regroup target is absent, not distinct from the "
                     "actor, ambiguous, or not confirmed alive at issue time."
                 )
-            return NativeCommandRequest(
-                schema_version="1.2",
-                command_id=command.command_id,
-                command=wire_command,
-                control_mode=ControlMode.NATIVE_ASSISTED,
-                identity_session_id=telemetry.identity_session_id,
-                based_on_revision=observation.world_revision,
-                selected_character_ids=list(selected_ids),
+            return self._native_request(
+                command,
+                wire_command,
+                observation,
+                selected_ids,
                 target_id=target_id,
             )
         if not target_id:
             raise RuntimeError("Native approach requires an exact target_id.")
-        if wire_command in {
-            native_commands.NATIVE_CONTEXT_ACTION_WIRE_COMMAND,
-            native_commands.NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND,
-            native_commands.NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND,
-        }:
-            if wire_command == native_commands.NATIVE_CONTEXT_ACTION_WIRE_COMMAND:
-                if context_action is None:
-                    raise RuntimeError("Native context execution requires an exact semantic.")
-                expected_context_action = context_action
-                request_context_action: ContextActionKind | Literal[""] = context_action
-            else:
-                expected_context_action = ContextActionKind.OPERATE
-                request_context_action = ""
-            matches = [
-                target
-                for target in telemetry.world_targets
-                if target.id == target_id and expected_context_action in target.context_actions
-            ]
-            if len(matches) != 1:
-                raise RuntimeError(
-                    "Native context target is absent or no longer advertises "
-                    f"the exact {expected_context_action.value!r} action."
-                )
-            return NativeCommandRequest(
-                schema_version="1.2",
-                command_id=command.command_id,
-                command=wire_command,
-                control_mode=ControlMode.NATIVE_ASSISTED,
-                identity_session_id=telemetry.identity_session_id,
-                based_on_revision=observation.world_revision,
-                selected_character_ids=list(selected_ids),
+        request_context_action = self._context_action_for_target(
+            wire_command,
+            target_id,
+            telemetry.world_targets,
+            context_action,
+        )
+        if request_context_action is not None:
+            return self._native_request(
+                command,
+                wire_command,
+                observation,
+                selected_ids,
                 target_id=target_id,
                 context_action=request_context_action,
                 minimum_output_quantity=minimum_output_quantity,

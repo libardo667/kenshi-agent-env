@@ -130,10 +130,49 @@ NATIVE_RESOURCE_OUTPUT_READY_RESULT = "resource_output_ready"
 NATIVE_RESOURCE_TASK_RELEASED_RESULT = "resource_output_ready_task_released"
 NATIVE_CONTEXT_ACTION_CAPABILITY = "control.perform_context_action"
 NATIVE_RESOURCE_SURVEY_CAPABILITY = "control.survey_local_resources"
+
 NATIVE_CONTEXT_TARGETS_CAPABILITY = "world.context_targets"
 WORLD_CONTEXT_TARGET_SCREEN_POSITIONS_CAPABILITY = "world.context_target_screen_positions"
 NATIVE_PRODUCE_RESOURCE_CAPABILITY = "control.produce_resource_output"
 NATIVE_OPEN_CONTEXT_INVENTORY_CAPABILITY = "control.open_context_inventory"
+
+# The one mapping from a control capability to the native command it authorizes.
+# A capability is the permission; the command is the thing performed with it.
+# This was restated in three places - an action-class chain in option
+# preparation that ended in an unconditional `return "move_in_direction"`, a
+# dict in the capability-consistency test, and the native parser's own name
+# list - so an operation could be admitted under one name and dispatched under
+# another. Names line up with the capability everywhere except the approach,
+# which kept its original wire name; that exception is written down here rather
+# than lived with.
+WIRE_COMMAND_BY_CONTROL_CAPABILITY: dict[str, str] = {
+    NATIVE_APPROACH_CAPABILITY: "approach_confirmed_vendor",
+    LEGACY_NATIVE_APPROACH_CAPABILITY: "approach_confirmed_vendor",
+    NATIVE_MOVE_CAPABILITY: "move_to_character",
+    NATIVE_SQUAD_SELECTION_CAPABILITY: "select_squad_member",
+    NATIVE_SQUAD_REGROUP_CAPABILITY: "regroup_with_squad_member",
+    NATIVE_DIRECTION_CAPABILITY: "move_in_direction",
+    NATIVE_MAP_TRAVEL_CAPABILITY: "travel_to_map_destination",
+    NATIVE_EXIT_BUILDING_CAPABILITY: "exit_current_building",
+    NATIVE_CONTEXT_ACTION_CAPABILITY: "perform_context_action",
+    NATIVE_PRODUCE_RESOURCE_CAPABILITY: "produce_resource_output",
+    NATIVE_OPEN_CONTEXT_INVENTORY_CAPABILITY: "open_context_inventory",
+    NATIVE_RESOURCE_SURVEY_CAPABILITY: "survey_local_resources",
+}
+
+
+def native_wire_command_for(definition: OperationDefinition) -> str | None:
+    """The native command this operation dispatches, from its own contract.
+
+    None when the operation declares no control capability, which is the honest
+    answer for anything that sends no native command.
+    """
+
+    for capability in sorted(definition.required_capabilities):
+        wire = WIRE_COMMAND_BY_CONTROL_CAPABILITY.get(capability)
+        if wire is not None:
+            return wire
+    return None
 CONTEXT_INVENTORY_TARGET_CAPABILITY = "ui.context_inventory_target"
 
 VISIBLE_CONTROLS_CAPABILITY = "ui.visible_controls"
@@ -3355,9 +3394,16 @@ PRODUCE_RESOURCE_OUTPUT_DEFINITION = OperationDefinition(
 HARVEST_RESOURCE_DEFINITION = OperationDefinition(
     kind="harvest_resource",
     version="1.0",
+    # Explicit recipients, not the current selection. A harvest opens one
+    # character's inventory to collect the yield, so it addresses the actor it
+    # names rather than broadcasting. It declared CURRENT_SELECTION while its
+    # own handler required that actor to be solely selected - the contract and
+    # the mechanics saying different things about the same operation, with the
+    # mechanics right and unable to say so.
     interaction=ordinary_order(
-        recipients=RecipientScope.CURRENT_SELECTION,
+        recipients=RecipientScope.EXPLICIT_RECIPIENTS,
         milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
+        selection=SelectionDependency.UI_TRANSACTION,
     ),
     operation_type=HarvestResourceAction,
     summary=(

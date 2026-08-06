@@ -42,7 +42,7 @@ INTERACTION CONTRACT (resolved from the sole operation registry)
   dismiss_screen                      global_ui          none                ui_transaction   world_outcome_observed  unproven
   equip_item                          global_ui          explicit_recipients ui_transaction   world_outcome_observed  unproven
   exit_current_building               ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
-  harvest_resource                    ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
+  harvest_resource                    ordinary_order     explicit_recipients ui_transaction   world_outcome_observed  unproven
   move_in_direction                   ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
   move_to_character                   ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
   noop                                runtime_only       none                none             input_delivered         source_proven
