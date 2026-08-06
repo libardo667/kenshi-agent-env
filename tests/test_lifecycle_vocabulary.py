@@ -338,3 +338,97 @@ def test_a_later_order_fact_is_a_linked_event_not_a_receipt_edit() -> None:
     assert '"command_id": transition.receipt.command_id' in source
     # The receipt itself is never rewritten with a disposition.
     assert "receipt.model_copy" not in source
+
+
+# --------------------------------------------------------------------------
+# Each detaching path declares its own disposition
+
+
+def test_a_human_handoff_is_not_reported_as_a_supervisor_action() -> None:
+    """A person taking the keyboard is a handoff, not the supervisor stopping us.
+
+    Every safety cause used to reach the same generic answer, which is a smaller
+    version of the problem this vocabulary exists to fix.
+    """
+
+    from kenshi_agent.core.lifecycle import monitor_disposition_for_safety_cause
+
+    assert (
+        monitor_disposition_for_safety_cause("human_input")
+        is MonitorDisposition.DETACHED_FOR_HUMAN_HANDOFF
+    )
+    assert (
+        monitor_disposition_for_safety_cause("emergency_stop")
+        is MonitorDisposition.DETACHED_FOR_HUMAN_HANDOFF
+    )
+
+
+def test_telemetry_causes_report_as_telemetry_loss() -> None:
+    """Stale, stalled, and a dead host window all end evidence, not the order."""
+
+    from kenshi_agent.core.lifecycle import monitor_disposition_for_safety_cause
+
+    for cause in ("telemetry_stale", "sequence_stalled", "host_terminal"):
+        assert (
+            monitor_disposition_for_safety_cause(cause)
+            is MonitorDisposition.DETACHED_ON_TELEMETRY_LOSS
+        )
+
+
+def test_every_safety_cause_has_a_disposition() -> None:
+    """Enumerated from the real cause vocabulary rather than restated."""
+
+    from kenshi_agent.core.lifecycle import MONITOR_DISPOSITION_BY_SAFETY_CAUSE
+    from kenshi_agent.safety_supervisor import SafetyCause
+
+    missing = [
+        cause.value
+        for cause in SafetyCause
+        if cause.value not in MONITOR_DISPOSITION_BY_SAFETY_CAUSE
+    ]
+
+    assert not missing, f"safety causes with no declared disposition: {missing}"
+
+
+def test_an_unknown_cause_degrades_to_vague_rather_than_wrong() -> None:
+    """A new cause must not silently claim a handoff or telemetry loss."""
+
+    from kenshi_agent.core.lifecycle import monitor_disposition_for_safety_cause
+
+    assert (
+        monitor_disposition_for_safety_cause("a_cause_added_later")
+        is MonitorDisposition.DETACHED_BY_SUPERVISOR
+    )
+
+
+def test_run_end_and_shutdown_are_distinguished_in_the_report() -> None:
+    """One means the agent finished; the other that it was stopped mid-thought.
+
+    A reader deciding whether to resume wants to know which, and both leave the
+    order alone either way.
+    """
+
+    import inspect
+
+    from kenshi_agent import run_coordinator
+
+    source = inspect.getsource(run_coordinator)
+
+    assert "MonitorDisposition.DETACHED_AT_RUN_END" in source
+    assert "MonitorDisposition.DETACHED_AT_SHUTDOWN" in source
+    assert "summary.terminated" in source
+
+
+def test_preemption_reports_what_kenshi_still_holds() -> None:
+    """Preemption is not an instruction to the characters either."""
+
+    import inspect
+
+    from kenshi_agent import run_coordinator
+
+    cancelled = inspect.getsource(run_coordinator)
+    block = cancelled[cancelled.index('"plan_execution_cancelled"') :][:1600]
+
+    assert "monitor_disposition" in block
+    assert "_retained_work_at_exit" in block
+    assert "sent no order-clearing input" in block

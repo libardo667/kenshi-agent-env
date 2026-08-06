@@ -199,3 +199,35 @@ def order_disposition_from_evidence(
         # ordered. Somebody else - a Job, the AI, a person - is driving.
         return OrderDisposition.EXTERNALLY_REPLACED
     return OrderDisposition.NATURALLY_ENDED
+
+
+# Why the monitor detached, for each way a run can stop watching. A supervisor
+# preemption is not one event: a human taking the keyboard, telemetry going
+# quiet, and the host window dying end monitoring for different reasons and
+# leave the order in different states of knownness. Collapsing them into
+# "detached by supervisor" would rebuild a smaller version of the problem this
+# vocabulary exists to fix.
+MONITOR_DISPOSITION_BY_SAFETY_CAUSE: dict[str, MonitorDisposition] = {
+    "human_input": MonitorDisposition.DETACHED_FOR_HUMAN_HANDOFF,
+    "emergency_stop": MonitorDisposition.DETACHED_FOR_HUMAN_HANDOFF,
+    "telemetry_stale": MonitorDisposition.DETACHED_ON_TELEMETRY_LOSS,
+    "sequence_stalled": MonitorDisposition.DETACHED_ON_TELEMETRY_LOSS,
+    # The game window died. Telemetry is frozen rather than merely late, so
+    # nothing further about the order can be learned.
+    "host_terminal": MonitorDisposition.DETACHED_ON_TELEMETRY_LOSS,
+    "reflex": MonitorDisposition.DETACHED_BY_SUPERVISOR,
+    "pause_capability_withdrawn": MonitorDisposition.DETACHED_BY_SUPERVISOR,
+    "unexpected_unpause": MonitorDisposition.DETACHED_BY_SUPERVISOR,
+}
+
+
+def monitor_disposition_for_safety_cause(cause: str) -> MonitorDisposition:
+    """The disposition a safety preemption actually represents.
+
+    Unknown causes fall to the supervisor default rather than raising: a new
+    cause should degrade to a true-but-vague answer, never to a wrong one.
+    """
+
+    return MONITOR_DISPOSITION_BY_SAFETY_CAUSE.get(
+        cause, MonitorDisposition.DETACHED_BY_SUPERVISOR
+    )

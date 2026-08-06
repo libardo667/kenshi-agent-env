@@ -38,6 +38,11 @@ from .core.affordance import (
 )
 from .core.continuity import MemoryRetrievalPolicy
 from .core.evidence import PlanDisposition
+from .core.lifecycle import (
+    EVIDENCE_SEMANTICS_VERSION,
+    MonitorDisposition,
+    monitor_disposition_for_safety_cause,
+)
 from .core.observation import Observation
 from .core.operation import (
     ControlMode,
@@ -879,6 +884,17 @@ class RunCoordinator:
                     safety_supervisor,
                 )
                 if preemption is not None:
+                    # "plan_execution_cancelled" names what happened to the
+                    # plan. What happened to any order Kenshi is holding is a
+                    # different question, and preemption answers none of it: no
+                    # order-clearing input is sent here either. A human taking
+                    # the keyboard and telemetry going quiet end monitoring for
+                    # different reasons and leave the order in different states
+                    # of knownness, so the cause is translated rather than
+                    # flattened to "the supervisor stopped it".
+                    monitor_disposition = monitor_disposition_for_safety_cause(
+                        preemption.cause.value
+                    )
                     self.logger.write(
                         "plan_execution_cancelled",
                         step_index=observation.step_index,
@@ -887,6 +903,12 @@ class RunCoordinator:
                             "plan_version": plan.plan_version,
                             "cause": preemption.cause.value,
                             "reason": preemption.reason,
+                            "monitor_disposition": monitor_disposition.value,
+                            "order_disposition_note": (
+                                "Preemption sent no order-clearing input; any order "
+                                "the characters hold remains with them."
+                            ),
+                            **_retained_work_at_exit(preemption.observation),
                             "world_revision": (
                                 preemption.observation.world_revision.model_dump(mode="json")
                             ),
@@ -2050,6 +2072,18 @@ class RunCoordinator:
                 # input is sent on the way out, so a character mid-job keeps
                 # that job. Saying so is the difference between a report that
                 # records the agent stopped and one that implies the world did.
+                #
+                # Run end and process shutdown are distinguished because they
+                # are different facts: one means the agent finished what it set
+                # out to do, the other that it was stopped mid-thought. Both
+                # leave the order alone, and a reader deciding whether to resume
+                # wants to know which happened.
+                "monitor_disposition": (
+                    MonitorDisposition.DETACHED_AT_RUN_END.value
+                    if summary.terminated
+                    else MonitorDisposition.DETACHED_AT_SHUTDOWN.value
+                ),
+                "evidence_semantics_version": EVIDENCE_SEMANTICS_VERSION,
                 **_retained_work_at_exit(observation),
             },
         )
