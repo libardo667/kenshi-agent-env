@@ -6,15 +6,17 @@ Regenerate with `python scripts/export_dev_cli.py`.
 ## `./dev`
 
 ```text
-usage: ./dev [-h] {doctor,launch,run,telemetry,affordances,snapshot,recover,stop,scenario,setup} ...
+usage: ./dev [-h]
+             {doctor,launch,run,tui,telemetry,affordances,snapshot,recover,stop,scenario,setup} ...
 
 Safe, state-aware Kenshi live development. Use 'run' for the normal launch-and-agent workflow.
 
 positional arguments:
-  {doctor,launch,run,telemetry,affordances,snapshot,recover,stop,scenario,setup}
+  {doctor,launch,run,tui,telemetry,affordances,snapshot,recover,stop,scenario,setup}
     doctor                    Check every launch prerequisite without sending input.
     launch                    Launch Kenshi without starting an agent.
     run                       Use a safe loaded game or launch one, then run the agent.
+    tui                       Launch an interactive terminal UI for composing a run configuration.
     telemetry                 Print the current player-readable telemetry as JSON.
     affordances               Show the affordance menu the agent would be offered right now.
     snapshot                  Capture one frame with its matching telemetry evidence.
@@ -74,7 +76,8 @@ options:
 
 ```text
 usage: ./dev run [-h] [--timeout TIMEOUT] [--scenario SCENARIO | --game-start GAME_START]
-                 [--objective OBJECTIVE] [--campaign CAMPAIGN] [--steps STEPS] [--run-id RUN_ID]
+                 [--objective OBJECTIVE] [--campaign CAMPAIGN] [--prompt-file PROMPT_FILE]
+                 [--advisor-corpus-file ADVISOR_CORPUS_FILE] [--steps STEPS] [--run-id RUN_ID]
                  [--control {plan-only,live}] [--focus-display]
 
 Run the agent in a fresh or already-loaded world. Ambiguous live state fails closed.
@@ -88,12 +91,26 @@ options:
   --objective OBJECTIVE       Override the configured objective for this run. (default: None)
   --campaign CAMPAIGN         Save-lineage identity used for durable memory continuity. (default:
                               None)
+  --prompt-file PROMPT_FILE   Planner prompt file override. (default: None)
+  --advisor-corpus-file ADVISOR_CORPUS_FILE
+                              Advisor corpus file override. (default: None)
   --steps STEPS               Override the configured step ceiling. (default: None)
   --run-id RUN_ID             Exact run identifier; generated when omitted. (default: None)
   --control {plan-only,live}  plan-only sends no gameplay actions; live takes desktop input
                               ownership for the run. (default: plan-only)
   --focus-display             Temporarily switch to the external 1920x1080 display only; the default
                               keeps the internal panel and external display active. (default: False)
+```
+
+## `./dev tui`
+
+```text
+usage: ./dev tui [-h]
+
+Drive ./dev run through a compact terminal UI and launch with the same safety rules.
+
+options:
+  -h, --help  show this help message and exit
 ```
 
 ## `./dev telemetry`

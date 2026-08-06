@@ -73,6 +73,16 @@ def _add_agent_options(parser: argparse.ArgumentParser) -> None:
         "--campaign",
         help="Save-lineage identity used for durable memory continuity.",
     )
+    parser.add_argument(
+        "--prompt-file",
+        type=Path,
+        help="Planner prompt file override.",
+    )
+    parser.add_argument(
+        "--advisor-corpus-file",
+        type=Path,
+        help="Advisor corpus file override.",
+    )
     parser.add_argument("--steps", type=int, help="Override the configured step ceiling.")
     parser.add_argument("--run-id", help="Exact run identifier; generated when omitted.")
     parser.set_defaults(tts=True)
@@ -238,6 +248,17 @@ def build_parser(
     _add_agent_options(run)
     _add_display_option(run)
     run.set_defaults(resume_launcher=False, preflight_only=False)
+
+    tui = commands.add_parser(
+        "tui",
+        parents=[common],
+        help="Launch an interactive terminal UI for composing a run configuration.",
+        description=(
+            "Drive ./dev run through a compact terminal UI and launch with the same "
+            "safety rules."
+        ),
+        formatter_class=_HelpFormatter,
+    )
 
     telemetry = commands.add_parser(
         "telemetry",

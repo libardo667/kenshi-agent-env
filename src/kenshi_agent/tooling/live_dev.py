@@ -83,6 +83,7 @@ from .authored_starts import (
 )
 from .dev_cli import LIVE_CONFIG
 from .dev_cli import build_parser as build_dev_parser
+from .dev_tui import run_from_dev_args
 from .gpu_events import (
     GpuTdrDetected,
     GpuTdrEvent,
@@ -138,7 +139,7 @@ class LowPhysicalMemory(LaunchFailed):
 def _config_path(args: argparse.Namespace) -> str | Path:
     if getattr(args, "config", None) is not None:
         return str(args.config)
-    return Path(__file__).resolve().parents[2] / LIVE_CONFIG
+    return Path(__file__).resolve().parents[3] / LIVE_CONFIG
 
 
 def _windows_runtime() -> bool:
@@ -2901,6 +2902,10 @@ def _agent_argv(
         argv.extend(["--objective", args.objective])
     if args.campaign:
         argv.extend(["--campaign", args.campaign])
+    if args.prompt_file:
+        argv.extend(["--prompt-file", str(args.prompt_file)])
+    if args.advisor_corpus_file:
+        argv.extend(["--advisor-corpus-file", str(args.advisor_corpus_file)])
     if scenario_attestation is not None:
         argv.extend(["--scenario-attestation", str(scenario_attestation)])
     argv.append("--tts")
@@ -3144,6 +3149,12 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(_launch(args))
     if args.command == "run":
         return _run(args)
+    if args.command == "tui":
+        return run_from_dev_args(
+            args,
+            config_loader=load_config,
+            run_command=_run,
+        )
     if args.command == "telemetry":
         return _telemetry(args)
     if args.command == "affordances":

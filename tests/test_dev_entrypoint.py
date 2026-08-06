@@ -162,6 +162,7 @@ def test_windows_transport_is_hidden_and_available_on_every_command() -> None:
         ["stop"],
         ["scenario", "list"],
         ["setup", "graphics"],
+        ["tui"],
     )
 
     for workflow in workflows:
@@ -199,7 +200,7 @@ def test_dev_help_is_local_and_describes_the_complete_supported_surface(
 
     assert result.returncode == 0
     assert (
-        "{doctor,launch,run,telemetry,affordances,snapshot,recover,stop,scenario,setup}"
+        "{doctor,launch,run,tui,telemetry,affordances,snapshot,recover,stop,scenario,setup}"
     ) in result.stdout
     assert "Windows live Python" not in result.stderr
 
@@ -221,6 +222,7 @@ def test_every_help_page_is_local(tmp_path: Path) -> None:
         "recover",
         "stop",
         "scenario",
+        "tui",
         "setup",
     ):
         result = subprocess.run(
@@ -310,6 +312,26 @@ def test_dev_detaches_windows_processes_from_an_inherited_pty(
             str(REPO_ROOT / "config" / "live.yaml"),
         ]
     ]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the ./dev wrapper is WSL-only")
+def test_dev_tui_does_not_require_windows_runtime() -> None:
+    env = {
+        **os.environ,
+        "PATH": f"{Path(sys.executable).parent}",
+    }
+
+    result = subprocess.run(
+        [str(REPO_ROOT / "dev"), "tui"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "Could not prepare the Windows live runtime" not in result.stderr
 
 
 @pytest.mark.skipif(os.name == "nt", reason="the ./dev wrapper is WSL-only")

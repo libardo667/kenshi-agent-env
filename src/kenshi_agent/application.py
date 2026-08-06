@@ -184,6 +184,8 @@ def _apply_run_overrides(
     objective = getattr(args, "objective", None)
     planning_mode = getattr(args, "planning_mode", None)
     campaign = getattr(args, "campaign", None)
+    prompt_file = getattr(args, "prompt_file", None)
+    advisor_corpus_file = getattr(args, "advisor_corpus_file", None)
     scenario_values = {
         "scenario_id": getattr(args, "scenario_id", None),
         "save_id": getattr(args, "save_id", None),
@@ -231,7 +233,14 @@ def _apply_run_overrides(
                 f"Invalid scenario declaration: {exc}"  # mutation: diagnostic-only
             ) from exc
 
-    if objective is None and planning_mode is None and campaign is None and scenario is None:
+    if (
+        objective is None
+        and planning_mode is None
+        and campaign is None
+        and scenario is None
+        and prompt_file is None
+        and advisor_corpus_file is None
+    ):
         return config
     updates: dict[str, object] = {}
     runtime_updates: dict[str, object] = {}
@@ -246,6 +255,14 @@ def _apply_run_overrides(
     if planning_mode is not None:
         updates["planning"] = config.planning.model_copy(
             update={"mode": PlanningMode(planning_mode)}
+        )
+    if prompt_file is not None:
+        updates["paths"] = config.paths.model_copy(
+            update={"prompt_file": Path(prompt_file)},
+        )
+    if advisor_corpus_file is not None:
+        updates["advisor"] = config.advisor.model_copy(
+            update={"corpus_file": Path(advisor_corpus_file)},
         )
     if campaign is not None:
         updates["memory"] = type(config.memory).model_validate(
@@ -838,6 +855,12 @@ def build_parser() -> argparse.ArgumentParser:
             "Explicit save-lineage identity for durable continuity in this run. "
             "The canonical live configuration intentionally does not choose one."
         ),
+    )
+    run.add_argument("--prompt-file", type=Path, help="Planner prompt file override")
+    run.add_argument(
+        "--advisor-corpus-file",
+        type=Path,
+        help="Advisor corpus file override",
     )
     run.add_argument("--scenario-id")
     run.add_argument(

@@ -154,6 +154,28 @@ def test_run_objective_override_is_ephemeral() -> None:
     assert config.runtime.objective == original
 
 
+def test_run_prompt_and_advisor_file_overrides_are_ephemeral() -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = load_config(root / "config" / "live.yaml")
+    original_prompt = config.paths.prompt_file
+    original_corpus = config.advisor.corpus_file
+
+    overridden = cli._apply_run_overrides(
+        config,
+        SimpleNamespace(
+            objective=None,
+            planning_mode=None,
+            prompt_file=Path("prompts/example.md"),
+            advisor_corpus_file=Path("knowledge/example.yaml"),
+        ),
+    )
+
+    assert overridden.paths.prompt_file == Path("prompts/example.md")
+    assert overridden.advisor.corpus_file == Path("knowledge/example.yaml")
+    assert config.paths.prompt_file == original_prompt
+    assert config.advisor.corpus_file == original_corpus
+
+
 def test_run_without_any_override_returns_the_original_config() -> None:
     root = Path(__file__).resolve().parents[1]
     config = load_config(root / "config" / "default.yaml")

@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import argparse
+import datetime
 import os
 import re
 import signal
@@ -49,6 +51,65 @@ def _run_text(*command: str) -> str:
     except (FileNotFoundError, subprocess.CalledProcessError) as exc:
         _fail(f"Could not prepare the Windows live runtime: {exc}")
     return result.stdout.strip().replace("\r", "")
+
+
+def _run_tui(
+    args: argparse.Namespace,
+    *,
+    environment: dict[str, str],
+) -> int:
+    from kenshi_agent.tooling.dev_tui import run_from_dev_args
+    from kenshi_agent.config import load_config
+
+    run_environment = _forwarded_environment()
+
+    def _run_command_namespace_to_argv(run_args: argparse.Namespace) -> list[str]:
+        argv = ["run", "--config", _to_windows_path(str(run_args.config))]
+        if run_args.timeout is not None:
+            argv.extend(["--timeout", str(run_args.timeout)])
+        if run_args.scenario is not None:
+            argv.extend(["--scenario", str(run_args.scenario)])
+        if run_args.game_start is not None:
+            argv.extend(["--game-start", str(run_args.game_start)])
+        if run_args.objective is not None:
+            argv.extend(["--objective", str(run_args.objective)])
+        if run_args.campaign is not None:
+            argv.extend(["--campaign", str(run_args.campaign)])
+        if run_args.steps is not None:
+            argv.extend(["--steps", str(run_args.steps)])
+        argv.extend(["--control", str(run_args.control)])
+        if run_args.focus_display:
+            argv.append("--focus-display")
+        if run_args.prompt_file is not None:
+            argv.extend(["--prompt-file", _to_windows_path(str(run_args.prompt_file))])
+        if run_args.advisor_corpus_file is not None:
+            argv.extend(
+                ["--advisor-corpus-file", _to_windows_path(str(run_args.advisor_corpus_file))]
+            )
+        if run_args.run_id is not None:
+            argv.extend(["--run-id", str(run_args.run_id)])
+        return argv
+
+    def launch_run(run_args: argparse.Namespace) -> int:
+        windows_run_args = argparse.Namespace(**vars(run_args))
+        windows_argv = [
+            "-u",
+            "-m",
+            "kenshi_agent.tooling.live_dev",
+            *_run_command_namespace_to_argv(windows_run_args),
+        ]
+        executable = _windows_python()
+        return _run_windows(
+            executable,
+            windows_argv,
+            environment={**run_environment, **environment},
+        )
+
+    return run_from_dev_args(
+        args,
+        config_loader=load_config,
+        run_command=launch_run,
+    )
 
 
 def _to_windows_path(value: str) -> str:
@@ -164,6 +225,12 @@ def _terminate_transport_process(
 def main(argv: list[str] | None = None) -> int:
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     args = build_parser().parse_args(raw_argv)
+    if args.command == "tui":
+        try:
+            return _run_tui(args, environment=os.environ.copy())
+        except KeyboardInterrupt:
+            return 130
+
     executable = _windows_python()
     environment = _forwarded_environment()
     windows_argv = _windows_argv(raw_argv)

@@ -143,6 +143,7 @@ def test_live_dev_exposes_only_the_approved_top_level_commands() -> None:
         "snapshot",
         "recover",
         "stop",
+        "tui",
         "scenario",
         "setup",
     }
@@ -2859,6 +2860,26 @@ def test_run_omits_unspecified_config_overrides() -> None:
 
     assert "--planner" not in argv
     assert "--steps" not in argv
+
+
+def test_run_passes_prompt_and_advisor_overrides() -> None:
+    argv = _agent_argv(
+        _run_args(
+            "--prompt-file",
+            "prompts/experimental/planning.md",
+            "--advisor-corpus-file",
+            "knowledge/experimental.yaml",
+        ),
+        "prompt-advisor-run",
+    )
+
+    assert (
+        argv[argv.index("--prompt-file") + 1] == "prompts/experimental/planning.md"
+    )
+    assert (
+        argv[argv.index("--advisor-corpus-file") + 1]
+        == "knowledge/experimental.yaml"
+    )
 
 
 def test_run_does_not_offer_a_second_planning_mode_authority() -> None:
