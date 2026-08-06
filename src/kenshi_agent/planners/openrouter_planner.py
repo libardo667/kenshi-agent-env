@@ -24,6 +24,7 @@ from ..planner_context import render_planner_payload
 from .base import (
     HostedPlannerCallDiagnostics,
     HostedPlannerResponseError,
+    HostedPlannerStaleChoiceError,
     Planner,
     PreparedPlannerInput,
     hosted_proposal_model,
@@ -492,6 +493,23 @@ class OpenRouterPlanner(Planner):
                     ),
                 )
         except ValueError as exc:
+            # A choice that is no longer offered is the planner picking from a
+            # menu that has moved, not a malformed response - and it is worth
+            # telling it so. Silently substituting an observe turn burned
+            # seventeen consecutive turns on a trade screen whose controls
+            # repaint constantly: the run looked like a noop loop from outside,
+            # and the only record was `proposal_fallback_reason` in the bundle.
+            #
+            # Raising instead engages the coordinator's replan-with-feedback
+            # path, which is bounded by max_consecutive_replans and the
+            # identical-failure limit, so a genuinely stuck run stops and says
+            # why rather than idling until its step ceiling.
+            if "affordance is absent" in str(exc) or "affordance is ambiguous" in str(exc):
+                self._last_call_diagnostics = replace(
+                    diagnostics,
+                    proposal_fallback_reason=str(exc)[:1000],
+                )
+                raise HostedPlannerStaleChoiceError(diagnostics, detail=str(exc)) from exc
             output = compile_hosted_plan_proposal(
                 {
                     "objective": "Regain a fresh planning turn after an unusable proposal.",

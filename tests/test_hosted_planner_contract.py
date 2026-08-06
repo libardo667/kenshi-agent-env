@@ -45,6 +45,7 @@ from kenshi_agent.planner_context import render_planner_payload
 from kenshi_agent.planners.base import (
     HostedPlannerCallDiagnostics,
     HostedPlannerResponseError,
+    HostedPlannerStaleChoiceError,
     hosted_proposal_model,
     output_token_budget,
     planner_context_manifest,
@@ -828,10 +829,18 @@ def test_openrouter_turns_malformed_plan_proposal_into_safe_reobservation() -> N
 def test_openrouter_never_executes_an_unadvertised_action_the_model_emits() -> None:
     """The model cannot smuggle an affordance the observation never offered.
 
-    Continuous play answers this by recovering rather than by dying: the
-    unusable proposal is replaced with an observe turn and the reason is
-    recorded, so the next turn gets fresh evidence instead of the session
-    ending. What must never happen is the absent affordance being executed.
+    This asserted the opposite this morning: that continuous play recovers by
+    substituting an observe turn rather than failing. Live evidence changed the
+    answer. On a trade screen, whose controls carry prices and quantities in
+    their labels and therefore churn, the substitution fired seventeen turns in a
+    row - the run looked like a noop loop from outside and the only record was
+    `proposal_fallback_reason` buried in the bundle.
+
+    Refusing is the stronger guarantee anyway: it engages the coordinator's
+    bounded replan, so the planner is told the menu moved and chooses again
+    against a fresh observation, and a genuinely stuck run stops and says why
+    instead of idling to its step ceiling. What must never happen either way is
+    the absent affordance reaching a step.
     """
 
     current = observation()
@@ -862,11 +871,13 @@ def test_openrouter_never_executes_an_unadvertised_action_the_model_emits() -> N
         chat=SimpleNamespace(completions=IgnoresProjectedSchema()),
     )
 
-    result = asyncio.run(planner.decide(current))
+    with pytest.raises(HostedPlannerStaleChoiceError) as captured:
+        asyncio.run(planner.decide(current))
 
-    # The absent affordance reached no step, and the recovery says why.
-    assert isinstance(result, PlanEnvelope)
-    assert result.steps[0].action.reason == "Re-evaluate current evidence."
+    # Retryable by construction, and it says what to do differently.
+    assert captured.value.failure_signature == "stale_affordance_choice"
+    assert "no longer offered" in captured.value.retry_feedback
+    # And the reason still reaches the bundle for a post-mortem.
     diagnostics = planner.take_call_diagnostics()
     assert diagnostics is not None
     assert diagnostics.proposal_fallback_reason is not None

@@ -455,6 +455,41 @@ class HostedPlannerCallDiagnostics:
         }
 
 
+class HostedPlannerStaleChoiceError(RuntimeError):
+    """The planner chose an affordance the current observation no longer offers.
+
+    Not a malformed response: the model answered in schema, against a menu that
+    has since changed. Common wherever the interface repaints - a trade window's
+    cells carry prices and quantities in their labels, so the same control is a
+    different choice a moment later.
+
+    Retryable by construction, because the next attempt is authored against a
+    fresh observation with the current menu in it. The coordinator's bounded
+    replan machinery owns how many times that is worth trying.
+    """
+
+    def __init__(
+        self,
+        diagnostics: HostedPlannerCallDiagnostics,
+        *,
+        detail: str = "",
+    ) -> None:
+        self.diagnostics = diagnostics
+        self.detail = detail[:1000]
+        self.retry_feedback = (
+            "The affordance you selected is no longer offered - the interface "
+            "changed between the observation you planned against and this one. "
+            "Choose again from the affordances in the current observation, and "
+            "prefer a choice that does not depend on a control whose label "
+            "carries a changing price or quantity."
+        )
+        self.failure_signature = "stale_affordance_choice"
+        super().__init__(
+            "Planner selected an affordance absent from the current observation: "
+            + self.detail
+        )
+
+
 class HostedPlannerResponseError(RuntimeError):
     """A provider returned a terminal response that cannot authorize a plan."""
 

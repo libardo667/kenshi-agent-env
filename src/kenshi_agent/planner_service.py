@@ -124,15 +124,22 @@ class PlannerService:
     def failure_signature(exc: Exception) -> str:
         """Identify repeats of the same failure, so a loop can be broken."""
 
-        if isinstance(exc, HostedPlannerResponseError):
-            return exc.failure_signature
+        # Duck-typed: any planner failure that can name its own repeat signature
+        # owns that answer. Keying on one concrete class meant a new failure kind
+        # silently fell back to its own message text, so two occurrences with
+        # different details never counted as the same failure and the loop
+        # breaker never fired.
+        signature = getattr(exc, "failure_signature", None)
+        if isinstance(signature, str) and signature:
+            return signature
         return str(exc)
 
     def retry_feedback(self, exc: Exception) -> str:
         """What to tell the planner so its next attempt can be different."""
 
-        if isinstance(exc, HostedPlannerResponseError):
-            return bounded_text(str(exc.retry_feedback), 1_200)
+        feedback = getattr(exc, "retry_feedback", None)
+        if isinstance(feedback, str) and feedback:
+            return bounded_text(feedback, 1_200)
         return (
             "Your previous response could not be used. Fix exactly this and "
             "return the schema again: " + bounded_text(str(exc), 900)
