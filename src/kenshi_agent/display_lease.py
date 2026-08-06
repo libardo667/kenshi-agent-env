@@ -154,6 +154,18 @@ class DisplayTopologyController:
     def validate_ready(self) -> DisplayTopology:
         state = self._query_state()
         if (
+            len(state.screens) == 1
+            and state.external_connected
+            and self._has_1080p_screen(state)
+        ):
+            # Already exactly where the lease wants to be. Requiring an active
+            # internal panel first turned a correct operator setup into a
+            # precondition failure, which is the only route left when
+            # `DisplaySwitch.exe /external` is being ignored by the driver -
+            # observed doing nothing for ten seconds while both screens stayed
+            # up. The switch below is then a no-op and the wait returns at once.
+            return state
+        if (
             len(state.screens) < 2
             or not state.internal_connected
             or not state.external_connected

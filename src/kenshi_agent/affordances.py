@@ -48,6 +48,7 @@ from .core.planning import screen_is_open
 from .core.telemetry import (
     CharacterState,
     ContextActionKind,
+    WorldTarget,
     is_runtime_owned_visible_control,
     map_destination_travel_available,
     normalize_control_label,
@@ -618,6 +619,31 @@ def _visible_control_offers(observation: Observation) -> Iterable[AffordanceOffe
         )
 
 
+def _context_order_description(
+    order: ContextActionKind,
+    target: WorldTarget,
+) -> str:
+    """Say what the order actually does, not merely that it exists.
+
+    "Issue 'operate' to 'Iron Resource'" reads like "mine this for money", and
+    it is not: it assigns a standing job whose output piles up inside the
+    resource and never reaches anyone's pack. An agent that picks it to get paid
+    waits forever and concludes mining is slow. Both readings are legitimate
+    playstyles - stationing someone to mine indefinitely is ordinary Kenshi - so
+    the fix is to make which one this is unmissable at the point of choice
+    rather than to withdraw the choice.
+    """
+
+    if order == ContextActionKind.OPERATE and target.kind == "natural_resource":
+        return (
+            f"Station the selection at {target.name!r} to mine it indefinitely, as a "
+            "standing job. Output collects inside the resource and reaches nobody's "
+            "inventory; this order never finishes on its own. To end up holding ore, "
+            "use harvest_resource instead."
+        )
+    return f"Issue {order.value!r} to {target.name!r}."
+
+
 def _context_order_offers(observation: Observation) -> Iterable[AffordanceOffer]:
     telemetry = observation.telemetry
     if telemetry is None:
@@ -641,7 +667,7 @@ def _context_order_offers(observation: Observation) -> Iterable[AffordanceOffer]
                 observation,
                 source=AffordanceSource.CONTEXT_ORDER,
                 semantic=order.value,
-                description=f"Issue {order.value!r} to {target.name!r}.",
+                description=_context_order_description(order, target),
                 operation_kind=operation_kind,
                 target=AffordanceTarget(
                     target_id=target.id,
@@ -1038,7 +1064,17 @@ def _native_and_composite_offers(
     telemetry = observation.telemetry
     if telemetry is None:
         return
-    selected = next((member for member in telemetry.squad if member.selected), None)
+    # Kenshi's exported primary, not the first selected member the exporter
+    # happened to walk - the harvest binding requires the primary, so offering
+    # it against anyone else manufactures a choice that cannot bind.
+    selected = next(
+        (
+            member
+            for member in telemetry.squad
+            if member.selected and member.id == telemetry.ui.selected_character_id
+        ),
+        None,
+    )
 
     primary_id = telemetry.ui.selected_character_id
     if primary_id and primary_id in telemetry.ui.selected_character_ids:
@@ -1157,7 +1193,12 @@ def _native_and_composite_offers(
                 observation,
                 source=AffordanceSource.COMPOSITE_OPERATION,
                 semantic="harvest",
-                description=f"Harvest a bounded yield from {target.name!r}.",
+                description=(
+                    f"Mine {target.name!r} until the requested quantity exists and "
+                    "carry it back into the actor's own inventory. This is the whole "
+                    "cycle - work, wait, and collect - and the one to use when the "
+                    "point is to end up holding the goods."
+                ),
                 operation_kind="harvest_resource",
                 target=AffordanceTarget(
                     target_id=target.id,

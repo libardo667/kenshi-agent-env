@@ -1227,19 +1227,28 @@ def bind_harvest_resource(
         for character in telemetry.squad
         if character.selected and character.id == action.actor_id
     ]
+    # The actor must be Kenshi's exported primary, because the collection phase
+    # opens that character's own inventory and the goods have to land somewhere
+    # unambiguous. It need not be the *only* selection: requiring that made an
+    # ordinary two-character party unable to harvest at all, which left
+    # `perform_context_action('operate')` as the only mining affordance on offer
+    # - the one that fills the resource's output box and nobody's pack.
+    #
+    # `down` is not a fence either. Only unconsciousness stops a character in
+    # Kenshi; legs past the knockout point crawl until bandaged.
     if (
         len(selected) != 1
         or telemetry.ui.selected_character_id != action.actor_id
-        or telemetry.ui.selected_character_ids != [action.actor_id]
+        or action.actor_id not in telemetry.ui.selected_character_ids
         or selected[0].alive is not True
         or selected[0].conscious is not True
-        or selected[0].down is not False
         or selected[0].in_combat is not False
         or selected[0].inventory_complete is not True
     ):
         return _unbound(
-            "Harvesting requires the exact selected actor to be alive, conscious, "
-            "standing, out of combat, and backed by a complete inventory export."
+            "Harvesting requires its actor to be the current primary, selected, "
+            "alive, conscious, out of combat, and backed by a complete inventory "
+            "export."
         )
     return BoundNamedTarget(
         reason=(
@@ -1256,23 +1265,32 @@ def harvest_resource_is_currently_authorable(observation: Observation) -> bool:
     telemetry = observation.telemetry
     if telemetry is None or observation.telemetry_stale:
         return False
+    # `down is False` was here and was wrong: in Kenshi only unconsciousness
+    # stops a character acting. Legs damaged past the knockout point make one
+    # crawl until bandaged, which is slow rather than incapable, so a crawling
+    # miner was refused the only operation that ends with ore in their pack.
     selected = [
         character
         for character in telemetry.squad
         if character.selected
         and character.alive is True
         and character.conscious is True
-        and character.down is False
         and character.in_combat is False
         and character.inventory_complete is True
     ]
+    # A singleton fence stood here too, and it is why every mining run reached
+    # for `perform_context_action('operate')`: an ordinary two-character party
+    # made the complete harvest unauthorable, leaving only the operation that
+    # starts a job and fills nobody's inventory. The actor is named by the
+    # action, so party size was never the harvest's business.
+    primary = telemetry.ui.selected_character_id
     return bool(
         telemetry.ui.active_screen == "world"
         and telemetry.ui.modal_open is False
         and telemetry.ui.dialogue_open is False
-        and len(selected) == 1
-        and telemetry.ui.selected_character_id == selected[0].id
-        and telemetry.ui.selected_character_ids == [selected[0].id]
+        and selected
+        and primary
+        and any(character.id == primary for character in selected)
         and any(
             target.kind == "natural_resource"
             and ContextActionKind.OPERATE in target.context_actions
@@ -3705,6 +3723,10 @@ MOVE_IN_DIRECTION_DEFINITION = OperationDefinition(
         "a walk to a bare point rather than toward anyone. One monitored option "
         "owns the targetless native order through its exact command vector. "
         "Native completion is reported as walk_destination_reached."
+        "A character who is down but conscious is crawling, not immobilised: in Kenshi only "
+        "unconsciousness stops movement, and legs damaged past the knockout point make a "
+        "character crawl until bandaged rather than stop. Crawling is slow, and it is still "
+        "movement - waiting to heal before moving is a choice, not a requirement. "
     ),
     argument_source=(
         "bearing_degrees is clockwise from north (0 N, 90 E, 180 S, 270 W); "
@@ -3948,6 +3970,10 @@ MOVE_TO_CHARACTER_DEFINITION = OperationDefinition(
         "somewhere: nearby characters are reported within four hundred units, "
         "so someone standing where you want to be is a destination. One "
         "monitored option owns the whole group walk."
+        "A character who is down but conscious is crawling, not immobilised: in Kenshi only "
+        "unconsciousness stops movement, and legs damaged past the knockout point make a "
+        "character crawl until bandaged rather than stop. Crawling is slow, and it is still "
+        "movement - waiting to heal before moving is a choice, not a requirement. "
     ),
     argument_source=(
         "target_id must be an exact id from the observation's telemetry.nearby_entities."

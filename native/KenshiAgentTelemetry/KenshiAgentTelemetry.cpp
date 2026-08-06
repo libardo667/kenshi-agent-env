@@ -4917,6 +4917,43 @@ namespace
                     // that run. Null meant "never exported", and nothing said so.
                     json << "\"bleeding_rate\":"
                          << medical->currentBleedRate << ",";
+                    // Per-limb condition. `currentBleedRate` is whole-body
+                    // blood loss and says nothing about a wound getting worse:
+                    // Kenshi degenerates untreated damage per part
+                    // (`HealthPartStatus::update` takes a degenerationRate), so
+                    // a leg can be deteriorating while the bleed rate reads
+                    // zero. Watched happening live with no way to see it.
+                    //
+                    // This is also what distinguishes "cannot move" from "slow":
+                    // legs damaged past the KO point make a character crawl
+                    // until bandaged, which is movement, not immobility.
+                    json << "\"body_parts\":[";
+                    bool firstPart = true;
+                    for (unsigned int partIndex = 0;
+                         partIndex < medical->anatomy.size();
+                         ++partIndex)
+                    {
+                        MedicalSystem::HealthPartStatus* part =
+                            medical->anatomy[partIndex];
+                        if (part == NULL)
+                            continue;
+                        GameData* partData = part->getData();
+                        if (partData == NULL)
+                            continue;
+                        if (!firstPart)
+                            json << ",";
+                        firstPart = false;
+                        json << "{";
+                        json << "\"name\":\"" << JsonEscape(partData->name) << "\",";
+                        json << "\"current_hp\":" << part->flesh << ",";
+                        json << "\"max_hp\":" << part->_maxHealth << ",";
+                        json << "\"wear_damage\":" << part->wearDamage << ",";
+                        json << "\"bleeding_rate\":"
+                             << part->getExtraBleedingAmount() << ",";
+                        json << "\"missing\":" << JsonBool(part->isDead());
+                        json << "}";
+                    }
+                    json << "],";
                 }
                 // What it already carries, so it does not go shopping for what
                 // is in its own pack.
