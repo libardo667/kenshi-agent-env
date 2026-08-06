@@ -60,6 +60,17 @@ class RecipientScope(StrEnum):
     EXPLICIT_RECIPIENTS = "explicit_recipients"
     """Stable character IDs carried by the typed action or its binding."""
 
+    NAMED_BODY = "named_body"
+    """One character the action names, who need not be the agent's at all.
+
+    Every other scope presupposes a living roster or selection to command. This
+    one exists because the case it serves is the absence of both: when every
+    character is dead the squad is empty, nothing is selected, and the only
+    operation still worth issuing is the one that takes a body which was never
+    yours. Requiring recipients there would make the recovery unreachable at
+    exactly the moment it is the whole point.
+    """
+
 
 class SelectionDependency(StrEnum):
     """How long the UI selection must hold still.

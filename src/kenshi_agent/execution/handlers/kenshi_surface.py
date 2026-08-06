@@ -26,7 +26,7 @@ from ...control.calibration import (
 from ...control.capture import CapturedFrame
 from ...core.authority import InputBoundaryDecision
 from ...core.evidence import SemanticActionReceipt
-from ...core.interaction import AuthoredRecipientBasis
+from ...core.interaction import AuthoredRecipientBasis, RecipientScope
 from ...core.observation import Observation
 from ...core.operation import (
     GAME_SPEED_MULTIPLIER_BY_GEAR,
@@ -1265,7 +1265,15 @@ class KenshiControlSurface:
                 "Native command would be delivered to different recipients than "
                 f"it was authored for: {'; '.join(drift)}."
             )
-        if not selected_ids or telemetry.ui.selected_character_id not in selected_ids:
+        if authored_basis.scope is not RecipientScope.NAMED_BODY and (
+            not selected_ids or telemetry.ui.selected_character_id not in selected_ids
+        ):
+            # Every order that broadcasts to the selection needs one, and needs
+            # Kenshi's own primary inside it. An order that names its own
+            # recipient does not, and the case it serves is the one where there
+            # is no selection to have: every character dead, the squad empty.
+            # Requiring a primary there would make the recovery unreachable at
+            # exactly the moment it is the only thing left to do.
             raise RuntimeError(
                 "Native command requires a current selection containing Kenshi's "
                 "exported primary."

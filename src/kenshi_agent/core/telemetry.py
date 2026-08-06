@@ -1033,6 +1033,19 @@ class NativeCommandStatus(StrEnum):
 # is never inferred from a command name here.
 NATIVE_COMMANDS_CARRYING_DIRECTION: frozenset[str] = frozenset({"move_in_direction"})
 
+NATIVE_COMMANDS_NAMING_THEIR_OWN_RECIPIENT: frozenset[str] = frozenset(
+    {"shift_into_body"}
+)
+"""Commands whose recipient is the target they name, not the current selection.
+
+Everything else broadcasts to whoever is selected, so an empty selection means
+an order with nobody to receive it and is refused. A body shift is the opposite:
+it names the character it acts on, and the case it exists for is precisely the
+one where nothing is selected because every character is dead. A blanket
+non-empty floor would make the recovery unreachable at exactly the moment it is
+the whole point.
+"""
+
 NATIVE_COMMANDS_NAMING_A_TARGET: frozenset[str] = frozenset(
     {
         "approach_confirmed_vendor",
@@ -1055,6 +1068,7 @@ def require_consistent_wire_shape(
     *,
     command: str,
     subject: str,
+    selected_character_ids: list[str],
     target_id: str,
     bearing_degrees: float,
     distance_units: float,
@@ -1063,6 +1077,10 @@ def require_consistent_wire_shape(
 ) -> None:
     """Reject a native request or acknowledgement whose fields contradict it."""
 
+    if command not in NATIVE_COMMANDS_NAMING_THEIR_OWN_RECIPIENT and not selected_character_ids:
+        raise ValueError(
+            f"a {command} {subject} must name at least one selected recipient"
+        )
     if command in NATIVE_COMMANDS_CARRYING_DIRECTION:
         if target_id:
             raise ValueError(f"a directional {subject} must not name a target")
@@ -1147,6 +1165,7 @@ class NativeCommandAcknowledgement(StrictModel):
         require_consistent_wire_shape(
             command=self.command,
             subject="acknowledgement",
+            selected_character_ids=self.selected_character_ids,
             target_id=self.target_id,
             bearing_degrees=self.bearing_degrees,
             distance_units=self.distance_units,

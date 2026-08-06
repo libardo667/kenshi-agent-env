@@ -118,7 +118,11 @@ class NativeCommandRequest(StrictModel):
     control_mode: Literal[ControlMode.NATIVE_ASSISTED]
     identity_session_id: str = Field(min_length=1, max_length=200)
     based_on_revision: WorldStateRevision
-    selected_character_ids: list[str] = Field(min_length=1, max_length=64)
+    # No non-empty floor here: whether an empty selection is legal depends on
+    # the command, and `require_consistent_wire_shape` is where that is decided.
+    # A body shift names its own recipient and exists for the case where nothing
+    # is selected because every character is dead.
+    selected_character_ids: list[str] = Field(max_length=64)
     # Empty for a directional walk, which references nobody.
     target_id: str = Field(default="", max_length=200)
     # Empty for every command except the generic context-action route.
@@ -139,6 +143,7 @@ class NativeCommandRequest(StrictModel):
         require_consistent_wire_shape(
             command=self.command,
             subject="command",
+            selected_character_ids=self.selected_character_ids,
             target_id=self.target_id,
             bearing_degrees=self.bearing_degrees,
             distance_units=self.distance_units,

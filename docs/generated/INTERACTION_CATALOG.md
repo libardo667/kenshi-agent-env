@@ -63,7 +63,7 @@ INTERACTION CONTRACT (resolved from the sole operation registry)
   select_squad_member_exact           selection_mutation explicit_recipients none             world_outcome_observed  source_proven
   sell_item                           global_ui          explicit_recipients ui_transaction   world_outcome_observed  unproven
   set_speed                           global_ui          none                none             world_outcome_observed  source_proven
-  shift_into_body                     ordinary_order     explicit_recipients dispatch_only    world_outcome_observed  source_proven
+  shift_into_body                     ordinary_order     named_body          dispatch_only    world_outcome_observed  source_proven
   stop                                runtime_only       none                none             input_delivered         source_proven
   survey_local_resources              global_ui          none                none             world_outcome_observed  source_proven
   travel_to_map_destination           ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven

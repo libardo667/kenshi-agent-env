@@ -2731,6 +2731,13 @@ class OperationDefinition:
             return bool(primary_id) and primary_id in selected_ids
         if scope is RecipientScope.CURRENT_SELECTION:
             return bool(selected_ids) and primary_id in selected_ids
+        if scope is RecipientScope.NAMED_BODY:
+            # Deliberately no roster and no selection requirement. This scope
+            # exists for the moment both are gone: every character dead, the
+            # squad empty, nothing selected. Demanding recipients here would
+            # make the only recovering operation unreachable exactly when it is
+            # the whole point.
+            return True
         # EXPLICIT_RECIPIENTS names its own characters through the typed action
         # or binding, so it needs a roster rather than a particular selection.
         return bool(telemetry.squad)
@@ -2806,6 +2813,19 @@ def capture_recipient_basis(
     """
 
     scope = definition.recipient_scope_for(action, observation)
+    if scope is RecipientScope.NAMED_BODY:
+        # The body named by the action is the recipient - it is what the order
+        # acts on and what the agent becomes. `target_id` is deliberately not a
+        # general recipient field: for every other operation the target is the
+        # object acted upon rather than the character commanded, and conflating
+        # those would make an iron deposit a recipient.
+        named = getattr(action, "target_id", None)
+        return AuthoredRecipientBasis.capture(
+            scope,
+            primary=None,
+            selection=(),
+            explicit_recipients=(named,) if isinstance(named, str) and named else (),
+        )
     if scope is RecipientScope.EXPLICIT_RECIPIENTS:
         return AuthoredRecipientBasis.capture(
             scope,
@@ -3860,7 +3880,7 @@ SHIFT_INTO_BODY_DEFINITION = OperationDefinition(
     kind="shift_into_body",
     version="1.0",
     interaction=ordinary_order(
-        recipients=RecipientScope.EXPLICIT_RECIPIENTS,
+        recipients=RecipientScope.NAMED_BODY,
         milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
     ),
     operation_type=ShiftIntoBodyAction,
