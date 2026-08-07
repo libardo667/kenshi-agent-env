@@ -218,6 +218,27 @@ namespace
         Character* owner;
     };
 
+    // What the active command's target handle actually is.
+    //
+    // This was inferred, not recorded: monitoring asked
+    // `expectedTask == FIRST_AID_ORDER` to decide whether the target was a
+    // squad character or a building, so a task value stood in for a target
+    // kind. A character order is neither, and it inherited the building branch
+    // -- `targetHandle.getBuilding()` on a character handle returns NULL, and
+    // the order was cancelled as `target_lifetime_changed` on the very update
+    // after Kenshi had accepted and obeyed it. The two characters really did
+    // enter combat; the plug-in then reported the target had ceased to exist.
+    //
+    // Recording the kind removes the inference. A new command that names a new
+    // kind of target has to say so, and monitoring dispatches on what it said.
+    enum NativeCommandTargetKind
+    {
+        NATIVE_TARGET_NONE,
+        NATIVE_TARGET_BUILDING,
+        NATIVE_TARGET_SQUAD_CHARACTER,
+        NATIVE_TARGET_NEARBY_CHARACTER
+    };
+
     struct ActiveNativeCommand
     {
         bool active;
@@ -240,6 +261,7 @@ namespace
         // visually complete doorway traversal.
         bool isBuildingExit;
         bool isContextAction;
+        NativeCommandTargetKind targetKind;
         bool isResourceProduction;
         bool resourceTaskObserved;
         bool resourceTaskIssuedByCommand;
@@ -350,6 +372,7 @@ namespace
         g_activeNativeCommand.mapInteriorOrderIssued = false;
         g_activeNativeCommand.isBuildingExit = false;
         g_activeNativeCommand.isContextAction = false;
+        g_activeNativeCommand.targetKind = NATIVE_TARGET_NONE;
         g_activeNativeCommand.isResourceProduction = false;
         g_activeNativeCommand.resourceTaskObserved = false;
         g_activeNativeCommand.resourceTaskIssuedByCommand = false;
@@ -598,17 +621,44 @@ namespace
 
     bool IsSelected(PlayerInterface* player, const hand& handle)
     {
-        // Ask the engine rather than re-deriving its answer. Walking
-        // `selectedCharacters` and comparing handles was a reimplementation of
-        // `isObjectSelected`, and a worse one: a `hand` carries its container,
-        // so the comparison returned a false negative for any character who had
-        // changed platoon while selected.
+        // Kenshi's two answers to "is this character selected" disagree, and
+        // this reconciles them onto the one that decides who receives orders.
+        //
+        // `isObjectSelected` looks the character up by its current handle.
+        // `selected_character_ids` walks `selectedCharacters` and resolves each
+        // stored entry forward. A `hand` carries its container, so a character
+        // who changes platoon while selected keeps a stored entry naming the
+        // old container: the walk still finds them, the lookup no longer does.
+        //
+        // Both squad members being knocked unconscious does exactly that --
+        // measured live, stored container 1 against current container 45 for
+        // both -- so every member reported `selected: false` while
+        // `selected_character_ids` listed them all. The snapshot's own
+        // consistency validator then rejected the whole thing, and telemetry
+        // went dark at the moment the squad was down and recovery needed it
+        // most.
+        //
+        // The set is the authority because it is what the engine delivers to:
+        // `newPlayerTaskSelectedCharacters` orders every member of the raw set,
+        // so being in it is what "selected" operationally means. Asking it the
+        // same way the id list does is what makes the two unable to disagree.
         if (player == NULL)
             return false;
         Character* character = handle.getCharacter();
         if (character == NULL)
             return false;
-        return player->isObjectSelected(character);
+        if (player->isObjectSelected(character))
+            return true;
+        const hand current = character->getHandle();
+        for (ogre_unordered_set<hand>::type::const_iterator it =
+                 player->selectedCharacters.begin();
+             it != player->selectedCharacters.end();
+             ++it)
+        {
+            if (SameCharacterIdentity(*it, current))
+                return true;
+        }
+        return false;
     }
 
     int FindNativeAcknowledgement(const std::string& commandId)
@@ -730,6 +780,7 @@ namespace
         g_activeNativeCommand.mapInteriorOrderIssued = false;
         g_activeNativeCommand.isBuildingExit = false;
         g_activeNativeCommand.isContextAction = false;
+        g_activeNativeCommand.targetKind = NATIVE_TARGET_NONE;
         g_activeNativeCommand.isResourceProduction = false;
         g_activeNativeCommand.resourceTaskObserved = false;
         g_activeNativeCommand.resourceTaskIssuedByCommand = false;
@@ -2900,7 +2951,54 @@ namespace
         bool resourceTaskActive = false;
         if (g_activeNativeCommand.isContextAction)
         {
-            if (g_activeNativeCommand.expectedTask == FIRST_AID_ORDER)
+            // Dispatched on the recorded target kind, not on a task value.
+            // Asking `expectedTask == FIRST_AID_ORDER` made a task stand in for
+            // a target kind, so a character order silently inherited the
+            // building branch below and was cancelled for having no building.
+            if (g_activeNativeCommand.targetKind ==
+                NATIVE_TARGET_NEARBY_CHARACTER)
+            {
+                // An order at a person. The target is looked up in the same
+                // nearby sphere it was issued from, because that is the
+                // population the order names -- squad membership is not
+                // required and is exactly the wrong fence: the people orders
+                // are for are hostiles, the unconscious, and the dead.
+                Character* target =
+                    g_activeNativeCommand.targetHandle.getCharacter();
+                bool exactIdentityFound = false;
+                Character* current = FindExactNearbyCharacter(
+                    player,
+                    g_activeNativeCommand.targetId,
+                    exactIdentityFound);
+                if (target == NULL ||
+                    !target->isValid() ||
+                    current == NULL ||
+                    !SameHandleIdentity(
+                        target->getHandle(),
+                        current->getHandle()))
+                {
+                    FinishActiveNativeCommand(
+                        "cancelled",
+                        "target_lifetime_changed");
+                    return;
+                }
+                // Goal adoption is the terminal proof, the same one first aid
+                // and mining already rely on. Kenshi holding the exact ordered
+                // task against the exact ordered person is the only evidence
+                // that the order took; nothing else here can say so.
+                if (HasExactContextGoal(
+                        walker,
+                        g_activeNativeCommand.expectedTask,
+                        current->getHandle()))
+                {
+                    FinishActiveNativeCommand(
+                        "completed",
+                        "context_task_started");
+                    return;
+                }
+            }
+            else if (g_activeNativeCommand.targetKind ==
+                     NATIVE_TARGET_SQUAD_CHARACTER)
             {
                 Character* target =
                     g_activeNativeCommand.targetHandle.getCharacter();
@@ -2923,7 +3021,7 @@ namespace
                 }
                 if (HasExactContextGoal(
                         walker,
-                        FIRST_AID_ORDER,
+                        g_activeNativeCommand.expectedTask,
                         current->getHandle()))
                 {
                     FinishActiveNativeCommand(
@@ -2931,6 +3029,17 @@ namespace
                         "context_task_started");
                     return;
                 }
+            }
+            else if (g_activeNativeCommand.targetKind != NATIVE_TARGET_BUILDING)
+            {
+                // No fall-through default. Being the last branch is how the
+                // building case acquired a character order in the first place,
+                // and a target kind nobody has written monitoring for must say
+                // so rather than be resolved as whatever happens to be last.
+                FinishActiveNativeCommand(
+                    "cancelled",
+                    "target_kind_unmonitored");
+                return;
             }
             else
             {
@@ -3980,6 +4089,7 @@ namespace
             g_activeNativeCommand.mapInteriorOrderIssued = false;
             g_activeNativeCommand.isBuildingExit = false;
             g_activeNativeCommand.isContextAction = true;
+            g_activeNativeCommand.targetKind = NATIVE_TARGET_NEARBY_CHARACTER;
             g_activeNativeCommand.isResourceProduction = false;
             g_activeNativeCommand.resourceTaskObserved = false;
             g_activeNativeCommand.minimumOutputQuantity = 1;
@@ -4065,6 +4175,7 @@ namespace
             g_activeNativeCommand.mapInteriorOrderIssued = false;
             g_activeNativeCommand.isBuildingExit = false;
             g_activeNativeCommand.isContextAction = true;
+            g_activeNativeCommand.targetKind = NATIVE_TARGET_SQUAD_CHARACTER;
             g_activeNativeCommand.isResourceProduction = false;
             g_activeNativeCommand.resourceTaskObserved = false;
             g_activeNativeCommand.minimumOutputQuantity = 1;
@@ -4239,6 +4350,7 @@ namespace
             g_activeNativeCommand.mapInteriorOrderIssued = false;
             g_activeNativeCommand.isBuildingExit = false;
             g_activeNativeCommand.isContextAction = true;
+            g_activeNativeCommand.targetKind = NATIVE_TARGET_BUILDING;
             g_activeNativeCommand.isResourceProduction =
                 isResourceProduction;
             g_activeNativeCommand.resourceTaskObserved =
@@ -4355,6 +4467,7 @@ namespace
             g_activeNativeCommand.mapInteriorOrderIssued = false;
             g_activeNativeCommand.isBuildingExit = false;
             g_activeNativeCommand.isContextAction = false;
+            g_activeNativeCommand.targetKind = NATIVE_TARGET_NONE;
             g_activeNativeCommand.isResourceProduction = false;
             g_activeNativeCommand.resourceTaskObserved = false;
             g_activeNativeCommand.minimumOutputQuantity = 1;
@@ -4419,6 +4532,7 @@ namespace
             g_activeNativeCommand.mapInteriorOrderIssued = false;
             g_activeNativeCommand.isBuildingExit = false;
             g_activeNativeCommand.isContextAction = false;
+            g_activeNativeCommand.targetKind = NATIVE_TARGET_NONE;
             g_activeNativeCommand.isResourceProduction = false;
             g_activeNativeCommand.resourceTaskObserved = false;
             g_activeNativeCommand.expectedTask = NULL_TASK;
@@ -4519,6 +4633,7 @@ namespace
             g_activeNativeCommand.mapInteriorOrderIssued = false;
             g_activeNativeCommand.isBuildingExit = true;
             g_activeNativeCommand.isContextAction = false;
+            g_activeNativeCommand.targetKind = NATIVE_TARGET_NONE;
             g_activeNativeCommand.isResourceProduction = false;
             g_activeNativeCommand.resourceTaskObserved = false;
             g_activeNativeCommand.expectedTask = NULL_TASK;
@@ -4602,6 +4717,7 @@ namespace
         g_activeNativeCommand.mapInteriorOrderIssued = false;
         g_activeNativeCommand.isBuildingExit = false;
         g_activeNativeCommand.isContextAction = false;
+        g_activeNativeCommand.targetKind = NATIVE_TARGET_NONE;
         g_activeNativeCommand.isResourceProduction = false;
         g_activeNativeCommand.resourceTaskObserved = false;
         g_activeNativeCommand.expectedTask = NULL_TASK;
