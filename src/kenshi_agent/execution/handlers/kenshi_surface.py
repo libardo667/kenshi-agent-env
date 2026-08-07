@@ -43,6 +43,7 @@ from ...core.telemetry import (
     NativeCommandAcknowledgement,
     NativeCommandStatus,
     NativeWireCommand,
+    NearbyEntity,
     TelemetrySnapshot,
     WorldTarget,
 )
@@ -1153,6 +1154,41 @@ class KenshiControlSurface:
             )
         return requested
 
+    def _context_action_for_person(
+        self,
+        wire_command: NativeWireCommand,
+        target: NearbyEntity,
+        context_action: ContextActionKind | None,
+    ) -> ContextActionKind | Literal[""]:
+        """The order semantic a person must still advertise, or empty.
+
+        Separate from `_context_action_for_target` because they read different
+        evidence: that one resolves against `world_targets.context_actions`, and
+        a person's orders live in `nearby_entities.advertised_tasks`. Routing an
+        order through the world-target resolver returned None -- "not this
+        route" -- and the semantic was dropped silently, so the request failed
+        its own shape validation for naming no action. That surfaced as a plan
+        abort three steps into a live run, nowhere near the resolver.
+
+        Re-proved here because the offer, the binding, and the request are three
+        separate moments and Kenshi can withdraw an order between any two.
+        """
+
+        if wire_command != native_commands.NATIVE_CHARACTER_ORDER_WIRE_COMMAND:
+            return ""
+        if context_action is None:
+            raise RuntimeError("A native character order requires an exact order name.")
+        if not target.advertised_tasks_probed:
+            raise RuntimeError(
+                "Native order target was not probed this observation, so what it "
+                "affords is unknown rather than empty."
+            )
+        if str(context_action) not in target.orderable_task_names():
+            raise RuntimeError(
+                f"Native order target no longer advertises {str(context_action)!r}."
+            )
+        return context_action
+
     def _native_request(
         self,
         command: CommandDispatchContext,
@@ -1405,6 +1441,11 @@ class KenshiControlSurface:
             )
         if require_vendor_role and not target.is_confirmed_vendor():
             raise RuntimeError("Native command target lacks exact safe current vendor evidence.")
+        order_context_action = self._context_action_for_person(
+            wire_command,
+            target,
+            context_action,
+        )
         return NativeCommandRequest(
             schema_version="1.2",
             command_id=command.command_id,
@@ -1416,6 +1457,7 @@ class KenshiControlSurface:
             based_on_revision=observation.world_revision,
             selected_character_ids=list(selected_ids),
             target_id=target_id,
+            context_action=order_context_action,
         )
 
     async def _wait_for_native_acknowledgement(
