@@ -1003,6 +1003,58 @@ class RuntimeContextMenu(StrictModel):
     task_type_values_complete: bool
 
 
+class InventorySlotItem(StrictModel):
+    """One item in one inventory slot, with the coordinates that name it.
+
+    `x`/`y` are not decoration. Kenshi's own transfer takes a section name and a
+    slot, so the slot *is* the item's address to the engine - unlike a cell
+    label scraped off a MyGUI widget, which addresses a picture of it.
+    """
+
+    item_name: str = Field(max_length=200)
+    item_sell_value: int
+    item_base_value: int
+    item_quantity: int = Field(ge=0)
+    item_type: int
+    x: int = Field(ge=0)
+    y: int = Field(ge=0)
+    w: int = Field(ge=0)
+    h: int = Field(ge=0)
+
+
+class InventorySectionView(StrictModel):
+    """One named grid within an inventory."""
+
+    name: str = Field(max_length=80)
+    width: int = Field(ge=0)
+    height: int = Field(ge=0)
+    items: list[InventorySlotItem] = Field(default_factory=list, max_length=128)
+
+
+class OpenInventory(StrictModel):
+    """One inventory Kenshi currently has open, whatever owns it.
+
+    Read from `ForgottenGUI::inventoryWindowsOpen`, the engine's own map of
+    owner handle to window, which holds no opinion about what kind of thing the
+    owner is. The field it replaces read one of four typed slots and saw only
+    buildings, so a looted body's window had no exported owner at all: the agent
+    ordered looting, Kenshi opened the window, and nothing told the agent an
+    inventory was there or what was in it.
+
+    A body, a crate, a shop and a squadmate all arrive here the same way, which
+    is what lets one transfer serve looting, buying, giving and harvesting
+    without knowing which it is looking at.
+    """
+
+    owner_id: str = Field(max_length=200)
+    owner_name: str = Field(default="", max_length=200)
+    owner_kind: Literal["character", "building", "item", "unknown"]
+    player_owned: bool
+    money: int
+    total_weight: float
+    sections: list[InventorySectionView] = Field(default_factory=list, max_length=16)
+
+
 class UIState(StrictModel):
     active_screen: str | None = None
     modal_open: bool | None = None
@@ -1038,6 +1090,13 @@ class UIState(StrictModel):
     # currently open. Window captions are not identities: two resources may
     # share the same name.
     context_inventory_target_id: str | None = Field(default=None, max_length=200)
+    # Every open inventory, by owner. `context_inventory_target_id` above reads
+    # only Kenshi's Building slot, so it stays for the resource route it already
+    # serves and this is what anything general asks.
+    open_inventories: list[OpenInventory] = Field(default_factory=list, max_length=8)
+    # A bounded export is not an empty world. False means the count stopped, not
+    # that nothing else was open.
+    open_inventories_complete: bool = True
     context_menu_open: bool | None = None
     # A visible menu can outlive its target or briefly overlap a delayed old
     # menu. Keep that distinction instead of flattening every failed read to

@@ -1386,66 +1386,109 @@ def harvest_resource_is_currently_authorable(observation: Observation) -> bool:
     )
 
 
+def _observed_inventory_owner(
+    target_id: str,
+    observation: Observation,
+) -> tuple[str, str] | None:
+    """One observed thing that could own an inventory, as (label, kind).
+
+    Deliberately unfenced by kind. Kenshi keys its open windows by handle and
+    opens them with `showInventory(hand, ...)`; neither has ever cared whether
+    the handle names a body, a crate, a shopkeeper or a squadmate. The narrow
+    lookup this replaces asked `world_targets` for a `natural_resource`, which
+    is why looting could not be reached through it at all.
+    """
+
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return None
+    for member in telemetry.squad:
+        if member.id == target_id:
+            return member.name, "squad_character"
+    for entity in telemetry.nearby_entities:
+        if entity.id == target_id:
+            return entity.name, entity.kind
+    for target in telemetry.world_targets:
+        if target.id == target_id:
+            return target.name, target.kind
+    for discovered in telemetry.discovered_objects:
+        if discovered.id == target_id:
+            return discovered.name, discovered.category
+    return None
+
+
 def bind_open_context_inventory(
     action: Action,
     observation: Observation,
 ) -> BoundNamedTarget | BindingFailure:
-    """Bind native UI opening to one exact resource handle."""
+    """Bind inventory opening to one exact observed owner, of any kind.
+
+    No fence on what may own an inventory, and no refusal for other open
+    windows. Both were mining artefacts: the old binding demanded a
+    `natural_resource` world target, and refused whenever anything else was
+    open. A transfer needs two inventories open at once, so "one window is the
+    whole interaction" is the assumption that made looting, buying and giving
+    look like three separate problems.
+    """
 
     if not isinstance(action, OpenContextInventoryAction):
         return _unbound("Action is not an open_context_inventory action.")
     telemetry = observation.telemetry
-    target, failure = _bind_exact_natural_resource(action.target_id, observation)
-    if failure is not None:
-        return failure
-    assert telemetry is not None and target is not None
-    already_open = (
-        telemetry.ui.active_screen == "inventory"
-        and telemetry.ui.context_inventory_target_id == action.target_id
-        and telemetry.ui.dialogue_open is False
+    if telemetry is None:
+        return _unbound("No telemetry is available to bind the inventory owner.")
+    if observation.telemetry_stale:
+        return _unbound("Telemetry is stale, so the inventory owner cannot be bound.")
+    owner = _observed_inventory_owner(action.target_id, observation)
+    if owner is None:
+        return _unbound(
+            f"{action.target_id!r} is not a currently observed character, world "
+            "target, or discovered object, so its inventory cannot be opened."
+        )
+    label, kind = owner
+    already_open = any(
+        held.owner_id == action.target_id for held in telemetry.ui.open_inventories
     )
-    if not already_open and (
-        telemetry.ui.active_screen != "world"
-        or telemetry.ui.modal_open is not False
-        or telemetry.ui.dialogue_open is not False
+    if telemetry.ui.dialogue_open is not False:
+        return _unbound("A dialogue is open; close it before opening an inventory.")
+    # `modal_open` is `dialogue_open or inventory_open`, so it cannot by itself
+    # tell a blocking message box from an inventory that is simply already
+    # showing. `open_inventories` can: a modal with no dialogue and no open
+    # inventory behind it is something else, and that is what must be refused.
+    # The old fence refused on `modal_open` alone, which meant a second window
+    # could never be opened - and two windows is what a transfer is.
+    if (
+        telemetry.ui.modal_open is True
+        and not telemetry.ui.open_inventories
+        and telemetry.ui.open_inventories_complete
     ):
         return _unbound(
-            "A different modal, dialogue, or inventory is open; close it before "
-            "opening this exact resource inventory."
+            "A modal that is neither a dialogue nor an inventory is open; close "
+            "it before opening an inventory."
         )
     return BoundNamedTarget(
         reason=(
-            f"Bound the contextual inventory to {target.name!r} ({target.id})"
+            f"Bound the inventory of {kind} {label!r} ({action.target_id})"
             + ("; it is already open." if already_open else ".")
         ),
-        target_id=target.id,
-        resolved_label=target.name,
+        target_id=action.target_id,
+        resolved_label=label,
         source_revision=observation.world_revision,
     )
 
 
 def context_inventory_is_currently_authorable(observation: Observation) -> bool:
+    """Whether anything observed could have its inventory opened at all."""
+
     telemetry = observation.telemetry
     if telemetry is None or observation.telemetry_stale:
         return False
     if telemetry.ui.dialogue_open is not False:
         return False
-    clear_world = telemetry.ui.active_screen == "world" and telemetry.ui.modal_open is False
-    exact_inventory_target = telemetry.ui.context_inventory_target_id
-    exact_inventory = telemetry.ui.active_screen == "inventory" and any(
-        target.id == exact_inventory_target
-        and target.kind == "natural_resource"
-        and ContextActionKind.OPERATE in target.context_actions
-        and target.default_task == "operate_machinery"
-        for target in telemetry.world_targets
-    )
     return bool(
-        (clear_world or exact_inventory)
-        and any(
-            target.kind == "natural_resource"
-            and ContextActionKind.OPERATE in target.context_actions
-            for target in telemetry.world_targets
-        )
+        telemetry.squad
+        or telemetry.nearby_entities
+        or telemetry.world_targets
+        or telemetry.discovered_objects
     )
 
 

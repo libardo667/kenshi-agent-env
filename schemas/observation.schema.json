@@ -3534,6 +3534,103 @@
       "title": "InventoryItem",
       "type": "object"
     },
+    "InventorySectionView": {
+      "additionalProperties": false,
+      "description": "One named grid within an inventory.",
+      "properties": {
+        "name": {
+          "maxLength": 80,
+          "title": "Name",
+          "type": "string"
+        },
+        "width": {
+          "minimum": 0,
+          "title": "Width",
+          "type": "integer"
+        },
+        "height": {
+          "minimum": 0,
+          "title": "Height",
+          "type": "integer"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/InventorySlotItem"
+          },
+          "maxItems": 128,
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "width",
+        "height"
+      ],
+      "title": "InventorySectionView",
+      "type": "object"
+    },
+    "InventorySlotItem": {
+      "additionalProperties": false,
+      "description": "One item in one inventory slot, with the coordinates that name it.\n\n`x`/`y` are not decoration. Kenshi's own transfer takes a section name and a\nslot, so the slot *is* the item's address to the engine - unlike a cell\nlabel scraped off a MyGUI widget, which addresses a picture of it.",
+      "properties": {
+        "item_name": {
+          "maxLength": 200,
+          "title": "Item Name",
+          "type": "string"
+        },
+        "item_sell_value": {
+          "title": "Item Sell Value",
+          "type": "integer"
+        },
+        "item_base_value": {
+          "title": "Item Base Value",
+          "type": "integer"
+        },
+        "item_quantity": {
+          "minimum": 0,
+          "title": "Item Quantity",
+          "type": "integer"
+        },
+        "item_type": {
+          "title": "Item Type",
+          "type": "integer"
+        },
+        "x": {
+          "minimum": 0,
+          "title": "X",
+          "type": "integer"
+        },
+        "y": {
+          "minimum": 0,
+          "title": "Y",
+          "type": "integer"
+        },
+        "w": {
+          "minimum": 0,
+          "title": "W",
+          "type": "integer"
+        },
+        "h": {
+          "minimum": 0,
+          "title": "H",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "item_name",
+        "item_sell_value",
+        "item_base_value",
+        "item_quantity",
+        "item_type",
+        "x",
+        "y",
+        "w",
+        "h"
+      ],
+      "title": "InventorySlotItem",
+      "type": "object"
+    },
     "JsonValue": {},
     "KeepMemoryOperation": {
       "additionalProperties": false,
@@ -4925,6 +5022,62 @@
         "target_id"
       ],
       "title": "OpenContextInventoryAction",
+      "type": "object"
+    },
+    "OpenInventory": {
+      "additionalProperties": false,
+      "description": "One inventory Kenshi currently has open, whatever owns it.\n\nRead from `ForgottenGUI::inventoryWindowsOpen`, the engine's own map of\nowner handle to window, which holds no opinion about what kind of thing the\nowner is. The field it replaces read one of four typed slots and saw only\nbuildings, so a looted body's window had no exported owner at all: the agent\nordered looting, Kenshi opened the window, and nothing told the agent an\ninventory was there or what was in it.\n\nA body, a crate, a shop and a squadmate all arrive here the same way, which\nis what lets one transfer serve looting, buying, giving and harvesting\nwithout knowing which it is looking at.",
+      "properties": {
+        "owner_id": {
+          "maxLength": 200,
+          "title": "Owner Id",
+          "type": "string"
+        },
+        "owner_name": {
+          "default": "",
+          "maxLength": 200,
+          "title": "Owner Name",
+          "type": "string"
+        },
+        "owner_kind": {
+          "enum": [
+            "character",
+            "building",
+            "item",
+            "unknown"
+          ],
+          "title": "Owner Kind",
+          "type": "string"
+        },
+        "player_owned": {
+          "title": "Player Owned",
+          "type": "boolean"
+        },
+        "money": {
+          "title": "Money",
+          "type": "integer"
+        },
+        "total_weight": {
+          "title": "Total Weight",
+          "type": "number"
+        },
+        "sections": {
+          "items": {
+            "$ref": "#/$defs/InventorySectionView"
+          },
+          "maxItems": 16,
+          "title": "Sections",
+          "type": "array"
+        }
+      },
+      "required": [
+        "owner_id",
+        "owner_kind",
+        "player_owned",
+        "money",
+        "total_weight"
+      ],
+      "title": "OpenInventory",
       "type": "object"
     },
     "OpenScreenAction": {
@@ -6803,6 +6956,19 @@
           ],
           "default": null,
           "title": "Context Inventory Target Id"
+        },
+        "open_inventories": {
+          "items": {
+            "$ref": "#/$defs/OpenInventory"
+          },
+          "maxItems": 8,
+          "title": "Open Inventories",
+          "type": "array"
+        },
+        "open_inventories_complete": {
+          "default": true,
+          "title": "Open Inventories Complete",
+          "type": "boolean"
         },
         "context_menu_open": {
           "anyOf": [

@@ -44,6 +44,7 @@ from kenshi_agent.core.telemetry import (
     KnownMapDestination,
     NearbyEntity,
     NormalizedPointerBounds,
+    OpenInventory,
     TelemetrySnapshot,
     UIState,
     Vec2,
@@ -836,6 +837,87 @@ class TestResourceProductionContracts:
 
         assert OPEN_CONTEXT_INVENTORY_DEFINITION.bind(action, clear).bound
         assert not OPEN_CONTEXT_INVENTORY_DEFINITION.bind(action, blocked).bound
+
+    def test_a_second_inventory_may_be_opened_while_one_is_already_open(
+        self,
+    ) -> None:
+        """Two open windows is what a transfer is, not a conflict.
+
+        The old fence refused whenever `modal_open` was true, and an open
+        inventory sets `modal_open`. So the source could be opened or the
+        destination could be opened, never both - which is why moving an item
+        needed a mouse and why looting, buying and giving looked like three
+        different problems instead of one.
+        """
+
+        target = natural_resource()
+        with_one_open = observation(
+            ui=UIState(
+                active_screen="inventory",
+                modal_open=True,
+                dialogue_open=False,
+                open_inventories=[
+                    OpenInventory(
+                        owner_id="entity-squadmate",
+                        owner_name="Little",
+                        owner_kind="character",
+                        player_owned=True,
+                        money=0,
+                        total_weight=3.0,
+                    )
+                ],
+            ),
+            capabilities=[
+                "control.open_context_inventory",
+                "world.context_targets",
+                "game.pause",
+                "identity.stable_handles",
+            ],
+            world_targets=[target],
+        )
+
+        bound = OPEN_CONTEXT_INVENTORY_DEFINITION.bind(
+            OpenContextInventoryAction(target_id=target.id), with_one_open
+        )
+
+        assert bound.bound
+
+    def test_any_observed_owner_can_have_its_inventory_opened(self) -> None:
+        """Not just mining crates. The narrow lookup was ours, not Kenshi's.
+
+        This resolved through `world_targets` for a `natural_resource`, so a
+        body the agent had just knocked out and ordered `loot_target` on was
+        unreachable by construction. Kenshi opens by handle and does not ask
+        what kind of thing the handle names.
+        """
+
+        body = NearbyEntity(
+            id="entity-bandit",
+            name="Hungry bandit",
+            kind="character",
+            is_animal=False,
+            has_dialogue=False,
+            disposition=Disposition.HOSTILE,
+            conscious=False,
+            distance=2.0,
+        )
+        world = observation(
+            ui=UIState(active_screen="world", modal_open=False, dialogue_open=False),
+            capabilities=[
+                "control.open_context_inventory",
+                "world.context_targets",
+                "game.pause",
+                "identity.stable_handles",
+            ],
+            entities=[body],
+        )
+
+        bound = OPEN_CONTEXT_INVENTORY_DEFINITION.bind(
+            OpenContextInventoryAction(target_id=body.id), world
+        )
+
+        assert bound.bound
+        assert "Hungry bandit" in bound.reason
 
 
 class TestCollectResourceOutput:

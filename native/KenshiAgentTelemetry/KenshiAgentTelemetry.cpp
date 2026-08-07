@@ -196,6 +196,11 @@ namespace
     const unsigned int MAX_NATIVE_COMMAND_BYTES = 16384;
     const unsigned int MAX_NATIVE_ACKNOWLEDGEMENTS = 16;
     const unsigned int MAX_RUNTIME_CONTEXT_MENU_TASK_TYPES = 64;
+    // Kenshi opens at most a handful of inventory windows at once, and a
+    // trade is two. These bound the export without bounding real play.
+    const unsigned int MAX_OPEN_INVENTORIES = 8;
+    const unsigned int MAX_INVENTORY_SECTIONS = 16;
+    const unsigned int MAX_INVENTORY_ITEMS_PER_SECTION = 128;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
     const char* PROTOCOL_VERSION = "1.17.0";
@@ -2171,6 +2176,101 @@ namespace
         return NULL;
     }
 
+    // One stable id to one engine handle, without caring what kind of thing it
+    // names.
+    //
+    // Every lookup beside this one is typed -- `FindExactNaturalResource`,
+    // `FindExactSquadMember`, `FindExactNearbyCharacter` -- and each was written
+    // for the one operation that needed it. That is why opening an inventory
+    // could only ever open a mining crate: `open_context_inventory` resolves
+    // through the natural-resource finder, so a looted body was unreachable by
+    // construction rather than by policy.
+    //
+    // Kenshi does not have this problem. `ForgottenGUI::showInventory` takes a
+    // `hand`, `inventoryWindowsOpen` is keyed by `hand`, and
+    // `newPlayerTaskSelectedCharacters` takes a `hand`. The engine's own
+    // vocabulary for "a thing" is the handle, so a bridge that speaks in
+    // typed finders is speaking a narrower language than the game it bridges.
+    //
+    // Searched nearest-population first: the squad, then nearby characters,
+    // then the object bands the world scan already walks.
+    bool FindExactOwnerHandle(
+        PlayerInterface* player,
+        const std::string& targetId,
+        hand& ownerHandle)
+    {
+        if (player == NULL || targetId.empty())
+            return false;
+        Character* selected = player->selectedCharacter.getCharacter();
+        if (selected == NULL || !selected->isValid())
+            return false;
+
+        bool exactIdentityFound = false;
+        Character* squadMember =
+            FindExactSquadMember(player, targetId, exactIdentityFound);
+        if (squadMember != NULL && squadMember->isValid())
+        {
+            ownerHandle = squadMember->getHandle();
+            return true;
+        }
+        Character* nearby =
+            FindExactNearbyCharacter(player, targetId, exactIdentityFound);
+        if (nearby != NULL && nearby->isValid())
+        {
+            ownerHandle = nearby->getHandle();
+            return true;
+        }
+        if (StableEntityId(selected) == targetId)
+        {
+            ownerHandle = selected->getHandle();
+            return true;
+        }
+
+        if (ou == NULL)
+            return false;
+        const Ogre::Vector3 selectedPosition = selected->getPosition();
+        const float radii[2] =
+        {
+            NEAR_WORLD_CONTEXT_TARGET_RADIUS,
+            WORLD_CONTEXT_TARGET_RADIUS
+        };
+        const int limits[2] =
+        {
+            MAX_NEAR_WORLD_CONTEXT_BUILDINGS,
+            MAX_OUTER_WORLD_CONTEXT_BUILDINGS
+        };
+        unsigned int categoryCount = 0;
+        const KenshiAgentTelemetry::ItemTypeVocabularyEntry* categories =
+            KenshiAgentTelemetry::ItemTypeVocabulary(categoryCount);
+        for (unsigned int band = 0; band < 2; ++band)
+        {
+            for (unsigned int index = 0; index < categoryCount; ++index)
+            {
+                lektor<RootObject*> found;
+                ou->getObjectsWithinSphere(
+                    found,
+                    selectedPosition,
+                    radii[band],
+                    static_cast<itemType>(categories[index].value),
+                    limits[band],
+                    selected);
+                for (lektor<RootObject*>::iterator it = found.begin();
+                     it != found.end();
+                     ++it)
+                {
+                    RootObject* candidate = *it;
+                    if (candidate == NULL || !candidate->isValid())
+                        continue;
+                    if (StableEntityId(candidate->getHandle()) != targetId)
+                        continue;
+                    ownerHandle = candidate->getHandle();
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     bool HasExactContextGoal(
         Character* selected,
         TaskType expectedTask,
@@ -2561,6 +2661,154 @@ namespace
         json << "\"item_base_value\":" << item->getValueSingle(false) << ",";
         json << "\"item_quantity\":" << item->quantity << ",";
         json << "\"item_type\":" << static_cast<int>(item->getItemType()) << ",";
+    }
+
+    // Every inventory Kenshi currently has open, whatever owns it.
+    //
+    // `context_inventory_target_id` reads `ForgottenGUI::inventoryWindowBuilding`
+    // -- one of four typed slots beside Character, Trader and NPC -- so a looted
+    // body's window had no exported owner at all. Measured live, the agent
+    // ordered `loot_target`, Kenshi opened the window, and the agent stood there
+    // waiting for a completion no field reported, because nothing told it an
+    // inventory was open or what was in it.
+    //
+    // `inventoryWindowsOpen` is the map the engine actually keeps: owner handle
+    // to window, with no opinion about what kind of thing the owner is. Reading
+    // that instead means a body, a crate, a shop and a squadmate arrive through
+    // one path, and the transfer built on it does not need to know which it is
+    // looking at.
+    //
+    // Positions are exported because they are the transfer's coordinates:
+    // `InventoryGUI::RClickAutoTrade` takes a section name and an x/y, so an
+    // item's slot is what names it to the engine. A cell label scraped off a
+    // MyGUI widget is not.
+    void AppendOpenInventories(std::ostringstream& json, ForgottenGUI* gui)
+    {
+        json << "\"open_inventories\":[";
+        bool complete = true;
+        if (gui != NULL)
+        {
+            unsigned int windowCount = 0;
+            bool firstWindow = true;
+            for (ogre_unordered_map<hand, InventoryGUI*>::type::const_iterator
+                     it = gui->inventoryWindowsOpen.begin();
+                 it != gui->inventoryWindowsOpen.end();
+                 ++it)
+            {
+                InventoryGUI* window = it->second;
+                if (window == NULL || !window->isVisible())
+                    continue;
+                if (windowCount >= MAX_OPEN_INVENTORIES)
+                {
+                    complete = false;
+                    break;
+                }
+                Inventory* inventory = window->getInventory();
+                if (inventory == NULL)
+                    continue;
+                ++windowCount;
+                if (!firstWindow)
+                    json << ",";
+                firstWindow = false;
+
+                const hand owner = it->first;
+                Character* ownerCharacter = owner.getCharacter();
+                Building* ownerBuilding = owner.getBuilding();
+                Item* ownerItem = owner.getItem();
+                const char* ownerKind =
+                    ownerCharacter != NULL
+                        ? "character"
+                        : (ownerBuilding != NULL
+                               ? "building"
+                               : (ownerItem != NULL ? "item" : "unknown"));
+                std::string ownerId;
+                std::string ownerName;
+                if (ownerCharacter != NULL && ownerCharacter->isValid())
+                {
+                    ownerId = StableEntityId(ownerCharacter);
+                    ownerName = ownerCharacter->getName();
+                }
+                else
+                {
+                    ownerId = StableEntityId(owner);
+                    RootObject* ownerObject = owner.getRootObject();
+                    if (ownerObject != NULL && ownerObject->isValid())
+                        ownerName = ownerObject->getName();
+                }
+
+                json << "{\"owner_id\":\"" << JsonEscape(ownerId) << "\",";
+                json << "\"owner_name\":\"" << JsonEscape(ownerName) << "\",";
+                json << "\"owner_kind\":\"" << ownerKind << "\",";
+                // Whether this side is the player's own is the fact that
+                // decides which direction a transfer even means, and it is the
+                // engine's answer rather than a guess from faction or squad.
+                json << "\"player_owned\":"
+                     << JsonBool(
+                            ownerCharacter != NULL &&
+                            ownerCharacter->isValid() &&
+                            ownerCharacter->isPlayerCharacter())
+                     << ",";
+                json << "\"money\":" << inventory->getMoney() << ",";
+                json << "\"total_weight\":" << inventory->getTotalWeight() << ",";
+                json << "\"sections\":[";
+                bool firstSection = true;
+                unsigned int sectionCount = 0;
+                for (unsigned int sectionIndex = 0;
+                     sectionIndex < inventory->sectionsInSearchOrder.size();
+                     ++sectionIndex)
+                {
+                    InventorySection* section =
+                        inventory->sectionsInSearchOrder[sectionIndex];
+                    if (section == NULL)
+                        continue;
+                    if (sectionCount >= MAX_INVENTORY_SECTIONS)
+                    {
+                        complete = false;
+                        break;
+                    }
+                    ++sectionCount;
+                    if (!firstSection)
+                        json << ",";
+                    firstSection = false;
+                    json << "{\"name\":\"" << JsonEscape(section->name) << "\",";
+                    json << "\"width\":" << section->width << ",";
+                    json << "\"height\":" << section->height << ",";
+                    json << "\"items\":[";
+                    const Ogre::vector<InventorySection::SectionItem>::type&
+                        items = section->getItems();
+                    bool firstItem = true;
+                    for (unsigned int itemIndex = 0;
+                         itemIndex < items.size();
+                         ++itemIndex)
+                    {
+                        Item* item = items[itemIndex].item;
+                        if (item == NULL || !item->isValid())
+                            continue;
+                        if (itemIndex >= MAX_INVENTORY_ITEMS_PER_SECTION)
+                        {
+                            complete = false;
+                            break;
+                        }
+                        if (!firstItem)
+                            json << ",";
+                        firstItem = false;
+                        json << "{";
+                        AppendItemFacts(json, item);
+                        json << "\"x\":" << items[itemIndex].x << ",";
+                        json << "\"y\":" << items[itemIndex].y << ",";
+                        json << "\"w\":" << items[itemIndex].w << ",";
+                        json << "\"h\":" << items[itemIndex].h;
+                        json << "}";
+                    }
+                    json << "]}";
+                }
+                json << "]}";
+            }
+        }
+        json << "],";
+        // A bounded window is not an empty one. Every consumer of this has to
+        // be able to tell "nothing is here" from "we stopped counting".
+        json << "\"open_inventories_complete\":" << JsonBool(complete) << ",";
     }
 
     void AppendSelectedInventoryFit(
@@ -4197,7 +4445,66 @@ namespace
             return;
         }
 
-        if (isContextAction || isResourceProduction || isContextInventory)
+        if (isContextInventory)
+        {
+            // Opens the inventory of whatever the id names: a body, a crate, a
+            // shopkeeper, a squadmate.
+            //
+            // This used to resolve through `FindExactNaturalResource` and
+            // require `InspectNaturalResource(...).structurallyRecognized`, so
+            // it could only ever open a mining crate -- a looted body was
+            // unreachable by construction rather than by policy. Kenshi's own
+            // opener is `showInventory(hand, ...)` and its window map is keyed
+            // by `hand`; neither has ever cared what kind of thing the handle
+            // names. The narrow finder was ours, not the engine's.
+            if (gui == NULL || gui->inDialogue() || gui->hasModalMessage())
+            {
+                RejectNativeCommand(request, "conflicting_modal_open");
+                return;
+            }
+            hand ownerHandle;
+            if (!FindExactOwnerHandle(player, request.targetId, ownerHandle))
+            {
+                RejectNativeCommand(request, "target_lifetime_changed");
+                return;
+            }
+            g_lastNativeCommandTargetId = request.targetId;
+            RootObject* ownerObject = ownerHandle.getRootObject();
+            if (ownerObject != NULL && ownerObject->isValid())
+                g_lastNativeCommandTarget = ownerObject->getName();
+            if (gui->hasInventoryWindowOpen(ownerHandle))
+            {
+                AddNativeAcknowledgement(
+                    request,
+                    "completed",
+                    "exact_context_inventory_open",
+                    true,
+                    true);
+                g_lastNativeCommandResult = "exact_context_inventory_open";
+                return;
+            }
+            // Deliberately no refusal for other open windows. The old
+            // `conflicting_inventory_open` fence encoded the assumption that
+            // one window is the whole interaction -- and a transfer needs two
+            // open at once. That assumption is what made looting, buying and
+            // giving look like three different problems.
+            gui->showInventory(ownerHandle, true, 0.0f, 0.0f);
+            if (!gui->hasInventoryWindowOpen(ownerHandle))
+            {
+                RejectNativeCommand(request, "context_inventory_not_opened");
+                return;
+            }
+            AddNativeAcknowledgement(
+                request,
+                "completed",
+                "exact_context_inventory_open",
+                true,
+                true);
+            g_lastNativeCommandResult = "exact_context_inventory_open";
+            return;
+        }
+
+        if (isContextAction || isResourceProduction)
         {
             if (isContextAction && request.contextAction != "operate")
             {
@@ -4990,6 +5297,7 @@ namespace
         json << "\"management_screen_open\":" << JsonBool(managementOpen) << ",";
         json << "\"management_tab\":" << managementTab << ",";
         json << "\"open_inventory_windows\":" << openInventoryWindows << ",";
+        AppendOpenInventories(json, gui);
         json << "\"dialogue_open\":" << JsonBool(dialogueOpen) << ",";
         std::string dialogueTargetId;
         json << "\"dialogue_target_id\":";
