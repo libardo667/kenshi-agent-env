@@ -165,6 +165,11 @@ namespace KenshiAgentTelemetry
                // buying, selling, giving and harvesting are one command rather
                // than five that each drive a mouse.
                command == "transfer_item" ||
+               // Both inventories at once, typed by Kenshi's own enum:
+               // money_trading, looting, auto. `showInventory` opens one
+               // window - a character's personal gear, the stealing view - so
+               // it can never produce the state a transfer needs.
+               command == "open_trade_window" ||
                command == "open_context_inventory";
     }
 

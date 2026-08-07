@@ -2878,6 +2878,39 @@ namespace
         }
     }
 
+    // Kenshi's own name for "put these two inventories side by side".
+    //
+    // `showInventory(hand, ...)` opens one window: a character's personal gear,
+    // which is the view a player gets for stealing. Measured live against the
+    // Barman it reported his `armour` and `legs` sections -- his worn kit, not
+    // shop stock -- and only ever one window, so a transfer had nothing to move
+    // between.
+    //
+    // `showTradeWindow` takes *two* hands and a type, and the type enum is the
+    // engine saying that trading and looting are one mechanism with a flag:
+    // TW_MONEY_TRADING, TW_LOOTING, TW_AUTO. Every attempt here to decide from
+    // the outside whether looting and buying were the same problem was
+    // re-deriving a distinction Kenshi had already made and named.
+    const char* TradeWindowTypeName(TradeWindowType type)
+    {
+        switch (type)
+        {
+        case TW_MONEY_TRADING: return "money_trading";
+        case TW_LOOTING: return "looting";
+        case TW_AUTO: return "auto";
+        case TW_OFF:
+        default: return "off";
+        }
+    }
+
+    bool ResolveTradeWindowType(const std::string& name, TradeWindowType& type)
+    {
+        if (name == "money_trading") { type = TW_MONEY_TRADING; return true; }
+        if (name == "looting") { type = TW_LOOTING; return true; }
+        if (name == "auto") { type = TW_AUTO; return true; }
+        return false;
+    }
+
     typedef InventoryGUI::TradeResult (*RClickAutoTradeFunction)(
         InventoryGUI*,
         const std::string&,
@@ -3997,6 +4030,7 @@ namespace
         const bool isContextInventory =
             request.command == "open_context_inventory";
         const bool isTransfer = request.command == "transfer_item";
+        const bool isTradeWindow = request.command == "open_trade_window";
         const bool isResourceSurvey =
             request.command == "survey_local_resources";
         const bool isBodyShiftProbe =
@@ -4007,7 +4041,7 @@ namespace
             isDirection || isMapTravel || isBuildingExit || isContextAction ||
             isCharacterOrder ||
             isResourceProduction || isContextInventory || isResourceSurvey ||
-            isTransfer)
+            isTransfer || isTradeWindow)
             g_lastNativeCommand = request.command;
         if (!isApproach &&
             !isMove &&
@@ -4022,6 +4056,7 @@ namespace
             !isContextInventory &&
             !isResourceSurvey &&
             !isTransfer &&
+            !isTradeWindow &&
             !isBodyShiftProbe &&
             !isBodyShift)
         {
@@ -4550,6 +4585,43 @@ namespace
                     ? "adopted_existing_task"
                     : "issued";
             g_lastNativeCommandTarget = target->getName();
+            g_lastNativeCommandTargetId = request.targetId;
+            return;
+        }
+
+        if (isTradeWindow)
+        {
+            // Both sides at once, which is the state a transfer needs and the
+            // one `showInventory` cannot produce.
+            if (gui == NULL || gui->inDialogue() || gui->hasModalMessage())
+            {
+                RejectNativeCommand(request, "conflicting_modal_open");
+                return;
+            }
+            TradeWindowType windowType = TW_AUTO;
+            if (!ResolveTradeWindowType(request.contextAction, windowType))
+            {
+                RejectNativeCommand(request, "unsupported_trade_window_type");
+                return;
+            }
+            hand firstHandle;
+            hand secondHandle;
+            if (!FindExactOwnerHandle(player, request.targetId, firstHandle) ||
+                !FindExactOwnerHandle(
+                    player, request.destinationId, secondHandle))
+            {
+                RejectNativeCommand(request, "target_lifetime_changed");
+                return;
+            }
+            gui->showTradeWindow(firstHandle, secondHandle, windowType);
+            if (gui->getNumOpenInventoryWindows() < 2)
+            {
+                RejectNativeCommand(request, "trade_window_not_opened");
+                return;
+            }
+            AddNativeAcknowledgement(
+                request, "completed", "trade_window_open", true, true);
+            g_lastNativeCommandResult = "trade_window_open";
             g_lastNativeCommandTargetId = request.targetId;
             return;
         }
