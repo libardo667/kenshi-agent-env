@@ -1687,10 +1687,15 @@ class TestAffordancesAreAdvertised:
         assert "harvest_resource" in world_kinds
         assert "harvest_resource" not in inventory_kinds
         assert "produce_resource_output" not in world_kinds
-        assert "open_context_inventory" not in world_kinds
         assert "collect_resource_output" not in world_kinds
         assert "perform_context_action" not in world_kinds
         assert "dismiss_screen" in inventory_kinds
+        # Opening an inventory is a first-class choice now, not a private step
+        # inside the harvest composite. While it was composition-only the
+        # planner could not choose it at all, so asked to open an inventory the
+        # agent dragged the mouse to the INV button - in the same run where it
+        # named a barman four hundred units away from telemetry.
+        assert "open_context_inventory" in world_kinds
 
     def test_visible_control_digest_marks_ambiguity(self) -> None:
         state = observation(

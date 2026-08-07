@@ -57,6 +57,7 @@ from .core.telemetry import (
 from .non_progress import unchanged_definitive_no_op_reason
 from .operation_definitions import (
     NATIVE_CHARACTER_ORDER_CAPABILITY,
+    NATIVE_OPEN_CONTEXT_INVENTORY_CAPABILITY,
     NATIVE_SHIFT_BODY_CAPABILITY,
     NEARBY_ORDERABLE_TASKS_CAPABILITY,
     OPERATION_DEFINITIONS,
@@ -829,6 +830,70 @@ def _character_order_offers(observation: Observation) -> Iterable[AffordanceOffe
             )
 
 
+MAX_INVENTORY_OWNERS_OFFERED = 12
+
+
+def _inventory_owner_offers(observation: Observation) -> Iterable[AffordanceOffer]:
+    """Offer opening the inventory of anything nearby that could have one.
+
+    This operation existed, worked, and was unreachable. It was listed as
+    reached-by-composition -- meaning only `harvest_resource` could invoke it,
+    inside a twelve-pointer-action composite -- so the planner could never
+    choose it. Asked to open an inventory, the agent did the only thing on its
+    menu and dragged the mouse to the INV button, in the same run where it
+    identified a barman four hundred units away from telemetry.
+
+    Kenshi opens a window by handle and does not ask what kind of thing the
+    handle names, so neither does this: squad members, nearby people including
+    the unconscious ones worth looting, and nearby containers are all owners.
+    Whether a given owner really has an inventory is the engine's answer at
+    dispatch, not a guess here.
+    """
+
+    telemetry = observation.telemetry
+    if telemetry is None or observation.control_mode is not ControlMode.NATIVE_ASSISTED:
+        return
+    if NATIVE_OPEN_CONTEXT_INVENTORY_CAPABILITY not in set(telemetry.capabilities):
+        return
+    if telemetry.ui.dialogue_open is not False:
+        return
+
+    already_open = {held.owner_id for held in telemetry.ui.open_inventories}
+    owners: list[tuple[str, str, str]] = []
+    for member in telemetry.squad:
+        owners.append((member.id, member.name, "squad_character"))
+    for entity in telemetry.nearby_entities:
+        owners.append((entity.id, entity.name, entity.kind))
+    for target in telemetry.world_targets:
+        owners.append((target.id, target.name, target.kind))
+
+    seen: set[str] = set()
+    offered = 0
+    for owner_id, label, kind in owners:
+        if owner_id in seen or owner_id in already_open:
+            continue
+        seen.add(owner_id)
+        if offered >= MAX_INVENTORY_OWNERS_OFFERED:
+            return
+        offered += 1
+        yield _offer(
+            observation,
+            source=AffordanceSource.NEARBY_CHARACTER,
+            semantic="open_inventory",
+            description=(
+                f"Open the inventory of {kind} {label!r} and see what it holds. "
+                "Kenshi opens the window itself; no pointer is used."
+            ),
+            operation_kind="open_context_inventory",
+            target=AffordanceTarget(
+                target_id=owner_id,
+                label=label,
+                kind=kind,
+            ),
+            arguments={"target_id": owner_id},
+        )
+
+
 def _dialogue_target_offers(observation: Observation) -> Iterable[AffordanceOffer]:
     telemetry = observation.telemetry
     if telemetry is None or observation.control_mode is not ControlMode.NATIVE_ASSISTED:
@@ -1483,6 +1548,20 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
             "they afford, and the rest report that they were not asked."
         ),
         enumerate=_character_order_offers,
+    ),
+    AffordanceAdapter(
+        name="inventory_owners",
+        sources=frozenset({AffordanceSource.NEARBY_CHARACTER}),
+        operation_kinds=frozenset({"open_context_inventory"}),
+        denominator=(
+            "Every squad member, nearby person, and nearby world target whose "
+            "inventory is not already open."
+        ),
+        completeness_boundary=(
+            "Bounded to the nearest few owners. Whether one really has an "
+            "inventory is Kenshi's answer at dispatch, not a guess here."
+        ),
+        enumerate=_inventory_owner_offers,
     ),
     AffordanceAdapter(
         name="dialogue_targets",

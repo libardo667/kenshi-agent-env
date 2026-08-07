@@ -13,9 +13,9 @@ they still bind through this registry but are not planner-visible offers.
 
 ```text
 definitions             36
-adapter operation kinds  33
-adapter routes           34
-adapters                 12
+adapter operation kinds  34
+adapter routes           35
+adapters                 13
 ownership proof         PASS
 
 DEFINITIONS
@@ -31,7 +31,7 @@ DEFINITIONS
   move_in_direction                   movement.move_in_direction                              MoveInDirectionAction [native_and_composite]
   move_to_character                   movement.move_to_character                              MoveToCharacterAction [characters]
   noop                                runtime.noop                                            NoopAction [runtime]
-  open_context_inventory              resources.open_context_inventory                        OpenContextInventoryAction [by-composition]
+  open_context_inventory              resources.open_context_inventory                        OpenContextInventoryAction [inventory_owners]
   open_screen                         screens.open_screen                                     OpenScreenAction [screens]
   pause                               runtime.pause                                           PauseAction [runtime]
   perform_character_order             movement.perform_character_order                        PerformCharacterOrderAction [character_orders]
@@ -64,6 +64,7 @@ SOURCE-SPECIFIC COMPLETENESS BOUNDARIES
   context_orders: Native execution proves the reviewed natural-resource operate and squad-character first_aid semantics; other orders require current screen geometry and stop at the generic UI delivery boundary.
   body_shift: Native-assisted stable identity and nearby-character evidence; a body outside the reported radius cannot be offered and a hostile one is deliberately withheld.
   character_orders: Bounded by the native probe budget: the nearest few people are asked what they afford, and the rest report that they were not asked.
+  inventory_owners: Bounded to the nearest few owners. Whether one really has an inventory is Kenshi's answer at dispatch, not a guess here.
   dialogue_targets: Native-assisted stable identity and dialogue-role evidence.
   inventory: Transactions require unambiguous counterpart identity and conservation evidence. Equip currently proves exact delivery, not final equipment state.
   characters: Offers require the source-specific selection, identity, geometry, and safety facts.

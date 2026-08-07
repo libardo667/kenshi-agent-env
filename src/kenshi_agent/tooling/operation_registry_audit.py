@@ -63,10 +63,16 @@ class OperationRegistryAudit:
 # name here says "some offered operation runs this", and that has to be true.
 REACHED_BY_COMPOSITION: frozenset[str] = frozenset(
     {
-        # harvest_resource opens the context inventory, produces the yield, and
-        # collects it as one controller-owned action.
+        # harvest_resource produces the yield and collects it as one
+        # controller-owned action.
+        #
+        # `open_context_inventory` was here and no longer is. Being listed meant
+        # only the harvest composite could invoke it, so the planner could never
+        # choose it: asked to open an inventory it dragged the mouse to the INV
+        # button, in the same run where it identified a barman four hundred
+        # units away from telemetry. An operation that works and cannot be
+        # chosen is not reached by composition, it is unreachable.
         "collect_resource_output",
-        "open_context_inventory",
         "produce_resource_output",
     }
 )

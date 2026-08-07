@@ -19,8 +19,8 @@ character selected.
 
 ```text
 operations               36
-planner-visible          33
-internal-only             3
+planner-visible          34
+internal-only             2
 native commands          13
 manifest entries         37
 coverage proof          PASS
@@ -88,7 +88,7 @@ EXECUTION AND ROUTING
   move_in_direction                   monitored_option   running_for_progress     move_in_direction          native_and_composite
   move_to_character                   monitored_option   running_for_progress     move_to_character          characters
   noop                                atomic_handler     any                      -                          runtime
-  open_context_inventory              atomic_handler     paused_transaction       open_context_inventory     internal-only
+  open_context_inventory              atomic_handler     paused_transaction       open_context_inventory     inventory_owners
   open_screen                         atomic_handler     paused_transaction       -                          screens
   pause                               atomic_handler     any                      -                          runtime
   perform_character_order             monitored_option   running_for_progress     perform_character_order    character_orders
