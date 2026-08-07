@@ -326,6 +326,10 @@ namespace
     // notice a new request without the agent pressing a key at the game.
     DWORD g_lastRequestWriteLow = 0;
     DWORD g_lastRequestWriteHigh = 0;
+    // The stamp seen last frame. A request is only read once its write stamp
+    // has held still for a frame, so the plug-in cannot catch a partial write.
+    DWORD g_pendingRequestWriteLow = 0;
+    DWORD g_pendingRequestWriteHigh = 0;
 
     class SamplingGuard
     {
@@ -6580,6 +6584,18 @@ namespace
             return false;
         }
         const FILETIME& written = attributes.ftLastWriteTime;
+        if (written.dwLowDateTime != g_pendingRequestWriteLow ||
+            written.dwHighDateTime != g_pendingRequestWriteHigh)
+        {
+            // Changed this frame. Note it and wait: reading now can catch a
+            // half-written file, which the hotkey handshake used to make
+            // impossible by only firing once the writer had finished. Measured
+            // live, an otherwise valid request came back `malformed_request`
+            // three times in a row for exactly this reason.
+            g_pendingRequestWriteLow = written.dwLowDateTime;
+            g_pendingRequestWriteHigh = written.dwHighDateTime;
+            return false;
+        }
         if (written.dwLowDateTime == g_lastRequestWriteLow &&
             written.dwHighDateTime == g_lastRequestWriteHigh)
         {

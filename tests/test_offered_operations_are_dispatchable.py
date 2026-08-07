@@ -28,6 +28,7 @@ from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.operation import (
     Action,
     ControlMode,
+    OpenTradeWindowAction,
     PerformCharacterOrderAction,
     PerformContextAction,
 )
@@ -53,6 +54,7 @@ from kenshi_agent.execution.handlers.kenshi_surface import KenshiControlSurface
 from kenshi_agent.native_commands import (
     NATIVE_CHARACTER_ORDER_WIRE_COMMAND,
     NATIVE_CONTEXT_ACTION_WIRE_COMMAND,
+    NATIVE_TRADE_WINDOW_WIRE_COMMAND,
 )
 from kenshi_agent.operation_definitions import wire_fields_for
 from kenshi_agent.options import StatefulNativeMovementOption
@@ -179,8 +181,14 @@ def _request(wire_command: str, *, target_id: str, context_action: str | None):
     that can no longer occur.
     """
 
-    if wire_command == NATIVE_CONTEXT_ACTION_WIRE_COMMAND:
-        action: Action = PerformContextAction(
+    if wire_command == NATIVE_TRADE_WINDOW_WIRE_COMMAND:
+        action: Action = OpenTradeWindowAction(
+            first_owner_id=ACTOR,
+            second_owner_id=target_id,
+            window_type="auto",
+        )
+    elif wire_command == NATIVE_CONTEXT_ACTION_WIRE_COMMAND:
+        action = PerformContextAction(
             target_id=target_id,
             context_action=ContextActionKind(context_action or "operate"),
         )

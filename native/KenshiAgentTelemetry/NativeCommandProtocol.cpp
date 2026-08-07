@@ -169,7 +169,6 @@ namespace KenshiAgentTelemetry
                // money_trading, looting, auto. `showInventory` opens one
                // window - a character's personal gear, the stealing view - so
                // it can never produce the state a transfer needs.
-               command == "open_trade_window" ||
                command == "open_trade_window";
     }
 
@@ -453,6 +452,14 @@ namespace KenshiAgentTelemetry
                 request.command == "perform_context_action";
             const bool isCharacterOrder =
                 request.command == "perform_character_order";
+            // Kenshi's own TradeWindowType rides in the action field, so a
+            // pairing always says which kind it is. This rule is stated here
+            // and again in Python's `NATIVE_COMMANDS_NAMING_AN_ACTION`, and
+            // adding the command to one and not the other is exactly how a
+            // well-formed request came back `malformed_request` three runs in
+            // a row.
+            const bool isTradeWindow =
+                request.command == "open_trade_window";
             if (isContextAction)
             {
                 if (request.contextAction != "operate" &&
@@ -462,7 +469,7 @@ namespace KenshiAgentTelemetry
                     return false;
                 }
             }
-            else if (isCharacterOrder)
+            else if (isCharacterOrder || isTradeWindow)
             {
                 // The order is named, not enumerated here: the plugin resolves
                 // it against Kenshi's task vocabulary and then asks Kenshi

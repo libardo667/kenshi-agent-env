@@ -1282,6 +1282,30 @@ int main(int argc, char** argv)
             "valid resource production did not retain its exact target");
     }
 
+    // Parsed here because the Python fixture test parses it too, and only one
+    // of those two was catching a rule stated in both languages. A trade window
+    // carries Kenshi's own window type in the action field; the parser rejected
+    // it as malformed for three live runs while Python happily produced it.
+    KenshiAgentTelemetry::NativeCommandRequest tradeWindow;
+    const std::string tradeWindowPayload =
+        ReadFile(prefix + "valid_open_trade_window_request.json");
+    if (tradeWindowPayload.empty())
+        return Fail("could not read valid_open_trade_window_request.json");
+    if (!KenshiAgentTelemetry::ParseNativeCommandRequest(
+            tradeWindowPayload,
+            tradeWindow,
+            rejectionReason))
+    {
+        return Fail(
+            "valid trade-window request was rejected as " + rejectionReason);
+    }
+    if (tradeWindow.command != "open_trade_window" ||
+        tradeWindow.destinationId.empty() ||
+        tradeWindow.contextAction != "auto")
+    {
+        return Fail("valid trade window did not retain both parties and its type");
+    }
+
     const std::string naturalResourcePayload =
         ReadFile(prefix + "valid_natural_resource.json");
     if (naturalResourcePayload.empty())

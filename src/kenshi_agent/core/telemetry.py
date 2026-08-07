@@ -1189,6 +1189,9 @@ NATIVE_COMMANDS_NAMING_AN_ACTION: frozenset[str] = frozenset(
     {
         "perform_context_action",
         "perform_character_order",
+        # Kenshi's own TradeWindowType - money_trading, looting, auto - rides in
+        # the action field, so a pairing always says which kind it is.
+        "open_trade_window",
     }
 )
 

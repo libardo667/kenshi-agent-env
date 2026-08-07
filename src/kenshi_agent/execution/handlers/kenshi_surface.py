@@ -1501,6 +1501,24 @@ class KenshiControlSurface:
             return None
         if wire_command == native_commands.NATIVE_TRANSFER_WIRE_COMMAND:
             return _transfer_precondition_error(action, telemetry)
+        if wire_command == native_commands.NATIVE_TRADE_WINDOW_WIRE_COMMAND:
+            # Both parties, wherever they are observed. Without this the command
+            # fell through to the nearby-character lookup and was refused for a
+            # squad member being absent from `nearby_entities` - which is true
+            # and irrelevant, since a squadmate is exactly who you pair with.
+            # Fifth operation to reach the wire through a fall-through that did
+            # not fit it.
+            parties = (
+                getattr(action, "first_owner_id", ""),
+                getattr(action, "second_owner_id", ""),
+            )
+            for owner in parties:
+                if not _observes_inventory_owner(telemetry, owner):
+                    return (
+                        f"Native trade-window party {owner!r} is absent from "
+                        "current telemetry."
+                    )
+            return None
         if wire_command in _TARGET_ONLY_WIRE_COMMANDS:
             return _target_only_command_error(
                 wire_command, telemetry, target_id, selected_ids
