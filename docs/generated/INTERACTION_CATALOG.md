@@ -26,9 +26,9 @@ manifest entries         37
 coverage proof          PASS
 
 PROOF STATUS
-  source_proven     15
+  source_proven     14
   unit_proven        0
-  live_proven        0
+  live_proven        1
   unproven          20
   withheld           2
 
@@ -49,7 +49,7 @@ INTERACTION CONTRACT (resolved from the sole operation registry)
   open_context_inventory              global_ui          explicit_recipients ui_transaction   world_outcome_observed  unproven
   open_screen                         global_ui          none                ui_transaction   world_outcome_observed  unproven
   pause                               global_ui          none                none             world_outcome_observed  source_proven
-  perform_character_order             ordinary_order     current_selection   dispatch_only    order_accepted          source_proven
+  perform_character_order             ordinary_order     current_selection   dispatch_only    order_accepted          live_proven
   perform_context_action *            varies             current_selection   varies           varies                  unproven
   produce_resource_output             ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
   purchase_item                       global_ui          explicit_recipients ui_transaction   world_outcome_observed  unproven

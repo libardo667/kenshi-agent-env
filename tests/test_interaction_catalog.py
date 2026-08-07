@@ -75,17 +75,37 @@ def test_proof_status_is_typed_and_claims_carry_evidence() -> None:
             assert entry.evidence
 
 
-def test_no_group_scope_behaviour_is_recorded_as_live_proven() -> None:
-    """Slice 0 characterization: group semantics are proposals, not evidence.
+def test_only_operations_with_a_recorded_live_run_claim_live_proof() -> None:
+    """Updated deliberately, which is what the characterization asked for.
 
-    This is a factual record of the starting point, not a permanent rule. When
-    a live proof from section 13 lands, that run's entry moves to `live_proven`
-    and this assertion is the thing that must be updated deliberately.
+    This began as `test_no_group_scope_behaviour_is_recorded_as_live_proven`,
+    asserting zero, and said in its own docstring that when a live proof landed
+    the entry would move to `live_proven` and this assertion would have to be
+    changed on purpose. One landed: `perform_character_order` dispatched
+    stealth_knockout, unprovoked_focused_melee_attack, attack_enemies,
+    player_talk_to and loot_target on kae-04-funded-pair, each finishing on
+    `context_task_started` -- Kenshi holding the exact ordered task against the
+    exact ordered person.
+
+    The claim stays narrow on purpose. Goal adoption was observed for the
+    ordering character, so what is proven is that the order reached Kenshi and
+    took. Group delivery is not proven by it: Kenshi orders every member of the
+    selection, and no run has yet checked adoption member by member.
+
+    So the assertion is now an allowlist rather than a zero. Any other
+    operation claiming live proof has to be added here by someone who has the
+    run to point at.
     """
 
     audit = audit_interaction_catalog()
 
-    assert audit.status_counts()["live_proven"] == 0
+    live_proven = {
+        entry.operation_kind
+        for entry in audit.entries
+        if entry.proof_status == "live_proven"
+    }
+
+    assert live_proven == {"perform_character_order"}
 
 
 def test_catalog_renders_the_contract_execution_and_native_routes() -> None:
