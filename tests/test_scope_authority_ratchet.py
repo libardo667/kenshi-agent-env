@@ -343,58 +343,59 @@ def test_no_operation_is_offered_without_a_dispatch_route() -> None:
     )
 
 
-def test_no_acknowledgement_match_rule_falls_through_to_a_direction() -> None:
+def test_no_acknowledgement_match_rule_falls_through_to_anything() -> None:
     """A survey died *after* Kenshi had already published its reading.
 
     The acknowledgement matcher ended by reading `bearing_degrees` off whatever
     action was left, so `survey_local_resources` - which has no such field -
     raised AttributeError once the native command had already succeeded. The
-    game did the work and the controller threw the result away.
+    game did the work and the controller threw the result away. Later
+    `perform_character_order` fell through the same chain to a silent `False`
+    while Kenshi was carrying out the order.
 
-    Third fallthrough of this shape in one file: the wire-command chain ended in
-    `move_in_direction`, the capability map ended in the direction capability,
-    and this ended in the direction geometry.
+    There is no chain now: one projection per operation, used to build the
+    request and to match the acknowledgement. An operation without one cannot
+    be matched *or* dispatched, and says so. Both earlier versions of this test
+    read the matcher's source text for the names it mentioned, which described
+    the implementation rather than the property.
     """
 
-    import inspect
+    from kenshi_agent.core.operation import PauseAction
+    from kenshi_agent.operation_definitions import wire_fields_for
 
-    from kenshi_agent.options import StatefulNativeMovementOption
-
-    source = inspect.getsource(StatefulNativeMovementOption)
-    matcher = source[source.index("def _matches_identity") :]
-    matcher = matcher[: matcher.index("\n    def ", 1)]
-
-    # The last statement must not be an unguarded read of direction geometry.
-    assert "MoveInDirectionAction" in matcher, (
-        "the acknowledgement matcher no longer checks that the action is a "
-        "direction before reading direction geometry off it"
-    )
+    # `pause` is a real registered operation that dispatches no native command,
+    # so it has no projection - exactly the state that used to fall through.
+    with pytest.raises(ValueError, match="declares no wire projection"):
+        wire_fields_for(PauseAction())
 
 
 def test_every_native_action_can_match_its_own_acknowledgement() -> None:
-    """The general form: every action this option accepts needs a match rule.
+    """The general form: every operation that dispatches needs a projection.
 
-    Enumerated from the option's own accepted union rather than restated, so a
-    new member added there without a rule fails here instead of in a live run
+    Asked of the registry rather than of a source file, so an operation added
+    with a wire command and no projection fails here rather than in a live run
     after the game has already acted.
     """
 
-    import inspect
-    import typing
+    from kenshi_agent.operation_definitions import (
+        OPERATION_DEFINITION_LIST,
+        native_wire_command_for,
+    )
 
-    from kenshi_agent import options as options_module
-    from kenshi_agent.options import StatefulNativeMovementOption
-
-    accepted = [
-        member.__name__
-        for member in typing.get_args(options_module.NativeMovementAction)
+    dispatching = [
+        definition
+        for definition in OPERATION_DEFINITION_LIST
+        if native_wire_command_for(definition)
     ]
-    assert accepted, "the probe resolved no accepted action types"
+    assert dispatching, "the probe resolved no dispatching operations"
 
-    source = inspect.getsource(StatefulNativeMovementOption)
-    unmatched = [name for name in accepted if name not in source]
+    unprojected = sorted(
+        definition.kind
+        for definition in dispatching
+        if definition.project_wire_fields is None
+    )
 
-    assert not unmatched, (
-        f"these actions reach this option with no acknowledgement match rule: "
-        f"{unmatched}"
+    assert not unprojected, (
+        "these operations dispatch a native command with no wire projection, so "
+        f"their requests cannot be built or matched: {unprojected}"
     )

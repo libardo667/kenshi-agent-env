@@ -19,11 +19,10 @@ offer and a live Kenshi to notice. These tests put something between them.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any
 
 import pytest
 
-from kenshi_agent.core.base import StrictModel
 from kenshi_agent.core.interaction import RecipientScope
 from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.operation import (
@@ -53,7 +52,7 @@ from kenshi_agent.native_commands import (
     NATIVE_CHARACTER_ORDER_WIRE_COMMAND,
     NATIVE_CONTEXT_ACTION_WIRE_COMMAND,
 )
-from kenshi_agent.options import OptionLifecycleError, StatefulNativeMovementOption
+from kenshi_agent.options import StatefulNativeMovementOption
 
 ACTOR = "char-tuner"
 SUBJECT = "entity-polly"
@@ -311,45 +310,6 @@ def test_one_order_does_not_satisfy_a_wait_for_another_on_the_same_person() -> N
             context_action=ORDER,
         )
     )
-
-
-class _UnruledAction(StrictModel):
-    """An operation with a native command but no acknowledgement match rule.
-
-    It borrows a real `kind` so the contract lookup resolves and the option can
-    name what it would dispatch. What it does not do is appear anywhere in the
-    isinstance chain, which is precisely the state `perform_character_order` was
-    in when the plug-in accepted its order and Kenshi obeyed it.
-    """
-
-    kind: Literal["move_to_character"] = "move_to_character"
-    target_id: str = SUBJECT
-
-
-def test_an_action_with_no_match_rule_is_loud_rather_than_unmatched() -> None:
-    """The trapdoor under all of this.
-
-    A targeted action with no rule used to reach `acknowledgement.target_id !=
-    ""` and return a quiet False, which reads as "the game acknowledged
-    something else" rather than "this code has no rule for you". Four
-    operations have fallen through this chain, and the last one was found only
-    after the plug-in had accepted the order and the two characters had already
-    entered combat.
-
-    Matching is allowed to say no. It is not allowed to say no for want of a
-    rule.
-    """
-
-    option = _order_option(_UnruledAction())
-
-    with pytest.raises(OptionLifecycleError, match="no acknowledgement match rule"):
-        option._matches_identity(
-            _acknowledgement(
-                command="move_to_character",
-                target_id=SUBJECT,
-                context_action="",
-            )
-        )
 
 
 def test_an_unprobed_target_cannot_have_an_order_formed_for_it() -> None:

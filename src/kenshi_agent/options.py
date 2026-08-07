@@ -36,7 +36,7 @@ from .core.transport import (
 from .core.world import WorldStateRevision
 from .input_boundary import ExecutionToken
 from .movement_ownership import has_keyed_native_movement_terminal
-from .operation_definitions import definition_for, native_wire_command_for
+from .operation_definitions import definition_for, native_wire_command_for, wire_fields_for
 from .threat_response import (
     threat_response_authority_error,
     threat_response_health_error,
@@ -817,87 +817,36 @@ class StatefulNativeMovementOption:
             acknowledgement.selected_character_ids
         ) != set(self.selected_character_ids):
             return False
-        if isinstance(
-            self.action,
-            (PerformContextAction, ProduceResourceOutputAction),
-        ):
-            minimum_matches = (
-                not isinstance(self.action, ProduceResourceOutputAction)
-                or acknowledgement.minimum_output_quantity == self.action.minimum_output_quantity
-            )
-            # Same reason the order is part of a character order's identity: one
-            # object can advertise several context actions, and matching on
-            # target alone lets an acknowledgement for one satisfy a wait for
-            # another.
-            semantic_matches = not isinstance(self.action, PerformContextAction) or str(
-                acknowledgement.context_action
-            ) == str(self.action.context_action)
-            return bool(
-                acknowledgement.target_id == self.action.target_id
-                and acknowledgement.bearing_degrees == 0.0
-                and acknowledgement.distance_units == 0.0
-                and minimum_matches
-                and semantic_matches
-            )
-        if isinstance(self.action, TravelToMapDestinationAction):
-            return bool(
-                acknowledgement.target_id == self.action.destination_id
-                and acknowledgement.bearing_degrees == 0.0
-                and acknowledgement.distance_units == 0.0
-            )
-        if isinstance(self.action, MoveToCharacterAction):
-            return bool(
-                acknowledgement.target_id == self.action.target_id
-                and acknowledgement.bearing_degrees == 0.0
-                and acknowledgement.distance_units == 0.0
-            )
-        if isinstance(self.action, RegroupWithSquadMemberAction):
-            return bool(
-                acknowledgement.target_id == self.action.target_id
-                and acknowledgement.bearing_degrees == 0.0
-                and acknowledgement.distance_units == 0.0
-            )
-        if isinstance(self.action, PerformCharacterOrderAction):
-            # The order is part of the identity, not decoration. One person can
-            # afford several orders at once - a downed bandit affords both
-            # looting and a finishing blow - so an acknowledgement matched on
-            # target alone would let either one satisfy a wait for the other.
-            return bool(
-                acknowledgement.target_id == self.action.target_id
-                and str(acknowledgement.context_action) == self.action.order
-                and acknowledgement.bearing_degrees == 0.0
-                and acknowledgement.distance_units == 0.0
-            )
-        # Every targeted action is matched above, so anything still here must be
-        # one that names nowhere to go. Asking that question before reading the
-        # acknowledgement's target is what makes an unhandled action loud.
+        # One comparison for every operation, against the same projection that
+        # builds the request. There is no chain to forget a member of, and no
+        # last branch to fall into.
         #
-        # It used to be the other way around: a targeted action with no rule hit
-        # `acknowledgement.target_id != ""` and returned a quiet False, which
-        # reads as "the game acknowledged something else" rather than "this code
-        # has no rule for you". `perform_character_order` fell through exactly
-        # there -- the plug-in accepted and issued the order, Kenshi obeyed it,
-        # and the run still failed on an identity mismatch that had nothing to
-        # do with identity. That is the fourth fallthrough of this shape in this
-        # file, and the previous three each cost a live run to find.
-        if not isinstance(
-            self.action,
-            (ExitCurrentBuildingAction, SurveyLocalResourcesAction, MoveInDirectionAction),
-        ):
-            raise OptionLifecycleError(
-                f"Operation {self.action.kind!r} has no acknowledgement match rule, "
-                "so a native acknowledgement cannot be attributed to it."
-            )
-        if acknowledgement.target_id != "":
-            return False
-        if isinstance(self.action, MoveInDirectionAction):
-            return bool(
-                acknowledgement.bearing_degrees == self.action.bearing_degrees
-                and acknowledgement.distance_units == self.action.distance_units
-            )
-        # Targetless and parameterless: the command names nowhere to go.
+        # It used to end in `if acknowledgement.target_id != "": return False`,
+        # so a targeted action with no rule reported "the game acknowledged
+        # something else" rather than "this code has no rule for you".
+        # `perform_character_order` fell through exactly there: the plug-in
+        # accepted the order, Kenshi obeyed it, the two characters entered
+        # combat, and the run still failed on an identity mismatch that had
+        # nothing to do with identity. Fourth fallthrough of this shape in this
+        # file; the previous three each cost a live run.
+        #
+        # `wire_fields_for` raises for an operation with no projection, which is
+        # the same refusal in a form nobody can mistake for a mismatch.
+        try:
+            expected = wire_fields_for(self.action)
+        except ValueError as error:
+            raise OptionLifecycleError(str(error)) from error
         return bool(
-            acknowledgement.bearing_degrees == 0.0 and acknowledgement.distance_units == 0.0
+            acknowledgement.target_id == expected["target_id"]
+            and str(acknowledgement.context_action) == expected["context_action"]
+            and acknowledgement.bearing_degrees == expected["bearing_degrees"]
+            and acknowledgement.distance_units == expected["distance_units"]
+            and acknowledgement.minimum_output_quantity
+            == expected["minimum_output_quantity"]
+            and acknowledgement.destination_id == expected["destination_id"]
+            and acknowledgement.section_name == expected["section_name"]
+            and acknowledgement.slot_x == expected["slot_x"]
+            and acknowledgement.slot_y == expected["slot_y"]
         )
 
     def _poll_result(self) -> OptionPoll:

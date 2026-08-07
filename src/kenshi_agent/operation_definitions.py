@@ -155,6 +155,93 @@ NATIVE_TRANSFER_CAPABILITY = "control.transfer_item"
 # than lived with.
 
 
+# One projection per dispatching operation: the fields that make a request that
+# command, and equally the fields an acknowledgement must carry to be that
+# command's. Keeping them in one function is what stops a request and a matcher
+# from disagreeing about what identifies an operation.
+def _wire_target(field_name: str = "target_id") -> WireFieldFactory:
+    def project(action: Action) -> WireFields:
+        return {"target_id": getattr(action, field_name)}
+
+    return project
+
+
+def _wire_direction(action: Action) -> WireFields:
+    return {
+        "bearing_degrees": action.bearing_degrees,
+        "distance_units": action.distance_units,
+    }
+
+
+def _wire_nothing(action: Action) -> WireFields:
+    del action
+    return {}
+
+
+def _wire_context_action(action: Action) -> WireFields:
+    return {
+        "target_id": action.target_id,
+        "context_action": str(action.context_action),
+    }
+
+
+def _wire_character_order(action: Action) -> WireFields:
+    # The order is part of the identity, not decoration. One person can afford
+    # several orders at once, so a match on target alone would let either
+    # satisfy a wait for the other.
+    return {"target_id": action.target_id, "context_action": action.order}
+
+
+def _wire_resource_output(action: Action) -> WireFields:
+    return {
+        "target_id": action.target_id,
+        "minimum_output_quantity": action.minimum_output_quantity,
+    }
+
+
+def _wire_transfer(action: Action) -> WireFields:
+    return {
+        "target_id": action.source_owner_id,
+        "destination_id": action.destination_owner_id,
+        "section_name": action.section_name,
+        "slot_x": action.slot_x,
+        "slot_y": action.slot_y,
+    }
+
+
+WIRE_FIELD_DEFAULTS: WireFields = {
+    "target_id": "",
+    "context_action": "",
+    "bearing_degrees": 0.0,
+    "distance_units": 0.0,
+    "minimum_output_quantity": 1,
+    "destination_id": "",
+    "section_name": "",
+    "slot_x": 0,
+    "slot_y": 0,
+}
+
+
+def wire_fields_for(action: Action) -> WireFields:
+    """Every wire field this action implies, defaults included.
+
+    Raises rather than returning a partial answer. An operation that dispatches
+    a native command and declares no projection cannot have a request built for
+    it or an acknowledgement attributed to it, and saying so here is what makes
+    that loud instead of a silent mismatch.
+    """
+
+    definition = definition_for(action)
+    if definition is None or definition.project_wire_fields is None:
+        raise ValueError(
+            f"Operation {action.kind!r} declares no wire projection, so its "
+            "request cannot be built and its acknowledgement cannot be matched."
+        )
+    fields = dict(WIRE_FIELD_DEFAULTS)
+    fields.update(definition.project_wire_fields(action))
+    return fields
+
+
 def native_wire_command_for(definition: OperationDefinition) -> str | None:
     """The native command this operation dispatches, declared by the operation.
 
@@ -229,6 +316,12 @@ class OperationRisk:
             self.native_assisted_actions,
         )
 
+
+# The wire fields one action projects onto a native request. Every key is a
+# `NativeCommandRequest` field name; anything omitted keeps its default, and the
+# same defaults are what an acknowledgement is checked against.
+WireFields = dict[str, object]
+WireFieldFactory = Callable[[Action], WireFields]
 
 RiskFactory = Callable[[Action], OperationRisk]
 PrimitiveActionBoundFactory = Callable[[Action], int]
@@ -2743,6 +2836,17 @@ class OperationDefinition:
     # The native command this operation dispatches, or empty when it sends none.
     # Declared rather than derived: see `native_wire_command_for`.
     wire_command: str = ""
+    # How this action becomes wire fields. One mapping, used in both directions:
+    # forward it is the request, backward an acknowledgement matches iff it
+    # carries the same fields. They used to be separate hand-written chains, and
+    # `perform_character_order` was missing from both - the request dropped its
+    # order name and the matcher returned a silent False about an order the game
+    # had already carried out. One function cannot be half-added.
+    project_wire_fields: WireFieldFactory | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
     handler_key: str = ""
     emits_world_command: bool = True
     requires_fresh_telemetry: bool = True
@@ -3455,6 +3559,7 @@ WAIT_DEFINITION = _runtime_control_definition(
 APPROACH_DIALOGUE_TARGET_DEFINITION = OperationDefinition(
     kind="approach_dialogue_target",
     wire_command="approach_confirmed_vendor",
+    project_wire_fields=_wire_target(),
     version="1.0",
     interaction=ordinary_order(
         recipients=RecipientScope.CURRENT_SELECTION,
@@ -3571,6 +3676,7 @@ SELECT_SQUAD_MEMBER_DEFINITION = OperationDefinition(
 SELECT_SQUAD_MEMBER_EXACT_DEFINITION = OperationDefinition(
     kind="select_squad_member_exact",
     wire_command="select_squad_member",
+    project_wire_fields=_wire_target(),
     version="1.0",
     interaction=selection_mutation(),
     operation_type=SelectSquadMemberExactAction,
@@ -3635,6 +3741,7 @@ ROTATE_CAMERA_DEFINITION = OperationDefinition(
 PERFORM_CONTEXT_ACTION_DEFINITION = OperationDefinition(
     kind="perform_context_action",
     wire_command="perform_context_action",
+    project_wire_fields=_wire_context_action,
     version="1.0",
     resolve_interaction=resolve_context_action_interaction,
     _dynamic_recipient_scope=RecipientScope.CURRENT_SELECTION,
@@ -3682,6 +3789,7 @@ PERFORM_CONTEXT_ACTION_DEFINITION = OperationDefinition(
 PRODUCE_RESOURCE_OUTPUT_DEFINITION = OperationDefinition(
     kind="produce_resource_output",
     wire_command="produce_resource_output",
+    project_wire_fields=_wire_resource_output,
     version="1.0",
     interaction=ordinary_order(
         recipients=RecipientScope.CURRENT_SELECTION,
@@ -3793,6 +3901,7 @@ HARVEST_RESOURCE_DEFINITION = OperationDefinition(
 PERFORM_CHARACTER_ORDER_DEFINITION = OperationDefinition(
     kind="perform_character_order",
     wire_command="perform_character_order",
+    project_wire_fields=_wire_character_order,
     version="1.0",
     interaction=ordinary_order(
         recipients=RecipientScope.CURRENT_SELECTION,
@@ -3836,6 +3945,7 @@ PERFORM_CHARACTER_ORDER_DEFINITION = OperationDefinition(
 RESPOND_TO_IMMEDIATE_THREAT_DEFINITION = OperationDefinition(
     kind="respond_to_immediate_threat",
     wire_command="move_in_direction",
+    project_wire_fields=_wire_direction,
     version="1.0",
     interaction=ordinary_order(
         recipients=RecipientScope.EXPLICIT_RECIPIENTS,
@@ -3883,6 +3993,7 @@ RESPOND_TO_IMMEDIATE_THREAT_DEFINITION = OperationDefinition(
 OPEN_CONTEXT_INVENTORY_DEFINITION = OperationDefinition(
     kind="open_context_inventory",
     wire_command="open_context_inventory",
+    project_wire_fields=_wire_target(),
     version="1.0",
     interaction=global_ui(
         recipients=RecipientScope.EXPLICIT_RECIPIENTS,
@@ -3929,6 +4040,7 @@ OPEN_CONTEXT_INVENTORY_DEFINITION = OperationDefinition(
 TRANSFER_ITEM_DEFINITION = OperationDefinition(
     kind="transfer_item",
     wire_command="transfer_item",
+    project_wire_fields=_wire_transfer,
     version="1.0",
     interaction=global_ui(
         recipients=RecipientScope.NONE,
@@ -3989,6 +4101,7 @@ TRANSFER_ITEM_DEFINITION = OperationDefinition(
 REGROUP_WITH_SQUAD_MEMBER_DEFINITION = OperationDefinition(
     kind="regroup_with_squad_member",
     wire_command="regroup_with_squad_member",
+    project_wire_fields=_wire_target(),
     version="1.0",
     interaction=ordinary_order(
         recipients=RecipientScope.EXPLICIT_RECIPIENTS,
@@ -4038,6 +4151,7 @@ REGROUP_WITH_SQUAD_MEMBER_DEFINITION = OperationDefinition(
 MOVE_IN_DIRECTION_DEFINITION = OperationDefinition(
     kind="move_in_direction",
     wire_command="move_in_direction",
+    project_wire_fields=_wire_direction,
     version="1.0",
     interaction=ordinary_order(
         recipients=RecipientScope.CURRENT_SELECTION,
@@ -4078,6 +4192,7 @@ MOVE_IN_DIRECTION_DEFINITION = OperationDefinition(
 TRAVEL_TO_MAP_DESTINATION_DEFINITION = OperationDefinition(
     kind="travel_to_map_destination",
     wire_command="travel_to_map_destination",
+    project_wire_fields=_wire_target("destination_id"),
     version="1.0",
     interaction=ordinary_order(
         recipients=RecipientScope.CURRENT_SELECTION,
@@ -4126,6 +4241,7 @@ TRAVEL_TO_MAP_DESTINATION_DEFINITION = OperationDefinition(
 SURVEY_LOCAL_RESOURCES_DEFINITION = OperationDefinition(
     kind="survey_local_resources",
     wire_command="survey_local_resources",
+    project_wire_fields=_wire_nothing,
     version="1.0",
     # A survey reads the world; it commands nobody, so it has no recipients.
     #
@@ -4186,6 +4302,7 @@ SURVEY_LOCAL_RESOURCES_DEFINITION = OperationDefinition(
 EXIT_CURRENT_BUILDING_DEFINITION = OperationDefinition(
     kind="exit_current_building",
     wire_command="exit_current_building",
+    project_wire_fields=_wire_nothing,
     version="1.0",
     interaction=ordinary_order(
         recipients=RecipientScope.CURRENT_SELECTION,
@@ -4230,6 +4347,7 @@ EXIT_CURRENT_BUILDING_DEFINITION = OperationDefinition(
 SHIFT_INTO_BODY_DEFINITION = OperationDefinition(
     kind="shift_into_body",
     wire_command="shift_into_body",
+    project_wire_fields=_wire_target(),
     version="1.0",
     interaction=ordinary_order(
         recipients=RecipientScope.NAMED_BODY,
@@ -4289,6 +4407,7 @@ SHIFT_INTO_BODY_DEFINITION = OperationDefinition(
 MOVE_TO_CHARACTER_DEFINITION = OperationDefinition(
     kind="move_to_character",
     wire_command="move_to_character",
+    project_wire_fields=_wire_target(),
     version="1.0",
     interaction=ordinary_order(
         recipients=RecipientScope.CURRENT_SELECTION,
