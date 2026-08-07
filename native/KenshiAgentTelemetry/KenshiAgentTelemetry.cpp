@@ -5468,37 +5468,17 @@ namespace
             }
         }
         json << "],";
-        // The selection half of the order question, on its own.
+        // `selection_orderable_tasks` was published here and has been removed.
         //
-        // `advertised_tasks` is an AND of two different questions -- "may this
-        // selection issue this order at all" and "does this order apply to that
-        // target" -- and when the answer disagreed with Kenshi's own right-click
-        // menu there was no way to tell which half was wrong. Kenshi offered
-        // ATTACK_ENEMIES and FOCUSED_MELEE_ATTACK on a cannibal and the probe
-        // offered KIDNAP_ORDER: nearly disjoint sets, one shared silence.
-        // Publishing the selection-level answer separately makes the two halves
-        // independently falsifiable instead of jointly unexplained.
-        json << "\"selection_orderable_tasks\":[";
-        if (player != NULL)
-        {
-            unsigned int vocabularyCount = 0;
-            const KenshiAgentTelemetry::TaskTypeVocabularyEntry* vocabulary =
-                KenshiAgentTelemetry::TaskTypeVocabulary(vocabularyCount);
-            bool firstSelectionTask = true;
-            for (unsigned int index = 0; index < vocabularyCount; ++index)
-            {
-                const TaskType task =
-                    static_cast<TaskType>(vocabulary[index].value);
-                if (!player->isOrderValidForSelection(task))
-                    continue;
-                if (!firstSelectionTask)
-                    json << ",";
-                firstSelectionTask = false;
-                json << "{\"value\":" << vocabulary[index].value
-                     << ",\"name\":\"" << vocabulary[index].name << "\"}";
-            }
-        }
-        json << "],";
+        // It existed to split the order question in half -- "may this selection
+        // issue this order at all" versus "does this order apply to that
+        // target" -- because a wrong combined answer was unattributable. It did
+        // its job in one live snapshot: `isOrderValidForSelection` returned true
+        // for all 291 vocabulary entries, so the selection half discriminates
+        // nothing and no call now consults it. Keeping the field meant
+        // serializing 291 entries every 500ms to re-answer a settled question.
+        // The finding survives in interaction_proof_status.json and beside
+        // `ProbeMenuOrders`, which is where a finding belongs.
         json << "\"prospect_survey\":";
         AppendProspectSurvey(json);
         json << ",";

@@ -6524,14 +6524,6 @@
           "title": "Nearby Entities",
           "type": "array"
         },
-        "selection_orderable_tasks": {
-          "items": {
-            "$ref": "#/$defs/AdvertisedTask"
-          },
-          "maxItems": 300,
-          "title": "Selection Orderable Tasks",
-          "type": "array"
-        },
         "world_targets": {
           "items": {
             "$ref": "#/$defs/WorldTarget"

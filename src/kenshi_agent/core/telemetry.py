@@ -1347,14 +1347,12 @@ class TelemetrySnapshot(StrictModel):
     # of open trades and must never confer current UI authority.
     active_shop_trader_count: int | None = Field(default=None, ge=0)
     nearby_entities: list[NearbyEntity] = Field(default_factory=list)
-    # Which orders this selection may issue at all, before any target is
-    # considered. Separate from a target's `advertised_tasks` on purpose: that
-    # field ANDs this question with "does the order apply to that target", and
-    # a disagreement with Kenshi's own context menu was unattributable while
-    # the two were fused.
-    selection_orderable_tasks: list[AdvertisedTask] = Field(
-        default_factory=list, max_length=300
-    )
+    # `selection_orderable_tasks` was published here and has been removed. It
+    # split the order question into "may this selection issue this order at
+    # all" and "does the order apply to that target", because a wrong combined
+    # answer was unattributable. One live snapshot settled it:
+    # `isOrderValidForSelection` returned true for all 291 vocabulary entries,
+    # so the selection half discriminates nothing and nothing consults it now.
     world_targets: list[WorldTarget] = Field(default_factory=list)
     # Every nearby object the discovery scan reached this snapshot, with what
     # Kenshi says it affords. Bounded and rotating, so this is a moving window
