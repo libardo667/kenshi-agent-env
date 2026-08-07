@@ -59,6 +59,7 @@ from .operation_definitions import (
     NATIVE_CHARACTER_ORDER_CAPABILITY,
     NATIVE_OPEN_CONTEXT_INVENTORY_CAPABILITY,
     NATIVE_SHIFT_BODY_CAPABILITY,
+    NATIVE_TRANSFER_CAPABILITY,
     NEARBY_ORDERABLE_TASKS_CAPABILITY,
     OPERATION_DEFINITIONS,
     SQUAD_REGROUP_ARRIVAL_DISTANCE,
@@ -894,6 +895,65 @@ def _inventory_owner_offers(observation: Observation) -> Iterable[AffordanceOffe
         )
 
 
+MAX_TRANSFERS_OFFERED = 24
+
+
+def _item_transfer_offers(observation: Observation) -> Iterable[AffordanceOffer]:
+    """Offer moving each item in each open inventory to each other open one.
+
+    Uncurated on purpose, in the same way orders are. Whether a given move is
+    allowed is Kenshi's judgment and Kenshi gives it in detail - no room, cannot
+    afford, that is mine, a thief was spotted - so enumerating the moves and
+    letting the engine refuse is more faithful than a Python rule that guesses
+    which ones are sensible. Looting, buying, selling and giving are not four
+    kinds of offer here; they are this offer with different owners.
+    """
+
+    telemetry = observation.telemetry
+    if telemetry is None or observation.control_mode is not ControlMode.NATIVE_ASSISTED:
+        return
+    if NATIVE_TRANSFER_CAPABILITY not in set(telemetry.capabilities):
+        return
+    inventories = telemetry.ui.open_inventories
+    if len(inventories) < 2:
+        return
+
+    offered = 0
+    for source in inventories:
+        for destination in inventories:
+            if destination.owner_id == source.owner_id:
+                continue
+            for section in source.sections:
+                for item in section.items:
+                    if offered >= MAX_TRANSFERS_OFFERED:
+                        return
+                    offered += 1
+                    yield _offer(
+                        observation,
+                        source=AffordanceSource.INVENTORY,
+                        semantic="transfer_item",
+                        description=(
+                            f"Move {item.item_name!r} from {source.owner_name!r} "
+                            f"to {destination.owner_name!r}. Kenshi decides "
+                            "whether it is allowed and says why not."
+                        ),
+                        operation_kind="transfer_item",
+                        target=AffordanceTarget(
+                            target_id=source.owner_id,
+                            label=f"{item.item_name} to {destination.owner_name}",
+                            kind="inventory_item",
+                        ),
+                        arguments={
+                            "source_owner_id": source.owner_id,
+                            "destination_owner_id": destination.owner_id,
+                            "section_name": section.name,
+                            "slot_x": item.x,
+                            "slot_y": item.y,
+                            "item_name": item.item_name,
+                        },
+                    )
+
+
 def _dialogue_target_offers(observation: Observation) -> Iterable[AffordanceOffer]:
     telemetry = observation.telemetry
     if telemetry is None or observation.control_mode is not ControlMode.NATIVE_ASSISTED:
@@ -1562,6 +1622,20 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
             "inventory is Kenshi's answer at dispatch, not a guess here."
         ),
         enumerate=_inventory_owner_offers,
+    ),
+    AffordanceAdapter(
+        name="item_transfers",
+        sources=frozenset({AffordanceSource.INVENTORY}),
+        operation_kinds=frozenset({"transfer_item"}),
+        denominator=(
+            "Every item in every open inventory, offered into every other open "
+            "inventory."
+        ),
+        completeness_boundary=(
+            "Bounded to the first few moves. Whether one is allowed is Kenshi's "
+            "answer at dispatch, reported in its own words."
+        ),
+        enumerate=_item_transfer_offers,
     ),
     AffordanceAdapter(
         name="dialogue_targets",

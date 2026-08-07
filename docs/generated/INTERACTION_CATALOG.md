@@ -18,15 +18,15 @@ repository, and every captured context-menu witness had exactly one
 character selected.
 
 ```text
-operations               36
-planner-visible          34
+operations               37
+planner-visible          35
 internal-only             2
-native commands          13
-manifest entries         37
+native commands          14
+manifest entries         38
 coverage proof          PASS
 
 PROOF STATUS
-  source_proven     14
+  source_proven     15
   unit_proven        0
   live_proven        1
   unproven          20
@@ -67,6 +67,7 @@ INTERACTION CONTRACT (resolved from the sole operation registry)
   shift_into_body                     ordinary_order     named_body          dispatch_only    world_outcome_observed  source_proven
   stop                                runtime_only       none                none             input_delivered         source_proven
   survey_local_resources              global_ui          none                none             world_outcome_observed  source_proven
+  transfer_item                       global_ui          none                none             world_outcome_observed  source_proven
   travel_to_map_destination           ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
   use_game_binding                    global_ui          none                ui_transaction   input_delivered         withheld
   wait                                runtime_only       none                none             input_delivered         source_proven
@@ -109,6 +110,7 @@ EXECUTION AND ROUTING
   shift_into_body                     atomic_handler     running_for_progress     shift_into_body            body_shift
   stop                                atomic_handler     any                      -                          runtime
   survey_local_resources              atomic_handler     any                      survey_local_resources     native_and_composite
+  transfer_item                       atomic_handler     paused_transaction       transfer_item              item_transfers
   travel_to_map_destination           monitored_option   running_for_progress     travel_to_map_destination  map
   use_game_binding                    atomic_handler     any                      -                          characters, game_bindings
   wait                                atomic_handler     running_for_progress     -                          runtime
@@ -126,6 +128,7 @@ NATIVE COMMAND ROUTES
   select_squad_member          -> select_squad_member
   shift_into_body              -> shift_into_body
   survey_local_resources       -> survey_local_resources
+  transfer_item                -> transfer_item
   travel_to_map_destination    -> travel_to_map_destination
 
 SEMANTIC SUBCASES

@@ -32,12 +32,12 @@ from ...core.operation import (
     ThreatResponseStrategy,
     TravelToMapDestinationAction,
 )
+from ...core.telemetry import ContextActionKind
 from ...core.transport import (
     ActionReceipt,
     CommandDispatchContext,
     Transition,
 )
-from ...core.telemetry import ContextActionKind
 from ...input_boundary import ExecutionToken
 from ...operation_definitions import BoundOperation
 from ...options import (

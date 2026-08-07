@@ -37,6 +37,7 @@ from ...core.operation import (
     PauseAction,
     PointerActionClass,
     SetSpeedAction,
+    TransferItemAction,
 )
 from ...core.telemetry import (
     ContextActionKind,
@@ -125,6 +126,32 @@ def _observes_inventory_owner(telemetry: TelemetrySnapshot, target_id: str) -> b
         or any(world.id == target_id for world in telemetry.world_targets)
         or any(found.id == target_id for found in telemetry.discovered_objects)
     )
+
+
+def _transfer_request_fields(
+    action: Action,
+    telemetry: TelemetrySnapshot,
+) -> dict[str, object]:
+    """The wire fields that make a request a transfer.
+
+    Both ends are proved open here rather than merely observed, because a slot
+    is only meaningful inside the inventory that reported it.
+    """
+
+    if not isinstance(action, TransferItemAction):
+        raise RuntimeError("A native transfer request requires a transfer_item action.")
+    held = {inventory.owner_id for inventory in telemetry.ui.open_inventories}
+    if action.source_owner_id not in held:
+        raise RuntimeError("Native transfer source inventory is not open.")
+    if action.destination_owner_id not in held:
+        raise RuntimeError("Native transfer destination inventory is not open.")
+    return {
+        "target_id": action.source_owner_id,
+        "destination_id": action.destination_owner_id,
+        "section_name": action.section_name,
+        "slot_x": action.slot_x,
+        "slot_y": action.slot_y,
+    }
 
 
 # Commands whose whole request is "this command, at that target". They differed
@@ -1448,6 +1475,14 @@ class KenshiControlSurface:
                 observation,
                 selected_ids,
                 target_id=target_id,
+            )
+        if wire_command == native_commands.NATIVE_TRANSFER_WIRE_COMMAND:
+            return self._native_request(
+                command,
+                wire_command,
+                observation,
+                selected_ids,
+                **_transfer_request_fields(action, telemetry),
             )
         if wire_command in _TARGET_ONLY_WIRE_COMMANDS:
             failure = _target_only_command_error(

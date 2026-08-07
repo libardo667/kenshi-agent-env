@@ -105,7 +105,9 @@ namespace KenshiAgentTelemetry
         : basedOnTelemetrySequence(0),
           bearingDegrees(0.0),
           distanceUnits(0.0),
-          minimumOutputQuantity(1)
+          minimumOutputQuantity(1),
+          slotX(0),
+          slotY(0)
     {
     }
 
@@ -113,6 +115,8 @@ namespace KenshiAgentTelemetry
         : bearingDegrees(0.0),
           distanceUnits(0.0),
           minimumOutputQuantity(1),
+          slotX(0),
+          slotY(0),
           basedOnTelemetrySequence(0),
           acknowledgedAtTelemetrySequence(0),
           acceptedAtTelemetrySequence(0),
@@ -156,6 +160,11 @@ namespace KenshiAgentTelemetry
                // than as three hand-written whitelists.
                command == "perform_character_order" ||
                command == "produce_resource_output" ||
+               // One transfer between two open inventories, wherever they came
+               // from. Kenshi adjudicates it and says why not, so looting,
+               // buying, selling, giving and harvesting are one command rather
+               // than five that each drive a mouse.
+               command == "transfer_item" ||
                command == "open_context_inventory";
     }
 
@@ -258,7 +267,11 @@ namespace KenshiAgentTelemetry
             "context_action",
             "bearing_degrees",
             "distance_units",
-            "minimum_output_quantity"
+            "minimum_output_quantity",
+            "destination_id",
+            "section_name",
+            "slot_x",
+            "slot_y"
         };
         static const char* const revisionKeys[] = {
             "telemetry_sequence",
@@ -289,6 +302,11 @@ namespace KenshiAgentTelemetry
                 root.get<double>("distance_units", 0.0);
             request.minimumOutputQuantity =
                 root.get<unsigned int>("minimum_output_quantity", 0);
+            request.destinationId =
+                root.get<std::string>("destination_id", "");
+            request.sectionName = root.get<std::string>("section_name", "");
+            request.slotX = root.get<int>("slot_x", -1);
+            request.slotY = root.get<int>("slot_y", -1);
             request.basedOnTelemetrySequence =
                 root.get<unsigned long long>(
                     "based_on_revision.telemetry_sequence",
@@ -311,7 +329,11 @@ namespace KenshiAgentTelemetry
                 request.targetId.size() > 200 ||
                 request.contextAction.size() > 80 ||
                 request.minimumOutputQuantity < 1 ||
-                request.minimumOutputQuantity > 5)
+                request.minimumOutputQuantity > 5 ||
+                request.destinationId.size() > 200 ||
+                request.sectionName.size() > 80 ||
+                request.slotX < 0 ||
+                request.slotY < 0)
             {
                 rejectionReason = "malformed_request";
                 return false;
@@ -487,6 +509,12 @@ namespace KenshiAgentTelemetry
              << acknowledgement.distanceUnits << ",";
         json << "\"minimum_output_quantity\":"
              << acknowledgement.minimumOutputQuantity << ",";
+        json << "\"destination_id\":\""
+             << JsonEscape(acknowledgement.destinationId) << "\",";
+        json << "\"section_name\":\""
+             << JsonEscape(acknowledgement.sectionName) << "\",";
+        json << "\"slot_x\":" << acknowledgement.slotX << ",";
+        json << "\"slot_y\":" << acknowledgement.slotY << ",";
         json << "\"selected_character_ids\":[";
         if (!acknowledgement.selectedCharacterIds.empty())
         {

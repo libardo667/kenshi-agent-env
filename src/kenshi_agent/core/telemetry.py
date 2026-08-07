@@ -1177,6 +1177,8 @@ the whole point.
 # `perform_character_order` names one of Kenshi's own task names, which is why
 # the field is shared rather than duplicated: both answer "which of this
 # target's advertised actions".
+NATIVE_TRANSFER_WIRE_COMMAND = "transfer_item"
+
 NATIVE_COMMANDS_NAMING_AN_ACTION: frozenset[str] = frozenset(
     {
         "perform_context_action",
@@ -1196,6 +1198,9 @@ NATIVE_COMMANDS_NAMING_A_TARGET: frozenset[str] = frozenset(
         "perform_character_order",
         "produce_resource_output",
         "open_context_inventory",
+        # Names the source inventory's owner. The destination and the slot ride
+        # in their own fields, because a transfer is addressed by both ends.
+        "transfer_item",
         # Diagnostic probe: names the exact body to move between platoons.
         "shift_body_platoon",
         # Names the exact body to become.
@@ -1214,6 +1219,8 @@ def require_consistent_wire_shape(
     distance_units: float,
     context_action: str,
     minimum_output_quantity: int,
+    destination_id: str = "",
+    section_name: str = "",
 ) -> None:
     """Reject a native request or acknowledgement whose fields contradict it."""
 
@@ -1242,6 +1249,22 @@ def require_consistent_wire_shape(
             raise ValueError(f"a {command} {subject} requires its named action")
     elif context_action:
         raise ValueError(f"only a {subject} that names an action may carry one")
+    # A transfer is addressed by both ends. Naming only the source would let one
+    # request stand for "move this item somewhere", which is not a thing Kenshi
+    # can be asked and not a thing an acknowledgement could be matched to.
+    if command == NATIVE_TRANSFER_WIRE_COMMAND:
+        if not destination_id:
+            raise ValueError(f"a {command} {subject} requires a destination")
+        if destination_id == target_id:
+            raise ValueError(
+                f"a {command} {subject} must name two different inventories"
+            )
+        if not section_name:
+            raise ValueError(f"a {command} {subject} requires a source section")
+    elif destination_id or section_name:
+        raise ValueError(
+            f"only a transfer {subject} may name a destination or a section"
+        )
     if command != "produce_resource_output" and minimum_output_quantity != 1:
         raise ValueError("only resource production may request a larger output quantity")
 
@@ -1271,6 +1294,10 @@ NativeWireCommand = Literal[
     "perform_character_order",
     "produce_resource_output",
     "open_context_inventory",
+    # One transfer between two open inventories, whatever owns them. Kenshi
+    # adjudicates it and says why not, so looting, buying, selling, giving and
+    # harvesting are one command rather than five that each drive a mouse.
+    "transfer_item",
     "survey_local_resources",
 ]
 
@@ -1289,6 +1316,15 @@ class NativeCommandAcknowledgement(StrictModel):
     # Retained in the acknowledgement so an adopted resource-production
     # command cannot silently satisfy a later request for a larger yield.
     minimum_output_quantity: int = Field(default=1, ge=1, le=5)
+    # A transfer names two inventories and one slot. `target_id` is the source
+    # owner; these are the rest of the address. Kenshi's own `RClickAutoTrade`
+    # takes a section name and an x/y, so a slot is how an item is named to the
+    # engine - unlike a cell label scraped off a widget, which names a picture
+    # of it.
+    destination_id: str = Field(default="", max_length=200)
+    section_name: str = Field(default="", max_length=80)
+    slot_x: int = Field(default=0, ge=0)
+    slot_y: int = Field(default=0, ge=0)
     selected_character_ids: list[str] = Field(min_length=1, max_length=64)
     based_on_telemetry_sequence: int = Field(ge=0)
     acknowledged_at_telemetry_sequence: int = Field(ge=0)
@@ -1312,6 +1348,8 @@ class NativeCommandAcknowledgement(StrictModel):
             distance_units=self.distance_units,
             context_action=str(self.context_action),
             minimum_output_quantity=self.minimum_output_quantity,
+            destination_id=self.destination_id,
+            section_name=self.section_name,
         )
 
         if self.status == NativeCommandStatus.REJECTED:

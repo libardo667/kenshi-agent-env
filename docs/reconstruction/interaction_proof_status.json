@@ -244,6 +244,18 @@
       "note": "Dispatched live on kae-04-funded-pair: stealth_knockout, unprovoked_focused_melee_attack, attack_enemies, player_talk_to and loot_target each reached goal adoption and finished on context_task_started, none of them a verb written into this repo. Kenshi's own state reasoning arrived with them -- measured live, an unconscious bandit advertised LOOT_TARGET, LIFT_PERSON_PLAYER_ORDER and FIRST_AID_ORDER and no attack, while a conscious one advertised UNPROVOKED_FOCUSED_MELEE_ATTACK and no looting. Both probes earned their place: the knockout that created the lootable body came from the odds getter, and the looting from the menu. The probe budget means an unprobed person reports advertised_tasks_probed false, and both the binding and the affordance treat that as unknown rather than empty. A dispatch whose probe could not run is refused as order_probe_unavailable rather than context_action_unavailable, so 'Kenshi withdrew this order' stays distinct from 'nobody could ask'. Two gaps remain, both past the order rather than in it: roughly a third of orders finish as movement_stalled because the ordered character cannot path to the target, and the order is terminal at goal adoption, so nothing observes the looting that follows -- with the loot window open the agent had no affordance to take anything and waited for a completion no field reports."
     },
     {
+      "operation_kind": "transfer_item",
+      "proof_status": "source_proven",
+      "evidence": [
+        "KenshiAgentTelemetry.cpp transfer_item: resolves both owners to handles, requires both inventory windows open, and calls InventoryGUI::RClickAutoTrade(section, x, y, destination, thieveryChecks, first) -- the engine's own right-click transfer, which the five operations it replaces each simulated with a mouse",
+        "The verdict is Kenshi's and is reported verbatim rather than collapsed into success or failure: ok, no_room, cant_afford, shopkeeper_cant_afford, cant_wear_item, incompatible_item, locked, thief_detected, selling_stolen_item_detected, thats_mine, target_conscious, smuggling_only, illegal_goods, uniforms, container_not_empty. Inventing a coarser vocabulary on top of a finer one is how selection_mismatch came to mean six conditions",
+        "Conservation is measured across the call rather than inferred from the verdict: a permitted transfer that moved nothing terminates as permitted_without_moving rather than as success, because an engine answering OK has said the transfer was allowed, not that an item moved",
+        "The slot is the address. RClickAutoTrade takes a section name and an x/y, and UIState.open_inventories exports exactly that per item, so no cell label is scraped from a MyGUI widget and no pointer is used at all",
+        "pointer_actions is 0. The operations this subsumes spend 23 pointer actions between them, 12 of those in harvest_resource alone"
+      ],
+      "note": "Not yet dispatched live. Requires two inventories open at once, which is why opening one no longer refuses because another already is. Binding proves both inventories open, the section present, and the named item still in its slot, since position alone is not identity."
+    },
+    {
       "operation_kind": "stop",
       "proof_status": "source_proven",
       "evidence": [

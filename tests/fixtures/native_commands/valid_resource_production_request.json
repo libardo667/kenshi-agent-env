@@ -17,5 +17,9 @@
   "context_action": "",
   "bearing_degrees": 0.0,
   "distance_units": 0.0,
-  "minimum_output_quantity": 5
+  "minimum_output_quantity": 5,
+  "destination_id": "",
+  "section_name": "",
+  "slot_x": 0,
+  "slot_y": 0
 }

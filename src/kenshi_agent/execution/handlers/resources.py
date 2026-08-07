@@ -37,6 +37,7 @@ from ...core.operation import (
     PerformContextAction,
     ProduceResourceOutputAction,
     SetSpeedAction,
+    TransferItemAction,
     UseGameBindingAction,
 )
 from ...core.telemetry import (
@@ -97,6 +98,10 @@ class ResourceMechanicsPort(Protocol):
     ) -> Transition: ...
 
     async def collect_resource_output(
+        self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
+    ) -> Transition: ...
+
+    async def transfer_item(
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
     ) -> Transition: ...
 
@@ -990,6 +995,10 @@ def resource_handlers(
             port.open_context_inventory,
             verify_native_terminal=True,
         ),
+        "resources.transfer_item": AtomicMovementHandler(
+            port.transfer_item,
+            verify_native_terminal=True,
+        ),
         "resources.harvest_resource": HarvestHandler(
             port,
             authority,
@@ -1089,6 +1098,16 @@ class KenshiResourceMechanics:
             receipt=self._execute_context_inventory_operation,
         )
 
+    async def transfer_item(
+        self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
+    ) -> Transition:
+        return await self._surface.run_exact(
+            action,
+            command=command,
+            token=token,
+            receipt=self._execute_transfer_operation,
+        )
+
     async def collect_resource_output(
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
     ) -> Transition:
@@ -1118,6 +1137,15 @@ class KenshiResourceMechanics:
     ) -> ActionReceipt:
         return await self._execute_produce_resource_output(
             cast(ProduceResourceOutputAction, action),
+            started,
+            await self._surface.require_command(command),
+        )
+
+    async def _execute_transfer_operation(
+        self, action: Action, started: datetime, command: CommandDispatchContext | None
+    ) -> ActionReceipt:
+        return await self._execute_transfer_item(
+            cast(TransferItemAction, action),
             started,
             await self._surface.require_command(command),
         )
@@ -1244,6 +1272,46 @@ class KenshiResourceMechanics:
             require_vendor_role=False,
             semantic=semantic,
             wire_command=native_commands.NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND,
+            require_dialogue_target=False,
+            accepted_is_terminal_error=True,
+        )
+
+    async def _execute_transfer_item(
+        self,
+        action: TransferItemAction,
+        started: datetime,
+        command: CommandDispatchContext,
+    ) -> ActionReceipt:
+        """Move one item between two open inventories, with no pointer at all.
+
+        The five operations this replaces each drove a mouse over a cell.
+        Kenshi's own `RClickAutoTrade` takes a section and a slot, performs the
+        move, and returns why not when it refuses - so the terminal reason here
+        is the engine's word, and success additionally requires that something
+        actually moved rather than merely being permitted.
+        """
+
+        semantic = SemanticActionReceipt(
+            action_kind=action.kind,
+            contract_version=operations.TRANSFER_ITEM_DEFINITION.version,
+            target_id=action.source_owner_id,
+            resolved_label=f"{action.item_name} to {action.destination_owner_id}",
+            source_revision=command.based_on_revision,
+            revalidation=(
+                "Re-proved both inventories open and the named item still in its "
+                "slot, then let Kenshi adjudicate the transfer and report its own "
+                "verdict."
+            ),
+        )
+        return await self._surface.run_native_order(
+            action,
+            started,
+            command,
+            target_id=action.source_owner_id,
+            pulse_seconds=self._surface.controls_config.native_movement_pulse_seconds,
+            require_vendor_role=False,
+            semantic=semantic,
+            wire_command=native_commands.NATIVE_TRANSFER_WIRE_COMMAND,
             require_dialogue_target=False,
             accepted_is_terminal_error=True,
         )

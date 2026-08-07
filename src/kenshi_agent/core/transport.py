@@ -130,6 +130,15 @@ class NativeCommandRequest(StrictModel):
     bearing_degrees: float = Field(default=0.0, ge=0.0, lt=360.0)
     distance_units: float = Field(default=0.0, ge=0.0, le=2000.0)
     minimum_output_quantity: int = Field(default=1, ge=1, le=5)
+    # A transfer names two inventories and one slot. `target_id` is the source
+    # owner; these are the rest of the address. Kenshi's own `RClickAutoTrade`
+    # takes a section name and an x/y, so a slot is how an item is named to the
+    # engine - unlike a cell label scraped off a widget, which names a picture
+    # of it.
+    destination_id: str = Field(default="", max_length=200)
+    section_name: str = Field(default="", max_length=80)
+    slot_x: int = Field(default=0, ge=0)
+    slot_y: int = Field(default=0, ge=0)
 
     @model_validator(mode="after")
     def validate_native_fences(self) -> NativeCommandRequest:
@@ -149,6 +158,8 @@ class NativeCommandRequest(StrictModel):
             distance_units=self.distance_units,
             context_action=str(self.context_action),
             minimum_output_quantity=self.minimum_output_quantity,
+            destination_id=self.destination_id,
+            section_name=self.section_name,
         )
         return self
 

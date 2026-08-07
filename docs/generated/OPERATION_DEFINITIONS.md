@@ -12,10 +12,10 @@ Internal-only definitions are controller phases or runtime operations;
 they still bind through this registry but are not planner-visible offers.
 
 ```text
-definitions             36
-adapter operation kinds  34
-adapter routes           35
-adapters                 13
+definitions             37
+adapter operation kinds  35
+adapter routes           36
+adapters                 14
 ownership proof         PASS
 
 DEFINITIONS
@@ -52,6 +52,7 @@ DEFINITIONS
   shift_into_body                     movement.shift_into_body                                ShiftIntoBodyAction [body_shift]
   stop                                runtime.stop                                            StopAction [runtime]
   survey_local_resources              movement.survey_local_resources                         SurveyLocalResourcesAction [native_and_composite]
+  transfer_item                       resources.transfer_item                                 TransferItemAction [item_transfers]
   travel_to_map_destination           movement.travel_to_map_destination                      TravelToMapDestinationAction [map]
   use_game_binding                    screens.use_game_binding                                UseGameBindingAction [characters, game_bindings]
   wait                                runtime.wait                                            WaitAction [runtime]
@@ -65,6 +66,7 @@ SOURCE-SPECIFIC COMPLETENESS BOUNDARIES
   body_shift: Native-assisted stable identity and nearby-character evidence; a body outside the reported radius cannot be offered and a hostile one is deliberately withheld.
   character_orders: Bounded by the native probe budget: the nearest few people are asked what they afford, and the rest report that they were not asked.
   inventory_owners: Bounded to the nearest few owners. Whether one really has an inventory is Kenshi's answer at dispatch, not a guess here.
+  item_transfers: Bounded to the first few moves. Whether one is allowed is Kenshi's answer at dispatch, reported in its own words.
   dialogue_targets: Native-assisted stable identity and dialogue-role evidence.
   inventory: Transactions require unambiguous counterpart identity and conservation evidence. Equip currently proves exact delivery, not final equipment state.
   characters: Offers require the source-specific selection, identity, geometry, and safety facts.

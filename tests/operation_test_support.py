@@ -48,6 +48,7 @@ _EXACT_METHODS = frozenset(
         "perform_character_order",
         "perform_context_action",
         "produce_resource_output",
+        "transfer_item",
         "purchase_item",
         "recover_camera_view",
         "regroup_with_squad_member",

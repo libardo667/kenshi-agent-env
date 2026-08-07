@@ -49,6 +49,7 @@ namespace KenshiAgentTelemetry
             "control.survey_local_resources",
             "control.produce_resource_output",
             "control.open_context_inventory",
+            "control.transfer_item",
             "control.shift_into_body",
             "control.perform_character_order",
             "identity.stable_handles",

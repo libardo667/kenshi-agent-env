@@ -72,6 +72,7 @@
         "perform_character_order",
         "produce_resource_output",
         "open_context_inventory",
+        "transfer_item",
         "survey_local_resources"
       ],
       "title": "Command",
@@ -140,6 +141,30 @@
       "maximum": 5,
       "minimum": 1,
       "title": "Minimum Output Quantity",
+      "type": "integer"
+    },
+    "destination_id": {
+      "default": "",
+      "maxLength": 200,
+      "title": "Destination Id",
+      "type": "string"
+    },
+    "section_name": {
+      "default": "",
+      "maxLength": 80,
+      "title": "Section Name",
+      "type": "string"
+    },
+    "slot_x": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Slot X",
+      "type": "integer"
+    },
+    "slot_y": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Slot Y",
       "type": "integer"
     }
   },

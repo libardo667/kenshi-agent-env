@@ -1361,6 +1361,64 @@
       "title": "ThreatResponseStrategy",
       "type": "string"
     },
+    "TransferItemAction": {
+      "additionalProperties": false,
+      "description": "Move one item between two open inventories, whatever owns them.\n\nLooting a body, buying from a shop, handing something to a squadmate and\nemptying a mining crate are the same act with different owners, and Kenshi\nalready knows it: `InventoryGUI::RClickAutoTrade` performs all four and\nreturns why not when it refuses. This project had five separate operations\nfor them, all driving a mouse, one of them costing twelve pointer actions.\n\nThe slot is the address. Kenshi's transfer takes a section name and an x/y,\nso `(section_name, slot_x, slot_y)` names the item to the engine - unlike a\ncell label read off a widget, which names a picture of it.",
+      "properties": {
+        "kind": {
+          "const": "transfer_item",
+          "default": "transfer_item",
+          "title": "Kind",
+          "type": "string"
+        },
+        "source_owner_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Source Owner Id",
+          "type": "string"
+        },
+        "destination_owner_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Destination Owner Id",
+          "type": "string"
+        },
+        "section_name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Section Name",
+          "type": "string"
+        },
+        "slot_x": {
+          "maximum": 64,
+          "minimum": 0,
+          "title": "Slot X",
+          "type": "integer"
+        },
+        "slot_y": {
+          "maximum": 64,
+          "minimum": 0,
+          "title": "Slot Y",
+          "type": "integer"
+        },
+        "item_name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Item Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_owner_id",
+        "destination_owner_id",
+        "section_name",
+        "slot_x",
+        "slot_y",
+        "item_name"
+      ],
+      "title": "TransferItemAction",
+      "type": "object"
+    },
     "TravelToMapDestinationAction": {
       "additionalProperties": false,
       "description": "Travel to one exact settlement marker already known to the player.\n\nNative code re-resolves the discovered marker, chooses Kenshi's waypoint,\nissues one pathing order, and owns camera follow and arrival. The planner\nnever supplies map coordinates or re-authors movement pulses.",
@@ -1509,6 +1567,9 @@
     },
     {
       "$ref": "#/$defs/OpenContextInventoryAction"
+    },
+    {
+      "$ref": "#/$defs/TransferItemAction"
     },
     {
       "$ref": "#/$defs/HarvestResourceAction"

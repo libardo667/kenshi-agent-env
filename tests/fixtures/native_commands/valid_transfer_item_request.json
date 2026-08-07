@@ -1,25 +1,25 @@
 {
   "schema_version": "1.2",
-  "command_id": "cmd-11111111111111111111111111111111",
-  "command": "exit_current_building",
+  "command_id": "cmd-66666666666666666666666666666666",
+  "command": "transfer_item",
   "control_mode": "native_assisted",
   "identity_session_id": "session-0000000000000001-0000000000000001",
   "based_on_revision": {
-    "telemetry_sequence": 15,
+    "telemetry_sequence": 42,
     "frame_sequence": null,
     "capability_epoch": 2,
-    "observed_at_monotonic": 16.0
+    "observed_at_monotonic": 123.5
   },
   "selected_character_ids": [
     "entity-selected"
   ],
-  "target_id": "",
+  "target_id": "entity-source-owner",
   "context_action": "",
   "bearing_degrees": 0.0,
   "distance_units": 0.0,
   "minimum_output_quantity": 1,
-  "destination_id": "",
-  "section_name": "",
-  "slot_x": 0,
-  "slot_y": 0
+  "destination_id": "entity-destination-owner",
+  "section_name": "main",
+  "slot_x": 2,
+  "slot_y": 1
 }

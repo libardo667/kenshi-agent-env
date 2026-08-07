@@ -39,6 +39,14 @@ namespace KenshiAgentTelemetry
         double bearingDegrees;
         double distanceUnits;
         unsigned int minimumOutputQuantity;
+        // A transfer names two inventories and one slot. `targetId` is the
+        // source owner; these are the rest of the address. Kenshi's own
+        // `RClickAutoTrade` takes a section name and an x/y, so a slot is how
+        // an item is named to the engine.
+        std::string destinationId;
+        std::string sectionName;
+        int slotX;
+        int slotY;
     };
 
     struct NativeCommandAcknowledgement
@@ -54,6 +62,14 @@ namespace KenshiAgentTelemetry
         double bearingDegrees;
         double distanceUnits;
         unsigned int minimumOutputQuantity;
+        // A transfer names two inventories and one slot. `targetId` is the
+        // source owner; these are the rest of the address. Kenshi's own
+        // `RClickAutoTrade` takes a section name and an x/y, so a slot is how
+        // an item is named to the engine.
+        std::string destinationId;
+        std::string sectionName;
+        int slotX;
+        int slotY;
         std::vector<std::string> selectedCharacterIds;
         // Retained as a compatibility convenience for singular fixtures.
         std::string selectedCharacterId;

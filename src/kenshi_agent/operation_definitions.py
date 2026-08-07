@@ -58,6 +58,7 @@ from .core.operation import (
     OpenContextInventoryAction,
     OpenScreenAction,
     PauseAction,
+    PerformCharacterOrderAction,
     PerformContextAction,
     PointerActionClass,
     ProduceResourceOutputAction,
@@ -73,11 +74,11 @@ from .core.operation import (
     SelectSquadMemberExactAction,
     SellItemAction,
     SetSpeedAction,
-    PerformCharacterOrderAction,
     ShiftIntoBodyAction,
     StopAction,
     SurveyLocalResourcesAction,
     ThreatResponseStrategy,
+    TransferItemAction,
     TravelToMapDestinationAction,
     UseGameBindingAction,
     WaitAction,
@@ -141,6 +142,7 @@ NATIVE_CONTEXT_TARGETS_CAPABILITY = "world.context_targets"
 WORLD_CONTEXT_TARGET_SCREEN_POSITIONS_CAPABILITY = "world.context_target_screen_positions"
 NATIVE_PRODUCE_RESOURCE_CAPABILITY = "control.produce_resource_output"
 NATIVE_OPEN_CONTEXT_INVENTORY_CAPABILITY = "control.open_context_inventory"
+NATIVE_TRANSFER_CAPABILITY = "control.transfer_item"
 
 # The one mapping from a control capability to the native command it authorizes.
 # A capability is the permission; the command is the thing performed with it.
@@ -164,6 +166,7 @@ WIRE_COMMAND_BY_CONTROL_CAPABILITY: dict[str, str] = {
     NATIVE_CHARACTER_ORDER_CAPABILITY: "perform_character_order",
     NATIVE_PRODUCE_RESOURCE_CAPABILITY: "produce_resource_output",
     NATIVE_OPEN_CONTEXT_INVENTORY_CAPABILITY: "open_context_inventory",
+    NATIVE_TRANSFER_CAPABILITY: "transfer_item",
     NATIVE_SHIFT_BODY_CAPABILITY: "shift_into_body",
     NATIVE_RESOURCE_SURVEY_CAPABILITY: "survey_local_resources",
 }
@@ -1474,6 +1477,99 @@ def bind_open_context_inventory(
         resolved_label=label,
         source_revision=observation.world_revision,
     )
+
+
+def bind_transfer_item(
+    action: Action,
+    observation: Observation,
+) -> BoundNamedTarget | BindingFailure:
+    """Bind one item in one open inventory slot to one open destination.
+
+    Both inventories must currently be open and both must be reported, because
+    the slot is only meaningful inside the inventory that reported it. What is
+    deliberately *not* decided here is whether the transfer is allowed: Kenshi
+    answers that, and answers it in detail - no room, cannot afford, that is
+    mine, a thief was spotted, the container is not empty. Re-deriving a coarser
+    version of that judgment in Python is how a fenced operation ends up
+    refusing things the game would have permitted.
+    """
+
+    if not isinstance(action, TransferItemAction):
+        return _unbound("Action is not a transfer_item action.")
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return _unbound("No telemetry is available to bind the transfer.")
+    if observation.telemetry_stale:
+        return _unbound("Telemetry is stale, so the transfer cannot be bound.")
+    if not telemetry.ui.open_inventories_complete:
+        return _unbound(
+            "The open-inventory export is incomplete, so the source and "
+            "destination cannot both be proved open."
+        )
+    held = {inventory.owner_id: inventory for inventory in telemetry.ui.open_inventories}
+    source = held.get(action.source_owner_id)
+    destination = held.get(action.destination_owner_id)
+    if source is None:
+        return _unbound(
+            f"The inventory of {action.source_owner_id!r} is not currently open; "
+            "open it before transferring out of it."
+        )
+    if destination is None:
+        return _unbound(
+            f"The inventory of {action.destination_owner_id!r} is not currently "
+            "open; open it before transferring into it."
+        )
+    sections = {section.name: section for section in source.sections}
+    section = sections.get(action.section_name)
+    if section is None:
+        return _unbound(
+            f"{source.owner_name!r} has no section {action.section_name!r}. "
+            f"Sections: {', '.join(sorted(sections)) or 'none reported'}."
+        )
+    slot = next(
+        (
+            item
+            for item in section.items
+            if item.x == action.slot_x and item.y == action.slot_y
+        ),
+        None,
+    )
+    if slot is None:
+        return _unbound(
+            f"No item sits at ({action.slot_x}, {action.slot_y}) in "
+            f"{action.section_name!r} of {source.owner_name!r}."
+        )
+    if slot.item_name != action.item_name:
+        # Position alone is not identity. An inventory that shifted between the
+        # offer and the dispatch would otherwise transfer whatever moved into
+        # that slot.
+        return _unbound(
+            f"({action.slot_x}, {action.slot_y}) in {action.section_name!r} now "
+            f"holds {slot.item_name!r}, not {action.item_name!r}."
+        )
+    return BoundNamedTarget(
+        reason=(
+            f"Bound {slot.item_name!r} at ({action.slot_x}, {action.slot_y}) in "
+            f"{action.section_name!r} of {source.owner_name!r} for transfer to "
+            f"{destination.owner_name!r}. Whether Kenshi permits it is Kenshi's "
+            "answer at dispatch."
+        ),
+        target_id=action.source_owner_id,
+        resolved_label=f"{slot.item_name} to {destination.owner_name}",
+        source_revision=observation.world_revision,
+    )
+
+
+def transfer_item_is_currently_authorable(observation: Observation) -> bool:
+    """Whether two inventories are open with something in one of them."""
+
+    telemetry = observation.telemetry
+    if telemetry is None or observation.telemetry_stale:
+        return False
+    inventories = telemetry.ui.open_inventories
+    if len(inventories) < 2:
+        return False
+    return any(section.items for inventory in inventories for section in inventory.sections)
 
 
 def context_inventory_is_currently_authorable(observation: Observation) -> bool:
@@ -3833,6 +3929,65 @@ OPEN_CONTEXT_INVENTORY_DEFINITION = OperationDefinition(
 )
 
 
+TRANSFER_ITEM_DEFINITION = OperationDefinition(
+    kind="transfer_item",
+    version="1.0",
+    interaction=global_ui(
+        recipients=RecipientScope.NONE,
+        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
+        selection=SelectionDependency.NONE,
+        playback=PlaybackRequirement.PAUSED_TRANSACTION,
+    ),
+    operation_type=TransferItemAction,
+    summary=(
+        "Move one item between two open inventories, whatever owns them. "
+        "Looting a body, buying from a shop, handing something to a squadmate "
+        "and emptying a crate are the same act with different owners, and "
+        "Kenshi performs all four through one call. Open both inventories "
+        "first, then name the source slot. Whether the transfer is allowed is "
+        "Kenshi's answer, reported verbatim: no_room, cant_afford, thats_mine, "
+        "thief_detected, locked, container_not_empty and the rest. Success "
+        "requires an observed move, not merely a permitted one."
+    ),
+    argument_source=(
+        "Copy source_owner_id and destination_owner_id from open_inventories, "
+        "and section_name, slot_x, slot_y, item_name from one item in the "
+        "source's own sections."
+    ),
+    allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset(
+        {
+            NATIVE_TRANSFER_CAPABILITY,
+            "ui.inventory",
+            "identity.stable_handles",
+        }
+    ),
+    capability_aliases=frozenset(),
+    # No pointer at all. The five operations this replaces spent twenty-three
+    # pointer actions between them, twelve of those in `harvest_resource`.
+    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
+    native_assisted=True,
+    risk=OperationRisk(native_assisted_actions=1),
+    max_primitive_actions=4,
+    reference_fields=(
+        "source_owner_id",
+        "destination_owner_id",
+        "section_name",
+        "slot_x",
+        "slot_y",
+        "item_name",
+    ),
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=OperationExecution.ATOMIC_HANDLER,
+    receipt_kind="semantic_item_transfer",
+    bind=bind_transfer_item,
+    handler_key="resources.transfer_item",
+    controller_verified=True,
+    native_terminal_success_reasons=frozenset({"item_transferred"}),
+    authorable_when=transfer_item_is_currently_authorable,
+)
+
+
 REGROUP_WITH_SQUAD_MEMBER_DEFINITION = OperationDefinition(
     kind="regroup_with_squad_member",
     version="1.0",
@@ -4665,6 +4820,7 @@ OPERATION_DEFINITION_LIST: tuple[OperationDefinition, ...] = (
     PERFORM_CHARACTER_ORDER_DEFINITION,
     RESPOND_TO_IMMEDIATE_THREAT_DEFINITION,
     OPEN_CONTEXT_INVENTORY_DEFINITION,
+    TRANSFER_ITEM_DEFINITION,
     REGROUP_WITH_SQUAD_MEMBER_DEFINITION,
     MOVE_TO_CHARACTER_DEFINITION,
     SHIFT_INTO_BODY_DEFINITION,

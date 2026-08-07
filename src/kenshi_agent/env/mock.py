@@ -282,6 +282,7 @@ class MockOperationPort:
     rotate_camera = _record
     scroll_screen = _record
     select_squad_member = _record
+    transfer_item = _record
     select_squad_member_exact = _record
     sell_item = _record
     shift_into_body = _record

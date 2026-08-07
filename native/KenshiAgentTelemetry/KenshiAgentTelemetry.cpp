@@ -726,6 +726,14 @@ namespace
         acknowledgement.distanceUnits = request.distanceUnits;
         acknowledgement.minimumOutputQuantity =
             request.minimumOutputQuantity;
+        // Echoed so an acknowledgement carries everything that identifies its
+        // request. A transfer is named by two owners and a slot, and matching
+        // on the source alone would let one transfer satisfy a wait for another
+        // out of the same inventory.
+        acknowledgement.destinationId = request.destinationId;
+        acknowledgement.sectionName = request.sectionName;
+        acknowledgement.slotX = request.slotX;
+        acknowledgement.slotY = request.slotY;
         acknowledgement.selectedCharacterId =
             request.selectedCharacterId;
         acknowledgement.selectedCharacterIds =
@@ -2811,6 +2819,76 @@ namespace
         json << "\"open_inventories_complete\":" << JsonBool(complete) << ",";
     }
 
+    // Kenshi's own word for how a transfer went.
+    //
+    // Reported verbatim rather than collapsed into success or failure. The
+    // engine already distinguishes "no room" from "cannot afford" from "that is
+    // mine" from "a thief was spotted", and every one of those is a different
+    // thing for a planner to do next. Inventing a coarser vocabulary on top of
+    // a finer one is how `selection_mismatch` came to mean six conditions.
+    const char* TradeResultName(InventoryGUI::TradeResult::Enum value)
+    {
+        switch (value)
+        {
+        case InventoryGUI::TradeResult::OK: return "ok";
+        case InventoryGUI::TradeResult::OUT_OF_RANGE: return "out_of_range";
+        case InventoryGUI::TradeResult::NO_ROOM: return "no_room";
+        case InventoryGUI::TradeResult::CANT_AFFORD: return "cant_afford";
+        case InventoryGUI::TradeResult::CANT_AFFORD_SHOPKEPPER:
+            return "shopkeeper_cant_afford";
+        case InventoryGUI::TradeResult::CANT_WEAR_ITEM: return "cant_wear_item";
+        case InventoryGUI::TradeResult::INCOMPATIBLE_ITEM:
+            return "incompatible_item";
+        case InventoryGUI::TradeResult::LOCKED: return "locked";
+        case InventoryGUI::TradeResult::THIEF_DETECTED: return "thief_detected";
+        case InventoryGUI::TradeResult::SELLING_STOLEN_ITEM_DETECTED:
+            return "selling_stolen_item_detected";
+        case InventoryGUI::TradeResult::ERROR_ITEM_POSITION:
+            return "bad_item_position";
+        case InventoryGUI::TradeResult::ERROR_INVALID: return "invalid";
+        case InventoryGUI::TradeResult::ERROR_THATS_MINE: return "thats_mine";
+        case InventoryGUI::TradeResult::ERROR_TARGET_CONSCIOUS:
+            return "target_conscious";
+        case InventoryGUI::TradeResult::SMUGGLING_ONLY: return "smuggling_only";
+        case InventoryGUI::TradeResult::ILLEGAL_GOODS: return "illegal_goods";
+        case InventoryGUI::TradeResult::UNIFORMS: return "uniforms";
+        case InventoryGUI::TradeResult::CONTAINER_NOT_EMPTY:
+            return "container_not_empty";
+        default: return "unknown_trade_result";
+        }
+    }
+
+    typedef InventoryGUI::TradeResult (*RClickAutoTradeFunction)(
+        InventoryGUI*,
+        const std::string&,
+        int,
+        int,
+        InventoryGUI*,
+        bool,
+        bool);
+
+    // `RClickAutoTrade` is the right-click transfer, and the five item
+    // operations in this project simulate it with a mouse.
+    //
+    // The header marks it protected, but KenshiLib exports its stub mangled as
+    // public (`?RClickAutoTrade@InventoryGUI@@QEAA...`), so the symbol is
+    // reachable; only C++ access control is in the way. A derived class may
+    // name a protected member of its base, which is all this exists to do. It
+    // is never constructed -- the destructor is left undefined so that trying
+    // would not link.
+    struct InventoryTradeReach : public InventoryGUI
+    {
+        static RClickAutoTradeFunction Resolve()
+        {
+            return reinterpret_cast<RClickAutoTradeFunction>(
+                KenshiLib::GetRealAddress(
+                    &InventoryTradeReach::RClickAutoTrade));
+        }
+
+    private:
+        ~InventoryTradeReach();
+    };
+
     void AppendSelectedInventoryFit(
         std::ostringstream& json,
         Item* item,
@@ -3890,6 +3968,7 @@ namespace
             request.command == "produce_resource_output";
         const bool isContextInventory =
             request.command == "open_context_inventory";
+        const bool isTransfer = request.command == "transfer_item";
         const bool isResourceSurvey =
             request.command == "survey_local_resources";
         const bool isBodyShiftProbe =
@@ -3899,7 +3978,8 @@ namespace
         if (isBodyShift || isBodyShiftProbe || isApproach || isMove || isSquadSelection || isSquadRegroup ||
             isDirection || isMapTravel || isBuildingExit || isContextAction ||
             isCharacterOrder ||
-            isResourceProduction || isContextInventory || isResourceSurvey)
+            isResourceProduction || isContextInventory || isResourceSurvey ||
+            isTransfer)
             g_lastNativeCommand = request.command;
         if (!isApproach &&
             !isMove &&
@@ -3913,6 +3993,7 @@ namespace
             !isResourceProduction &&
             !isContextInventory &&
             !isResourceSurvey &&
+            !isTransfer &&
             !isBodyShiftProbe &&
             !isBodyShift)
         {
@@ -4442,6 +4523,125 @@ namespace
                     : "issued";
             g_lastNativeCommandTarget = target->getName();
             g_lastNativeCommandTargetId = request.targetId;
+            return;
+        }
+
+        if (isTransfer)
+        {
+            // One item, one slot, between two open inventories -- whatever owns
+            // them. This is the whole of looting, buying, selling, giving and
+            // harvesting: five operations in this project each simulated it
+            // with a mouse, and `harvest_resource` spent twelve pointer actions
+            // doing so.
+            //
+            // Kenshi adjudicates it. `RClickAutoTrade` returns a `TradeResult`
+            // that already separates "no room" from "cannot afford" from "that
+            // is mine" from "a thief was spotted", so the reason reported here
+            // is the engine's word rather than a coarser one invented above it.
+            if (gui == NULL || gui->inDialogue() || gui->hasModalMessage())
+            {
+                RejectNativeCommand(request, "conflicting_modal_open");
+                return;
+            }
+            hand sourceHandle;
+            hand destinationHandle;
+            if (!FindExactOwnerHandle(player, request.targetId, sourceHandle) ||
+                !FindExactOwnerHandle(
+                    player, request.destinationId, destinationHandle))
+            {
+                RejectNativeCommand(request, "target_lifetime_changed");
+                return;
+            }
+            InventoryGUI* source = gui->getInventoryWindow(sourceHandle);
+            InventoryGUI* destination =
+                gui->getInventoryWindow(destinationHandle);
+            if (source == NULL || destination == NULL)
+            {
+                // Both windows have to be open, which is why opening one no
+                // longer refuses because another already is.
+                RejectNativeCommand(request, "inventory_not_open");
+                return;
+            }
+            if (source == destination)
+            {
+                RejectNativeCommand(request, "same_inventory");
+                return;
+            }
+            Inventory* sourceInventory = source->getInventory();
+            Inventory* destinationInventory = destination->getInventory();
+            if (sourceInventory == NULL || destinationInventory == NULL)
+            {
+                RejectNativeCommand(request, "inventory_not_open");
+                return;
+            }
+            InventorySection* section =
+                sourceInventory->getSection(request.sectionName);
+            if (section == NULL)
+            {
+                RejectNativeCommand(request, "section_absent");
+                return;
+            }
+            Item* item = section->getItemAt(request.slotX, request.slotY);
+            if (item == NULL || !item->isValid())
+            {
+                RejectNativeCommand(request, "slot_empty");
+                return;
+            }
+            // Conservation, measured across the call rather than inferred from
+            // its verdict. An engine that answers OK has said the transfer was
+            // permitted, not that an item moved, and those are separable -- the
+            // operation this replaces already knew that a click receipt is
+            // never enough.
+            const unsigned int destinationBefore =
+                static_cast<unsigned int>(
+                    destinationInventory->getAllItems().size());
+            const int sourceMoneyBefore = sourceInventory->getMoney();
+
+            RClickAutoTradeFunction trade = InventoryTradeReach::Resolve();
+            if (trade == NULL)
+            {
+                RejectNativeCommand(request, "transfer_unavailable");
+                return;
+            }
+            const InventoryGUI::TradeResult result =
+                trade(
+                    source,
+                    request.sectionName,
+                    request.slotX,
+                    request.slotY,
+                    destination,
+                    true,
+                    true);
+            const char* const verdict = TradeResultName(result.value);
+            const unsigned int destinationAfter =
+                static_cast<unsigned int>(
+                    destinationInventory->getAllItems().size());
+            const bool destinationGained = destinationAfter > destinationBefore;
+            const bool sourceSlotReleased =
+                section->getItemAt(request.slotX, request.slotY) != item;
+
+            g_lastNativeCommandTargetId = request.targetId;
+            if (result.value != InventoryGUI::TradeResult::OK)
+            {
+                AddNativeAcknowledgement(request, "cancelled", verdict, false, true);
+                g_lastNativeCommandResult = verdict;
+                return;
+            }
+            if (!destinationGained && !sourceSlotReleased)
+            {
+                // Kenshi permitted it and nothing moved. Reported as its own
+                // condition rather than as success, because a transfer that
+                // silently does nothing is the failure the conservation check
+                // exists to catch.
+                AddNativeAcknowledgement(
+                    request, "cancelled", "permitted_without_moving", false, true);
+                g_lastNativeCommandResult = "permitted_without_moving";
+                return;
+            }
+            (void)sourceMoneyBefore;
+            AddNativeAcknowledgement(
+                request, "completed", "item_transferred", true, true);
+            g_lastNativeCommandResult = "item_transferred";
             return;
         }
 
