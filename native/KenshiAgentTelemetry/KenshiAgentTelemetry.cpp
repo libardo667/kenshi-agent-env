@@ -266,6 +266,9 @@ namespace
         // visually complete doorway traversal.
         bool isBuildingExit;
         bool isContextAction;
+        // A trade window is asked for, not opened on the spot: `showTradeWindow`
+        // records the request and the GUI pairs the windows on a later update.
+        bool isTradeWindowPending;
         NativeCommandTargetKind targetKind;
         bool isResourceProduction;
         bool resourceTaskObserved;
@@ -385,6 +388,7 @@ namespace
         g_activeNativeCommand.mapInteriorOrderIssued = false;
         g_activeNativeCommand.isBuildingExit = false;
         g_activeNativeCommand.isContextAction = false;
+        g_activeNativeCommand.isTradeWindowPending = false;
         g_activeNativeCommand.targetKind = NATIVE_TARGET_NONE;
         g_activeNativeCommand.isResourceProduction = false;
         g_activeNativeCommand.resourceTaskObserved = false;
@@ -801,6 +805,7 @@ namespace
         g_activeNativeCommand.mapInteriorOrderIssued = false;
         g_activeNativeCommand.isBuildingExit = false;
         g_activeNativeCommand.isContextAction = false;
+        g_activeNativeCommand.isTradeWindowPending = false;
         g_activeNativeCommand.targetKind = NATIVE_TARGET_NONE;
         g_activeNativeCommand.isResourceProduction = false;
         g_activeNativeCommand.resourceTaskObserved = false;
@@ -3291,6 +3296,15 @@ namespace
         if (!g_activeNativeCommand.active)
             return;
 
+        if (g_activeNativeCommand.isTradeWindowPending)
+        {
+            // The pair is observed, not assumed. Two open windows is the state
+            // a transfer acts in, so that is the terminal.
+            if (gui != NULL && gui->getNumOpenInventoryWindows() >= 2)
+                FinishActiveNativeCommand("completed", "trade_window_open");
+            return;
+        }
+
         // PLAYER_TALK_TO can open a nearby conversation while the world stays
         // paused. That exact target is success, not a pause stall. Check the
         // native terminal before the generic movement-pause watchdog so a
@@ -4489,6 +4503,7 @@ namespace
             g_activeNativeCommand.mapInteriorOrderIssued = false;
             g_activeNativeCommand.isBuildingExit = false;
             g_activeNativeCommand.isContextAction = true;
+            g_activeNativeCommand.isTradeWindowPending = false;
             g_activeNativeCommand.targetKind = NATIVE_TARGET_NEARBY_CHARACTER;
             g_activeNativeCommand.isResourceProduction = false;
             g_activeNativeCommand.resourceTaskObserved = false;
@@ -4575,6 +4590,7 @@ namespace
             g_activeNativeCommand.mapInteriorOrderIssued = false;
             g_activeNativeCommand.isBuildingExit = false;
             g_activeNativeCommand.isContextAction = true;
+            g_activeNativeCommand.isTradeWindowPending = false;
             g_activeNativeCommand.targetKind = NATIVE_TARGET_SQUAD_CHARACTER;
             g_activeNativeCommand.isResourceProduction = false;
             g_activeNativeCommand.resourceTaskObserved = false;
@@ -4621,15 +4637,30 @@ namespace
                 RejectNativeCommand(request, "target_lifetime_changed");
                 return;
             }
+            // Asked for, not opened here. `showTradeWindow` records the pair
+            // and the GUI opens both windows on a later update, so checking the
+            // count one instruction later reported `trade_window_not_opened`
+            // about a pairing that did in fact appear -- telemetry showed both
+            // windows moments after the refusal.
             gui->showTradeWindow(firstHandle, secondHandle, windowType);
-            if (gui->getNumOpenInventoryWindows() < 2)
-            {
-                RejectNativeCommand(request, "trade_window_not_opened");
-                return;
-            }
             AddNativeAcknowledgement(
-                request, "completed", "trade_window_open", true, true);
-            g_lastNativeCommandResult = "trade_window_open";
+                request, "accepted", "trade_window_requested", true, false);
+            g_activeNativeCommand.active = true;
+            g_activeNativeCommand.commandId = request.commandId;
+            g_activeNativeCommand.targetId = request.targetId;
+            g_activeNativeCommand.selectedCharacterId = selectedId;
+            g_activeNativeCommand.selectedCharacterIds = request.selectedCharacterIds;
+            g_activeNativeCommand.selectedHandle = selectedHandle;
+            g_activeNativeCommand.isWalk = false;
+            g_activeNativeCommand.hasFixedDestination = false;
+            g_activeNativeCommand.isMapTravel = false;
+            g_activeNativeCommand.isBuildingExit = false;
+            g_activeNativeCommand.isContextAction = false;
+            g_activeNativeCommand.isResourceProduction = false;
+            g_activeNativeCommand.isTradeWindowPending = true;
+            g_activeNativeCommand.targetKind = NATIVE_TARGET_NONE;
+            g_activeNativeCommand.expectedTask = NULL_TASK;
+            g_lastNativeCommandResult = "trade_window_requested";
             g_lastNativeCommandTargetId = request.targetId;
             return;
         }
@@ -4965,6 +4996,7 @@ namespace
             g_activeNativeCommand.mapInteriorOrderIssued = false;
             g_activeNativeCommand.isBuildingExit = false;
             g_activeNativeCommand.isContextAction = true;
+            g_activeNativeCommand.isTradeWindowPending = false;
             g_activeNativeCommand.targetKind = NATIVE_TARGET_BUILDING;
             g_activeNativeCommand.isResourceProduction =
                 isResourceProduction;
@@ -5082,7 +5114,8 @@ namespace
             g_activeNativeCommand.mapInteriorOrderIssued = false;
             g_activeNativeCommand.isBuildingExit = false;
             g_activeNativeCommand.isContextAction = false;
-            g_activeNativeCommand.targetKind = NATIVE_TARGET_NONE;
+            g_activeNativeCommand.isTradeWindowPending = false;
+        g_activeNativeCommand.targetKind = NATIVE_TARGET_NONE;
             g_activeNativeCommand.isResourceProduction = false;
             g_activeNativeCommand.resourceTaskObserved = false;
             g_activeNativeCommand.minimumOutputQuantity = 1;
@@ -5147,7 +5180,8 @@ namespace
             g_activeNativeCommand.mapInteriorOrderIssued = false;
             g_activeNativeCommand.isBuildingExit = false;
             g_activeNativeCommand.isContextAction = false;
-            g_activeNativeCommand.targetKind = NATIVE_TARGET_NONE;
+            g_activeNativeCommand.isTradeWindowPending = false;
+        g_activeNativeCommand.targetKind = NATIVE_TARGET_NONE;
             g_activeNativeCommand.isResourceProduction = false;
             g_activeNativeCommand.resourceTaskObserved = false;
             g_activeNativeCommand.expectedTask = NULL_TASK;
@@ -5248,7 +5282,8 @@ namespace
             g_activeNativeCommand.mapInteriorOrderIssued = false;
             g_activeNativeCommand.isBuildingExit = true;
             g_activeNativeCommand.isContextAction = false;
-            g_activeNativeCommand.targetKind = NATIVE_TARGET_NONE;
+            g_activeNativeCommand.isTradeWindowPending = false;
+        g_activeNativeCommand.targetKind = NATIVE_TARGET_NONE;
             g_activeNativeCommand.isResourceProduction = false;
             g_activeNativeCommand.resourceTaskObserved = false;
             g_activeNativeCommand.expectedTask = NULL_TASK;
@@ -5332,6 +5367,7 @@ namespace
         g_activeNativeCommand.mapInteriorOrderIssued = false;
         g_activeNativeCommand.isBuildingExit = false;
         g_activeNativeCommand.isContextAction = false;
+        g_activeNativeCommand.isTradeWindowPending = false;
         g_activeNativeCommand.targetKind = NATIVE_TARGET_NONE;
         g_activeNativeCommand.isResourceProduction = false;
         g_activeNativeCommand.resourceTaskObserved = false;

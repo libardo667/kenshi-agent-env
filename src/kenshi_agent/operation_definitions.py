@@ -3942,6 +3942,9 @@ OPEN_TRADE_WINDOW_DEFINITION = OperationDefinition(
     handler_key="resources.open_trade_window",
     controller_verified=True,
     native_terminal_success_reasons=frozenset({"trade_window_open"}),
+    # Kenshi records the pairing and opens both windows on a later GUI update,
+    # so acceptance is not the outcome: the terminal is two windows observed.
+    native_task_started_reasons=frozenset({"trade_window_requested"}),
     authorable_when=trade_window_is_currently_authorable,
 )
 
