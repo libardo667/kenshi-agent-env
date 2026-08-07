@@ -16,6 +16,7 @@ from .core.operation import (
     ExitCurrentBuildingAction,
     MoveInDirectionAction,
     MoveToCharacterAction,
+    PerformCharacterOrderAction,
     PerformContextAction,
     ProduceResourceOutputAction,
     RegroupWithSquadMemberAction,
@@ -51,7 +52,9 @@ NativeMovementAction: TypeAlias = (
     | TravelToMapDestinationAction
     | ExitCurrentBuildingAction
     | PerformContextAction
+    | PerformCharacterOrderAction
     | ProduceResourceOutputAction
+    | SurveyLocalResourcesAction
 )
 TransitionOperation: TypeAlias = Callable[..., Coroutine[Any, Any, Transition]]
 
@@ -822,11 +825,19 @@ class StatefulNativeMovementOption:
                 not isinstance(self.action, ProduceResourceOutputAction)
                 or acknowledgement.minimum_output_quantity == self.action.minimum_output_quantity
             )
+            # Same reason the order is part of a character order's identity: one
+            # object can advertise several context actions, and matching on
+            # target alone lets an acknowledgement for one satisfy a wait for
+            # another.
+            semantic_matches = not isinstance(self.action, PerformContextAction) or str(
+                acknowledgement.context_action
+            ) == str(self.action.context_action)
             return bool(
                 acknowledgement.target_id == self.action.target_id
                 and acknowledgement.bearing_degrees == 0.0
                 and acknowledgement.distance_units == 0.0
                 and minimum_matches
+                and semantic_matches
             )
         if isinstance(self.action, TravelToMapDestinationAction):
             return bool(
@@ -846,27 +857,47 @@ class StatefulNativeMovementOption:
                 and acknowledgement.bearing_degrees == 0.0
                 and acknowledgement.distance_units == 0.0
             )
-        if acknowledgement.target_id != "":
-            return False
-        if isinstance(self.action, (ExitCurrentBuildingAction, SurveyLocalResourcesAction)):
-            # Targetless and parameterless: the command names nowhere to go.
+        if isinstance(self.action, PerformCharacterOrderAction):
+            # The order is part of the identity, not decoration. One person can
+            # afford several orders at once - a downed bandit affords both
+            # looting and a finishing blow - so an acknowledgement matched on
+            # target alone would let either one satisfy a wait for the other.
             return bool(
-                acknowledgement.bearing_degrees == 0.0 and acknowledgement.distance_units == 0.0
+                acknowledgement.target_id == self.action.target_id
+                and str(acknowledgement.context_action) == self.action.order
+                and acknowledgement.bearing_degrees == 0.0
+                and acknowledgement.distance_units == 0.0
             )
-        if not isinstance(self.action, MoveInDirectionAction):
-            # This chain used to end by reading `bearing_degrees` off whatever
-            # was left, so a survey - which has no such field - reached its own
-            # acknowledgement and died with an AttributeError *after* the game
-            # had already published the reading. Third fallthrough of this shape
-            # in this file; matching an acknowledgement to an action it cannot
-            # describe is not a default anyone wants.
+        # Every targeted action is matched above, so anything still here must be
+        # one that names nowhere to go. Asking that question before reading the
+        # acknowledgement's target is what makes an unhandled action loud.
+        #
+        # It used to be the other way around: a targeted action with no rule hit
+        # `acknowledgement.target_id != ""` and returned a quiet False, which
+        # reads as "the game acknowledged something else" rather than "this code
+        # has no rule for you". `perform_character_order` fell through exactly
+        # there -- the plug-in accepted and issued the order, Kenshi obeyed it,
+        # and the run still failed on an identity mismatch that had nothing to
+        # do with identity. That is the fourth fallthrough of this shape in this
+        # file, and the previous three each cost a live run to find.
+        if not isinstance(
+            self.action,
+            (ExitCurrentBuildingAction, SurveyLocalResourcesAction, MoveInDirectionAction),
+        ):
             raise OptionLifecycleError(
                 f"Operation {self.action.kind!r} has no acknowledgement match rule, "
                 "so a native acknowledgement cannot be attributed to it."
             )
+        if acknowledgement.target_id != "":
+            return False
+        if isinstance(self.action, MoveInDirectionAction):
+            return bool(
+                acknowledgement.bearing_degrees == self.action.bearing_degrees
+                and acknowledgement.distance_units == self.action.distance_units
+            )
+        # Targetless and parameterless: the command names nowhere to go.
         return bool(
-            acknowledgement.bearing_degrees == self.action.bearing_degrees
-            and acknowledgement.distance_units == self.action.distance_units
+            acknowledgement.bearing_degrees == 0.0 and acknowledgement.distance_units == 0.0
         )
 
     def _poll_result(self) -> OptionPoll:

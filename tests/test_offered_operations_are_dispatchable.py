@@ -19,13 +19,17 @@ offer and a live Kenshi to notice. These tests put something between them.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 
+from kenshi_agent.core.base import StrictModel
 from kenshi_agent.core.interaction import RecipientScope
 from kenshi_agent.core.observation import Observation
-from kenshi_agent.core.operation import ControlMode
+from kenshi_agent.core.operation import (
+    ControlMode,
+    PerformCharacterOrderAction,
+)
 from kenshi_agent.core.telemetry import (
     NATIVE_COMMANDS_NAMING_AN_ACTION,
     AdvertisedTask,
@@ -34,6 +38,8 @@ from kenshi_agent.core.telemetry import (
     ContextActionKind,
     Disposition,
     GameState,
+    NativeCommandAcknowledgement,
+    NativeCommandStatus,
     NearbyEntity,
     TelemetrySnapshot,
     UIState,
@@ -47,6 +53,7 @@ from kenshi_agent.native_commands import (
     NATIVE_CHARACTER_ORDER_WIRE_COMMAND,
     NATIVE_CONTEXT_ACTION_WIRE_COMMAND,
 )
+from kenshi_agent.options import OptionLifecycleError, StatefulNativeMovementOption
 
 ACTOR = "char-tuner"
 SUBJECT = "entity-polly"
@@ -227,6 +234,121 @@ def test_an_order_the_target_stopped_advertising_is_refused_at_the_wire() -> Non
             NATIVE_CHARACTER_ORDER_WIRE_COMMAND,
             target_id=SUBJECT,
             context_action="loot_target",
+        )
+
+
+def _acknowledgement(
+    *,
+    command: str,
+    target_id: str,
+    context_action: str,
+) -> NativeCommandAcknowledgement:
+    return NativeCommandAcknowledgement(
+        command_id="cmd-" + "0" * 32,
+        command=command,  # type: ignore[arg-type]
+        status=NativeCommandStatus.ACCEPTED,
+        reason="issued",
+        target_id=target_id,
+        context_action=ContextActionKind(context_action),
+        selected_character_ids=[ACTOR],
+        based_on_telemetry_sequence=41,
+        acknowledged_at_telemetry_sequence=42,
+        accepted_at_telemetry_sequence=42,
+    )
+
+
+def _order_option(action: Any) -> StatefulNativeMovementOption:
+    """An option positioned exactly where identity is decided.
+
+    `_wire_command` is derived from the action's own contract, so setting the
+    action is the whole setup; anything else would be asserting the mapping
+    rather than using it.
+    """
+
+    option = StatefulNativeMovementOption.__new__(StatefulNativeMovementOption)
+    option.action = action
+    option.selected_character_ids = [ACTOR]
+    return option
+
+
+def test_an_accepted_order_is_attributed_to_the_option_that_issued_it() -> None:
+    """The failure that outlasted the wire fix.
+
+    The plug-in accepted and issued the order and Kenshi obeyed it -- the two
+    characters entered combat -- and the run still failed on an identity
+    mismatch, because `perform_character_order` had no match rule and fell
+    through to a quiet `return False`.
+    """
+
+    option = _order_option(PerformCharacterOrderAction(target_id=SUBJECT, order=ORDER))
+
+    assert option._matches_identity(
+        _acknowledgement(
+            command=NATIVE_CHARACTER_ORDER_WIRE_COMMAND,
+            target_id=SUBJECT,
+            context_action=ORDER,
+        )
+    )
+
+
+def test_one_order_does_not_satisfy_a_wait_for_another_on_the_same_person() -> None:
+    """The order is part of the identity, not decoration.
+
+    A downed bandit affords both looting and a finishing blow at once. Matching
+    on target alone would let the acknowledgement for either satisfy a wait for
+    the other, which is the same collapse that once made two offers on one
+    person look like a hallucinated affordance id.
+    """
+
+    option = _order_option(
+        PerformCharacterOrderAction(target_id=SUBJECT, order="loot_target")
+    )
+
+    assert not option._matches_identity(
+        _acknowledgement(
+            command=NATIVE_CHARACTER_ORDER_WIRE_COMMAND,
+            target_id=SUBJECT,
+            context_action=ORDER,
+        )
+    )
+
+
+class _UnruledAction(StrictModel):
+    """An operation with a native command but no acknowledgement match rule.
+
+    It borrows a real `kind` so the contract lookup resolves and the option can
+    name what it would dispatch. What it does not do is appear anywhere in the
+    isinstance chain, which is precisely the state `perform_character_order` was
+    in when the plug-in accepted its order and Kenshi obeyed it.
+    """
+
+    kind: Literal["move_to_character"] = "move_to_character"
+    target_id: str = SUBJECT
+
+
+def test_an_action_with_no_match_rule_is_loud_rather_than_unmatched() -> None:
+    """The trapdoor under all of this.
+
+    A targeted action with no rule used to reach `acknowledgement.target_id !=
+    ""` and return a quiet False, which reads as "the game acknowledged
+    something else" rather than "this code has no rule for you". Four
+    operations have fallen through this chain, and the last one was found only
+    after the plug-in had accepted the order and the two characters had already
+    entered combat.
+
+    Matching is allowed to say no. It is not allowed to say no for want of a
+    rule.
+    """
+
+    option = _order_option(_UnruledAction())
+
+    with pytest.raises(OptionLifecycleError, match="no acknowledgement match rule"):
+        option._matches_identity(
+            _acknowledgement(
+                command="move_to_character",
+                target_id=SUBJECT,
+                context_action="",
+            )
         )
 
 
