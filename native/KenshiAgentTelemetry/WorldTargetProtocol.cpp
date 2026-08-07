@@ -85,10 +85,37 @@ namespace KenshiAgentTelemetry
     {
     }
 
-    AdvertisedTask::AdvertisedTask(int taskValue, const std::string& taskName)
-        : value(taskValue),
-          name(taskName)
+    namespace AdvertisedTaskSource
     {
+        const char* const MENU = "menu";
+        const char* const ODDS = "odds";
+    }
+
+    AdvertisedTask::AdvertisedTask(
+        int taskValue,
+        const std::string& taskName,
+        const std::string& taskSource)
+        : value(taskValue),
+          name(taskName),
+          source(taskSource)
+    {
+    }
+
+    void MergeAdvertisedTask(
+        std::vector<AdvertisedTask>& tasks,
+        const AdvertisedTask& task)
+    {
+        for (std::vector<AdvertisedTask>::iterator it = tasks.begin();
+             it != tasks.end();
+             ++it)
+        {
+            if (it->value != task.value)
+                continue;
+            if (task.source == AdvertisedTaskSource::MENU)
+                it->source = task.source;
+            return;
+        }
+        tasks.push_back(task);
     }
 
     bool IsWithinTargetProbeBudget(
@@ -114,6 +141,7 @@ namespace KenshiAgentTelemetry
                 json << ",";
             json << "{\"value\":" << it->value
                  << ",\"name\":\"" << WorldTargetJsonEscape(it->name)
+                 << "\",\"source\":\"" << WorldTargetJsonEscape(it->source)
                  << "\"}";
         }
         json << "]";

@@ -715,7 +715,7 @@
     },
     "AdvertisedTask": {
       "additionalProperties": false,
-      "description": "One task Kenshi confirms the current selection may issue to a target.\n\nDiscovered through `getPlayerTaskProbability` over the generated TaskType\nvocabulary. The value and name are the game's own; mapping either onto a\ncontroller semantic is the operation registry's job, not this model's.",
+      "description": "One task Kenshi confirms the current selection may issue to a target.\n\nThe value and name are the game's own; mapping either onto a controller\nsemantic is the operation registry's job, not this model's. `source` records\nwhich engine call vouched for it, so a wrong offer stays attributable to the\nevidence that produced it.",
       "properties": {
         "value": {
           "minimum": 0,
@@ -727,14 +727,27 @@
           "minLength": 1,
           "title": "Name",
           "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/AdvertisedTaskSource"
         }
       },
       "required": [
         "value",
-        "name"
+        "name",
+        "source"
       ],
       "title": "AdvertisedTask",
       "type": "object"
+    },
+    "AdvertisedTaskSource": {
+      "description": "How Kenshi was asked, because the answers are not equally trustworthy.\n\nThree separate engine calls were each mistaken for \"what applies here\"\nbefore provenance existed to tell them apart, and the cost was a day of\nlive diagnosis against a list nobody could attribute.",
+      "enum": [
+        "menu",
+        "odds"
+      ],
+      "title": "AdvertisedTaskSource",
+      "type": "string"
     },
     "AdvisorAttribution": {
       "additionalProperties": false,

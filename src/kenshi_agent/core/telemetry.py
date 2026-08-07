@@ -316,6 +316,19 @@ class NearbyEntity(StrictModel):
 
         return tuple(sorted(task.name.lower() for task in self.advertised_tasks))
 
+    def order_evidence(self, order: str) -> frozenset[AdvertisedTaskSource]:
+        """Which probes vouched for one order on this person.
+
+        Empty when the order was never advertised. Two probes answer for the
+        same target and they disagree in both directions, so an order that
+        binds and then fails to take needs its evidence on the receipt rather
+        than in a second live run.
+        """
+
+        return frozenset(
+            task.source for task in self.advertised_tasks if task.name.lower() == order
+        )
+
     def is_dialogue_target(self) -> bool:
         """Deterministic "can the agent approach and talk to this person" fence.
 
@@ -395,16 +408,44 @@ class ContextActionKind(str):
 ContextActionKind.OPERATE = ContextActionKind("operate")
 
 
+class AdvertisedTaskSource(StrEnum):
+    """How Kenshi was asked, because the answers are not equally trustworthy.
+
+    Three separate engine calls were each mistaken for "what applies here"
+    before provenance existed to tell them apart, and the cost was a day of
+    live diagnosis against a list nobody could attribute.
+    """
+
+    MENU = "menu"
+    """Kenshi's own context-menu builder produced this order for this target.
+
+    Not a proxy for the answer, the answer: it is exactly what a player sees on
+    right-click, obtained by having the game build the menu with its renderer
+    muted.
+    """
+
+    ODDS = "odds"
+    """`getPlayerTaskProbability` returned a success chance above zero.
+
+    Sound when it fires, and silent for every order Kenshi renders no
+    percentage beside - measured live it reported KIDNAP_ORDER and
+    STEALTH_KNOCKOUT on a cannibal whose menu offered attacking instead. Its
+    absence therefore means nothing at all.
+    """
+
+
 class AdvertisedTask(StrictModel):
     """One task Kenshi confirms the current selection may issue to a target.
 
-    Discovered through `getPlayerTaskProbability` over the generated TaskType
-    vocabulary. The value and name are the game's own; mapping either onto a
-    controller semantic is the operation registry's job, not this model's.
+    The value and name are the game's own; mapping either onto a controller
+    semantic is the operation registry's job, not this model's. `source` records
+    which engine call vouched for it, so a wrong offer stays attributable to the
+    evidence that produced it.
     """
 
     value: int = Field(ge=0)
     name: str = Field(min_length=1, max_length=80)
+    source: AdvertisedTaskSource
 
 
 class GroundPosition(StrictModel):

@@ -120,6 +120,26 @@
 #include "RuntimeContextMenuSemantics.h"
 #include "WorldTargetProtocol.h"
 
+// The declaration `kenshi/gui/ContextMenu.h` would have supplied, restated here
+// because that header cannot be included.
+//
+// It defines `class ContextMenu` a second time, byte-identical to the one in
+// `kenshi/PlayerInterface.h`, and two identical definitions in one translation
+// unit is still a redefinition. Only `show` is needed, and only to take its
+// address: `GetRealAddress(&ContextMenuGUI::show)` resolves the linker stub
+// KenshiLib.lib exports, and MSVC mangles that from the class name, the
+// function name, and the parameter types alone -- not from the bases or the
+// members. Nothing here is ever constructed or dereferenced; the pointer is
+// taken once at hook time and passed straight back through afterwards.
+class ContextMenuGUI
+{
+public:
+    void show(
+        const lektor<int>& ordersList,
+        const std::string& _name,
+        bool offset);
+};
+
 namespace
 {
     using KenshiAgentTelemetry::IsValidCommandId;
@@ -146,9 +166,9 @@ namespace
     // needs each (kind, task) pair once, not every target every 500ms, and
     // the agent can only act on what is near it. Unprobed targets say so.
     const unsigned int MAX_PROBED_WORLD_TARGETS = 16;
-    // Probing walks the whole task vocabulary per target, so nearby people get
-    // a tighter budget than world targets: there are more of them, and only the
-    // close ones are actionable anyway.
+    // Probing builds a context menu and walks the whole task vocabulary per
+    // target, so nearby people get a tighter budget than world targets: there
+    // are more of them, and only the close ones are actionable anyway.
     const unsigned int MAX_PROBED_NEARBY_CHARACTERS = 8;
     // Full-discovery scan. Every object category Kenshi declares is asked, so
     // a category nobody anticipated is found rather than excluded by omission.
@@ -178,12 +198,17 @@ namespace
     const unsigned int MAX_RUNTIME_CONTEXT_MENU_TASK_TYPES = 64;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "1.16.0";
+    const char* PROTOCOL_VERSION = "1.17.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
     typedef void (*GameWorldResetFunction)(GameWorld*);
     typedef void (*ContextMenuShowFunction)(ContextMenu*, bool, RootObject*);
+    typedef void (*ContextMenuGUIShowFunction)(
+        ContextMenuGUI*,
+        const lektor<int>&,
+        const std::string&,
+        bool);
     typedef ShopTrader* (*ShopTraderConstructorFunction)(ShopTrader*, Character*);
     typedef void (*ShopTraderDestructorFunction)(ShopTrader*);
 
@@ -238,6 +263,11 @@ namespace
     TitleScreenUpdateFunction g_originalTitleScreenUpdate = NULL;
     GameWorldResetFunction g_originalGameWorldReset = NULL;
     ContextMenuShowFunction g_originalContextMenuShow = NULL;
+    ContextMenuGUIShowFunction g_originalContextMenuGUIShow = NULL;
+    // Set only for the duration of one silent probe, and only ever on the
+    // thread already inside `PlayerInterface::update`.
+    bool g_contextMenuProbeActive = false;
+    bool g_contextMenuProbeInstalled = false;
     ShopTraderConstructorFunction g_originalShopTraderConstructor = NULL;
     ShopTraderDestructorFunction g_originalShopTraderDestructor = NULL;
     TrackedShopTrader g_trackedShopTraders[MAX_TRACKED_SHOP_TRADERS];
@@ -504,6 +534,24 @@ namespace
             targetId,
             targetName);
         g_originalContextMenuShow(menu, on, target);
+    }
+
+    // The one line that turns Kenshi's menu into a question instead of an act.
+    //
+    // `ContextMenu::showContextMenu` decides which orders apply to a target and
+    // then hands them to `ContextMenuGUI::show` to draw. Kenshi already keeps
+    // those two apart, so muting the second leaves the first intact: during a
+    // probe the orders are computed exactly as a right-click computes them, and
+    // no widget is ever built, shown, or destroyed.
+    void ContextMenuGUIShowHook(
+        ContextMenuGUI* gui,
+        const lektor<int>& ordersList,
+        const std::string& name,
+        bool offset)
+    {
+        if (g_contextMenuProbeActive)
+            return;
+        g_originalContextMenuGUIShow(gui, ordersList, name, offset);
     }
 
     bool SameHandleIdentity(const hand& left, const hand& right)
@@ -1341,31 +1389,122 @@ namespace
         return false;
     }
 
-    // Which orders the ordering character may actually issue against a subject.
+    // The name Kenshi's own vocabulary gives a task value, or empty.
     //
-    // This asks `Character::checkPlayerOrderForProblems`, not
-    // `PlayerInterface::getPlayerTaskProbability`. The probability call was the
-    // first choice and it was the wrong question: measured live against a
-    // cannibal, it returned exactly KIDNAP_ORDER and STEALTH_KNOCKOUT -- the two
-    // orders Kenshi renders a success *percentage* beside in its context menu --
-    // while Kenshi's own menu on that same cannibal offered ATTACK_ENEMIES and
-    // FOCUSED_MELEE_ATTACK and neither of those two. It is a odds-getter that
-    // reports false for any order without odds to show, so it would equally
-    // have hidden LOOT_TARGET.
+    // The context menu answers in raw ints. A value with no vocabulary entry is
+    // reported by number rather than dropped: an order this build has never
+    // heard of is exactly the discovery the probe exists to make.
+    std::string TaskTypeVocabularyName(int value)
+    {
+        unsigned int vocabularyCount = 0;
+        const KenshiAgentTelemetry::TaskTypeVocabularyEntry* vocabulary =
+            KenshiAgentTelemetry::TaskTypeVocabulary(vocabularyCount);
+        for (unsigned int index = 0; index < vocabularyCount; ++index)
+        {
+            if (vocabulary[index].value == value)
+                return vocabulary[index].name;
+        }
+        std::ostringstream unknown;
+        unknown << "UNKNOWN_TASK_" << value;
+        return unknown.str();
+    }
+
+    // Restores the probe flag however the probe leaves.
+    struct ContextMenuProbeGuard
+    {
+        ContextMenuProbeGuard() { g_contextMenuProbeActive = true; }
+        ~ContextMenuProbeGuard() { g_contextMenuProbeActive = false; }
+    };
+
+    // Ask Kenshi which orders apply to a target, by having it build the menu it
+    // would build for a right-click and then not drawing it.
     //
-    // `isOrderValidForSelection` is not consulted at all: measured live it
-    // returned true for all 291 vocabulary entries, so it discriminates nothing
-    // and its presence in an AND only made a wrong answer unattributable.
-    // World objects: machines, resource nodes, doors. Their affordances come
-    // from the probability call, which has been safe on arbitrary RootObjects
-    // since it was introduced.
-    void ProbeAdvertisedTasks(
+    // This replaced three failed attempts at a side-effect-free predicate, and
+    // the reason all three failed is that none of them was asking this
+    // question:
+    //
+    //   `isOrderValidForSelection` returned true for all 291 vocabulary
+    //   entries measured live, so it discriminates nothing.
+    //
+    //   `getPlayerTaskProbability` is an odds-getter. Against a cannibal it
+    //   returned exactly KIDNAP_ORDER and STEALTH_KNOCKOUT -- the two orders
+    //   Kenshi renders a success percentage beside -- while the game's own menu
+    //   on that same cannibal offered ATTACK_ENEMIES and FOCUSED_MELEE_ATTACK
+    //   and neither of those. It reports false for any order with no odds to
+    //   display, so it hides attacking and looting alike.
+    //
+    //   `Character::checkPlayerOrderForProblems` is not a query at all. Called
+    //   speculatively it made Kenshi float "I don't have a medkit" over a
+    //   character -- the game's response to an *attempted* first aid order. It
+    //   crashed world load twice, and answered "no problem" for 285 of 291.
+    //
+    // The menu is not a fourth proxy. It is the definition: what it lists is
+    // what a player sees, so an agent offered those orders is offered the human
+    // move set rather than one this plug-in invented.
+    //
+    // Two guards keep the probe from being felt. It refuses to run while a menu
+    // is already open, because building one would replace what the player is
+    // looking at; and it calls through `g_originalContextMenuShow` rather than
+    // our own hook, so the record of which target the *player* opened a menu on
+    // is never overwritten by a probe.
+    bool ProbeMenuOrders(
+        PlayerInterface* player,
+        RootObject* target,
+        std::vector<KenshiAgentTelemetry::AdvertisedTask>& advertised)
+    {
+        if (!g_contextMenuProbeInstalled ||
+            g_originalContextMenuShow == NULL ||
+            player == NULL ||
+            target == NULL ||
+            !target->isValid())
+        {
+            return false;
+        }
+        ContextMenu& menu = player->contextMenu;
+        if (menu.isVisible() || g_contextMenuProbeActive)
+            return false;
+
+        {
+            ContextMenuProbeGuard guard;
+            g_originalContextMenuShow(&menu, true, target);
+            for (unsigned int index = 0; index < menu.orders.size(); ++index)
+            {
+                const int value = menu.orders[index];
+                KenshiAgentTelemetry::MergeAdvertisedTask(
+                    advertised,
+                    KenshiAgentTelemetry::AdvertisedTask(
+                        value,
+                        TaskTypeVocabularyName(value),
+                        KenshiAgentTelemetry::AdvertisedTaskSource::MENU));
+            }
+            g_originalContextMenuShow(&menu, false, target);
+        }
+        return true;
+    }
+
+    // Everything a target affords, from every source that will answer for it.
+    //
+    // The menu is asked first and its answers outrank the odds probe, but the
+    // odds probe is still run: the two disagree in both directions, so neither
+    // can be subtracted from the other. `isOrderValidForSelection` is not
+    // consulted, because a filter that admits all 291 only makes a wrong answer
+    // unattributable.
+    //
+    // One function for people and objects alike. The split into two probes was
+    // an artefact of `checkPlayerOrderForProblems` being safe on characters and
+    // fatal on arbitrary RootObjects; the menu takes a RootObject* and treats
+    // a bandit, a mining node and a door the same way, which is what let the
+    // split go.
+    // Returns whether the menu could be asked. A probe that could not run is
+    // not a denial, and the two must stay distinguishable at dispatch.
+    bool ProbeAdvertisedTasks(
         PlayerInterface* player,
         RootObject* target,
         std::vector<KenshiAgentTelemetry::AdvertisedTask>& advertised)
     {
         if (player == NULL || target == NULL)
-            return;
+            return false;
+        const bool menuAsked = ProbeMenuOrders(player, target, advertised);
         unsigned int vocabularyCount = 0;
         const KenshiAgentTelemetry::TaskTypeVocabularyEntry* vocabulary =
             KenshiAgentTelemetry::TaskTypeVocabulary(vocabularyCount);
@@ -1373,85 +1512,19 @@ namespace
         {
             const TaskType task =
                 static_cast<TaskType>(vocabulary[index].value);
-            if (!player->isOrderValidForSelection(task))
-                continue;
             float probability = 0.0f;
             if (!player->getPlayerTaskProbability(task, target, probability))
                 continue;
             if (!(probability > 0.0f))
                 continue;
-            advertised.push_back(
+            KenshiAgentTelemetry::MergeAdvertisedTask(
+                advertised,
                 KenshiAgentTelemetry::AdvertisedTask(
                     vocabulary[index].value,
-                    vocabulary[index].name));
+                    vocabulary[index].name,
+                    KenshiAgentTelemetry::AdvertisedTaskSource::ODDS));
         }
-    }
-
-    // People are a different question from objects, and answering both with one
-    // call is what broke this.
-    //
-    // `getPlayerTaskProbability` is an odds-getter: measured live against a
-    // cannibal it returned exactly KIDNAP_ORDER and STEALTH_KNOCKOUT -- the two
-    // orders Kenshi renders a success percentage beside -- while Kenshi's own
-    // context menu on that same cannibal offered ATTACK_ENEMIES and
-    // FOCUSED_MELEE_ATTACK and neither of those. It reports false for any order
-    // with no odds to show, so it hides attacking and looting alike.
-    // `isOrderValidForSelection` is no help either: measured live it returned
-    // true for all 291 vocabulary entries.
-    //
-    // `Character::checkPlayerOrderForProblems` asks the right question, but it
-    // is only safe between characters. Pointing it at arbitrary RootObjects
-    // crashed Kenshi during world load, before a single nearby character
-    // existed -- which is precisely why the object probe above still exists
-    // rather than being replaced by this one.
-    // Disabled, and left here as the record of why.
-    //
-    // `checkPlayerOrderForProblems` is not a query. Called speculatively it
-    // made Kenshi float "I don't have a medkit" over a character -- the game's
-    // response to an *attempted* first aid order. It validates and complains on
-    // the player's behalf when an order is issued, so probing with it issues
-    // 291 order attempts per target per snapshot. It crashed world load twice,
-    // and it answered "no problem" for 285 of 291 tasks, so it would have been
-    // useless even if it were silent.
-    //
-    // Every passive option is now exhausted: `isOrderValidForSelection` is true
-    // for all 291, `getPlayerTaskProbability` reports only orders that display
-    // success odds, and this one acts. Kenshi's context menu remains the single
-    // faithful source, and reaching it means `showContextMenu` -- an action with
-    // a cost, not free perception.
-    //
-    // Until then a character reports `advertised_tasks_probed` false, which
-    // already means "not asked" rather than "affords nothing", so the binding
-    // and the affordance both stay silent instead of offering a wrong list.
-    const bool CHARACTER_ORDER_PROBE_AVAILABLE = false;
-
-    void ProbeCharacterOrders(
-        Character* orderingCharacter,
-        Character* subject,
-        std::vector<KenshiAgentTelemetry::AdvertisedTask>& advertised)
-    {
-        if (!CHARACTER_ORDER_PROBE_AVAILABLE)
-            return;
-        if (orderingCharacter == NULL || subject == NULL ||
-            !orderingCharacter->isValid() || !subject->isValid() ||
-            orderingCharacter == subject)
-        {
-            return;
-        }
-        unsigned int vocabularyCount = 0;
-        const KenshiAgentTelemetry::TaskTypeVocabularyEntry* vocabulary =
-            KenshiAgentTelemetry::TaskTypeVocabulary(vocabularyCount);
-        for (unsigned int index = 0; index < vocabularyCount; ++index)
-        {
-            const TaskType task =
-                static_cast<TaskType>(vocabulary[index].value);
-            if (orderingCharacter->checkPlayerOrderForProblems(task, subject))
-                continue;
-            advertised.push_back(
-                KenshiAgentTelemetry::AdvertisedTask(
-                    vocabulary[index].value,
-                    vocabulary[index].name));
-        }
+        return menuAsked;
     }
 
     // One completed prospecting survey, held until the next replaces it.
@@ -3836,15 +3909,37 @@ namespace
             // target, and it is asked again here rather than trusting the
             // offer: a target that stopped affording the order between
             // publication and dispatch must be refused, not ordered at.
-            float taskProbability = 0.0f;
-            if (!player->isOrderValidForSelection(orderedTask) ||
-                !player->getPlayerTaskProbability(
-                    orderedTask,
-                    target,
-                    taskProbability) ||
-                !(taskProbability > 0.0f))
+            //
+            // It is asked with the same function that published the offer.
+            // This check used to be `isOrderValidForSelection` plus
+            // `getPlayerTaskProbability`, which meant dispatch and publication
+            // consulted different oracles -- and since the odds getter reports
+            // nothing for attacking or looting, it would have rejected every
+            // order this path exists to carry, under a reason code that named
+            // the target rather than the disagreement.
+            std::vector<KenshiAgentTelemetry::AdvertisedTask> dispatchTasks;
+            const bool menuAsked =
+                ProbeAdvertisedTasks(player, target, dispatchTasks);
+            bool stillAdvertised = false;
+            for (unsigned int index = 0; index < dispatchTasks.size(); ++index)
             {
-                RejectNativeCommand(request, "context_action_unavailable");
+                if (dispatchTasks[index].value ==
+                    static_cast<int>(orderedTask))
+                {
+                    stillAdvertised = true;
+                    break;
+                }
+            }
+            if (!stillAdvertised)
+            {
+                // A probe that could not run is not a denial. Saying so keeps
+                // "Kenshi withdrew this order" apart from "nobody could ask",
+                // which are different bugs with the same symptom.
+                RejectNativeCommand(
+                    request,
+                    menuAsked
+                        ? "context_action_unavailable"
+                        : "order_probe_unavailable");
                 return;
             }
             Character* orderingActor = selectedHandle.getCharacter();
@@ -5361,11 +5456,10 @@ namespace
                 json << "\"conscious\":" << JsonBool(!target->isUnconcious());
                 json << ",";
                 const bool probeThisTarget =
-                    CHARACTER_ORDER_PROBE_AVAILABLE &&
                     probeIds.find(targetId) != probeIds.end();
                 std::vector<KenshiAgentTelemetry::AdvertisedTask> advertised;
                 if (probeThisTarget)
-                    ProbeCharacterOrders(selected, target, advertised);
+                    ProbeAdvertisedTasks(player, target, advertised);
                 KenshiAgentTelemetry::AppendAdvertisedTasks(
                     json,
                     probeThisTarget,
@@ -5468,14 +5562,13 @@ namespace
                 json << "\"default_task\":\"first_aid\",";
                 std::vector<KenshiAgentTelemetry::AdvertisedTask> advertised;
                 const bool probeSquadTarget =
-                    CHARACTER_ORDER_PROBE_AVAILABLE &&
                     KenshiAgentTelemetry::IsWithinTargetProbeBudget(
                         probedSquadTargets,
                         MAX_PROBED_WORLD_TARGETS);
                 if (probeSquadTarget)
                 {
                     ++probedSquadTargets;
-                    ProbeCharacterOrders(selected, target, advertised);
+                    ProbeAdvertisedTasks(player, target, advertised);
                 }
                 KenshiAgentTelemetry::AppendAdvertisedTasks(
                     json,
@@ -5811,6 +5904,23 @@ __declspec(dllexport) void startPlugin()
             "KenshiAgentTelemetry: could not hook ContextMenu::showContextMenu.");
         WriteStatus("error", "Could not hook ContextMenu::showContextMenu.");
         return;
+    }
+
+    // Not fatal. Without this hook a menu probe would draw a real menu over the
+    // player's screen twice a second, so `ProbeMenuOrders` refuses to run at
+    // all and every target reports `advertised_tasks_probed` false -- "not
+    // asked", which the binding and the affordance already fail closed on.
+    // Losing the orders is the correct trade against taking over the display.
+    const KenshiLib::HookStatus contextMenuGUIStatus = KenshiLib::AddHook(
+        KenshiLib::GetRealAddress(&ContextMenuGUI::show),
+        ContextMenuGUIShowHook,
+        &g_originalContextMenuGUIShow);
+    g_contextMenuProbeInstalled = contextMenuGUIStatus == KenshiLib::SUCCESS;
+    if (!g_contextMenuProbeInstalled)
+    {
+        ErrorLog(
+            "KenshiAgentTelemetry: could not hook ContextMenuGUI::show; "
+            "silent order probing is unavailable this session.");
     }
 
     const KenshiLib::HookStatus updateStatus = KenshiLib::AddHook(

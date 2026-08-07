@@ -723,9 +723,10 @@ def bind_perform_character_order(
 ) -> BoundNamedTarget | BindingFailure:
     """Bind one order to one exact person Kenshi currently offers it on.
 
-    Eligibility is not re-derived here. Kenshi already answered it per target
-    through `getPlayerTaskProbability`, and the answer travelled in
-    `advertised_tasks`; this binding only proves the named order is among them.
+    Eligibility is not re-derived here. Kenshi already answered it per target -
+    chiefly by building the context menu it would build for a right-click, with
+    its renderer muted - and the answer travelled in `advertised_tasks`; this
+    binding only proves the named order is among them.
 
     An unprobed entity fails closed. Probing is budgeted, so an empty list from
     an unprobed target is silence rather than a denial, and reading silence as
@@ -764,12 +765,17 @@ def bind_perform_character_order(
             f"Kenshi does not currently offer {action.order!r} on {target.name!r} "
             f"({target.id}). Offered: {', '.join(offered) if offered else 'nothing'}."
         )
+    # Which probe vouched for it travels into the reason. When an order binds
+    # and then fails to take, the receipt already says whether the game's own
+    # menu offered it or only the odds getter did, so the disagreement is
+    # attributable without a second live run.
+    sources = ", ".join(sorted(target.order_evidence(action.order)))
     return BoundNamedTarget(
         reason=(
             f"Bound the order {action.order!r} to current "
             f"{target.faction or 'unaffiliated'} character {target.name!r} ({target.id}) "
             f"at distance {target.distance if target.distance is not None else 'unknown'}, "
-            "which Kenshi currently advertises it on."
+            f"which Kenshi currently advertises it on (evidence: {sources})."
         ),
         target_id=target.id,
         resolved_label=f"{action.order} on {target.name}",

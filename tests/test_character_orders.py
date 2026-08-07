@@ -5,11 +5,12 @@ Before this, the agent's entire combat vocabulary was one reactive operation:
 coming at it. It could not take a bounty, pick a fight, or loot anything it
 survived -- and the reason was not a missing gate but a missing verb.
 
-The fix is not a verb per action. Kenshi answers `getPlayerTaskProbability` for
-every task in its own vocabulary against a given target, so eligibility is the
-engine's judgment, arriving as `advertised_tasks`. These tests pin that the
-offers are whatever Kenshi said yes to, that silence is never read as
-permission, and that two orders on one person stay distinguishable.
+The fix is not a verb per action. Kenshi builds its own context menu for a
+target, and the plug-in has it build that menu with the renderer muted, so
+eligibility is the engine's judgment -- the same list a player sees on
+right-click -- arriving as `advertised_tasks`. These tests pin that the offers
+are whatever Kenshi said yes to, that silence is never read as permission, and
+that two orders on one person stay distinguishable.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.operation import ControlMode, PerformCharacterOrderAction
 from kenshi_agent.core.telemetry import (
     AdvertisedTask,
+    AdvertisedTaskSource,
     CharacterState,
     Disposition,
     GameState,
@@ -31,9 +33,10 @@ from kenshi_agent.core.telemetry import (
 from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.operation_definitions import bind_perform_character_order
 
-ATTACK = AdvertisedTask(value=9, name="CHOOSE_ENEMY_AND_ATTACK")
-LOOT = AdvertisedTask(value=26, name="LOOT_TARGET")
-AID = AdvertisedTask(value=25, name="FIRST_AID_ORDER")
+MENU = AdvertisedTaskSource.MENU
+ATTACK = AdvertisedTask(value=9, name="CHOOSE_ENEMY_AND_ATTACK", source=MENU)
+LOOT = AdvertisedTask(value=26, name="LOOT_TARGET", source=MENU)
+AID = AdvertisedTask(value=25, name="FIRST_AID_ORDER", source=MENU)
 
 
 def _person(
@@ -253,6 +256,79 @@ def test_non_combat_orders_travel_the_same_path(order: str) -> None:
     )
 
     assert result.bound is True
+
+
+def test_the_evidence_for_an_order_reaches_the_receipt() -> None:
+    """A bound order records which probe vouched for it.
+
+    The two probes disagree in both directions, so "Kenshi advertised it" is
+    not a single claim. An order that binds and then fails to take must be
+    attributable to its evidence from the receipt alone, not from a rerun.
+    """
+
+    observation = _world(
+        _person(
+            "e-bandit",
+            "Hungry bandit",
+            tasks=[
+                AdvertisedTask(value=9, name="CHOOSE_ENEMY_AND_ATTACK", source=MENU),
+                AdvertisedTask(
+                    value=125,
+                    name="KIDNAP_ORDER",
+                    source=AdvertisedTaskSource.ODDS,
+                ),
+            ],
+        )
+    )
+
+    attack = bind_perform_character_order(
+        PerformCharacterOrderAction(target_id="e-bandit", order="choose_enemy_and_attack"),
+        observation,
+    )
+    kidnap = bind_perform_character_order(
+        PerformCharacterOrderAction(target_id="e-bandit", order="kidnap_order"),
+        observation,
+    )
+
+    assert attack.bound is True
+    assert "evidence: menu" in attack.reason
+    assert kidnap.bound is True
+    assert "evidence: odds" in kidnap.reason
+
+
+def test_both_probes_answering_for_one_person_offer_the_union() -> None:
+    """Neither probe can be subtracted from the other, so nothing is dropped.
+
+    The odds getter reported KIDNAP_ORDER on a cannibal whose own menu offered
+    attacking and not kidnapping. Preferring either source alone loses real
+    orders, so the offer is the union of what both admitted to.
+    """
+
+    observation = _world(
+        _person(
+            "e-bandit",
+            "Hungry bandit",
+            tasks=[
+                AdvertisedTask(value=16, name="ATTACK_ENEMIES", source=MENU),
+                AdvertisedTask(
+                    value=125,
+                    name="KIDNAP_ORDER",
+                    source=AdvertisedTaskSource.ODDS,
+                ),
+            ],
+        )
+    )
+
+    assert _semantics(observation) == {"attack_enemies", "kidnap_order"}
+
+
+def test_an_order_kenshi_never_advertised_has_no_evidence() -> None:
+    """`order_evidence` is empty for what was never offered, not defaulted."""
+
+    entity = _person("e-bandit", "Hungry bandit", tasks=[ATTACK])
+
+    assert entity.order_evidence("choose_enemy_and_attack") == frozenset({MENU})
+    assert entity.order_evidence("loot_target") == frozenset()
 
 
 def test_the_order_name_reaching_the_wire_is_the_one_telemetry_published() -> None:

@@ -1348,9 +1348,15 @@ int main(int argc, char** argv)
         naturalResource;
     probedResource.advertisedTasksProbed = true;
     probedResource.advertisedTasks.push_back(
-        KenshiAgentTelemetry::AdvertisedTask(26, "LOOT_TARGET"));
+        KenshiAgentTelemetry::AdvertisedTask(
+            26,
+            "LOOT_TARGET",
+            KenshiAgentTelemetry::AdvertisedTaskSource::MENU));
     probedResource.advertisedTasks.push_back(
-        KenshiAgentTelemetry::AdvertisedTask(87, "OPERATE_MACHINERY"));
+        KenshiAgentTelemetry::AdvertisedTask(
+            87,
+            "OPERATE_MACHINERY",
+            KenshiAgentTelemetry::AdvertisedTaskSource::ODDS));
     const std::string probedResourceSerialized =
         KenshiAgentTelemetry::SerializeNaturalResourceTarget(probedResource);
     std::string probedResourceExpected = probedResourcePayload;
@@ -1364,6 +1370,48 @@ int main(int argc, char** argv)
     {
         return Fail(
             "serialized probed natural resource diverged from fixture");
+    }
+
+    // Two probes answer for the same target and disagree in both directions,
+    // so the union has to keep every task while keeping the better evidence.
+    {
+        std::vector<KenshiAgentTelemetry::AdvertisedTask> merged;
+        KenshiAgentTelemetry::MergeAdvertisedTask(
+            merged,
+            KenshiAgentTelemetry::AdvertisedTask(
+                26,
+                "LOOT_TARGET",
+                KenshiAgentTelemetry::AdvertisedTaskSource::ODDS));
+        KenshiAgentTelemetry::MergeAdvertisedTask(
+            merged,
+            KenshiAgentTelemetry::AdvertisedTask(
+                26,
+                "LOOT_TARGET",
+                KenshiAgentTelemetry::AdvertisedTaskSource::MENU));
+        KenshiAgentTelemetry::MergeAdvertisedTask(
+            merged,
+            KenshiAgentTelemetry::AdvertisedTask(
+                16,
+                "ATTACK_ENEMIES",
+                KenshiAgentTelemetry::AdvertisedTaskSource::MENU));
+        KenshiAgentTelemetry::MergeAdvertisedTask(
+            merged,
+            KenshiAgentTelemetry::AdvertisedTask(
+                16,
+                "ATTACK_ENEMIES",
+                KenshiAgentTelemetry::AdvertisedTaskSource::ODDS));
+        if (merged.size() != 2)
+            return Fail("advertised task merge did not deduplicate by value");
+        if (merged[0].value != 26 ||
+            merged[0].source != KenshiAgentTelemetry::AdvertisedTaskSource::MENU)
+        {
+            return Fail("menu evidence did not upgrade an odds-sourced task");
+        }
+        if (merged[1].value != 16 ||
+            merged[1].source != KenshiAgentTelemetry::AdvertisedTaskSource::MENU)
+        {
+            return Fail("odds evidence downgraded a menu-sourced task");
+        }
     }
 
     if (!KenshiAgentTelemetry::IsWithinTargetProbeBudget(0, 16) ||
