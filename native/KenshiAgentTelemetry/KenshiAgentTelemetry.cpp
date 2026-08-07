@@ -1341,6 +1341,24 @@ namespace
         return false;
     }
 
+    // Which orders the ordering character may actually issue against a subject.
+    //
+    // This asks `Character::checkPlayerOrderForProblems`, not
+    // `PlayerInterface::getPlayerTaskProbability`. The probability call was the
+    // first choice and it was the wrong question: measured live against a
+    // cannibal, it returned exactly KIDNAP_ORDER and STEALTH_KNOCKOUT -- the two
+    // orders Kenshi renders a success *percentage* beside in its context menu --
+    // while Kenshi's own menu on that same cannibal offered ATTACK_ENEMIES and
+    // FOCUSED_MELEE_ATTACK and neither of those two. It is a odds-getter that
+    // reports false for any order without odds to show, so it would equally
+    // have hidden LOOT_TARGET.
+    //
+    // `isOrderValidForSelection` is not consulted at all: measured live it
+    // returned true for all 291 vocabulary entries, so it discriminates nothing
+    // and its presence in an AND only made a wrong answer unattributable.
+    // World objects: machines, resource nodes, doors. Their affordances come
+    // from the probability call, which has been safe on arbitrary RootObjects
+    // since it was introduced.
     void ProbeAdvertisedTasks(
         PlayerInterface* player,
         RootObject* target,
@@ -1361,6 +1379,73 @@ namespace
             if (!player->getPlayerTaskProbability(task, target, probability))
                 continue;
             if (!(probability > 0.0f))
+                continue;
+            advertised.push_back(
+                KenshiAgentTelemetry::AdvertisedTask(
+                    vocabulary[index].value,
+                    vocabulary[index].name));
+        }
+    }
+
+    // People are a different question from objects, and answering both with one
+    // call is what broke this.
+    //
+    // `getPlayerTaskProbability` is an odds-getter: measured live against a
+    // cannibal it returned exactly KIDNAP_ORDER and STEALTH_KNOCKOUT -- the two
+    // orders Kenshi renders a success percentage beside -- while Kenshi's own
+    // context menu on that same cannibal offered ATTACK_ENEMIES and
+    // FOCUSED_MELEE_ATTACK and neither of those. It reports false for any order
+    // with no odds to show, so it hides attacking and looting alike.
+    // `isOrderValidForSelection` is no help either: measured live it returned
+    // true for all 291 vocabulary entries.
+    //
+    // `Character::checkPlayerOrderForProblems` asks the right question, but it
+    // is only safe between characters. Pointing it at arbitrary RootObjects
+    // crashed Kenshi during world load, before a single nearby character
+    // existed -- which is precisely why the object probe above still exists
+    // rather than being replaced by this one.
+    // Disabled, and left here as the record of why.
+    //
+    // `checkPlayerOrderForProblems` is not a query. Called speculatively it
+    // made Kenshi float "I don't have a medkit" over a character -- the game's
+    // response to an *attempted* first aid order. It validates and complains on
+    // the player's behalf when an order is issued, so probing with it issues
+    // 291 order attempts per target per snapshot. It crashed world load twice,
+    // and it answered "no problem" for 285 of 291 tasks, so it would have been
+    // useless even if it were silent.
+    //
+    // Every passive option is now exhausted: `isOrderValidForSelection` is true
+    // for all 291, `getPlayerTaskProbability` reports only orders that display
+    // success odds, and this one acts. Kenshi's context menu remains the single
+    // faithful source, and reaching it means `showContextMenu` -- an action with
+    // a cost, not free perception.
+    //
+    // Until then a character reports `advertised_tasks_probed` false, which
+    // already means "not asked" rather than "affords nothing", so the binding
+    // and the affordance both stay silent instead of offering a wrong list.
+    const bool CHARACTER_ORDER_PROBE_AVAILABLE = false;
+
+    void ProbeCharacterOrders(
+        Character* orderingCharacter,
+        Character* subject,
+        std::vector<KenshiAgentTelemetry::AdvertisedTask>& advertised)
+    {
+        if (!CHARACTER_ORDER_PROBE_AVAILABLE)
+            return;
+        if (orderingCharacter == NULL || subject == NULL ||
+            !orderingCharacter->isValid() || !subject->isValid() ||
+            orderingCharacter == subject)
+        {
+            return;
+        }
+        unsigned int vocabularyCount = 0;
+        const KenshiAgentTelemetry::TaskTypeVocabularyEntry* vocabulary =
+            KenshiAgentTelemetry::TaskTypeVocabulary(vocabularyCount);
+        for (unsigned int index = 0; index < vocabularyCount; ++index)
+        {
+            const TaskType task =
+                static_cast<TaskType>(vocabulary[index].value);
+            if (orderingCharacter->checkPlayerOrderForProblems(task, subject))
                 continue;
             advertised.push_back(
                 KenshiAgentTelemetry::AdvertisedTask(
@@ -5276,15 +5361,47 @@ namespace
                 json << "\"conscious\":" << JsonBool(!target->isUnconcious());
                 json << ",";
                 const bool probeThisTarget =
+                    CHARACTER_ORDER_PROBE_AVAILABLE &&
                     probeIds.find(targetId) != probeIds.end();
                 std::vector<KenshiAgentTelemetry::AdvertisedTask> advertised;
                 if (probeThisTarget)
-                    ProbeAdvertisedTasks(player, *it, advertised);
+                    ProbeCharacterOrders(selected, target, advertised);
                 KenshiAgentTelemetry::AppendAdvertisedTasks(
                     json,
                     probeThisTarget,
                     advertised);
                 json << "}";
+            }
+        }
+        json << "],";
+        // The selection half of the order question, on its own.
+        //
+        // `advertised_tasks` is an AND of two different questions -- "may this
+        // selection issue this order at all" and "does this order apply to that
+        // target" -- and when the answer disagreed with Kenshi's own right-click
+        // menu there was no way to tell which half was wrong. Kenshi offered
+        // ATTACK_ENEMIES and FOCUSED_MELEE_ATTACK on a cannibal and the probe
+        // offered KIDNAP_ORDER: nearly disjoint sets, one shared silence.
+        // Publishing the selection-level answer separately makes the two halves
+        // independently falsifiable instead of jointly unexplained.
+        json << "\"selection_orderable_tasks\":[";
+        if (player != NULL)
+        {
+            unsigned int vocabularyCount = 0;
+            const KenshiAgentTelemetry::TaskTypeVocabularyEntry* vocabulary =
+                KenshiAgentTelemetry::TaskTypeVocabulary(vocabularyCount);
+            bool firstSelectionTask = true;
+            for (unsigned int index = 0; index < vocabularyCount; ++index)
+            {
+                const TaskType task =
+                    static_cast<TaskType>(vocabulary[index].value);
+                if (!player->isOrderValidForSelection(task))
+                    continue;
+                if (!firstSelectionTask)
+                    json << ",";
+                firstSelectionTask = false;
+                json << "{\"value\":" << vocabulary[index].value
+                     << ",\"name\":\"" << vocabulary[index].name << "\"}";
             }
         }
         json << "],";
@@ -5351,13 +5468,14 @@ namespace
                 json << "\"default_task\":\"first_aid\",";
                 std::vector<KenshiAgentTelemetry::AdvertisedTask> advertised;
                 const bool probeSquadTarget =
+                    CHARACTER_ORDER_PROBE_AVAILABLE &&
                     KenshiAgentTelemetry::IsWithinTargetProbeBudget(
                         probedSquadTargets,
                         MAX_PROBED_WORLD_TARGETS);
                 if (probeSquadTarget)
                 {
                     ++probedSquadTargets;
-                    ProbeAdvertisedTasks(player, target, advertised);
+                    ProbeCharacterOrders(selected, target, advertised);
                 }
                 KenshiAgentTelemetry::AppendAdvertisedTasks(
                     json,
