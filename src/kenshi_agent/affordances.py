@@ -1796,7 +1796,11 @@ def _rebind_affordance_operation(
         raise RuntimeError("affordance provenance does not identify one source adapter")
     adapter = adapters[0]
     target_id = affordance.target.target_id if affordance.target else None
-    rebounds: list[BoundOperation] = []
+    # Keyed, not appended. This is the third walk over raw adapter output to
+    # count what it finds, and the third to mistake a repeated identical offer
+    # for two different ones - a shop window with ten identically labelled cells
+    # emits one choice ten times, and counting them called it ambiguous.
+    rebounds: dict[str, BoundOperation] = {}
     for offer in adapter.offers(observation):
         current_target_id = offer.target.target_id if offer.target else None
         if (
@@ -1817,7 +1821,7 @@ def _rebind_affordance_operation(
         except ValueError:
             continue
         if candidate.operation == operation:
-            rebounds.append(candidate)
+            rebounds[offer.affordance_id] = candidate
     if not rebounds:
         raise OperationBindingError(
             "Affordance is absent from the current observation.",
@@ -1825,10 +1829,12 @@ def _rebind_affordance_operation(
         )
     if len(rebounds) > 1:
         raise OperationBindingError(
-            "Affordance is ambiguous in the current observation.",
+            f"Affordance is ambiguous in the current observation: "
+            f"{len(rebounds)} distinct offers match "
+            f"({', '.join(sorted(rebounds))}).",
             code=AuthorizationCode.BINDING_AMBIGUOUS,
         )
-    rebound = rebounds[0]
+    rebound = next(iter(rebounds.values()))
     return BoundOperation(
         definition=rebound.definition,
         operation=rebound.operation,

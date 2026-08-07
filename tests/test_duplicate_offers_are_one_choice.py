@@ -94,3 +94,38 @@ def test_a_repeated_offer_still_binds(
     )
 
     assert bound.operation.kind == "noop"
+
+
+@pytest.mark.parametrize("copies", [2, 10])
+def test_a_repeated_offer_still_rebinds_at_the_input_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+    observation,  # type: ignore[no-untyped-def]
+    copies: int,
+) -> None:
+    """The same miscount, at the boundary rather than at compile time.
+
+    `_rebind_affordance_operation` is a third walk over raw adapter output, and
+    it counted duplicates too - reporting the choice as *ambiguous* where the
+    compile path reported it *absent*. One live run died on each wording before
+    anyone noticed they were the same defect.
+    """
+
+    from kenshi_agent.affordances import OPERATION_BINDING_AUTHORITY
+
+    offer = next(
+        candidate
+        for candidate in offered_affordances(observation)
+        if candidate.semantic == "observe"
+    )
+    bound = bind_affordance(
+        AffordanceSelection(
+            semantic=offer.semantic,
+            target_id=offer.target.target_id if offer.target else None,
+        ),
+        observation,
+    )
+
+    _duplicate_every_offer(monkeypatch, copies)
+    rebound = OPERATION_BINDING_AUTHORITY.rebind(bound, observation)
+
+    assert rebound.operation == bound.operation
