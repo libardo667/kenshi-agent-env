@@ -49,6 +49,7 @@ _EXACT_METHODS = frozenset(
         "perform_context_action",
         "produce_resource_output",
         "transfer_item",
+        "open_trade_window",
         "purchase_item",
         "recover_camera_view",
         "regroup_with_squad_member",

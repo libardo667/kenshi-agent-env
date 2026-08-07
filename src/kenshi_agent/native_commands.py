@@ -38,6 +38,7 @@ NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND: Literal["open_context_inventory"] = 
     "open_context_inventory"
 )
 NATIVE_TRANSFER_WIRE_COMMAND: Literal["transfer_item"] = "transfer_item"
+NATIVE_TRADE_WINDOW_WIRE_COMMAND: Literal["open_trade_window"] = "open_trade_window"
 NATIVE_RESOURCE_SURVEY_WIRE_COMMAND: Literal["survey_local_resources"] = (
     "survey_local_resources"
 )

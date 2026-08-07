@@ -18,15 +18,15 @@ repository, and every captured context-menu witness had exactly one
 character selected.
 
 ```text
-operations               36
-planner-visible          34
+operations               37
+planner-visible          35
 internal-only             2
-native commands          14
-manifest entries         37
+native commands          15
+manifest entries         38
 coverage proof          PASS
 
 PROOF STATUS
-  source_proven     14
+  source_proven     15
   unit_proven        0
   live_proven        1
   unproven          20
@@ -48,6 +48,7 @@ INTERACTION CONTRACT (resolved from the sole operation registry)
   noop                                runtime_only       none                none             input_delivered         source_proven
   open_context_inventory              global_ui          explicit_recipients ui_transaction   world_outcome_observed  unproven
   open_screen                         global_ui          none                ui_transaction   world_outcome_observed  unproven
+  open_trade_window                   global_ui          none                none             world_outcome_observed  source_proven
   pause                               global_ui          none                none             world_outcome_observed  source_proven
   perform_character_order             ordinary_order     current_selection   dispatch_only    order_accepted          live_proven
   perform_context_action *            varies             current_selection   varies           varies                  unproven
@@ -90,6 +91,7 @@ EXECUTION AND ROUTING
   noop                                atomic_handler     any                      -                          runtime
   open_context_inventory              atomic_handler     paused_transaction       open_context_inventory     inventory_owners
   open_screen                         atomic_handler     paused_transaction       -                          screens
+  open_trade_window                   atomic_handler     paused_transaction       open_trade_window          trade_windows
   pause                               atomic_handler     any                      -                          runtime
   perform_character_order             monitored_option   running_for_progress     perform_character_order    character_orders
   perform_context_action              monitored_option   varies                   perform_context_action     context_orders
@@ -119,6 +121,7 @@ NATIVE COMMAND ROUTES
   move_in_direction            -> respond_to_immediate_threat
   move_to_character            -> move_to_character
   open_context_inventory       -> open_context_inventory
+  open_trade_window            -> open_trade_window
   perform_character_order      -> perform_character_order
   perform_context_action       -> perform_context_action
   produce_resource_output      -> produce_resource_output

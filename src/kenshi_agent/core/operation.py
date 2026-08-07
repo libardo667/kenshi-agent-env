@@ -400,6 +400,23 @@ class OpenContextInventoryAction(StrictModel):
     target_id: str = Field(min_length=1, max_length=200)
 
 
+class OpenTradeWindowAction(StrictModel):
+    """Put two inventories side by side, in Kenshi's own terms.
+
+    `showInventory` opens one window - a character's personal gear, the view a
+    player gets for stealing - so a transfer opened that way has nothing to move
+    between. `ForgottenGUI::showTradeWindow` takes both sides and a type, and
+    that type enum is the engine stating that trading and looting are one
+    mechanism with a flag rather than two problems.
+    """
+
+    kind: Literal["open_trade_window"] = "open_trade_window"
+    first_owner_id: str = Field(min_length=1, max_length=200)
+    second_owner_id: str = Field(min_length=1, max_length=200)
+    # Kenshi's own TradeWindowType, minus TW_OFF which closes rather than opens.
+    window_type: Literal["money_trading", "looting", "auto"] = "auto"
+
+
 class TransferItemAction(StrictModel):
     """Move one item between two open inventories, whatever owns them.
 
@@ -1041,6 +1058,7 @@ InternalRuntimeOperation: TypeAlias = (
     | ProduceResourceOutputAction
     | OpenContextInventoryAction
     | TransferItemAction
+    | OpenTradeWindowAction
     | CollectResourceOutputAction
 )
 """Controller-owned phases used only inside larger semantic options."""
@@ -1081,6 +1099,7 @@ Action: TypeAlias = (
     | ProduceResourceOutputAction
     | OpenContextInventoryAction
     | TransferItemAction
+    | OpenTradeWindowAction
     | HarvestResourceAction
     | RespondToImmediateThreatAction
     | RegroupWithSquadMemberAction

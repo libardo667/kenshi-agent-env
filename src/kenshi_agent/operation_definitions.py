@@ -57,6 +57,7 @@ from .core.operation import (
     NoopAction,
     OpenContextInventoryAction,
     OpenScreenAction,
+    OpenTradeWindowAction,
     PauseAction,
     PerformCharacterOrderAction,
     PerformContextAction,
@@ -143,6 +144,7 @@ WORLD_CONTEXT_TARGET_SCREEN_POSITIONS_CAPABILITY = "world.context_target_screen_
 NATIVE_PRODUCE_RESOURCE_CAPABILITY = "control.produce_resource_output"
 NATIVE_OPEN_CONTEXT_INVENTORY_CAPABILITY = "control.open_context_inventory"
 NATIVE_TRANSFER_CAPABILITY = "control.transfer_item"
+NATIVE_TRADE_WINDOW_CAPABILITY = "control.open_trade_window"
 
 # The one mapping from a control capability to the native command it authorizes.
 # A capability is the permission; the command is the thing performed with it.
@@ -196,6 +198,14 @@ def _wire_resource_output(action: Action) -> WireFields:
     return {
         "target_id": action.target_id,
         "minimum_output_quantity": action.minimum_output_quantity,
+    }
+
+
+def _wire_trade_window(action: Action) -> WireFields:
+    return {
+        "target_id": action.first_owner_id,
+        "destination_id": action.second_owner_id,
+        "context_action": action.window_type,
     }
 
 
@@ -1556,6 +1566,62 @@ def bind_open_context_inventory(
         target_id=action.target_id,
         resolved_label=label,
         source_revision=observation.world_revision,
+    )
+
+
+def bind_open_trade_window(
+    action: Action,
+    observation: Observation,
+) -> BoundNamedTarget | BindingFailure:
+    """Bind two observed parties whose inventories should be paired.
+
+    Both must be observed; neither needs an inventory open yet, because opening
+    them is what this does. Whether Kenshi will pair these two is Kenshi's
+    answer at dispatch.
+    """
+
+    if not isinstance(action, OpenTradeWindowAction):
+        return _unbound("Action is not an open_trade_window action.")
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return _unbound("No telemetry is available to bind the trade window.")
+    if observation.telemetry_stale:
+        return _unbound("Telemetry is stale, so the trade window cannot be bound.")
+    first = _observed_inventory_owner(action.first_owner_id, observation)
+    second = _observed_inventory_owner(action.second_owner_id, observation)
+    if first is None:
+        return _unbound(
+            f"{action.first_owner_id!r} is not currently observed, so its "
+            "inventory cannot be paired."
+        )
+    if second is None:
+        return _unbound(
+            f"{action.second_owner_id!r} is not currently observed, so its "
+            "inventory cannot be paired."
+        )
+    if telemetry.ui.dialogue_open is not False:
+        return _unbound("A dialogue is open; close it before pairing inventories.")
+    return BoundNamedTarget(
+        reason=(
+            f"Bound a {action.window_type} window pairing {first[0]!r} with "
+            f"{second[0]!r}. Whether Kenshi pairs them is its answer at dispatch."
+        ),
+        target_id=action.first_owner_id,
+        resolved_label=f"{first[0]} and {second[0]}",
+        source_revision=observation.world_revision,
+    )
+
+
+def trade_window_is_currently_authorable(observation: Observation) -> bool:
+    """Whether there are two observed parties to pair at all."""
+
+    telemetry = observation.telemetry
+    if telemetry is None or observation.telemetry_stale:
+        return False
+    if telemetry.ui.dialogue_open is not False:
+        return False
+    return bool(telemetry.squad) and bool(
+        telemetry.nearby_entities or telemetry.world_targets or len(telemetry.squad) > 1
     )
 
 
@@ -4002,6 +4068,49 @@ OPEN_CONTEXT_INVENTORY_DEFINITION = OperationDefinition(
 )
 
 
+OPEN_TRADE_WINDOW_DEFINITION = OperationDefinition(
+    kind="open_trade_window",
+    wire_command="open_trade_window",
+    project_wire_fields=_wire_trade_window,
+    version="1.0",
+    interaction=global_ui(
+        recipients=RecipientScope.NONE,
+        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
+        selection=SelectionDependency.NONE,
+        playback=PlaybackRequirement.PAUSED_TRANSACTION,
+    ),
+    operation_type=OpenTradeWindowAction,
+    summary=(
+        "Open two inventories side by side, which is the state a transfer acts "
+        "in. Kenshi's own window types are money_trading, looting and auto; the "
+        "single-inventory opener shows a character's personal gear instead, "
+        "which is the stealing view and cannot host a transfer."
+    ),
+    argument_source=(
+        "first_owner_id and second_owner_id are copied from any observed squad "
+        "member, nearby character, or world target."
+    ),
+    allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset(
+        {NATIVE_TRADE_WINDOW_CAPABILITY, "identity.stable_handles"}
+    ),
+    capability_aliases=frozenset(),
+    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
+    native_assisted=True,
+    risk=OperationRisk(native_assisted_actions=1),
+    max_primitive_actions=4,
+    reference_fields=("first_owner_id", "second_owner_id", "window_type"),
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=OperationExecution.ATOMIC_HANDLER,
+    receipt_kind="semantic_context_inventory",
+    bind=bind_open_trade_window,
+    handler_key="resources.open_trade_window",
+    controller_verified=True,
+    native_terminal_success_reasons=frozenset({"trade_window_open"}),
+    authorable_when=trade_window_is_currently_authorable,
+)
+
+
 TRANSFER_ITEM_DEFINITION = OperationDefinition(
     kind="transfer_item",
     wire_command="transfer_item",
@@ -4908,6 +5017,7 @@ OPERATION_DEFINITION_LIST: tuple[OperationDefinition, ...] = (
     PERFORM_CHARACTER_ORDER_DEFINITION,
     RESPOND_TO_IMMEDIATE_THREAT_DEFINITION,
     OPEN_CONTEXT_INVENTORY_DEFINITION,
+    OPEN_TRADE_WINDOW_DEFINITION,
     TRANSFER_ITEM_DEFINITION,
     REGROUP_WITH_SQUAD_MEMBER_DEFINITION,
     MOVE_TO_CHARACTER_DEFINITION,

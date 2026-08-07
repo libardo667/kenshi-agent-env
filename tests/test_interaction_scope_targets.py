@@ -179,6 +179,7 @@ def test_native_command_names_remain_the_known_set() -> None:
         "produce_resource_output",
         "open_context_inventory",
         "transfer_item",
+        "open_trade_window",
         "survey_local_resources",
     }
 

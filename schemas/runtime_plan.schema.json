@@ -1445,6 +1445,46 @@
       "title": "OpenScreenAction",
       "type": "object"
     },
+    "OpenTradeWindowAction": {
+      "additionalProperties": false,
+      "description": "Put two inventories side by side, in Kenshi's own terms.\n\n`showInventory` opens one window - a character's personal gear, the view a\nplayer gets for stealing - so a transfer opened that way has nothing to move\nbetween. `ForgottenGUI::showTradeWindow` takes both sides and a type, and\nthat type enum is the engine stating that trading and looting are one\nmechanism with a flag rather than two problems.",
+      "properties": {
+        "kind": {
+          "const": "open_trade_window",
+          "default": "open_trade_window",
+          "title": "Kind",
+          "type": "string"
+        },
+        "first_owner_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "First Owner Id",
+          "type": "string"
+        },
+        "second_owner_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Second Owner Id",
+          "type": "string"
+        },
+        "window_type": {
+          "default": "auto",
+          "enum": [
+            "money_trading",
+            "looting",
+            "auto"
+          ],
+          "title": "Window Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "first_owner_id",
+        "second_owner_id"
+      ],
+      "title": "OpenTradeWindowAction",
+      "type": "object"
+    },
     "PauseAction": {
       "additionalProperties": false,
       "properties": {
@@ -1633,6 +1673,9 @@
             },
             {
               "$ref": "#/$defs/TransferItemAction"
+            },
+            {
+              "$ref": "#/$defs/OpenTradeWindowAction"
             },
             {
               "$ref": "#/$defs/HarvestResourceAction"

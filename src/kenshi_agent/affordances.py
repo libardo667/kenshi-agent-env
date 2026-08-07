@@ -59,6 +59,7 @@ from .operation_definitions import (
     NATIVE_CHARACTER_ORDER_CAPABILITY,
     NATIVE_OPEN_CONTEXT_INVENTORY_CAPABILITY,
     NATIVE_SHIFT_BODY_CAPABILITY,
+    NATIVE_TRADE_WINDOW_CAPABILITY,
     NATIVE_TRANSFER_CAPABILITY,
     NEARBY_ORDERABLE_TASKS_CAPABILITY,
     OPERATION_DEFINITIONS,
@@ -895,6 +896,62 @@ def _inventory_owner_offers(observation: Observation) -> Iterable[AffordanceOffe
         )
 
 
+MAX_TRADE_WINDOWS_OFFERED = 12
+
+
+def _trade_window_offers(observation: Observation) -> Iterable[AffordanceOffer]:
+    """Offer pairing the selected character's inventory with someone else's.
+
+    This is the state a transfer acts in, and the single-inventory opener
+    cannot produce it: `showInventory` shows a character's personal gear, which
+    is the view for stealing. Kenshi's own window types come along unchanged -
+    looting and money trading are one mechanism with a flag, not two problems.
+    """
+
+    telemetry = observation.telemetry
+    if telemetry is None or observation.control_mode is not ControlMode.NATIVE_ASSISTED:
+        return
+    if NATIVE_TRADE_WINDOW_CAPABILITY not in set(telemetry.capabilities):
+        return
+    if telemetry.ui.dialogue_open is not False:
+        return
+    actor = telemetry.ui.selected_character_id
+    if actor is None:
+        return
+    held = {inventory.owner_id for inventory in telemetry.ui.open_inventories}
+
+    others: list[tuple[str, str, str]] = [
+        (entity.id, entity.name, entity.kind)
+        for entity in telemetry.nearby_entities
+    ] + [
+        (member.id, member.name, "squad_character")
+        for member in telemetry.squad
+        if member.id != actor
+    ]
+    offered = 0
+    for owner_id, label, kind in others:
+        if owner_id in held or offered >= MAX_TRADE_WINDOWS_OFFERED:
+            continue
+        offered += 1
+        yield _offer(
+            observation,
+            source=AffordanceSource.INVENTORY,
+            semantic="open_trade_window",
+            description=(
+                f"Open your inventory alongside {kind} {label!r} so items can "
+                "move between them. Kenshi decides whether the pairing is "
+                "trading or looting."
+            ),
+            operation_kind="open_trade_window",
+            target=AffordanceTarget(target_id=owner_id, label=label, kind=kind),
+            arguments={
+                "first_owner_id": actor,
+                "second_owner_id": owner_id,
+                "window_type": "auto",
+            },
+        )
+
+
 MAX_TRANSFERS_OFFERED = 24
 
 
@@ -1640,6 +1697,20 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
             "answer at dispatch, reported in its own words."
         ),
         enumerate=_item_transfer_offers,
+    ),
+    AffordanceAdapter(
+        name="trade_windows",
+        sources=frozenset({AffordanceSource.INVENTORY}),
+        operation_kinds=frozenset({"open_trade_window"}),
+        denominator=(
+            "Every nearby person and squadmate whose inventory could be paired "
+            "with the selected character's."
+        ),
+        completeness_boundary=(
+            "Bounded to the nearest few. Whether Kenshi pairs a given two is its "
+            "answer at dispatch."
+        ),
+        enumerate=_trade_window_offers,
     ),
     AffordanceAdapter(
         name="dialogue_targets",

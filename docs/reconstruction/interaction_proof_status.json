@@ -110,12 +110,34 @@
       "note": "Screen opening is global today. Whether any specific screen is primary-scoped rather than global is exactly the question section 10.1 leaves open; no screen has been proven primary-owned."
     },
     {
+      "operation_kind": "open_trade_window",
+      "proof_status": "source_proven",
+      "evidence": [
+        "KenshiAgentTelemetry.cpp open_trade_window: resolves both parties to handles and calls ForgottenGUI::showTradeWindow(a, b, TradeWindowType), then requires getNumOpenInventoryWindows() >= 2 as terminal evidence",
+        "TradeWindowType is Kenshi's own enum - TW_OFF, TW_MONEY_TRADING, TW_LOOTING, TW_AUTO - so trading and looting arrive as one mechanism with a flag rather than as two operations invented here",
+        "The single-window opener beside it calls showInventory, which shows a character's personal gear: measured live against the Barman it reported his armour and legs sections and exactly one window, which is the stealing view and cannot host a transfer"
+      ],
+      "note": "Not yet dispatched live. This is the state transfer_item requires and could not previously reach."
+    },
+    {
       "operation_kind": "pause",
       "proof_status": "source_proven",
       "evidence": [
         "operation_definitions.py PAUSE_DEFINITION is internal-only"
       ],
       "note": "Slice 7 moves ordinary in-run pause behind the playback coordinator; FinalSafeStateOwner keeps the terminal pause decision. Its milestone is a real observed world state, not delivery."
+    },
+    {
+      "operation_kind": "perform_character_order",
+      "proof_status": "live_proven",
+      "evidence": [
+        "KenshiAgentTelemetry.cpp ProbeMenuOrders: hooks ContextMenuGUI::show and returns early during a probe, then calls ContextMenu::showContextMenu(true, target) and reads ContextMenu::orders before closing it again. Kenshi already separates building the order list from drawing it, so muting the second leaves the first intact and the agent is offered the same list a player sees on right-click, with no widget shown. It refuses to run while a menu is already open and calls through the saved original rather than our own hook, so what the player opened a menu on is never overwritten",
+        "The three passive predicates were each measured live and each answers a different question: isOrderValidForSelection returned true for all 291 vocabulary entries; getPlayerTaskProbability is an odds getter that returned exactly KIDNAP_ORDER and STEALTH_KNOCKOUT against a cannibal whose own menu offered ATTACK_ENEMIES and FOCUSED_MELEE_ATTACK; Character::checkPlayerOrderForProblems is not a query at all -- it floated 'I don't have a medkit' over a character, crashed world load twice, and answered 'no problem' for 285 of 291",
+        "Both probes still run and the union is reported with provenance, since they disagree in both directions and neither can be subtracted from the other. AdvertisedTask.source records menu or odds, and it travels into the bound reason so an order that binds and then fails to take is attributable without a second live run",
+        "KenshiAgentTelemetry.cpp perform_character_order: resolves the wire's lowercased vocabulary name to its TaskType, re-probes with the same ProbeAdvertisedTasks that published the offer so publication and dispatch cannot consult different oracles, adopts an identical active goal via HasExactContextGoal instead of reissuing, then newPlayerTaskSelectedCharacters(task, handle, building, position, false) -- the same generic call that already carries MOVE_CUS_ORDERED and PLAYER_TALK_TO",
+        "Target resolution deliberately uses FindExactNearbyCharacter, which applies no disposition filter, rather than FindExactDialogueTarget: an order is not a conversation, and hostiles, the unconscious, and the dead are exactly who orders are for"
+      ],
+      "note": "Dispatched live on kae-04-funded-pair: stealth_knockout, unprovoked_focused_melee_attack, attack_enemies, player_talk_to and loot_target each reached goal adoption and finished on context_task_started, none of them a verb written into this repo. Kenshi's own state reasoning arrived with them -- measured live, an unconscious bandit advertised LOOT_TARGET, LIFT_PERSON_PLAYER_ORDER and FIRST_AID_ORDER and no attack, while a conscious one advertised UNPROVOKED_FOCUSED_MELEE_ATTACK and no looting. Both probes earned their place: the knockout that created the lootable body came from the odds getter, and the looting from the menu. The probe budget means an unprobed person reports advertised_tasks_probed false, and both the binding and the affordance treat that as unknown rather than empty. A dispatch whose probe could not run is refused as order_probe_unavailable rather than context_action_unavailable, so 'Kenshi withdrew this order' stays distinct from 'nobody could ask'. Two gaps remain, both past the order rather than in it: roughly a third of orders finish as movement_stalled because the ordered character cannot path to the target, and the order is terminal at goal adoption, so nothing observes the looting that follows -- with the loot window open the agent had no affordance to take anything and waited for a completion no field reports."
     },
     {
       "operation_kind": "perform_context_action",
@@ -224,30 +246,6 @@
       "note": "Refuses a dead, unconscious, or hostile body natively as well as in the binding. Entering a body is not repeatable against the same evidence, so it is at_most_once."
     },
     {
-      "operation_kind": "perform_character_order",
-      "proof_status": "live_proven",
-      "evidence": [
-        "KenshiAgentTelemetry.cpp ProbeMenuOrders: hooks ContextMenuGUI::show and returns early during a probe, then calls ContextMenu::showContextMenu(true, target) and reads ContextMenu::orders before closing it again. Kenshi already separates building the order list from drawing it, so muting the second leaves the first intact and the agent is offered the same list a player sees on right-click, with no widget shown. It refuses to run while a menu is already open and calls through the saved original rather than our own hook, so what the player opened a menu on is never overwritten",
-        "The three passive predicates were each measured live and each answers a different question: isOrderValidForSelection returned true for all 291 vocabulary entries; getPlayerTaskProbability is an odds getter that returned exactly KIDNAP_ORDER and STEALTH_KNOCKOUT against a cannibal whose own menu offered ATTACK_ENEMIES and FOCUSED_MELEE_ATTACK; Character::checkPlayerOrderForProblems is not a query at all -- it floated 'I don't have a medkit' over a character, crashed world load twice, and answered 'no problem' for 285 of 291",
-        "Both probes still run and the union is reported with provenance, since they disagree in both directions and neither can be subtracted from the other. AdvertisedTask.source records menu or odds, and it travels into the bound reason so an order that binds and then fails to take is attributable without a second live run",
-        "KenshiAgentTelemetry.cpp perform_character_order: resolves the wire's lowercased vocabulary name to its TaskType, re-probes with the same ProbeAdvertisedTasks that published the offer so publication and dispatch cannot consult different oracles, adopts an identical active goal via HasExactContextGoal instead of reissuing, then newPlayerTaskSelectedCharacters(task, handle, building, position, false) -- the same generic call that already carries MOVE_CUS_ORDERED and PLAYER_TALK_TO",
-        "Target resolution deliberately uses FindExactNearbyCharacter, which applies no disposition filter, rather than FindExactDialogueTarget: an order is not a conversation, and hostiles, the unconscious, and the dead are exactly who orders are for"
-      ],
-      "note": "Dispatched live on kae-04-funded-pair: stealth_knockout, unprovoked_focused_melee_attack, attack_enemies, player_talk_to and loot_target each reached goal adoption and finished on context_task_started, none of them a verb written into this repo. Kenshi's own state reasoning arrived with them -- measured live, an unconscious bandit advertised LOOT_TARGET, LIFT_PERSON_PLAYER_ORDER and FIRST_AID_ORDER and no attack, while a conscious one advertised UNPROVOKED_FOCUSED_MELEE_ATTACK and no looting. Both probes earned their place: the knockout that created the lootable body came from the odds getter, and the looting from the menu. The probe budget means an unprobed person reports advertised_tasks_probed false, and both the binding and the affordance treat that as unknown rather than empty. A dispatch whose probe could not run is refused as order_probe_unavailable rather than context_action_unavailable, so 'Kenshi withdrew this order' stays distinct from 'nobody could ask'. Two gaps remain, both past the order rather than in it: roughly a third of orders finish as movement_stalled because the ordered character cannot path to the target, and the order is terminal at goal adoption, so nothing observes the looting that follows -- with the loot window open the agent had no affordance to take anything and waited for a completion no field reports."
-    },
-    {
-      "operation_kind": "transfer_item",
-      "proof_status": "source_proven",
-      "evidence": [
-        "KenshiAgentTelemetry.cpp transfer_item: resolves both owners to handles, requires both inventory windows open, and calls InventoryGUI::RClickAutoTrade(section, x, y, destination, thieveryChecks, first) -- the engine's own right-click transfer, which the five operations it replaces each simulated with a mouse",
-        "The verdict is Kenshi's and is reported verbatim rather than collapsed into success or failure: ok, no_room, cant_afford, shopkeeper_cant_afford, cant_wear_item, incompatible_item, locked, thief_detected, selling_stolen_item_detected, thats_mine, target_conscious, smuggling_only, illegal_goods, uniforms, container_not_empty. Inventing a coarser vocabulary on top of a finer one is how selection_mismatch came to mean six conditions",
-        "Conservation is measured across the call rather than inferred from the verdict: a permitted transfer that moved nothing terminates as permitted_without_moving rather than as success, because an engine answering OK has said the transfer was allowed, not that an item moved",
-        "The slot is the address. RClickAutoTrade takes a section name and an x/y, and UIState.open_inventories exports exactly that per item, so no cell label is scraped from a MyGUI widget and no pointer is used at all",
-        "pointer_actions is 0. The operations this subsumes spend 23 pointer actions between them, 12 of those in harvest_resource alone"
-      ],
-      "note": "Not yet dispatched live. Requires two inventories open at once, which is why opening one no longer refuses because another already is. Binding proves both inventories open, the section present, and the named item still in its slot, since position alone is not identity."
-    },
-    {
       "operation_kind": "stop",
       "proof_status": "source_proven",
       "evidence": [
@@ -263,6 +261,18 @@
         "native survey completes on publication and issues no order, so it commands no recipient"
       ],
       "note": "Reads Kenshi's resource field around the primary character and returns a grid rather than the window's area-averaged scalar, which reports 0 for a discrete deposit. Gated on an action deliberately: the agent learns what it surveyed, not what exists everywhere. Two things are unproven and are live-proof items - whether the null biome argument is accepted at runtime, and what the returned value scale means."
+    },
+    {
+      "operation_kind": "transfer_item",
+      "proof_status": "source_proven",
+      "evidence": [
+        "KenshiAgentTelemetry.cpp transfer_item: resolves both owners to handles, requires both inventory windows open, and calls InventoryGUI::RClickAutoTrade(section, x, y, destination, thieveryChecks, first) -- the engine's own right-click transfer, which the five operations it replaces each simulated with a mouse",
+        "The verdict is Kenshi's and is reported verbatim rather than collapsed into success or failure: ok, no_room, cant_afford, shopkeeper_cant_afford, cant_wear_item, incompatible_item, locked, thief_detected, selling_stolen_item_detected, thats_mine, target_conscious, smuggling_only, illegal_goods, uniforms, container_not_empty. Inventing a coarser vocabulary on top of a finer one is how selection_mismatch came to mean six conditions",
+        "Conservation is measured across the call rather than inferred from the verdict: a permitted transfer that moved nothing terminates as permitted_without_moving rather than as success, because an engine answering OK has said the transfer was allowed, not that an item moved",
+        "The slot is the address. RClickAutoTrade takes a section name and an x/y, and UIState.open_inventories exports exactly that per item, so no cell label is scraped from a MyGUI widget and no pointer is used at all",
+        "pointer_actions is 0. The operations this subsumes spend 23 pointer actions between them, 12 of those in harvest_resource alone"
+      ],
+      "note": "Not yet dispatched live. Requires two inventories open at once, which is why opening one no longer refuses because another already is. Binding proves both inventories open, the section present, and the named item still in its slot, since position alone is not identity."
     },
     {
       "operation_kind": "travel_to_map_destination",

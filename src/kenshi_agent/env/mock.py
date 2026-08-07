@@ -283,6 +283,7 @@ class MockOperationPort:
     scroll_screen = _record
     select_squad_member = _record
     transfer_item = _record
+    open_trade_window = _record
     select_squad_member_exact = _record
     sell_item = _record
     shift_into_body = _record

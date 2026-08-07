@@ -1178,6 +1178,12 @@ the whole point.
 # the field is shared rather than duplicated: both answer "which of this
 # target's advertised actions".
 NATIVE_TRANSFER_WIRE_COMMAND = "transfer_item"
+NATIVE_TRADE_WINDOW_WIRE_COMMAND = "open_trade_window"
+
+# Commands addressed by two parties rather than one.
+NATIVE_COMMANDS_NAMING_TWO_PARTIES: frozenset[str] = frozenset(
+    {NATIVE_TRANSFER_WIRE_COMMAND, NATIVE_TRADE_WINDOW_WIRE_COMMAND}
+)
 
 NATIVE_COMMANDS_NAMING_AN_ACTION: frozenset[str] = frozenset(
     {
@@ -1196,6 +1202,8 @@ NATIVE_COMMANDS_NAMING_A_TARGET: frozenset[str] = frozenset(
         "perform_context_action",
         # Names the exact person the order is issued against.
         "perform_character_order",
+        # Kenshi's TradeWindowType rides in the action field.
+        "open_trade_window",
         "produce_resource_output",
         "open_context_inventory",
         # Names the source inventory's owner. The destination and the slot ride
@@ -1252,14 +1260,14 @@ def require_consistent_wire_shape(
     # A transfer is addressed by both ends. Naming only the source would let one
     # request stand for "move this item somewhere", which is not a thing Kenshi
     # can be asked and not a thing an acknowledgement could be matched to.
-    if command == NATIVE_TRANSFER_WIRE_COMMAND:
+    if command in NATIVE_COMMANDS_NAMING_TWO_PARTIES:
         if not destination_id:
             raise ValueError(f"a {command} {subject} requires a destination")
         if destination_id == target_id:
             raise ValueError(
                 f"a {command} {subject} must name two different inventories"
             )
-        if not section_name:
+        if command == NATIVE_TRANSFER_WIRE_COMMAND and not section_name:
             raise ValueError(f"a {command} {subject} requires a source section")
     elif destination_id or section_name:
         raise ValueError(
@@ -1298,6 +1306,10 @@ NativeWireCommand = Literal[
     # adjudicates it and says why not, so looting, buying, selling, giving and
     # harvesting are one command rather than five that each drive a mouse.
     "transfer_item",
+    # Both inventories at once, typed by Kenshi's own TradeWindowType. The
+    # single-window opener beside it shows a character's personal gear, which
+    # is the stealing view and not a state a transfer can act in.
+    "open_trade_window",
     "survey_local_resources",
 ]
 
