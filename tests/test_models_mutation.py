@@ -841,6 +841,8 @@ def test_log_digest_conserves_the_complete_bounded_logging_contract() -> None:
             for index in range(60)
         ],
         "open_windows": ["Vendor Stock", "Decision"],
+        "open_inventories": [],
+        "open_inventories_complete": True,
     }
     assert telemetry_digest["selected"] == {
         "id": "entity-hep",

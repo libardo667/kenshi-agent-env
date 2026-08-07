@@ -562,6 +562,32 @@ class Observation(StrictModel):
                     if control.role == "item"
                 ][:60],
                 "open_windows": self.open_window_captions(),
+                # Who owns each open inventory and how much is in it. The count
+                # beside this says two windows are open; it cannot say whose, or
+                # whether the export saw inside them. A live trade reached two
+                # windows and the agent reported no way to move anything, and
+                # the bundle could not distinguish "the export was empty" from
+                # "the offer was filtered" - so the next step was another run
+                # rather than a query.
+                "open_inventories": [
+                    {
+                        "owner_id": inventory.owner_id,
+                        "owner_name": inventory.owner_name,
+                        "owner_kind": inventory.owner_kind,
+                        "player_owned": inventory.player_owned,
+                        "money": inventory.money,
+                        "item_count": sum(
+                            len(section.items) for section in inventory.sections
+                        ),
+                        "sections": [
+                            section.name
+                            for section in inventory.sections
+                            if section.items
+                        ][:8],
+                    }
+                    for inventory in telemetry.ui.open_inventories
+                ],
+                "open_inventories_complete": telemetry.ui.open_inventories_complete,
             },
             # The evaluator reconstructs native command causality from these, so
             # they are kept whole rather than counted.
