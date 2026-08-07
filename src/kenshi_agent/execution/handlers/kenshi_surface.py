@@ -109,6 +109,72 @@ class LiveExternalPort(Protocol):
     ) -> Observation: ...
 
 
+def _observes_inventory_owner(telemetry: TelemetrySnapshot, target_id: str) -> bool:
+    """Whether anything currently observed could be the owner of an inventory.
+
+    An inventory owner is not necessarily a nearby character. A squad member is
+    in `squad`, a container in `world_targets`, a body in `nearby_entities`, and
+    Kenshi opens all three by handle without asking which. Proving the owner is
+    still observed somewhere is the honest check; proving it is a nearby
+    character would refuse the agent its own squad.
+    """
+
+    return (
+        any(member.id == target_id for member in telemetry.squad)
+        or any(entity.id == target_id for entity in telemetry.nearby_entities)
+        or any(world.id == target_id for world in telemetry.world_targets)
+        or any(found.id == target_id for found in telemetry.discovered_objects)
+    )
+
+
+# Commands whose whole request is "this command, at that target". They differed
+# only in which list they proved the target still sat in, and each carried its
+# own copy of the same build call - so a fourth could arrive with a validation
+# and no request, or a request and no validation. Keeping the proofs together
+# and the build once makes that pairing structural.
+_TARGET_ONLY_WIRE_COMMANDS: frozenset[str] = frozenset(
+    {
+        native_commands.NATIVE_SQUAD_SELECTION_WIRE_COMMAND,
+        native_commands.NATIVE_SQUAD_REGROUP_WIRE_COMMAND,
+        native_commands.NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND,
+    }
+)
+
+
+def _target_only_command_error(
+    wire_command: NativeWireCommand,
+    telemetry: TelemetrySnapshot,
+    target_id: str,
+    selected_ids: Sequence[str],
+) -> str | None:
+    """Why a target-only native command cannot be issued now, or None."""
+
+    if wire_command == native_commands.NATIVE_SQUAD_SELECTION_WIRE_COMMAND:
+        matches = [member for member in telemetry.squad if member.id == target_id]
+        if len(matches) != 1:
+            return "Native squad-selection target is absent or ambiguous at issue time."
+        return None
+    if wire_command == native_commands.NATIVE_SQUAD_REGROUP_WIRE_COMMAND:
+        matches = [
+            member
+            for member in telemetry.squad
+            if member.id == target_id and member.id not in selected_ids
+        ]
+        if len(matches) != 1 or matches[0].alive is not True:
+            return (
+                "Native squad-regroup target is absent, not distinct from the "
+                "actor, ambiguous, or not confirmed alive at issue time."
+            )
+        return None
+    if wire_command == native_commands.NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND:
+        if not _observes_inventory_owner(telemetry, target_id):
+            return "Native inventory owner is absent from current telemetry."
+        return None
+    raise RuntimeError(
+        f"{wire_command!r} is listed as target-only but has no validation rule."
+    )
+
+
 class KenshiControlSurface:
     """One external delivery path into a running Kenshi process."""
 
@@ -1128,10 +1194,15 @@ class KenshiControlSurface:
         model started.
         """
 
+        # `open_context_inventory` was in this set and is not any more. It names
+        # an owner, not a world target advertising a context action, so routing
+        # it here demanded that a squad member be a `natural_resource` offering
+        # `operate` - and every attempt to open a person's inventory was refused
+        # with "no longer advertises the exact 'operate' action" about someone
+        # who had never advertised anything of the kind.
         if wire_command not in {
             native_commands.NATIVE_CONTEXT_ACTION_WIRE_COMMAND,
             native_commands.NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND,
-            native_commands.NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND,
         }:
             return None
         if wire_command == native_commands.NATIVE_CONTEXT_ACTION_WIRE_COMMAND:
@@ -1378,30 +1449,12 @@ class KenshiControlSurface:
                 selected_ids,
                 target_id=target_id,
             )
-        if wire_command == native_commands.NATIVE_SQUAD_SELECTION_WIRE_COMMAND:
-            target_matches = [member for member in telemetry.squad if member.id == target_id]
-            if len(target_matches) != 1:
-                raise RuntimeError(
-                    "Native squad-selection target is absent or ambiguous at issue time."
-                )
-            return self._native_request(
-                command,
-                wire_command,
-                observation,
-                selected_ids,
-                target_id=target_id,
+        if wire_command in _TARGET_ONLY_WIRE_COMMANDS:
+            failure = _target_only_command_error(
+                wire_command, telemetry, target_id, selected_ids
             )
-        if wire_command == native_commands.NATIVE_SQUAD_REGROUP_WIRE_COMMAND:
-            target_matches = [
-                member
-                for member in telemetry.squad
-                if member.id == target_id and member.id not in selected_ids
-            ]
-            if len(target_matches) != 1 or target_matches[0].alive is not True:
-                raise RuntimeError(
-                    "Native squad-regroup target is absent, not distinct from the "
-                    "actor, ambiguous, or not confirmed alive at issue time."
-                )
+            if failure is not None:
+                raise RuntimeError(failure)
             return self._native_request(
                 command,
                 wire_command,
