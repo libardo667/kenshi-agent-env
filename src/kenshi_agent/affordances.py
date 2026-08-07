@@ -667,13 +667,22 @@ def _trade_window_offers(observation: Observation) -> Iterable[AffordanceOffer]:
         return
     held = {inventory.owner_id for inventory in telemetry.ui.open_inventories}
 
+    # Squad first, then nearby by stable id.
+    #
+    # This listed nearby entities first and truncated at the cap, so with a
+    # crowd around the squad pairings fell off the end - and *which* nearby ones
+    # survived shifted as distances changed. A planner copied a real
+    # `affordance_id`, the next observation no longer carried it, and the choice
+    # was refused as absent. `_offer_id` already carries a note about this
+    # failure from the last time an offer's identity was unstable; the identity
+    # was fine here and the membership was not.
     others: list[tuple[str, str, str]] = [
-        (entity.id, entity.name, entity.kind)
-        for entity in telemetry.nearby_entities
-    ] + [
         (member.id, member.name, "squad_character")
-        for member in telemetry.squad
+        for member in sorted(telemetry.squad, key=lambda member: member.id)
         if member.id != actor
+    ] + [
+        (entity.id, entity.name, entity.kind)
+        for entity in sorted(telemetry.nearby_entities, key=lambda entity: entity.id)
     ]
     offered = 0
     for owner_id, label, kind in others:

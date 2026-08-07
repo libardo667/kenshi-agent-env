@@ -21,9 +21,14 @@ Output contract
 Affordance authority
 
 `affordances` is the entire game-action language offered for this observation.
-It is generated at runtime from named bindings, visible controls, contextual
-orders, dialogue choices, inventory cells, characters, map destinations, and
-native or composite operations. Different sources share this one contract.
+It is generated at runtime from contextual orders, the orders Kenshi itself
+advertises on a person, dialogue targets, characters, map destinations, paired
+inventories and the transfers between them, body shifts, and native or
+composite operations. Different sources share this one contract.
+
+Nothing here moves a pointer. Every offer reaches Kenshi through its own code,
+so there is no clicking, no screen geometry, and no window to scroll: if an
+effect is not offered, it is not available by finding it on screen.
 
 Select only a currently listed affordance. Never name an executor operation or
 reconstruct an action from raw telemetry. Never invent or alter an opaque ID.
