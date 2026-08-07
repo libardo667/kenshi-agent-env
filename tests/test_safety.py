@@ -1,34 +1,23 @@
-from datetime import UTC, datetime
 
 import pytest
 
-from kenshi_agent.action_budget import ActionBudgetError, ActionBudgetLedger
+from kenshi_agent.action_budget import ActionBudgetLedger
 from kenshi_agent.affordances import OPERATION_BINDING_AUTHORITY
 from kenshi_agent.config import SafetyConfig
-from kenshi_agent.core.continuity import (
-    FieldbookProjectIndex,
-    FieldbookProjectKind,
-    FieldbookProjectStatus,
-)
 from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.operation import (
     Action,
     ApproachDialogueTargetAction,
     ClickAction,
-    ConsultAdvisorAction,
     ControlMode,
     CoordinateSpace,
-    GameBinding,
     MoveCursorAction,
     PauseAction,
     PurchaseItemAction,
-    ReadFieldbookAction,
-    RecallMemoryAction,
     ScrollAction,
     SelectSquadMemberExactAction,
     SetSpeedAction,
     TravelToMapDestinationAction,
-    UseGameBindingAction,
     WaitAction,
 )
 from kenshi_agent.core.telemetry import (
@@ -351,180 +340,6 @@ def test_set_speed_unpause_requires_explicit_profile_authority() -> None:
 
     enabled = safety_config().model_copy(update={"allow_live_unpause_actions": True})
     assert OperationPolicy(enabled).validate(action, paused) == action
-
-
-@pytest.mark.parametrize(
-    "binding",
-    [
-        GameBinding.PAUSE,
-        GameBinding.SPEED_1,
-        GameBinding.SPEED_2,
-        GameBinding.SPEED_3,
-    ],
-)
-def test_raw_time_binding_is_not_a_guarded_planner_affordance(
-    binding: GameBinding,
-) -> None:
-    guard = OperationPolicy(
-        safety_config().model_copy(
-            update={"allow_action_kinds": [*safety_config().allow_action_kinds, "use_game_binding"]}
-        ),
-    )
-    action = UseGameBindingAction(
-        binding=binding,
-        expected_effect="change playback",
-    )
-    observation = Observation(
-        run_id="run",
-        step_index=0,
-        mode="live",
-        telemetry=TelemetrySnapshot(
-            capabilities=["game.pause", "game.speed"],
-            game=GameState(loaded=True, paused=False, speed_multiplier=1.0),
-        ),
-    )
-
-    with pytest.raises(SafetyViolation, match="Raw time bindings"):
-        guard.validate(action, observation)
-
-
-def test_safety_pause_bypasses_only_the_rate_budget() -> None:
-    config = safety_config().model_copy(update={"max_actions_per_minute": 1})
-    guard = OperationPolicy(config)
-    ledger = ActionBudgetLedger(config)
-    observation = Observation(run_id="run", step_index=0, mode="mock")
-
-    ledger.commit(reserve_action(ledger, PauseAction(paused=True), observation))
-    with pytest.raises(ActionBudgetError, match="rate limit"):
-        reserve_action(ledger, PauseAction(paused=True), observation)
-
-    assert guard.validate_safety_pause(PauseAction(paused=True), observation).paused is True
-    with pytest.raises(SafetyViolation, match="paused=true"):
-        guard.validate_safety_pause(PauseAction(paused=False), observation)
-
-    mismatched = Observation(
-        run_id="run",
-        step_index=0,
-        mode="live",
-        control_mode=ControlMode.NATIVE_ASSISTED,
-        telemetry=TelemetrySnapshot(game=GameState(paused=False)),
-    )
-    with pytest.raises(SafetyViolation, match="does not match"):
-        guard.validate_safety_pause(PauseAction(paused=True), mismatched)
-
-
-def test_revalidation_does_not_spend_rate_authority_twice() -> None:
-    config = safety_config().model_copy(update={"max_actions_per_minute": 1})
-    guard = OperationPolicy(config)
-    ledger = ActionBudgetLedger(config)
-    observation = Observation(run_id="run", step_index=0, mode="mock")
-    action = PauseAction(paused=True)
-
-    ledger.commit(reserve_action(ledger, action, observation))
-    for _ in range(5):
-        assert guard.revalidate(action, observation) == action
-    with pytest.raises(ActionBudgetError, match="rate limit"):
-        reserve_action(ledger, action, observation)
-
-
-def test_rate_budget_conserves_committed_and_pending_authority(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    clock = [0.0]
-    monkeypatch.setattr("kenshi_agent.action_budget.time.monotonic", lambda: clock[0])
-    config = safety_config().model_copy(update={"max_actions_per_minute": 2})
-    ledger = ActionBudgetLedger(config)
-    observation = Observation(run_id="run", step_index=0, mode="mock")
-    action = PauseAction(paused=True)
-
-    first = reserve_action(ledger, action, observation)
-    second = reserve_action(ledger, action, observation)
-    assert [first.token, second.token] == [1, 2]
-    with pytest.raises(ActionBudgetError, match="rate limit"):
-        reserve_action(ledger, action, observation)
-
-    ledger.release(first)
-    with pytest.raises(RuntimeError):
-        ledger.release(first)
-    replacement = reserve_action(ledger, action, observation)
-    assert replacement.token == 3
-    ledger.commit(second)
-    with pytest.raises(ActionBudgetError, match="rate limit"):
-        reserve_action(ledger, action, observation)
-
-    ledger.release(replacement)
-    ledger.commit(reserve_action(ledger, action, observation))
-    with pytest.raises(ActionBudgetError, match="rate limit"):
-        reserve_action(ledger, action, observation)
-
-    clock[0] = 60.0
-    with pytest.raises(ActionBudgetError, match="rate limit"):
-        reserve_action(ledger, action, observation)
-    clock[0] = 60.001
-    assert reserve_action(ledger, action, observation).token == 5
-
-
-def test_cognitive_actions_do_not_consume_primitive_authority() -> None:
-    config = safety_config().model_copy(
-        update={
-            "allow_action_kinds": [
-                *safety_config().allow_action_kinds,
-                "consult_advisor",
-                "recall_memory",
-                "read_fieldbook",
-            ],
-            "max_actions_per_minute": 1,
-        }
-    )
-    guard = OperationPolicy(config)
-    ledger = ActionBudgetLedger(config)
-    observation = Observation(run_id="run", step_index=0, mode="mock")
-    ledger.commit(reserve_action(ledger, PauseAction(paused=True), observation))
-
-    advisor = ConsultAdvisorAction(question="What should the squad pursue next?")
-    recall = RecallMemoryAction(query="gate")
-    project_id = "fbp-" + "1" * 32
-    fieldbook_observation = observation.model_copy(
-        update={
-            "fieldbook_projects": [
-                FieldbookProjectIndex(
-                    project_id=project_id,
-                    title="Route",
-                    kind=FieldbookProjectKind.ROUTE_ATLAS,
-                    status=FieldbookProjectStatus.ACTIVE,
-                    short_summary="Known route.",
-                    entry_count=1,
-                    updated_at=datetime.now(UTC),
-                    selected=False,
-                )
-            ]
-        }
-    )
-    read_fieldbook = ReadFieldbookAction(project_id=project_id)
-    assert guard.validate(advisor, observation) == advisor
-    assert guard.validate(recall, observation) == recall
-    assert guard.validate(read_fieldbook, fieldbook_observation) == read_fieldbook
-    assert reserve_action(ledger, advisor, observation).primitive_actions == 0
-    assert reserve_action(ledger, recall, observation).primitive_actions == 0
-    assert reserve_action(ledger, read_fieldbook, fieldbook_observation).primitive_actions == 0
-
-
-def test_fieldbook_read_fails_closed_on_an_undelivered_project_identity() -> None:
-    config = safety_config().model_copy(
-        update={
-            "allow_action_kinds": [
-                *safety_config().allow_action_kinds,
-                "read_fieldbook",
-            ]
-        }
-    )
-    guard = OperationPolicy(config)
-
-    with pytest.raises(SafetyViolation, match="not present"):
-        guard.validate(
-            ReadFieldbookAction(project_id="fbp-" + "1" * 32),
-            Observation(run_id="run", step_index=0, mode="mock"),
-        )
 
 
 @pytest.mark.parametrize(

@@ -1532,63 +1532,6 @@ def test_an_unrelated_bad_request_is_not_retried_as_a_schema_problem() -> None:
     assert not _is_schema_refusal(rate_limited)
 
 
-def test_the_action_surface_is_not_traded_away_for_a_smaller_payload() -> None:
-    """A control the planner was not shown is one it cannot press.
-
-    Truncating exact offers does not buy a smaller observation, it silently
-    changes what the model can choose. A proactive target cannot cut this
-    surface, and a hard envelope that cannot carry it fails closed.
-    """
-    from kenshi_agent.core.telemetry import (
-        NormalizedPointerBounds,
-        VisibleUIControl,
-    )
-
-    controls = [
-        VisibleUIControl(
-            label=f"{role}-{index}",
-            role=role,  # type: ignore[arg-type]
-            window="SHOP",
-            bounds=NormalizedPointerBounds(min_x=0.1, min_y=0.1, max_x=0.2, max_y=0.2),
-        )
-        for index in range(60)
-        for role in ("button", "item", "text")
-    ]
-    crowded = observation().model_copy(
-        update={
-            "telemetry": TelemetrySnapshot(
-                ui=UIState(active_screen="trade", visible_controls=controls),
-                capabilities=["ui.visible_controls"],
-            )
-        }
-    )
-
-    def shown(max_chars: int, **kwargs: Any) -> dict[str, Any]:
-        kwargs.setdefault("max_context_chars", 1_000_000)
-        return json.loads(render_planner_payload(crowded, max_chars=max_chars, **kwargs))
-
-    def listed(payload: dict[str, Any]) -> list[dict[str, Any]]:
-        return [
-            entry
-            for entry in payload["affordances"]
-            if entry["source"] == "visible_control" and entry["semantic"] == "activate"
-        ]
-
-    # A budget far below what the controls cost does not cost the agent one.
-    tight = shown(12000)
-    # Outside dialogue, text is observation rather than an activation surface;
-    # only actual buttons carry generic visible-control authority.
-    expected = len([control for control in controls if control.role == "button"])
-    assert len(listed(tight)) == expected
-    assert len(listed(shown(60000))) == expected
-    assert all(entry["target"]["target_id"].startswith("SHOP\x1f") for entry in listed(tight))
-
-    from kenshi_agent.observation_budget import PlannerPayloadContextError
-
-    with pytest.raises(PlannerPayloadContextError):
-        shown(12000, max_context_chars=9000)
-
-
 
 def test_somewhere_to_go_survives_the_payload_budget() -> None:
     """Being able to travel is useless while every destination is trimmed away.

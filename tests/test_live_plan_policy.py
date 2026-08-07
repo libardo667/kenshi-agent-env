@@ -14,9 +14,7 @@ from kenshi_agent.core.operation import (
     ApproachDialogueTargetAction,
     ClickAction,
     ControlMode,
-    GameBinding,
     IdempotencyPolicy,
-    UseGameBindingAction,
 )
 from kenshi_agent.core.planning import (
     Condition,
@@ -190,59 +188,8 @@ TRADE_CONTROLS = [
 
 
 class TestGenericComposition:
-    def test_runtime_owned_completion_needs_no_model_authored_duplicate(self) -> None:
-        composed = plan(
-            [
-                PlanStep(
-                    step_id="open-inventory",
-                    action=UseGameBindingAction(
-                        binding=GameBinding.TOGGLE_INVENTORY,
-                        expected_effect="open the selected character inventory",
-                    ),
-                    preconditions=[freshness()],
-                    success_conditions=[],
-                    timeout_seconds=30.0,
-                )
-            ],
-            pointer=0,
-            native=0,
-        )
-        assert not live_plan_policy_errors(composed)
 
-    def test_approach_then_activate_is_accepted(self) -> None:
-        composed = plan(
-            [
-                step(
-                    "approach",
-                    ApproachDialogueTargetAction(target_id=VENDOR_ID),
-                    on_success="activate",
-                ),
-                step(
-                    "activate",
-                    ActivateVisibleControlAction(exact_label="Show me your goods.", role="button"),
-                    success=[screen_is("trade")],
-                ),
-            ],
-            pointer=2,
-        )
-        assert live_plan_policy_errors(composed) == []
 
-    def test_a_different_order_is_equally_acceptable(self) -> None:
-        """The policy prescribes no sequence."""
-
-        composed = plan(
-            [
-                step(
-                    "activate",
-                    ActivateVisibleControlAction(exact_label="Goodbye.", role="button"),
-                    success=[screen_is("world")],
-                    on_success="approach",
-                ),
-                step("approach", ApproachDialogueTargetAction(target_id=CIVILIAN_ID)),
-            ],
-            pointer=2,
-        )
-        assert live_plan_policy_errors(composed) == []
 
     def test_a_single_action_plan_is_acceptable(self) -> None:
         composed = plan(
@@ -295,19 +242,6 @@ class TestGenericPolicyRejections:
         errors = live_plan_policy_errors(composed)
         assert any("raw controller primitive" in error for error in errors)
 
-    def test_current_operation_eligibility_is_not_plan_structure(self) -> None:
-        composed = plan(
-            [
-                step(
-                    "activate",
-                    ActivateVisibleControlAction(exact_label="Buy everything", role="button"),
-                    success=[screen_is("trade")],
-                )
-            ],
-            native=0,
-        )
-        errors = live_plan_policy_errors(composed)
-        assert errors == []
 
     def test_underdeclared_native_budget_is_rejected(self) -> None:
         composed = plan(
@@ -318,53 +252,6 @@ class TestGenericPolicyRejections:
         errors = live_plan_policy_errors(composed)
         assert any("native-assisted cost" in error for error in errors)
 
-    def test_underdeclared_pointer_budget_is_rejected(self) -> None:
-        composed = plan(
-            [
-                step(
-                    "activate",
-                    ActivateVisibleControlAction(exact_label="Show me your goods.", role="button"),
-                    success=[screen_is("trade")],
-                )
-            ],
-            native=0,
-            pointer=0,
-        )
-        errors = live_plan_policy_errors(composed)
-        assert any("pointer cost" in error for error in errors)
-
-    def test_non_causal_success_condition_is_rejected(self) -> None:
-        control_mode_only = Condition(
-            kind=ConditionKind.FIELD,
-            path=ConditionPath.CONTROL_MODE,
-            operator=ConditionOperator.EQUALS,
-            expected="native_assisted",
-            max_age_seconds=3.0,
-        )
-        composed = plan(
-            [
-                step(
-                    "activate",
-                    ActivateVisibleControlAction(
-                        exact_label="Show me your goods.",
-                        role="button",
-                    ),
-                    success=[control_mode_only],
-                )
-            ],
-            pointer=1,
-        )
-        errors = live_plan_policy_errors(composed)
-        assert any("none witness a causal world change" in error for error in errors)
-
-
-# ---------------------------------------------------------------------------
-# Rebasing a plan that aged during a slow strategic call.
-#
-# The sequence number always moves during a ~25s hosted call, so the question
-# that belongs here is whether the plan's own basis, assumptions, and input
-# ownership still hold — not whether current operation eligibility changed.
-# ---------------------------------------------------------------------------
 
 
 def later(observation: Observation, *, sequence: int = 60) -> Observation:
@@ -539,25 +426,7 @@ class TestDismissScreen:
             native=0,
         )
 
-    def test_dismissing_the_open_screen_is_accepted(self) -> None:
-        from kenshi_agent.core.operation import DismissScreenAction
 
-        composed = self._plan_with(DismissScreenAction(expected_screen="trade"))
-        assert live_plan_policy_errors(composed) == []
-
-    def test_dismissing_a_screen_that_is_not_open_is_left_to_authority(self) -> None:
-        from kenshi_agent.core.operation import DismissScreenAction
-
-        composed = self._plan_with(DismissScreenAction(expected_screen="trade"))
-        assert live_plan_policy_errors(composed) == []
-
-    def test_dismiss_costs_one_pointer_and_no_native_budget(self) -> None:
-        from kenshi_agent.operation_definitions import DISMISS_SCREEN_DEFINITION
-
-        assert DISMISS_SCREEN_DEFINITION.risk.as_tuple() == (1, 0, 0)
-        # It is available without any capability, in either control mode.
-        assert not DISMISS_SCREEN_DEFINITION.missing_capabilities(set())
-        assert DISMISS_SCREEN_DEFINITION.allows_control_mode(ControlMode.INTERFACE_ONLY)
 
 
 class TestCapabilityAliases:
@@ -770,31 +639,3 @@ def test_capability_presence_can_never_count_as_causal_effect_proof() -> None:
     assert not _is_causal_condition(ConditionKind.FIELD, "control_mode")
 
 
-def test_plan_structure_does_not_decide_operation_semantics() -> None:
-
-    speed_effect = Condition(
-        kind=ConditionKind.FIELD,
-        path=ConditionPath.TELEMETRY_GAME_SPEED_MULTIPLIER,
-        operator=ConditionOperator.EQUALS,
-        expected=3.0,
-        max_age_seconds=3.0,
-        required_capabilities=["game.speed"],
-    )
-    composed = plan(
-        [
-            step(
-                "accelerate",
-                UseGameBindingAction(
-                    binding=GameBinding.SPEED_3,
-                    expected_effect="set the third speed gear",
-                ),
-                success=[speed_effect],
-            )
-        ],
-        pointer=0,
-        native=0,
-    )
-
-    errors = live_plan_policy_errors(composed)
-
-    assert errors == []

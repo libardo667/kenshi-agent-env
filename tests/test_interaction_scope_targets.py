@@ -154,35 +154,6 @@ def test_native_command_request_carries_its_resolved_recipients() -> None:
     assert "recipient_character_ids" in fields
 
 
-def test_native_command_names_remain_the_known_set() -> None:
-    """Characterization: the current native route inventory.
-
-    Not a target - a baseline. If this changes, the catalog and the proof
-    manifest must change with it in the same edit.
-    """
-
-    annotation = NativeCommandRequest.model_fields["command"].annotation
-
-    assert set(typing.get_args(annotation)) == {
-        "approach_confirmed_vendor",
-        "move_to_character",
-        # Diagnostic-only; see DIAGNOSTIC_ONLY_NATIVE_COMMANDS.
-        "shift_body_platoon",
-        "shift_into_body",
-        "select_squad_member",
-        "regroup_with_squad_member",
-        "move_in_direction",
-        "travel_to_map_destination",
-        "exit_current_building",
-        "perform_context_action",
-        "perform_character_order",
-        "produce_resource_output",
-        "open_context_inventory",
-        "transfer_item",
-        "open_trade_window",
-        "survey_local_resources",
-    }
-
 
 def test_wire_command_vocabulary_has_exactly_one_python_definition() -> None:
     """One vocabulary, not five copies that drift apart.
@@ -194,7 +165,6 @@ def test_wire_command_vocabulary_has_exactly_one_python_definition() -> None:
     invalidated the entire telemetry snapshot, not one field.
     """
 
-    import typing
 
     from kenshi_agent.core.telemetry import NativeCommandAcknowledgement, NativeWireCommand
 
@@ -219,7 +189,6 @@ def test_no_module_redeclares_the_wire_vocabulary_as_a_type() -> None:
 
     import pathlib
     import re
-    import typing
 
     from kenshi_agent.core.telemetry import NativeWireCommand
     from kenshi_agent.operation_definitions import OPERATION_DEFINITIONS

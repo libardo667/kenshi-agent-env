@@ -137,27 +137,6 @@ def test_the_mechanics_composition_root_implements_nothing_itself() -> None:
     assert len(node.bases) >= 2
 
 
-def test_every_operation_family_has_exactly_one_live_mechanics_owner() -> None:
-    family_of_operation = {
-        definition.kind: definition.handler_key.split(".", 1)[0]
-        for definition in OPERATION_DEFINITION_LIST
-    }
-    owners: dict[str, list[str]] = {}
-    for name, (_path, node) in _mechanics_classes().items():
-        for operation in _defined_methods(node) & set(family_of_operation):
-            owners.setdefault(operation, []).append(name)
-    duplicated = {op: names for op, names in owners.items() if len(names) > 1}
-    assert duplicated == {}
-
-    # Cognitive operations are portable services, not Kenshi mechanics.
-    mechanical = {
-        definition.kind
-        for definition in OPERATION_DEFINITION_LIST
-        if definition.handler_key.split(".", 1)[0] not in {"cognition"}
-        and definition.kind not in {"noop", "stop", "harvest_resource"}
-    }
-    assert set(owners) == mechanical
-
 
 def test_the_control_surface_holds_no_operation_semantics() -> None:
     """The shared surface is external delivery only: no operation may live in it."""

@@ -9,9 +9,7 @@ import pytest
 import kenshi_agent.affordances as affordance_module
 from kenshi_agent.affordances import (
     AFFORDANCE_ADAPTERS,
-    OPAQUE_CHARACTER_SELECTION_GAME_BINDINGS,
     OPERATION_BINDING_AUTHORITY,
-    SEMANTICALLY_ADAPTED_GAME_BINDINGS,
     AffordanceSource,
     bind_affordance,
     bound_affordance,
@@ -22,11 +20,7 @@ from kenshi_agent.affordances import (
 from kenshi_agent.core.affordance import AffordanceLifecycleStatus
 from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.operation import (
-    TIME_GAME_BINDINGS,
     ControlMode,
-    GameBinding,
-    GameScreen,
-    UseGameBindingAction,
 )
 from kenshi_agent.core.telemetry import (
     CharacterState,
@@ -38,16 +32,12 @@ from kenshi_agent.core.telemetry import (
     NormalizedPointerBounds,
     TelemetrySnapshot,
     UIState,
-    Vec2,
     Vec3,
-    VisibleUIControl,
     WorldTarget,
-    is_runtime_owned_visible_control,
 )
 from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.operation_definitions import (
     APPROACH_DIALOGUE_TARGET_DEFINITION,
-    USE_GAME_BINDING_DEFINITION,
     BoundActor,
     BoundOperation,
     TerminalOwner,
@@ -113,217 +103,8 @@ def _observation(
     )
 
 
-def test_named_binding_adapter_covers_its_whole_current_denominator() -> None:
-    observation = _observation(
-        capabilities=[
-            "camera.position",
-            "game.loaded",
-            "game.pause",
-            "game.speed",
-            "host.quicksave_completion",
-            "ui.management_screen",
-            "ui.stats_window",
-            "ui.visible_controls",
-        ]
-    )
-    telemetry = observation.telemetry
-    assert telemetry is not None
-    expected = set()
-    for binding in GameBinding:
-        if binding in TIME_GAME_BINDINGS or binding in SEMANTICALLY_ADAPTED_GAME_BINDINGS:
-            continue
-        action = UseGameBindingAction(
-            binding=binding,
-            expected_effect=binding.value,
-        )
-        completion = USE_GAME_BINDING_DEFINITION.resolve_terminal(
-            action,
-            observation,
-            selected_affordance=True,
-        )
-        if (
-            USE_GAME_BINDING_DEFINITION.bind(action, observation).bound
-            and not (
-            completion.owner is TerminalOwner.RUNTIME_CONDITIONS
-                and not completion.conditions
-            )
-        ):
-            expected.add(binding.value)
-    actual = {
-        offer.semantic
-        for offer in offered_affordances(observation)
-        if offer.source is AffordanceSource.GAME_BINDING
-    }
-    assert actual == expected
 
 
-def test_exact_identity_selection_subsumes_opaque_character_bindings() -> None:
-    bark = CharacterState(id="bark", name="Bark", selected=True)
-    plant = CharacterState(id="plant", name="Plant", selected=False)
-    base_ui = UIState(
-        active_screen="world",
-        dialogue_open=False,
-        modal_open=False,
-        selected_character_id=bark.id,
-        selected_character_ids=[bark.id],
-    )
-    observation = _observation(
-        capabilities=[
-            "control.select_squad_member",
-            "identity.stable_handles",
-            "squad.basic",
-        ],
-        ui=base_ui,
-        squad=[bark, plant],
-    )
-
-    offers = offered_affordances(observation)
-    semantics = {offer.semantic for offer in offers}
-    assert not {
-        binding.value for binding in OPAQUE_CHARACTER_SELECTION_GAME_BINDINGS
-    } & semantics
-    assert "select_all" not in semantics
-    whole_party = next(offer for offer in offers if offer.semantic == "select_whole_party")
-    assert whole_party.operation_kind == "use_game_binding"
-    assert "Bark" in whole_party.description
-    assert "Plant" in whole_party.description
-    assert "complete current party" in whole_party.description
-    singular = next(
-        offer
-        for offer in offers
-        if offer.semantic == "select_only"
-        and offer.target is not None
-        and offer.target.target_id == plant.id
-    )
-    assert "only" in singular.description
-    assert "deselecting every other" in singular.description
-
-    # A modal suppresses exact selection itself, but must not resurrect the
-    # opaque key bindings as a guard bypass. The next choice should close the UI.
-    modal = observation.model_copy(
-        update={
-            "telemetry": observation.telemetry.model_copy(
-                update={"ui": base_ui.model_copy(update={"modal_open": True})}
-            )
-        },
-        deep=True,
-    )
-    modal_semantics = {offer.semantic for offer in offered_affordances(modal)}
-    assert "select_only" not in modal_semantics
-    assert "select_whole_party" not in modal_semantics
-    assert not {
-        binding.value for binding in OPAQUE_CHARACTER_SELECTION_GAME_BINDINGS
-    } & modal_semantics
-    assert "select_all" not in modal_semantics
-
-    all_selected = observation.model_copy(
-        update={
-            "telemetry": observation.telemetry.model_copy(
-                update={
-                    "ui": base_ui.model_copy(
-                        update={"selected_character_ids": [bark.id, plant.id]}
-                    ),
-                    "squad": [bark, plant.model_copy(update={"selected": True})],
-                }
-            )
-        },
-        deep=True,
-    )
-    assert "select_whole_party" not in {
-        offer.semantic for offer in offered_affordances(all_selected)
-    }
-
-
-def test_ui_adapter_offers_only_controls_with_current_semantic_authority() -> None:
-    controls = [
-        VisibleUIControl(label="Accept", role="button", window="Talk", bounds=_bounds(1)),
-        VisibleUIControl(
-            label="1. Show me your goods.",
-            role="text",
-            window="Talk",
-            bounds=_bounds(2),
-        ),
-        VisibleUIControl(label="A warning", role="text", window="Talk", bounds=_bounds(3)),
-        VisibleUIControl(
-            label="cell 3",
-            role="item",
-            window="SHOP",
-            bounds=_bounds(4),
-            item_name="Bread",
-            item_base_value=31,
-        ),
-        VisibleUIControl(
-            label="pause",
-            role="button",
-            window="HUD",
-            widget_name="HUDRoot/TimeControls/Pause",
-            bounds=_bounds(5),
-        ),
-    ]
-    observation = _observation(
-        capabilities=["ui.visible_controls"],
-        ui=UIState(
-            dialogue_open=True,
-            dialogue_options=["1. Show me your goods."],
-            visible_controls=controls,
-        ),
-    )
-    expected = {
-        (control.window, control.role, control.label)
-        for control in controls
-        if not is_runtime_owned_visible_control(control)
-        and (
-            control.role == "button"
-            or control.label == "1. Show me your goods."
-        )
-    }
-    actual = {
-        (
-            str(offer.operation_arguments["window"]),
-            str(offer.operation_arguments["role"]),
-            str(offer.operation_arguments["exact_label"]),
-        )
-        for offer in offered_affordances(observation)
-        if offer.source is AffordanceSource.DIALOGUE
-        and offer.operation_kind == "activate_visible_control"
-    }
-    assert actual == expected
-
-
-def test_screen_adapter_exposes_state_intent_not_toggle_mechanics() -> None:
-    observation = _observation(
-        capabilities=[
-            "game.loaded",
-            "ui.inventory",
-            "ui.management_screen",
-            "ui.stats_window",
-            "ui.visible_controls",
-        ],
-        ui=UIState(
-            active_screen="world",
-            dialogue_open=False,
-            modal_open=False,
-            open_inventory_windows=0,
-            stats_window_open=False,
-            management_tab=-1,
-            visible_controls=[],
-        ),
-    )
-    offers = offered_affordances(observation)
-    assert {
-        offer.semantic for offer in offers if offer.operation_kind == "open_screen"
-    } == {f"open_{screen.value}" for screen in GameScreen}
-    assert not any(
-        offer.semantic.startswith("toggle_")
-        and offer.semantic in {
-            "toggle_inventory",
-            "toggle_stats",
-            "toggle_map",
-            "toggle_research",
-            "toggle_crafting",
-        }
-        for offer in offers
-    )
 
 
 def test_character_adapter_exposes_one_runtime_chosen_squad_reunion() -> None:
@@ -493,192 +274,6 @@ def test_group_selection_can_issue_broadcast_orders_and_still_narrow() -> None:
     assert "select_squad_member_exact" in operation_kinds
     assert "perform_context_action" in operation_kinds
 
-
-def test_screen_adapter_offers_exact_current_window_dismissal() -> None:
-    bark = CharacterState(id="bark", name="Bark", selected=True)
-    observation = _observation(
-        capabilities=[
-            "control.move_to_character",
-            "identity.stable_handles",
-            "nearby.characters",
-            "squad.basic",
-            "ui.inventory",
-            "ui.visible_controls",
-        ],
-        ui=UIState(
-            active_screen="inventory",
-            dialogue_open=False,
-            modal_open=True,
-            open_inventory_windows=1,
-            selected_character_id=bark.id,
-            selected_character_ids=[bark.id],
-            visible_controls=[
-                VisibleUIControl(
-                    label="Inventory",
-                    role="text",
-                    window="Bark",
-                    bounds=_bounds(1),
-                )
-            ],
-        ),
-        squad=[bark],
-        nearby=[
-            NearbyEntity(
-                id="barman",
-                name="Barman",
-                disposition=Disposition.NEUTRAL,
-                distance=20,
-            )
-        ],
-    )
-    offers = offered_affordances(observation)
-    offer = next(
-        offer
-        for offer in offers
-        if offer.operation_kind == "dismiss_screen"
-    )
-    assert offer.target is not None
-    assert offer.target.target_id == "Bark"
-    bound = bind_affordance(selection_for(offer), observation)
-    assert bound.operation.kind == "dismiss_screen"
-    assert bound.operation.window == "Bark"
-    assert not any(offer.operation_kind == "open_screen" for offer in offers)
-    assert not {
-        "approach_dialogue_target",
-        "command_world_target",
-        "exit_current_building",
-        "harvest_resource",
-        "move_in_direction",
-        "move_to_character",
-        "perform_context_action",
-        "recover_camera_view",
-        "regroup_with_squad_member",
-        "respond_to_immediate_threat",
-        "rotate_camera",
-        "select_squad_member",
-        "select_squad_member_exact",
-        "travel_to_map_destination",
-        "use_game_binding",
-    } & {offer.operation_kind for offer in offers}
-
-
-@pytest.mark.parametrize(
-    ("screen", "ui"),
-    [
-        (
-            GameScreen.INVENTORY,
-            UIState(
-                active_screen="inventory",
-                modal_open=True,
-                dialogue_open=False,
-                open_inventory_windows=1,
-            ),
-        ),
-        (
-            GameScreen.STATS,
-            UIState(
-                active_screen="world",
-                modal_open=True,
-                dialogue_open=False,
-                stats_window_open=True,
-            ),
-        ),
-        *[
-            (
-                screen,
-                UIState(
-                    active_screen="world",
-                    modal_open=True,
-                    dialogue_open=False,
-                    management_screen_open=True,
-                    management_tab=tab,
-                ),
-            )
-            for screen, tab in [
-                (GameScreen.MAP, 0),
-                (GameScreen.RESEARCH, 2),
-                (GameScreen.CRAFTING, 3),
-            ]
-        ],
-    ],
-)
-def test_every_named_open_screen_exposes_one_exact_close(
-    screen: GameScreen,
-    ui: UIState,
-) -> None:
-    observation = _observation(capabilities=[], ui=ui)
-
-    offers = offered_affordances(observation)
-    close = next(offer for offer in offers if offer.semantic == f"close_{screen.value}")
-
-    assert close.operation_kind == "dismiss_screen"
-    assert f"open_{screen.value}" not in {offer.semantic for offer in offers}
-    bound = bind_affordance(selection_for(close), observation)
-    assert bound.operation.kind == "dismiss_screen"
-    assert bound.operation.expected_screen is screen
-
-
-def test_context_adapter_preserves_every_executable_runtime_order_without_enumeration() -> None:
-    actor = CharacterState(id="actor-1", name="Bark", selected=True)
-    targets = [
-        WorldTarget(
-            id="resource-1",
-            name="Iron Resource",
-            kind="natural_resource",
-            position=Vec3(x=10, y=0, z=20),
-            distance=25,
-            context_actions=[ContextActionKind.OPERATE],
-            default_task="operate",
-            screen_position=None,
-        ),
-        WorldTarget(
-            id="machine-1",
-            name="Machine",
-            kind="building",
-            position=Vec3(x=30, y=0, z=40),
-            distance=50,
-            context_actions=[ContextActionKind("repair")],
-            default_task="repair",
-            screen_position=Vec2(x=0.4, y=0.5),
-        ),
-    ]
-    observation = _observation(
-        capabilities=[
-            "control.perform_context_action",
-            "world.context_targets",
-            "world.context_target_screen_positions",
-            "game.pause",
-            "identity.stable_handles",
-        ],
-        ui=UIState(
-            active_screen="world",
-            dialogue_open=False,
-            modal_open=False,
-            selected_character_id=actor.id,
-            selected_character_ids=[actor.id],
-        ),
-        squad=[actor],
-        targets=targets,
-    )
-    expected = {
-        (target.id, order.value)
-        for target in targets
-        for order in target.context_actions
-    }
-    context_offers = [
-        offer
-        for offer in offered_affordances(observation)
-        if offer.source is AffordanceSource.CONTEXT_ORDER
-    ]
-    assert {
-        (offer.target.target_id, offer.semantic)
-        for offer in context_offers
-        if offer.target is not None
-    } == expected
-    assert {offer.operation_kind for offer in context_offers} == {
-        "perform_context_action",
-        "command_world_target",
-    }
 
 
 def test_reviewed_first_aid_context_order_uses_the_generic_native_route() -> None:

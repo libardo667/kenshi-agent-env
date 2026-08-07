@@ -12,15 +12,12 @@ from kenshi_agent.affordances import offered_affordances
 from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.operation import (
     ACTION_ADAPTER,
-    ActivateVisibleControlAction,
     ApproachDialogueTargetAction,
     CollectResourceOutputAction,
-    CommandWorldTargetAction,
     ControlMode,
     ExitCurrentBuildingAction,
     MoveInDirectionAction,
     MoveToCharacterAction,
-    OpenContextInventoryAction,
     PerformContextAction,
     PointerActionClass,
     ProduceResourceOutputAction,
@@ -43,7 +40,6 @@ from kenshi_agent.core.telemetry import (
     KnownMapDestination,
     NearbyEntity,
     NormalizedPointerBounds,
-    OpenInventory,
     TelemetrySnapshot,
     UIState,
     Vec2,
@@ -53,13 +49,10 @@ from kenshi_agent.core.telemetry import (
 )
 from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.operation_definitions import (
-    ACTIVATE_VISIBLE_CONTROL_DEFINITION,
     APPROACH_DIALOGUE_TARGET_DEFINITION,
-    COMMAND_WORLD_TARGET_DEFINITION,
     EXIT_CURRENT_BUILDING_DEFINITION,
     MOVE_IN_DIRECTION_DEFINITION,
     MOVE_TO_CHARACTER_DEFINITION,
-    OPEN_CONTEXT_INVENTORY_DEFINITION,
     PERFORM_CONTEXT_ACTION_DEFINITION,
     PRODUCE_RESOURCE_OUTPUT_DEFINITION,
     REGROUP_WITH_SQUAD_MEMBER_DEFINITION,
@@ -353,112 +346,11 @@ class TestApproachBindsAnyDialogueTarget:
 
 
 class TestVisibleControlBinding:
-    def test_runtime_owned_time_widgets_are_not_generic_controls(self) -> None:
-        speed_name = "0,000,000,073,247,990_TimeSpeedButton2"
-        controls = [
-            VisibleUIControl(
-                label=speed_name,
-                role="button",
-                widget_name=speed_name,
-                bounds=_bounds(0.5),
-            ),
-            VisibleUIControl(
-                label="Show me your goods.",
-                role="button",
-                widget_name="0,000,000,073,247,990_DialogueChoiceButton",
-                bounds=_bounds(0.6),
-            ),
-        ]
-        state = observation(controls=controls, capabilities=["ui.visible_controls"])
+    """Every case here exercised a retired clicking operation."""
 
-        assert [
-            entry["exact_label"] for entry in state.visible_control_digest()
-        ] == ["Show me your goods."]
 
-        speed_binding = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
-            ActivateVisibleControlAction(exact_label=speed_name, role="button"),
-            state,
-        )
-        dialogue_binding = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
-            ActivateVisibleControlAction(
-                exact_label="Show me your goods.",
-                role="button",
-            ),
-            state,
-        )
 
-        assert not speed_binding.bound
-        assert "runtime-owned" in speed_binding.reason
-        assert dialogue_binding.bound
 
-    def test_binds_two_unrelated_labels_with_the_same_action(self) -> None:
-        controls = [
-            VisibleUIControl(label="Show me your goods.", role="button", bounds=_bounds(0.5)),
-            VisibleUIControl(label="Goodbye.", role="button", bounds=_bounds(0.6)),
-        ]
-        state = observation(controls=controls, capabilities=["ui.visible_controls"])
-
-        first = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
-            ActivateVisibleControlAction(exact_label="Show me your goods.", role="button"),
-            state,
-        )
-        second = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
-            ActivateVisibleControlAction(exact_label="Goodbye.", role="button"),
-            state,
-        )
-
-        assert first.bound and second.bound
-        assert first.resolved_bounds == _bounds(0.5)
-        assert second.resolved_bounds == _bounds(0.6)
-
-    def test_label_whitespace_and_case_normalize(self) -> None:
-        state = observation(
-            controls=[
-                VisibleUIControl(label="Show me  your goods.", role="button", bounds=_bounds(0.5))
-            ],
-            capabilities=["ui.visible_controls"],
-        )
-        binding = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
-            ActivateVisibleControlAction(exact_label="show me your goods.", role="button"),
-            state,
-        )
-        assert binding.bound
-        assert binding.resolved_label == "Show me  your goods."
-
-    def test_duplicate_label_fails_closed(self) -> None:
-        state = observation(
-            controls=[
-                VisibleUIControl(label="Trade", role="button", bounds=_bounds(0.5)),
-                VisibleUIControl(label="Trade", role="button", bounds=_bounds(0.7)),
-            ],
-            capabilities=["ui.visible_controls"],
-        )
-        binding = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
-            ActivateVisibleControlAction(exact_label="Trade", role="button"),
-            state,
-        )
-        assert not binding.bound
-        assert "ambiguous" in binding.reason
-
-    def test_role_mismatch_does_not_bind(self) -> None:
-        state = observation(
-            controls=[VisibleUIControl(label="Trade", role="text", bounds=_bounds(0.5))],
-            capabilities=["ui.visible_controls"],
-        )
-        binding = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
-            ActivateVisibleControlAction(exact_label="Trade", role="button"),
-            state,
-        )
-        assert not binding.bound
-
-    def test_missing_capability_is_unknown_not_absent(self) -> None:
-        state = observation(controls=None, capabilities=[])
-        binding = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
-            ActivateVisibleControlAction(exact_label="Trade", role="button"),
-            state,
-        )
-        assert not binding.bound
-        assert "unavailable" in binding.reason
 
 
 class TestExitCurrentBuildingBinding:
@@ -701,46 +593,6 @@ def natural_resource(
     )
 
 
-class TestWorldTargetCommandContract:
-    def test_missing_geometry_and_ambiguous_ids_fail_closed(self) -> None:
-        action = CommandWorldTargetAction(
-            target_id="entity-copper",
-            context_action=ContextActionKind.OPERATE,
-        )
-        clear_ui = UIState(
-            active_screen="world",
-            modal_open=False,
-            dialogue_open=False,
-        )
-        missing_geometry = observation(
-            ui=clear_ui,
-            capabilities=[
-                "world.context_targets",
-                "world.context_target_screen_positions",
-            ],
-            world_targets=[natural_resource()],
-        )
-        duplicate = observation(
-            ui=clear_ui,
-            capabilities=[
-                "world.context_targets",
-                "world.context_target_screen_positions",
-            ],
-            world_targets=[
-                natural_resource(screen_position=Vec2(x=0.4, y=0.6)),
-                natural_resource(screen_position=Vec2(x=0.5, y=0.7)),
-            ],
-        )
-
-        absent = COMMAND_WORLD_TARGET_DEFINITION.bind(action, missing_geometry)
-        ambiguous = COMMAND_WORLD_TARGET_DEFINITION.bind(action, duplicate)
-
-        assert not absent.bound
-        assert "no current on-screen command geometry" in absent.reason
-        assert not ambiguous.bound
-        assert "ambiguous" in ambiguous.reason
-
-
 class TestResourceProductionContracts:
     def test_production_binds_one_exact_advertised_natural_resource(self) -> None:
         target = natural_resource()
@@ -798,123 +650,7 @@ class TestResourceProductionContracts:
         assert not ambiguous_binding.bound
         assert "ambiguous" in ambiguous_binding.reason
 
-    def test_open_inventory_binds_the_exact_target_and_fails_closed_on_a_modal(
-        self,
-    ) -> None:
-        target = natural_resource()
-        clear = observation(
-            ui=UIState(
-                active_screen="world",
-                modal_open=False,
-                dialogue_open=False,
-            ),
-            capabilities=[
-                "control.open_context_inventory",
-                "world.context_targets",
-                "game.pause",
-                "identity.stable_handles",
-            ],
-            world_targets=[target],
-        )
-        blocked = clear.model_copy(
-            update={
-                "telemetry": clear.telemetry.model_copy(
-                    update={
-                        "ui": UIState(
-                            active_screen="world",
-                            modal_open=True,
-                            dialogue_open=False,
-                        )
-                    }
-                )
-            },
-            deep=True,
-        )
-        action = OpenContextInventoryAction(target_id=target.id)
 
-        assert OPEN_CONTEXT_INVENTORY_DEFINITION.bind(action, clear).bound
-        assert not OPEN_CONTEXT_INVENTORY_DEFINITION.bind(action, blocked).bound
-
-    def test_a_second_inventory_may_be_opened_while_one_is_already_open(
-        self,
-    ) -> None:
-        """Two open windows is what a transfer is, not a conflict.
-
-        The old fence refused whenever `modal_open` was true, and an open
-        inventory sets `modal_open`. So the source could be opened or the
-        destination could be opened, never both - which is why moving an item
-        needed a mouse and why looting, buying and giving looked like three
-        different problems instead of one.
-        """
-
-        target = natural_resource()
-        with_one_open = observation(
-            ui=UIState(
-                active_screen="inventory",
-                modal_open=True,
-                dialogue_open=False,
-                open_inventories=[
-                    OpenInventory(
-                        owner_id="entity-squadmate",
-                        owner_name="Little",
-                        owner_kind="character",
-                        player_owned=True,
-                        money=0,
-                        total_weight=3.0,
-                    )
-                ],
-            ),
-            capabilities=[
-                "control.open_context_inventory",
-                "world.context_targets",
-                "game.pause",
-                "identity.stable_handles",
-            ],
-            world_targets=[target],
-        )
-
-        bound = OPEN_CONTEXT_INVENTORY_DEFINITION.bind(
-            OpenContextInventoryAction(target_id=target.id), with_one_open
-        )
-
-        assert bound.bound
-
-    def test_any_observed_owner_can_have_its_inventory_opened(self) -> None:
-        """Not just mining crates. The narrow lookup was ours, not Kenshi's.
-
-        This resolved through `world_targets` for a `natural_resource`, so a
-        body the agent had just knocked out and ordered `loot_target` on was
-        unreachable by construction. Kenshi opens by handle and does not ask
-        what kind of thing the handle names.
-        """
-
-        body = NearbyEntity(
-            id="entity-bandit",
-            name="Hungry bandit",
-            kind="character",
-            is_animal=False,
-            has_dialogue=False,
-            disposition=Disposition.HOSTILE,
-            conscious=False,
-            distance=2.0,
-        )
-        world = observation(
-            ui=UIState(active_screen="world", modal_open=False, dialogue_open=False),
-            capabilities=[
-                "control.open_context_inventory",
-                "world.context_targets",
-                "game.pause",
-                "identity.stable_handles",
-            ],
-            entities=[body],
-        )
-
-        bound = OPEN_CONTEXT_INVENTORY_DEFINITION.bind(
-            OpenContextInventoryAction(target_id=body.id), world
-        )
-
-        assert bound.bound
-        assert "Hungry bandit" in bound.reason
 
 
 class TestCollectResourceOutput:
@@ -1013,17 +749,6 @@ class TestDefinitionPolicy:
             EXIT_CURRENT_BUILDING_DEFINITION,
         ):
             assert contract.controller_verified
-
-    def test_approach_is_withheld_from_interface_only(self) -> None:
-        state = observation(
-            control_mode=ControlMode.INTERFACE_ONLY,
-            capabilities=set(APPROACH_CAPABILITIES) | {"ui.visible_controls"},
-            entities=[vendor()],
-            controls=[VisibleUIControl(label="Trade", role="button", bounds=_bounds(0.5))],
-        )
-        kinds = [offer.operation_kind for offer in offered_affordances(state)]
-        assert "approach_dialogue_target" not in kinds
-        assert "activate_visible_control" in kinds
 
 
     def test_legacy_capability_alias_still_satisfies_the_contract(self) -> None:
@@ -1392,28 +1117,6 @@ def test_group_map_travel_is_not_hidden_by_a_primary_member_already_in_town() ->
 
 
 class TestAffordancesAreAdvertised:
-    def test_digest_reports_available_semantics_and_exact_targets(self) -> None:
-        actor = CharacterState(id="entity-player", name="Player", selected=True)
-        state = observation(
-            entities=[vendor()],
-            controls=[VisibleUIControl(label="Trade", role="button", bounds=_bounds(0.5))],
-            capabilities=[*APPROACH_CAPABILITIES, "ui.visible_controls"],
-            squad=[actor],
-            ui=UIState(
-                active_screen="world",
-                modal_open=False,
-                dialogue_open=False,
-                visible_controls=[
-                    VisibleUIControl(label="Trade", role="button", bounds=_bounds(0.5))
-                ],
-                selected_character_id=actor.id,
-                selected_character_ids=[actor.id],
-            ),
-        )
-        offers = offered_affordances(state)
-        kinds = {offer.operation_kind for offer in offers}
-        assert {"approach_dialogue_target", "activate_visible_control"} <= kinds
-        assert all(offer.affordance_id for offer in offers)
 
     def test_threat_response_is_offered_only_for_a_grounded_safe_paused_threat(
         self,
@@ -1500,44 +1203,8 @@ class TestAffordancesAreAdvertised:
 class TestItemCellControls:
     """Shop and inventory grid cells bind like any other advertised control."""
 
-    def test_an_item_cell_binds_by_ordinal_and_role(self) -> None:
-        state = observation(
-            controls=[
-                VisibleUIControl(label="item_0", role="item", bounds=_bounds(0.5)),
-                VisibleUIControl(label="item_1", role="item", bounds=_bounds(0.6)),
-                VisibleUIControl(label="ARRANGE", role="button", bounds=_bounds(0.9)),
-            ],
-            capabilities=["ui.visible_controls"],
-        )
-        binding = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
-            ActivateVisibleControlAction(exact_label="item_1", role="item"),
-            state,
-        )
-        assert binding.bound
-        assert binding.resolved_role == "item"
-        assert binding.resolved_bounds == _bounds(0.6)
 
-    def test_an_item_ordinal_does_not_match_a_button(self) -> None:
-        state = observation(
-            controls=[VisibleUIControl(label="item_0", role="item", bounds=_bounds(0.5))],
-            capabilities=["ui.visible_controls"],
-        )
-        binding = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
-            ActivateVisibleControlAction(exact_label="item_0", role="button"),
-            state,
-        )
-        assert not binding.bound
 
-    def test_absent_cell_fails_closed(self) -> None:
-        state = observation(
-            controls=[VisibleUIControl(label="item_0", role="item", bounds=_bounds(0.5))],
-            capabilities=["ui.visible_controls"],
-        )
-        binding = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
-            ActivateVisibleControlAction(exact_label="item_9", role="item"),
-            state,
-        )
-        assert not binding.bound
 
     def test_item_cells_appear_in_the_digest_with_ambiguity_marked(self) -> None:
         state = observation(
@@ -1686,32 +1353,8 @@ class TestWindowAttribution:
             capabilities=["ui.visible_controls"],
         )
 
-    def test_a_label_shared_by_two_windows_is_ambiguous(self) -> None:
-        binding = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
-            ActivateVisibleControlAction(exact_label="ARRANGE", role="button"),
-            self._two_windows(),
-        )
-        assert not binding.bound
-        assert "Name the window" in binding.reason
 
-    def test_naming_the_window_resolves_it(self) -> None:
-        binding = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
-            ActivateVisibleControlAction(
-                exact_label="ARRANGE", role="button", window="BARMAN"
-            ),
-            self._two_windows(),
-        )
-        assert binding.bound
-        assert binding.resolved_bounds == _bounds(0.7)
 
-    def test_naming_a_window_that_does_not_have_it_fails_closed(self) -> None:
-        binding = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
-            ActivateVisibleControlAction(
-                exact_label="ARRANGE", role="button", window="NOBODY"
-            ),
-            self._two_windows(),
-        )
-        assert not binding.bound
 
     def test_open_window_captions_are_reported_in_order(self) -> None:
         assert self._two_windows().open_window_captions() == ["HEP", "BARMAN"]

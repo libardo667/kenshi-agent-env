@@ -145,7 +145,6 @@ def dialogue_handlers(
             port.approach_dialogue_target,
             planning_config,
         ),
-        "dialogue.command_world_target": WorldTargetHandler(port.command_world_target),
     }
 
 

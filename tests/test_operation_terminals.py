@@ -2,11 +2,7 @@ from __future__ import annotations
 
 from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.operation import (
-    ActivateVisibleControlAction,
     ControlMode,
-    DismissScreenAction,
-    GameBinding,
-    UseGameBindingAction,
     WaitAction,
 )
 from kenshi_agent.core.planning import ConditionOperator
@@ -17,9 +13,6 @@ from kenshi_agent.core.telemetry import (
 )
 from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.operation_definitions import (
-    ACTIVATE_VISIBLE_CONTROL_DEFINITION,
-    DISMISS_SCREEN_DEFINITION,
-    USE_GAME_BINDING_DEFINITION,
     OperationTerminal,
     TerminalOwner,
     runtime_control_terminal,
@@ -79,39 +72,6 @@ def assert_one_runtime_condition(
 
 
 
-def test_only_genuinely_ambiguous_internal_effects_need_explicit_step_conditions() -> None:
-    state = observation()
-
-    visible = ActivateVisibleControlAction(exact_label="Goodbye.", role="button")
-    assert (
-        ACTIVATE_VISIBLE_CONTROL_DEFINITION.resolve_terminal(visible, state).owner
-        is TerminalOwner.STEP_CONDITIONS
-    )
-    binding = UseGameBindingAction(
-        binding=GameBinding.CAMERA_FORWARD,
-        expected_effect="move the camera forward",
-    )
-    assert (
-        USE_GAME_BINDING_DEFINITION.resolve_terminal(binding, state).owner
-        is TerminalOwner.STEP_CONDITIONS
-    )
-    dismiss = DismissScreenAction(expected_screen="trade")
-    assert (
-        DISMISS_SCREEN_DEFINITION.resolve_terminal(dismiss, state).owner
-        is TerminalOwner.STEP_CONDITIONS
-    )
-
-
-def test_selected_affordance_never_delegates_ambiguous_completion_to_model() -> None:
-    action = ActivateVisibleControlAction(exact_label="Goodbye.", role="button")
-    completion = ACTIVATE_VISIBLE_CONTROL_DEFINITION.resolve_terminal(
-        action,
-        observation(),
-        selected_affordance=True,
-    )
-
-    assert completion.owner is TerminalOwner.AFFORDANCE_DELIVERY
-    assert completion.conditions == ()
 
 
 def test_receipt_terminal_controls_do_not_need_a_fictional_world_effect() -> None:

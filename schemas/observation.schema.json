@@ -4542,7 +4542,6 @@
             "perform_context_action",
             "perform_character_order",
             "produce_resource_output",
-            "open_context_inventory",
             "transfer_item",
             "open_trade_window",
             "survey_local_resources"

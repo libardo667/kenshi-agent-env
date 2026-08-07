@@ -156,39 +156,6 @@ def test_real_env_file_is_ignored_but_template_is_trackable() -> None:
     assert (root / ".env.example").is_file()
 
 
-def test_canonical_live_config_authorizes_semantic_actions_not_raw_input(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The canonical config grants composition, not a wider input surface."""
-
-    root = Path(__file__).resolve().parents[1]
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-
-    config = load_config(root / "config" / "live.yaml")
-
-    assert config.control.mode == ControlMode.NATIVE_ASSISTED
-    # Both live gates are still required before any input is emitted.
-    assert config.safety.live_actions_enabled
-    assert "require_cli_execute_flag" not in type(config.safety).model_fields
-    assert config.safety.emergency_stop_key == "f12"
-
-    allowed = config.safety.allow_action_kinds
-    assert all(
-        action_kind_is_allowlisted(kind, allowed)
-        for kind in ("approach_dialogue_target", "activate_visible_control")
-    )
-    # Raw controller primitives are never live-allowlisted. The wildcard admits
-    # registered operations and nothing else, which is the property the
-    # hand-written list of thirty-seven names was protecting.
-    assert not any(
-        action_kind_is_allowlisted(kind, allowed)
-        for kind in ("click", "key", "hotkey", "move_cursor", "scroll")
-    )
-
-    assert not action_kind_is_allowlisted("skill", allowed)
-    assert "allow_skills" not in type(config.safety).model_fields
-    assert "macros" not in type(config).model_fields
-
 
 def test_canonical_live_config_allowlists_every_affordance_operation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

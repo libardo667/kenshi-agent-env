@@ -36,28 +36,21 @@ from .core.affordance import (
 from .core.authority import AuthorizationCode
 from .core.observation import Observation
 from .core.operation import (
-    TIME_GAME_BINDINGS,
     Action,
-    CameraRotationDirection,
     ControlMode,
     GameBinding,
-    GameScreen,
     ThreatResponseStrategy,
 )
-from .core.planning import screen_is_open
 from .core.telemetry import (
     CharacterState,
     ContextActionKind,
     NearbyEntity,
     WorldTarget,
-    is_runtime_owned_visible_control,
     map_destination_travel_available,
-    normalize_control_label,
 )
 from .non_progress import unchanged_definitive_no_op_reason
 from .operation_definitions import (
     NATIVE_CHARACTER_ORDER_CAPABILITY,
-    NATIVE_OPEN_CONTEXT_INVENTORY_CAPABILITY,
     NATIVE_SHIFT_BODY_CAPABILITY,
     NATIVE_TRADE_WINDOW_CAPABILITY,
     NATIVE_TRANSFER_CAPABILITY,
@@ -474,194 +467,6 @@ def _runtime_offers(observation: Observation) -> Iterable[AffordanceOffer]:
         )
 
 
-def _game_binding_offers(observation: Observation) -> Iterable[AffordanceOffer]:
-    telemetry = observation.telemetry
-    if telemetry is None:
-        return
-    exact_identity_selection = bool(
-        observation.control_mode is ControlMode.NATIVE_ASSISTED
-        and "control.select_squad_member" in telemetry.capabilities
-        and "identity.stable_handles" in telemetry.capabilities
-        and telemetry.ui.selected_character_id is not None
-        and telemetry.ui.selected_character_id in telemetry.ui.selected_character_ids
-    )
-    for binding in GameBinding:
-        if (
-            binding in TIME_GAME_BINDINGS
-            or binding in SEMANTICALLY_ADAPTED_GAME_BINDINGS
-            or (exact_identity_selection and binding in OPAQUE_CHARACTER_SELECTION_GAME_BINDINGS)
-        ):
-            continue
-        yield _offer(
-            observation,
-            source=AffordanceSource.GAME_BINDING,
-            semantic=binding.value,
-            description=f"Use Kenshi's named {binding.value} binding.",
-            operation_kind="use_game_binding",
-            arguments={"binding": binding.value, "expected_effect": binding.value},
-        )
-
-
-def _screen_offers(observation: Observation) -> Iterable[AffordanceOffer]:
-    telemetry = observation.telemetry
-    if telemetry is None:
-        return
-    interface_clear = bool(
-        telemetry.ui.active_screen == "world"
-        and telemetry.ui.modal_open is False
-        and telemetry.ui.dialogue_open is False
-    )
-    for screen in GameScreen:
-        open_state = screen_is_open(screen, telemetry)
-        if open_state is not False or not interface_clear:
-            continue
-        yield _offer(
-            observation,
-            source=AffordanceSource.GAME_BINDING,
-            semantic=f"open_{screen.value}",
-            description=f"Have the {screen.value!r} screen open.",
-            operation_kind="open_screen",
-            arguments={"screen": screen.value},
-        )
-
-    if telemetry.ui.dialogue_open:
-        return
-
-    owners = observation.window_owners()
-    captions = [
-        window
-        for window in observation.open_window_captions()
-        if normalize_control_label(window) in owners
-    ]
-    inventory_open = screen_is_open(GameScreen.INVENTORY, telemetry)
-    if inventory_open is True:
-        if captions:
-            for window in captions:
-                yield _offer(
-                    observation,
-                    source=AffordanceSource.VISIBLE_CONTROL,
-                    semantic="close_inventory_window",
-                    description=f"Close the exact open inventory window {window!r}.",
-                    operation_kind="dismiss_screen",
-                    target=AffordanceTarget(
-                        target_id=window,
-                        label=window,
-                        kind="window",
-                    ),
-                    arguments={
-                        "expected_screen": GameScreen.INVENTORY.value,
-                        "window": window,
-                    },
-                )
-        else:
-            yield _offer(
-                observation,
-                source=AffordanceSource.GAME_BINDING,
-                semantic="close_inventory",
-                description="Close the currently open inventory screen.",
-                operation_kind="dismiss_screen",
-                arguments={"expected_screen": GameScreen.INVENTORY.value},
-            )
-
-    for screen in (GameScreen.STATS, GameScreen.MAP, GameScreen.RESEARCH, GameScreen.CRAFTING):
-        if screen_is_open(screen, telemetry) is not True:
-            continue
-        yield _offer(
-            observation,
-            source=AffordanceSource.GAME_BINDING,
-            semantic=f"close_{screen.value}",
-            description=f"Close the currently open {screen.value!r} screen.",
-            operation_kind="dismiss_screen",
-            arguments={"expected_screen": screen.value},
-        )
-
-    if telemetry.ui.active_screen == "trade":
-        for window in captions:
-            yield _offer(
-                observation,
-                source=AffordanceSource.VISIBLE_CONTROL,
-                semantic="close_trade_window",
-                description=f"Close the exact open trade window {window!r}.",
-                operation_kind="dismiss_screen",
-                target=AffordanceTarget(
-                    target_id=window,
-                    label=window,
-                    kind="window",
-                ),
-                arguments={"expected_screen": "trade", "window": window},
-            )
-
-
-def _visible_control_offers(observation: Observation) -> Iterable[AffordanceOffer]:
-    telemetry = observation.telemetry
-    if (
-        telemetry is None
-        or telemetry.ui.visible_controls is None
-        or "ui.visible_controls" not in telemetry.capabilities
-    ):
-        return
-    dialogue_labels = {
-        normalize_control_label(label) for label in (telemetry.ui.dialogue_options or [])
-    }
-    for control in telemetry.ui.visible_controls:
-        if is_runtime_owned_visible_control(control) or control.role == "item":
-            continue
-        if control.role == "text" and not (
-            telemetry.ui.dialogue_open and normalize_control_label(control.label) in dialogue_labels
-        ):
-            continue
-        source = (
-            AffordanceSource.DIALOGUE
-            if telemetry.ui.dialogue_open
-            else AffordanceSource.VISIBLE_CONTROL
-        )
-        target_id = f"{control.window}\x1f{control.role}\x1f{control.label}"
-        # A caption-less widget arrives with its raw MyGUI name as the label -
-        # '0,000,000,08D,29A,5E0_FloorArrowUp' - which was offered to the
-        # planner verbatim. Kenshi's shipped layouts name that widget
-        # FloorArrowUp and call it a Button, so say so. The binding identity is
-        # unchanged; only what the planner can understand about the choice is.
-        declaration = control.declaration
-        described = control.label
-        if declaration.resolved:
-            declared = declaration.layout_widget_name
-            # A caption-less control's label *is* its raw widget name, so
-            # showing both repeated it: '0,000,...,160_FloorArrowUp
-            # [FloorArrowUp]'. When the label carries no caption of its own,
-            # the declared name replaces it outright.
-            described = (
-                declared
-                if control.label.endswith(declared)
-                else f"{control.label} [{declared}]"
-            )
-        where = control.window or "the current UI"
-        kind = f" ({declaration.widget_type})" if declaration.widget_type else ""
-        yield _offer(
-            observation,
-            source=source,
-            semantic="choose_dialogue" if source is AffordanceSource.DIALOGUE else "activate",
-            description=f"Activate {described!r}{kind} in {where}.",
-            operation_kind="activate_visible_control",
-            target=AffordanceTarget(
-                target_id=target_id,
-                # The target reads as what Kenshi calls the control. target_id
-                # is untouched: it is the binding identity, and rebinding
-                # matches on it.
-                label=described,
-                kind=control.role,
-            ),
-            # Operation arguments are the action's own fields, so the declared
-            # identity cannot ride here - it is perception, not a parameter of
-            # the click. It reaches the planner through the description and the
-            # target label, which is what planner_digest projects.
-            arguments={
-                "exact_label": control.label,
-                "role": control.role,
-                "window": control.window,
-            },
-        )
-
-
 def _context_order_description(
     order: ContextActionKind,
     target: WorldTarget,
@@ -694,7 +499,11 @@ def _context_order_offers(observation: Observation) -> Iterable[AffordanceOffer]
     native = "control.perform_context_action" in telemetry.capabilities
     for target in telemetry.world_targets:
         for order in target.context_actions:
-            native_order = bool(
+            # Native or not at all. `command_world_target` clicked the object's
+            # screen position for semantics the native route refuses, which is a
+            # real gap - but a mouse fallback is how the planner kept choosing
+            # the clicking path, so the gap is left visible instead of covered.
+            if not (
                 native
                 and (
                     order == ContextActionKind.OPERATE
@@ -702,10 +511,9 @@ def _context_order_offers(observation: Observation) -> Iterable[AffordanceOffer]
                     or order == ContextActionKind("first_aid")
                     and target.kind == "squad_character"
                 )
-            )
-            if not native_order and target.screen_position is None:
+            ):
                 continue
-            operation_kind = "perform_context_action" if native_order else "command_world_target"
+            operation_kind = "perform_context_action"
             yield _offer(
                 observation,
                 source=AffordanceSource.CONTEXT_ORDER,
@@ -833,67 +641,6 @@ def _character_order_offers(observation: Observation) -> Iterable[AffordanceOffe
 
 
 MAX_INVENTORY_OWNERS_OFFERED = 12
-
-
-def _inventory_owner_offers(observation: Observation) -> Iterable[AffordanceOffer]:
-    """Offer opening the inventory of anything nearby that could have one.
-
-    This operation existed, worked, and was unreachable. It was listed as
-    reached-by-composition -- meaning only `harvest_resource` could invoke it,
-    inside a twelve-pointer-action composite -- so the planner could never
-    choose it. Asked to open an inventory, the agent did the only thing on its
-    menu and dragged the mouse to the INV button, in the same run where it
-    identified a barman four hundred units away from telemetry.
-
-    Kenshi opens a window by handle and does not ask what kind of thing the
-    handle names, so neither does this: squad members, nearby people including
-    the unconscious ones worth looting, and nearby containers are all owners.
-    Whether a given owner really has an inventory is the engine's answer at
-    dispatch, not a guess here.
-    """
-
-    telemetry = observation.telemetry
-    if telemetry is None or observation.control_mode is not ControlMode.NATIVE_ASSISTED:
-        return
-    if NATIVE_OPEN_CONTEXT_INVENTORY_CAPABILITY not in set(telemetry.capabilities):
-        return
-    if telemetry.ui.dialogue_open is not False:
-        return
-
-    already_open = {held.owner_id for held in telemetry.ui.open_inventories}
-    owners: list[tuple[str, str, str]] = []
-    for member in telemetry.squad:
-        owners.append((member.id, member.name, "squad_character"))
-    for entity in telemetry.nearby_entities:
-        owners.append((entity.id, entity.name, entity.kind))
-    for target in telemetry.world_targets:
-        owners.append((target.id, target.name, target.kind))
-
-    seen: set[str] = set()
-    offered = 0
-    for owner_id, label, kind in owners:
-        if owner_id in seen or owner_id in already_open:
-            continue
-        seen.add(owner_id)
-        if offered >= MAX_INVENTORY_OWNERS_OFFERED:
-            return
-        offered += 1
-        yield _offer(
-            observation,
-            source=AffordanceSource.NEARBY_CHARACTER,
-            semantic="open_inventory",
-            description=(
-                f"Open the inventory of {kind} {label!r} and see what it holds. "
-                "Kenshi opens the window itself; no pointer is used."
-            ),
-            operation_kind="open_context_inventory",
-            target=AffordanceTarget(
-                target_id=owner_id,
-                label=label,
-                kind=kind,
-            ),
-            arguments={"target_id": owner_id},
-        )
 
 
 MAX_TRADE_WINDOWS_OFFERED = 12
@@ -1080,33 +827,10 @@ def _character_offers(observation: Observation) -> Iterable[AffordanceOffer]:
                 target=target,
                 arguments={"target_id": member.id},
             )
-    all_member_ids = {member.id for member in telemetry.squad}
-    if (
-        all_member_ids
-        and set(telemetry.ui.selected_character_ids) != all_member_ids
-        and telemetry.ui.active_screen == "world"
-        and telemetry.ui.modal_open is False
-        and telemetry.ui.dialogue_open is False
-        and "squad.basic" in capabilities
-        and "identity.stable_handles" in capabilities
-    ):
-        names = ", ".join(member.name for member in telemetry.squad)
-        if len(names) > 240:
-            names = f"{len(telemetry.squad)} current members"
-        yield _offer(
-            observation,
-            source=AffordanceSource.SQUAD,
-            semantic="select_whole_party",
-            description=(
-                f"Select the complete current party together: {names}. This "
-                "replaces the current selection with all current members."
-            ),
-            operation_kind="use_game_binding",
-            arguments={
-                "binding": GameBinding.SELECT_ALL.value,
-                "expected_effect": (f"select all {len(telemetry.squad)} current party members"),
-            },
-        )
+    # Selecting the whole party was a keystroke through `use_game_binding`.
+    # Kenshi has no native "select all" this bridge can reach yet, so the offer
+    # is gone rather than kept as the one remaining reason to send input; the
+    # agent selects members individually through the native path.
     if (
         selected is not None
         and selected.position is not None
@@ -1291,16 +1015,6 @@ def _native_and_composite_offers(
                 arguments={},
             )
 
-    for direction in CameraRotationDirection:
-        yield _offer(
-            observation,
-            source=AffordanceSource.NATIVE_OPERATION,
-            semantic=f"rotate_camera_{direction.value}",
-            description=f"Rotate the camera {direction.value} one bounded increment.",
-            operation_kind="rotate_camera",
-            arguments={"direction": direction.value},
-        )
-
     yield _offer(
         observation,
         source=AffordanceSource.NATIVE_OPERATION,
@@ -1339,69 +1053,6 @@ def _native_and_composite_offers(
             ),
         )
 
-    yield _offer(
-        observation,
-        source=AffordanceSource.COMPOSITE_OPERATION,
-        semantic="recover_camera_view",
-        description="Restore a readable, character-following camera view.",
-        operation_kind="recover_camera_view",
-    )
-
-    if telemetry.ui.visible_controls is not None:
-        for window in observation.open_window_captions():
-            yield _offer(
-                observation,
-                source=AffordanceSource.VISIBLE_CONTROL,
-                semantic="scroll_down",
-                description=f"Reveal later content in open window {window!r}.",
-                operation_kind="scroll_screen",
-                target=AffordanceTarget(
-                    target_id=window,
-                    label=window,
-                    kind="window",
-                ),
-                arguments={"window": window, "notches": -3},
-            )
-            yield _offer(
-                observation,
-                source=AffordanceSource.VISIBLE_CONTROL,
-                semantic="scroll_up",
-                description=f"Reveal earlier content in open window {window!r}.",
-                operation_kind="scroll_screen",
-                target=AffordanceTarget(
-                    target_id=window,
-                    label=window,
-                    kind="window",
-                ),
-                arguments={"window": window, "notches": 3},
-            )
-
-    if selected is not None:
-        for target in telemetry.world_targets:
-            if (
-                target.kind != "natural_resource"
-                or ContextActionKind.OPERATE not in target.context_actions
-            ):
-                continue
-            yield _offer(
-                observation,
-                source=AffordanceSource.COMPOSITE_OPERATION,
-                semantic="harvest",
-                description=(
-                    f"Mine {target.name!r} until the requested quantity exists and "
-                    "carry it back into the actor's own inventory. This is the whole "
-                    "cycle - work, wait, and collect - and the one to use when the "
-                    "point is to end up holding the goods."
-                ),
-                operation_kind="harvest_resource",
-                target=AffordanceTarget(
-                    target_id=target.id,
-                    label=target.name,
-                    kind=target.kind,
-                ),
-                parameters=(_quantity_parameter(),),
-                arguments={"actor_id": selected.id, "target_id": target.id},
-            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1473,44 +1124,9 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
         enumerate=_runtime_offers,
     ),
     AffordanceAdapter(
-        name="game_bindings",
-        sources=frozenset({AffordanceSource.GAME_BINDING}),
-        operation_kinds=frozenset({"use_game_binding"}),
-        denominator="Every captured-default-keymap binding not owned by another adapter.",
-        completeness_boundary=(
-            "Witnessed bindings use effect terminals; unwitnessed bindings stop at "
-            "accepted delivery plus a later observation. Playback, stateful screens, "
-            "and camera rotation route through semantic adapters."
-        ),
-        enumerate=_game_binding_offers,
-    ),
-    AffordanceAdapter(
-        name="screens",
-        sources=frozenset({AffordanceSource.GAME_BINDING, AffordanceSource.VISIBLE_CONTROL}),
-        operation_kinds=frozenset({"open_screen", "dismiss_screen"}),
-        denominator="Observable named-screen states and currently open window captions.",
-        completeness_boundary=(
-            "Opening requires an observable exact terminal. Named-window dismissal "
-            "uses a count terminal; uncaptained dismissal stops at delivery. Dialogue "
-            "is excluded."
-        ),
-        enumerate=_screen_offers,
-    ),
-    AffordanceAdapter(
-        name="visible_controls",
-        sources=frozenset({AffordanceSource.VISIBLE_CONTROL, AffordanceSource.DIALOGUE}),
-        operation_kinds=frozenset({"activate_visible_control"}),
-        denominator="Every current non-item, non-runtime-owned visible control.",
-        completeness_boundary=(
-            "Ambiguous or stale controls fail exact rebinding. Activation proves exact "
-            "delivery and a later observation, not the gameplay meaning of the result."
-        ),
-        enumerate=_visible_control_offers,
-    ),
-    AffordanceAdapter(
         name="context_orders",
         sources=frozenset({AffordanceSource.CONTEXT_ORDER}),
-        operation_kinds=frozenset({"perform_context_action", "command_world_target"}),
+        operation_kinds=frozenset({"perform_context_action"}),
         denominator="Every exact world-target/order pair advertised by current telemetry.",
         completeness_boundary=(
             "Native execution proves the reviewed natural-resource operate and "
@@ -1545,20 +1161,6 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
             "they afford, and the rest report that they were not asked."
         ),
         enumerate=_character_order_offers,
-    ),
-    AffordanceAdapter(
-        name="inventory_owners",
-        sources=frozenset({AffordanceSource.NEARBY_CHARACTER}),
-        operation_kinds=frozenset({"open_context_inventory"}),
-        denominator=(
-            "Every squad member, nearby person, and nearby world target whose "
-            "inventory is not already open."
-        ),
-        completeness_boundary=(
-            "Bounded to the nearest few owners. Whether one really has an "
-            "inventory is Kenshi's answer at dispatch, not a guess here."
-        ),
-        enumerate=_inventory_owner_offers,
     ),
     AffordanceAdapter(
         name="item_transfers",
@@ -1608,7 +1210,6 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
         operation_kinds=frozenset(
             {
                 "select_squad_member_exact",
-                "use_game_binding",
                 "regroup_with_squad_member",
                 "move_to_character",
                 "respond_to_immediate_threat",
@@ -1639,13 +1240,9 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
         ),
         operation_kinds=frozenset(
             {
-                "rotate_camera",
                 "survey_local_resources",
                 "move_in_direction",
                 "exit_current_building",
-                "recover_camera_view",
-                "scroll_screen",
-                "harvest_resource",
             }
         ),
         denominator="Current state for native movement, camera, scrolling, and harvesting.",

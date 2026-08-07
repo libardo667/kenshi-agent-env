@@ -996,10 +996,6 @@ def resource_handlers(
         "resources.produce_resource_output": NativeMovementHandler(
             port.produce_resource_output, planning_config
         ),
-        "resources.open_context_inventory": AtomicMovementHandler(
-            port.open_context_inventory,
-            verify_native_terminal=True,
-        ),
         "resources.transfer_item": AtomicMovementHandler(
             port.transfer_item,
             verify_native_terminal=True,
@@ -1007,12 +1003,6 @@ def resource_handlers(
         "resources.open_trade_window": AtomicMovementHandler(
             port.open_trade_window,
             verify_native_terminal=True,
-        ),
-        "resources.harvest_resource": HarvestHandler(
-            port,
-            authority,
-            binding,
-            planning_config,
         ),
     }
 

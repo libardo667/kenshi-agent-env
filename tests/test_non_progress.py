@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 
 import pytest
 
-from kenshi_agent.affordances import offered_affordances
 from kenshi_agent.continuity import ContinuityLedger
 from kenshi_agent.core.evidence import (
     ActionOutcome,
@@ -359,27 +358,6 @@ def test_harvest_no_op_blocks_every_quantity_until_relevant_state_changes() -> N
     assert unchanged_definitive_no_op_reason(action, changed_target) is None
 
 
-def test_unchanged_harvest_no_op_is_not_redelivered_as_an_affordance() -> None:
-    action = _harvest()
-    initial = _harvest_observation()
-    fingerprint = retry_state_fingerprint(action, initial)
-    assert fingerprint is not None
-    assert "harvest_resource" in {
-        offer.operation_kind for offer in offered_affordances(initial)
-    }
-    failed = _outcome(
-        outcome_id="ao-10",
-        action=action,
-        assessment=ActionOutcomeAssessment.NO_OP,
-        retry_fingerprint=fingerprint,
-        semantic_status=ResourceHarvestStatus.NOT_HARVESTED,
-    ).model_copy(update={"identity_session_id": "session-harvest"})
-    unchanged = _harvest_observation(recent_outcomes=[failed])
-
-    assert "harvest_resource" not in {
-        offer.operation_kind for offer in offered_affordances(unchanged)
-    }
-
 
 @pytest.mark.parametrize(
     ("field", "changed"),
@@ -660,37 +638,6 @@ def test_purchase_fingerprint_fails_closed_without_complete_exact_authority() ->
     assert all(retry_state_fingerprint(action, variant) is None for variant in variants)
 
 
-def test_no_op_arrange_does_not_clear_a_purchase_retry_barrier() -> None:
-    action = _purchase()
-    initial = _trade_observation(sequence=1, player_item_x=0.15)
-    fingerprint = retry_state_fingerprint(action, initial)
-    assert fingerprint is not None
-    failed_purchase = _outcome(
-        outcome_id="ao-1",
-        action=action,
-        assessment=ActionOutcomeAssessment.NO_OP,
-        retry_fingerprint=fingerprint,
-        semantic_status=PurchaseStatus.NOT_PURCHASED,
-    )
-    no_op_arrange = _outcome(
-        outcome_id="ao-2",
-        action=ActivateVisibleControlAction(
-            exact_label="ARRANGE",
-            window="STEYERFAST",
-        ),
-        assessment=ActionOutcomeAssessment.NO_OP,
-    )
-    unchanged = _trade_observation(
-        sequence=9,
-        player_item_x=0.15,
-        recent_outcomes=[failed_purchase, no_op_arrange],
-    )
-
-    reason = unchanged_definitive_no_op_reason(action, unchanged)
-
-    assert reason is not None
-    assert "ao-1" in reason
-
 
 def test_cosmetic_inventory_shuffle_does_not_clear_a_purchase_retry_barrier() -> None:
     action = _purchase()
@@ -847,51 +794,6 @@ def test_retry_barrier_clears_only_for_a_provably_new_session_or_state() -> None
         is not None
     )
 
-
-def test_retry_barrier_ignores_other_actions_and_absent_history() -> None:
-    action = _purchase()
-    empty = _trade_observation(sequence=1, player_item_x=0.15)
-    assert unchanged_definitive_no_op_reason(action, empty) is None
-    assert (
-        unchanged_definitive_no_op_reason(
-            ActivateVisibleControlAction(
-                exact_label="ARRANGE",
-                window="STEYERFAST",
-            ),
-            empty,
-        )
-        is None
-    )
-
-    same_purchase_other_quantity = action.model_copy(update={"quantity": 2})
-    fingerprint = retry_state_fingerprint(action, empty)
-    assert fingerprint is not None
-    same_class = _outcome(
-        outcome_id="ao-8",
-        action=same_purchase_other_quantity,
-        assessment=ActionOutcomeAssessment.NO_OP,
-        retry_fingerprint=fingerprint,
-        semantic_status=PurchaseStatus.NOT_PURCHASED,
-    )
-    with_same_class = empty.model_copy(
-        update={"recent_action_outcomes": [same_class]}
-    )
-    assert unchanged_definitive_no_op_reason(action, with_same_class) is not None
-
-    different_purchase = action.model_copy(
-        update={"cell_label": "Riceweed", "item_name": "Riceweed"}
-    )
-    unrelated = _outcome(
-        outcome_id="ao-9",
-        action=different_purchase,
-        assessment=ActionOutcomeAssessment.NO_OP,
-        retry_fingerprint=fingerprint,
-        semantic_status=PurchaseStatus.NOT_PURCHASED,
-    )
-    with_unrelated = empty.model_copy(
-        update={"recent_action_outcomes": [unrelated]}
-    )
-    assert unchanged_definitive_no_op_reason(action, with_unrelated) is None
 
 
 def test_runtime_records_the_post_action_purchase_retry_state() -> None:

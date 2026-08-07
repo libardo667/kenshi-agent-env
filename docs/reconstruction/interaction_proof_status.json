@@ -20,24 +20,10 @@
   ],
   "entries": [
     {
-      "operation_kind": "activate_visible_control",
-      "proof_status": "withheld",
-      "evidence": [
-        "docs/generated/OPERATION_DEFINITIONS.md visible_controls boundary: activation proves delivery and a later observation, not the gameplay meaning of the result"
-      ],
-      "note": "Section 10.4 forbids this remaining a universal gameplay escape hatch. It has no semantic contract because its effect boundary is deliberately generic; Slice 7 either narrows it to bounded UI delivery or removes the offer. Prospect is the concrete case that must not be activated through it."
-    },
-    {
       "operation_kind": "approach_dialogue_target",
       "proof_status": "unproven",
       "evidence": [],
       "note": "Movement is plausibly group-scoped while the dialogue outcome belongs to one participant. Which character becomes that participant is unproven; section 13.9 is its proof. Its wire command is still named approach_confirmed_vendor."
-    },
-    {
-      "operation_kind": "command_world_target",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "Generic world-target order. Its contract may need to resolve per semantic rather than once for the operation."
     },
     {
       "operation_kind": "consult_advisor",
@@ -48,22 +34,10 @@
       "note": "Read-only strategic call."
     },
     {
-      "operation_kind": "dismiss_screen",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "Same open question as open_screen."
-    },
-    {
       "operation_kind": "exit_current_building",
       "proof_status": "unproven",
       "evidence": [],
       "note": "Mixed-building group behavior is unknown: recipients inside different buildings, or some already outside, have never been observed."
-    },
-    {
-      "operation_kind": "harvest_resource",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "One planner-visible intent whose phases have different scopes. Its contract declares current_selection, but harvest_resource_is_currently_authorable still hard-requires a singleton selection - a gate that belongs to the late inventory-transfer phase, not to travelling or mining. Slice 1 stopped the menu offering it to a group it would refuse; it did not make a group able to harvest. Section 10.5 and Slice 6 own phase-scoped descriptors and the actual capability."
     },
     {
       "operation_kind": "move_in_direction",
@@ -84,18 +58,6 @@
         "operation_definitions.py NOOP_DEFINITION emits no world command"
       ],
       "note": "No Kenshi input and no recipient."
-    },
-    {
-      "operation_kind": "open_context_inventory",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "Internal harvest phase. Opens the container window for one exact actor."
-    },
-    {
-      "operation_kind": "open_screen",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "Screen opening is global today. Whether any specific screen is primary-scoped rather than global is exactly the question section 10.1 leaves open; no screen has been proven primary-owned."
     },
     {
       "operation_kind": "open_trade_window",
@@ -163,14 +125,6 @@
       "note": "Continuity read."
     },
     {
-      "operation_kind": "recover_camera_view",
-      "proof_status": "source_proven",
-      "evidence": [
-        "camera.recover_camera_view handler drives the view, never a character"
-      ],
-      "note": "Recovery is verified against observed camera state, hence the outcome milestone."
-    },
-    {
       "operation_kind": "regroup_with_squad_member",
       "proof_status": "unproven",
       "evidence": [],
@@ -181,20 +135,6 @@
       "proof_status": "unproven",
       "evidence": [],
       "note": "Explicit actor. Whether engage/withdraw broadcasts to a group is proof-required and must not be inherited from current selection."
-    },
-    {
-      "operation_kind": "rotate_camera",
-      "proof_status": "source_proven",
-      "evidence": [
-        "camera.rotate_camera handler drives the view, never a character"
-      ],
-      "note": "View state only."
-    },
-    {
-      "operation_kind": "scroll_screen",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "Scrolling within an owned window."
     },
     {
       "operation_kind": "select_squad_member_exact",
@@ -255,14 +195,6 @@
       "proof_status": "unproven",
       "evidence": [],
       "note": "Issues a delayed interior-leg continuation through newPlayerTaskSelectedCharacters, so it is the clearest case for the captured dispatch basis and the ScopedOrderDispatcher. Section 13.3 is its proof."
-    },
-    {
-      "operation_kind": "use_game_binding",
-      "proof_status": "withheld",
-      "evidence": [
-        "docs/generated/GAME_BINDING_PARITY.md distinguishes witnessed from unwitnessed bindings"
-      ],
-      "note": "Cannot have one universal contract merely because every case shares an input mechanism. Select All is the concrete case: it is currently offered by collecting the whole roster, and section 10.3 requires withholding it until live proof establishes whether the binding is active-platoon scoped."
     },
     {
       "operation_kind": "wait",

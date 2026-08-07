@@ -171,8 +171,6 @@ def _cancelled(
 
 def camera_handlers(port: CameraMechanicsPort) -> dict[str, OperationHandler]:
     return {
-        "camera.rotate_camera": CameraRotationHandler(port.rotate_camera),
-        "camera.recover_camera_view": CameraRecoveryHandler(port.recover_camera_view),
     }
 
 

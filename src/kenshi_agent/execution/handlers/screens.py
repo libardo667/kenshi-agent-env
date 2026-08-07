@@ -179,11 +179,6 @@ def _cancelled(
 
 def screen_handlers(port: ScreenMechanicsPort) -> dict[str, OperationHandler]:
     return {
-        "screens.open_screen": ScreenHandler(port.open_screen),
-        "screens.dismiss_screen": ScreenHandler(port.dismiss_screen),
-        "screens.activate_visible_control": ScreenHandler(port.activate_visible_control),
-        "screens.scroll_screen": ScreenHandler(port.scroll_screen),
-        "screens.use_game_binding": GameBindingHandler(port.use_game_binding),
     }
 
 

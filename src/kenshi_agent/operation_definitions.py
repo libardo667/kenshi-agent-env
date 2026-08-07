@@ -3663,43 +3663,6 @@ APPROACH_DIALOGUE_TARGET_DEFINITION = OperationDefinition(
     controller_verified=True,
 )
 
-COMMAND_WORLD_TARGET_DEFINITION = OperationDefinition(
-    kind="command_world_target",
-    version="1.0",
-    interaction=ordinary_order(
-        recipients=RecipientScope.CURRENT_SELECTION,
-        milestone=CompletionMilestone.ORDER_ACCEPTED,
-    ),
-    operation_type=CommandWorldTargetAction,
-    summary=(
-        "Issue Kenshi's Mouse2 command to one exact current world target at a "
-        "screen position exported by current telemetry and re-resolved inside "
-        "the input lease."
-    ),
-    argument_source=(
-        "target_id and context_action must be copied as an exact pair from a "
-        "context_targets entry that also has screen_position."
-    ),
-    allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
-    required_capabilities=frozenset(
-        {
-            NATIVE_CONTEXT_TARGETS_CAPABILITY,
-            WORLD_CONTEXT_TARGET_SCREEN_POSITIONS_CAPABILITY,
-        }
-    ),
-    capability_aliases=frozenset(),
-    pointer_class=PointerActionClass.SEMANTIC_CURRENT,
-    native_assisted=True,
-    risk=OperationRisk(pointer_actions=1),
-    max_primitive_actions=1,
-    reference_fields=("target_id", "context_action"),
-    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=OperationExecution.ATOMIC_HANDLER,
-    receipt_kind="semantic_world_command",
-    bind=bind_command_world_target,
-    handler_key="dialogue.command_world_target",
-    authorable_when=world_target_command_is_currently_authorable,
-)
 
 
 
@@ -3742,31 +3705,6 @@ SELECT_SQUAD_MEMBER_EXACT_DEFINITION = OperationDefinition(
 )
 
 
-ROTATE_CAMERA_DEFINITION = OperationDefinition(
-    kind="rotate_camera",
-    version="1.0",
-    interaction=global_ui(),
-    operation_type=RotateCameraAction,
-    summary=(
-        "Rotate the current world camera one bounded horizontal increment through "
-        "Kenshi's held-Mouse3 rotation mode."
-    ),
-    argument_source="direction is left or right.",
-    allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
-    required_capabilities=frozenset(),
-    capability_aliases=frozenset(),
-    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
-    native_assisted=False,
-    risk=OperationRisk(pointer_actions=1),
-    max_primitive_actions=1,
-    reference_fields=(),
-    idempotency=IdempotencyPolicy.SAFE_TO_RETRY,
-    execution=OperationExecution.ATOMIC_HANDLER,
-    receipt_kind="semantic_camera_rotation",
-    bind=bind_rotate_camera,
-    handler_key="camera.rotate_camera",
-    authorable_when=camera_rotation_is_currently_authorable,
-)
 
 
 PERFORM_CONTEXT_ACTION_DEFINITION = OperationDefinition(
@@ -3869,64 +3807,6 @@ PRODUCE_RESOURCE_OUTPUT_DEFINITION = OperationDefinition(
     authorable_when=resource_production_is_currently_authorable,
 )
 
-HARVEST_RESOURCE_DEFINITION = OperationDefinition(
-    kind="harvest_resource",
-    version="1.0",
-    # Explicit recipients, not the current selection. A harvest opens one
-    # character's inventory to collect the yield, so it addresses the actor it
-    # names rather than broadcasting. It declared CURRENT_SELECTION while its
-    # own handler required that actor to be solely selected - the contract and
-    # the mechanics saying different things about the same operation, with the
-    # mechanics right and unable to say so.
-    interaction=ordinary_order(
-        recipients=RecipientScope.EXPLICIT_RECIPIENTS,
-        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
-        selection=SelectionDependency.UI_TRANSACTION,
-    ),
-    operation_type=HarvestResourceAction,
-    summary=(
-        "Run one exact natural-resource job at Kenshi's observed 5x speed until "
-        "the requested bounded yield exists, restore normal speed, transfer it "
-        "conservatively into one exact selected actor, and close the two owned "
-        "inventory windows. Its controller-issued operating order is cleared, while "
-        "pre-existing work is preserved. Production, transfer, and cleanup are one "
-        "interruptible controller option."
-    ),
-    argument_source=(
-        "actor_id is selected.id; target_id is one natural_resource entry in "
-        "context_targets advertising operate; quantity is the useful yield, 1-5."
-    ),
-    allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
-    required_capabilities=frozenset(
-        {
-            NATIVE_PRODUCE_RESOURCE_CAPABILITY,
-            NATIVE_OPEN_CONTEXT_INVENTORY_CAPABILITY,
-            NATIVE_CONTEXT_TARGETS_CAPABILITY,
-            CONTEXT_INVENTORY_TARGET_CAPABILITY,
-            VISIBLE_CONTROLS_CAPABILITY,
-            "game.pause",
-            "game.speed",
-            "squad.basic",
-            "squad.health",
-            "squad.inventory",
-            "ui.inventory",
-            "identity.stable_handles",
-        }
-    ),
-    capability_aliases=frozenset(),
-    pointer_class=PointerActionClass.SEMANTIC_CURRENT,
-    native_assisted=True,
-    risk=OperationRisk(pointer_actions=12, native_assisted_actions=2),
-    max_primitive_actions=45,
-    reference_fields=("actor_id", "target_id"),
-    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=OperationExecution.COMPOSITE_OPTION,
-    receipt_kind="semantic_resource_harvest",
-    bind=bind_harvest_resource,
-    handler_key="resources.harvest_resource",
-    controller_verified=True,
-    authorable_when=harvest_resource_is_currently_authorable,
-)
 
 
 PERFORM_CHARACTER_ORDER_DEFINITION = OperationDefinition(
@@ -4021,51 +3901,6 @@ RESPOND_TO_IMMEDIATE_THREAT_DEFINITION = OperationDefinition(
     authorable_when=threat_response_is_currently_authorable,
 )
 
-OPEN_CONTEXT_INVENTORY_DEFINITION = OperationDefinition(
-    kind="open_context_inventory",
-    wire_command="open_context_inventory",
-    project_wire_fields=_wire_target(),
-    version="1.0",
-    interaction=global_ui(
-        recipients=RecipientScope.EXPLICIT_RECIPIENTS,
-        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
-        selection=SelectionDependency.UI_TRANSACTION,
-        playback=PlaybackRequirement.PAUSED_TRANSACTION,
-    ),
-    operation_type=OpenContextInventoryAction,
-    summary=(
-        "Open the ordinary inventory UI for one exact current natural-resource "
-        "handle. Native code re-resolves the target and terminally proves that "
-        "this exact building inventory is open. This opens the source window; "
-        "use toggle_inventory afterward to open the selected character's "
-        "destination before collecting output."
-    ),
-    argument_source=(
-        "target_id must be copied from one natural_resource entry in context_targets."
-    ),
-    allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
-    required_capabilities=frozenset(
-        {
-            NATIVE_OPEN_CONTEXT_INVENTORY_CAPABILITY,
-            NATIVE_CONTEXT_TARGETS_CAPABILITY,
-            "identity.stable_handles",
-        }
-    ),
-    capability_aliases=frozenset(),
-    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
-    native_assisted=True,
-    risk=OperationRisk(native_assisted_actions=1),
-    max_primitive_actions=6,
-    reference_fields=("target_id",),
-    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=OperationExecution.ATOMIC_HANDLER,
-    receipt_kind="semantic_context_inventory",
-    bind=bind_open_context_inventory,
-    handler_key="resources.open_context_inventory",
-    controller_verified=True,
-    native_terminal_success_reasons=frozenset({"exact_context_inventory_open"}),
-    authorable_when=context_inventory_is_currently_authorable,
-)
 
 
 OPEN_TRADE_WINDOW_DEFINITION = OperationDefinition(
@@ -4524,75 +4359,7 @@ MOVE_TO_CHARACTER_DEFINITION = OperationDefinition(
     controller_verified=True,
 )
 
-ACTIVATE_VISIBLE_CONTROL_DEFINITION = OperationDefinition(
-    kind="activate_visible_control",
-    version="1.0",
-    interaction=global_ui(
-        selection=SelectionDependency.UI_TRANSACTION,
-        playback=PlaybackRequirement.PAUSED_TRANSACTION,
-    ),
-    operation_type=ActivateVisibleControlAction,
-    summary=(
-        "Activate exactly one control the interface currently advertises, using "
-        "its observed bounds re-resolved inside the input lease."
-    ),
-    argument_source=(
-        "exact_label and role must match exactly one non-ambiguous, non-runtime-owned "
-        "entry of the observation's visible_controls."
-    ),
-    allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
-    required_capabilities=frozenset({VISIBLE_CONTROLS_CAPABILITY}),
-    capability_aliases=frozenset(),
-    # Bounds come from current telemetry and are re-read inside the lease, so
-    # this action survives a resolution change and needs no calibrated profile.
-    pointer_class=PointerActionClass.SEMANTIC_CURRENT,
-    native_assisted=False,
-    risk=OperationRisk(pointer_actions=1),
-    max_primitive_actions=1,
-    reference_fields=("exact_label", "role"),
-    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=OperationExecution.ATOMIC_HANDLER,
-    receipt_kind="semantic_control",
-    bind=bind_visible_control,
-    handler_key="screens.activate_visible_control",
-)
 
-DISMISS_SCREEN_DEFINITION = OperationDefinition(
-    kind="dismiss_screen",
-    version="1.0",
-    interaction=global_ui(
-        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
-        selection=SelectionDependency.UI_TRANSACTION,
-        playback=PlaybackRequirement.PAUSED_TRANSACTION,
-    ),
-    operation_type=DismissScreenAction,
-    summary=(
-        "Close one currently bound named screen or exact trade/inventory window "
-        "toward the world view. Active dialogue instead ends through an exact "
-        "visible reply."
-    ),
-    argument_source=(
-        "expected_screen must be observably open; inventory/trade may also name "
-        "the exact current owner window. Do not use for active dialogue."
-    ),
-    allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
-    required_capabilities=frozenset(),
-    capability_aliases=frozenset(),
-    # Inventory and trade windows close through their current close box; other
-    # screens use a configured key. The pointer path is resolved from current
-    # telemetry inside the input lease.
-    pointer_class=PointerActionClass.SEMANTIC_CURRENT,
-    native_assisted=False,
-    risk=OperationRisk(pointer_actions=1),
-    max_primitive_actions=3,
-    reference_fields=("expected_screen",),
-    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=OperationExecution.ATOMIC_HANDLER,
-    receipt_kind="semantic_dismiss",
-    bind=bind_dismiss_screen,
-    handler_key="screens.dismiss_screen",
-    derive_completion_conditions=_dismissed_screen_closed,
-)
 
 
 
@@ -4644,151 +4411,11 @@ def _open_screen_terminal(
     return (condition,) if condition is not None else ()
 
 
-OPEN_SCREEN_DEFINITION = OperationDefinition(
-    kind="open_screen",
-    version="1.0",
-    interaction=global_ui(
-        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
-        selection=SelectionDependency.UI_TRANSACTION,
-        playback=PlaybackRequirement.PAUSED_TRANSACTION,
-    ),
-    operation_type=OpenScreenAction,
-    summary=(
-        "Have a named screen open. The controller presses whichever binding "
-        "opens it and proves the exact screen arrived, so the affordance expresses "
-        "state intent rather than a key."
-    ),
-    argument_source=("The screen adapter supplies one current GameScreen state intention."),
-    allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
-    required_capabilities=frozenset(),
-    capability_aliases=frozenset(),
-    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
-    native_assisted=False,
-    risk=OperationRisk(),
-    max_primitive_actions=1,
-    reference_fields=("screen",),
-    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=OperationExecution.ATOMIC_HANDLER,
-    receipt_kind="semantic_screen",
-    bind=bind_open_screen,
-    handler_key="screens.open_screen",
-    derive_completion_conditions=_open_screen_terminal,
-)
 
 
-USE_GAME_BINDING_DEFINITION = OperationDefinition(
-    kind="use_game_binding",
-    version="1.0",
-    interaction=global_ui(selection=SelectionDependency.UI_TRANSACTION),
-    operation_type=UseGameBindingAction,
-    summary=(
-        "Press one named Kenshi control through the hard-coded shipped-default "
-        "keymap. The binding catalog is the reviewed semantic vocabulary; it "
-        "does not permit arbitrary keys. Use a named control instead of hunting "
-        "for a widget when one exists. Customized keymaps are not currently read."
-    ),
-    argument_source=(
-        "The game-binding adapter supplies one exact current GameBinding. Live "
-        "time controls remain runtime-owned. expected_effect is a runtime audit "
-        "label; completion is either a derived terminal or the adapter's explicit "
-        "delivery boundary."
-    ),
-    allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
-    # A keypress needs the game loaded and nothing else; requiring more would
-    # withhold the one action that recovers from a screen we cannot identify.
-    required_capabilities=frozenset(),
-    capability_aliases=frozenset(),
-    # A key carries no screen position at all.
-    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
-    native_assisted=False,
-    risk=OperationRisk(),
-    max_primitive_actions=1,
-    reference_fields=("binding",),
-    # Set at construction below: toggles may not be retried, because a retry
-    # undoes the first press instead of repeating it.
-    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=OperationExecution.ATOMIC_HANDLER,
-    receipt_kind="semantic_binding",
-    bind=bind_use_game_binding,
-    handler_key="screens.use_game_binding",
-    derive_completion_conditions=_binding_transition,
-    derive_terminal=_game_binding_terminal,
-)
-
-RECOVER_CAMERA_VIEW_DEFINITION = OperationDefinition(
-    kind="recover_camera_view",
-    version="1.0",
-    interaction=global_ui(milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED),
-    operation_type=RecoverCameraViewAction,
-    summary=(
-        "Restore a usable selected-character-following world view through one "
-        "bounded controller-owned transaction. The caller supplies no camera "
-        "parameters and receives already_clear, recovered, or "
-        "failed_after_bounded_attempts."
-    ),
-    argument_source=(
-        "No arguments. The controller resolves the one selected character, its "
-        "lower-HUD portrait, the current floor, and floor arrows from fresh "
-        "telemetry, then scores retained frames."
-    ),
-    allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
-    required_capabilities=frozenset(
-        {
-            CAMERA_RECOVERY_CAPABILITY,
-            "camera.position",
-            "game.pause",
-            "squad.basic",
-            VISIBLE_CONTROLS_CAPABILITY,
-        }
-    ),
-    capability_aliases=frozenset(),
-    pointer_class=PointerActionClass.SEMANTIC_CURRENT,
-    native_assisted=False,
-    risk=OperationRisk(pointer_actions=1),
-    max_primitive_actions=15,
-    reference_fields=(),
-    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=OperationExecution.ATOMIC_HANDLER,
-    receipt_kind="semantic_camera_recovery",
-    bind=bind_recover_camera_view,
-    handler_key="camera.recover_camera_view",
-    controller_verified=True,
-)
 
 
-SCROLL_SCREEN_DEFINITION = OperationDefinition(
-    kind="scroll_screen",
-    version="1.0",
-    interaction=global_ui(
-        selection=SelectionDependency.UI_TRANSACTION,
-        playback=PlaybackRequirement.PAUSED_TRANSACTION,
-    ),
-    operation_type=ScrollScreenAction,
-    summary=(
-        "Scroll inside one open window to reveal contents past the first "
-        "screenful. Shop stock and inventory that are not currently rendered "
-        "are not exported at all, so scrolling is the only way to find them."
-    ),
-    argument_source=(
-        "window must exactly match the `window` of at least one current "
-        "visible_controls entry; notches is negative to scroll further down "
-        "the list and positive to scroll back up."
-    ),
-    allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
-    required_capabilities=frozenset({VISIBLE_CONTROLS_CAPABILITY}),
-    capability_aliases=frozenset(),
-    pointer_class=PointerActionClass.SEMANTIC_CURRENT,
-    native_assisted=False,
-    # A scroll commits nothing: it changes what is rendered, not the world.
-    risk=OperationRisk(),
-    max_primitive_actions=1,
-    reference_fields=("window",),
-    idempotency=IdempotencyPolicy.SAFE_TO_RETRY,
-    execution=OperationExecution.ATOMIC_HANDLER,
-    receipt_kind="semantic_scroll",
-    bind=bind_scroll_screen,
-    handler_key="screens.scroll_screen",
-)
+
 
 
 
@@ -4805,16 +4432,11 @@ OPERATION_DEFINITION_LIST: tuple[OperationDefinition, ...] = (
     SET_SPEED_DEFINITION,
     WAIT_DEFINITION,
     APPROACH_DIALOGUE_TARGET_DEFINITION,
-    OPEN_SCREEN_DEFINITION,
-    COMMAND_WORLD_TARGET_DEFINITION,
     SELECT_SQUAD_MEMBER_EXACT_DEFINITION,
-    ROTATE_CAMERA_DEFINITION,
     PERFORM_CONTEXT_ACTION_DEFINITION,
     PRODUCE_RESOURCE_OUTPUT_DEFINITION,
-    HARVEST_RESOURCE_DEFINITION,
     PERFORM_CHARACTER_ORDER_DEFINITION,
     RESPOND_TO_IMMEDIATE_THREAT_DEFINITION,
-    OPEN_CONTEXT_INVENTORY_DEFINITION,
     OPEN_TRADE_WINDOW_DEFINITION,
     TRANSFER_ITEM_DEFINITION,
     REGROUP_WITH_SQUAD_MEMBER_DEFINITION,
@@ -4824,11 +4446,6 @@ OPERATION_DEFINITION_LIST: tuple[OperationDefinition, ...] = (
     TRAVEL_TO_MAP_DESTINATION_DEFINITION,
     EXIT_CURRENT_BUILDING_DEFINITION,
     SURVEY_LOCAL_RESOURCES_DEFINITION,
-    ACTIVATE_VISIBLE_CONTROL_DEFINITION,
-    DISMISS_SCREEN_DEFINITION,
-    USE_GAME_BINDING_DEFINITION,
-    RECOVER_CAMERA_VIEW_DEFINITION,
-    SCROLL_SCREEN_DEFINITION,
 )
 
 

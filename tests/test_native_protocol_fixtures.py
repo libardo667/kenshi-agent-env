@@ -117,7 +117,6 @@ def test_python_accepts_exact_first_aid_context_action_request_fixture() -> None
     ("fixture", "command"),
     [
         ("valid_resource_production_request.json", "produce_resource_output"),
-        ("valid_context_inventory_request.json", "open_context_inventory"),
     ],
 )
 def test_python_accepts_exact_resource_workflow_request_fixtures(

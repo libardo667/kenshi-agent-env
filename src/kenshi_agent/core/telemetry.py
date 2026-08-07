@@ -1205,7 +1205,6 @@ NATIVE_COMMANDS_NAMING_A_TARGET: frozenset[str] = frozenset(
         # Kenshi's TradeWindowType rides in the action field.
         "open_trade_window",
         "produce_resource_output",
-        "open_context_inventory",
         # Names the source inventory's owner. The destination and the slot ride
         # in their own fields, because a transfer is addressed by both ends.
         "transfer_item",
@@ -1301,7 +1300,6 @@ NativeWireCommand = Literal[
     "perform_context_action",
     "perform_character_order",
     "produce_resource_output",
-    "open_context_inventory",
     # One transfer between two open inventories, whatever owns them. Kenshi
     # adjudicates it and says why not, so looting, buying, selling, giving and
     # harvesting are one command rather than five that each drive a mouse.

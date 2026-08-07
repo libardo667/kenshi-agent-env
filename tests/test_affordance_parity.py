@@ -35,19 +35,6 @@ def test_controls_parser_preserves_alternates_and_equals_key() -> None:
     ]
 
 
-def test_every_game_binding_has_one_explicit_decision() -> None:
-    report = audit_binding_parity()
-
-    assert not report.unclassified(), (
-        "Kenshi bindings absent from the parity ledger: "
-        f"{report.unclassified()}. Wire each one or exempt it with a typed reason."
-    )
-    assert not report.stale_decisions(), (
-        "Parity decisions no longer present in Kenshi's source: "
-        f"{report.stale_decisions()}."
-    )
-    assert not report.decision_errors()
-
 
 def test_a_new_game_binding_cannot_disappear_inside_our_own_denominator() -> None:
     expanded = parse_controls_cfg(

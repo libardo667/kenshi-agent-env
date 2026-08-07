@@ -13,34 +13,24 @@ from kenshi_agent.config import CaptureConfig, ControlsConfig, RuntimeConfig
 from kenshi_agent.control.base import InputController, PrimitiveInputAction, WindowRect
 from kenshi_agent.core.authority import AuthorizationCode
 from kenshi_agent.core.operation import (
-    ActivateVisibleControlAction,
     ApproachDialogueTargetAction,
-    CameraRotationDirection,
     ClickAction,
-    CommandWorldTargetAction,
     ControlMode,
     ExitCurrentBuildingAction,
-    GameBinding,
     HotkeyAction,
     KeyAction,
     MouseButton,
-    MouseButtonAction,
-    MouseDragAction,
     MoveInDirectionAction,
     MoveToCharacterAction,
-    OpenContextInventoryAction,
     PauseAction,
     PerformContextAction,
-    PointerActionClass,
     ProduceResourceOutputAction,
     RegroupWithSquadMemberAction,
     RespondToImmediateThreatAction,
-    RotateCameraAction,
     SelectSquadMemberExactAction,
     SetSpeedAction,
     ThreatResponseStrategy,
     TravelToMapDestinationAction,
-    UseGameBindingAction,
 )
 from kenshi_agent.core.telemetry import (
     CharacterState,
@@ -63,7 +53,6 @@ from kenshi_agent.core.telemetry import (
 )
 from kenshi_agent.core.transport import (
     ActionReceipt,
-    CalibrationStatus,
     CommandDispatchContext,
     NativeCommandRequest,
 )
@@ -287,162 +276,9 @@ def live_environment(
     )
 
 
-def test_semantic_hotkey_binding_dispatches_one_hotkey(tmp_path: Path) -> None:
-    async def scenario() -> None:
-        telemetry = PulseTelemetry()
-        controller = PulseController(telemetry)
-        environment = live_environment(
-            tmp_path,
-            telemetry,
-            controller,
-        )
-        action = UseGameBindingAction(
-            binding=GameBinding.EDITOR_TOGGLE,
-            expected_effect="toggle the in-game editor",
-        )
-
-        await environment.reset()
-        transition = await execute_operation(environment, action)
-        receipt = transition.receipt
-
-        assert controller.actions == [HotkeyAction(keys=["shift", "f12"])]
-        assert receipt.action == action
-        assert receipt.semantic is not None
-        assert receipt.semantic.resolved_label == "editor_toggle"
-        assert "shift+f12" in receipt.message
-
-    asyncio.run(scenario())
 
 
-def test_semantic_mouse_binding_dispatches_one_held_button(tmp_path: Path) -> None:
-    async def scenario() -> None:
-        telemetry = PulseTelemetry()
-        controller = PulseController(telemetry)
-        environment = live_environment(
-            tmp_path,
-            telemetry,
-            controller,
-        )
-        action = UseGameBindingAction(
-            binding=GameBinding.HIGHLIGHT,
-            expected_effect="highlight world items while the binding is held",
-        )
 
-        await environment.reset()
-        transition = await execute_operation(environment, action)
-        receipt = transition.receipt
-
-        assert controller.actions == [MouseButtonAction(button=MouseButton.X2, hold_seconds=0.25)]
-        assert receipt.action == action
-        assert receipt.semantic is not None
-        assert receipt.semantic.resolved_label == "highlight"
-        assert "x2" in receipt.message
-
-    asyncio.run(scenario())
-
-
-def test_quicksave_waits_for_an_exact_quiescent_save_tree(tmp_path: Path) -> None:
-    from kenshi_agent.core.evidence import QuicksaveStatus
-
-    class QuicksavePulseController(PulseController):
-        def __init__(self, telemetry: PulseTelemetry, quicksave_dir: Path) -> None:
-            super().__init__(telemetry)
-            self.quicksave_dir = quicksave_dir
-
-        async def execute(self, action: PrimitiveInputAction) -> ActionReceipt:
-            receipt = await super().execute(action)
-            if isinstance(action, KeyAction) and action.key == "f5":
-                self.quicksave_dir.mkdir(parents=True)
-                (self.quicksave_dir / "quick.save").write_bytes(b"saved game")
-            return receipt
-
-    async def scenario() -> None:
-        telemetry = PulseTelemetry()
-        quicksave_dir = tmp_path / "save" / "quicksave"
-        controller = QuicksavePulseController(telemetry, quicksave_dir)
-        environment = live_environment(
-            tmp_path,
-            telemetry,
-            controller,
-            quicksave_dir=quicksave_dir,
-            quicksave_timeout_seconds=0.2,
-            quicksave_stable_seconds=0.01,
-        )
-        action = UseGameBindingAction(
-            binding=GameBinding.QUICKSAVE,
-            expected_effect="write the current game to the quicksave slot",
-        )
-
-        transition = await execute_operation(environment, action)
-
-        assert controller.actions == [KeyAction(key="f5")]
-        assert transition.receipt.semantic is not None
-        evidence = transition.receipt.semantic.quicksave
-        assert evidence is not None
-        assert evidence.status is QuicksaveStatus.SAVED
-        assert evidence.slot == "quicksave"
-        assert evidence.changed_files == 1
-        assert evidence.quick_save_size_bytes == len(b"saved game")
-        assert evidence.quiescent_seconds >= 0.01
-
-    asyncio.run(scenario())
-
-
-def test_quicksave_does_not_promote_an_input_receipt_to_completion(
-    tmp_path: Path,
-) -> None:
-    from kenshi_agent.core.evidence import QuicksaveStatus
-
-    async def scenario() -> None:
-        telemetry = PulseTelemetry()
-        controller = PulseController(telemetry)
-        environment = live_environment(
-            tmp_path,
-            telemetry,
-            controller,
-            quicksave_dir=tmp_path / "save" / "quicksave",
-            quicksave_timeout_seconds=0.03,
-            quicksave_stable_seconds=0.01,
-        )
-        action = UseGameBindingAction(
-            binding=GameBinding.QUICKSAVE,
-            expected_effect="write the current game to the quicksave slot",
-        )
-
-        transition = await execute_operation(environment, action)
-
-        assert transition.receipt.executed
-        assert transition.receipt.semantic is not None
-        evidence = transition.receipt.semantic.quicksave
-        assert evidence is not None
-        assert evidence.status is QuicksaveStatus.NOT_OBSERVED
-        assert evidence.changed_files == 0
-        assert evidence.quick_save_size_bytes is None
-
-    asyncio.run(scenario())
-
-
-def test_semantic_camera_rotation_dispatches_one_bounded_middle_drag(
-    tmp_path: Path,
-) -> None:
-    async def scenario() -> None:
-        environment, _, controller = native_vendor_environment(tmp_path)
-        action = RotateCameraAction(direction=CameraRotationDirection.RIGHT)
-
-        transition = await execute_operation(environment, action)
-
-        assert controller.actions == [
-            MouseDragAction(
-                button=MouseButton.MIDDLE,
-                delta_x=-96,
-                delta_y=0,
-                steps=8,
-            )
-        ]
-        assert transition.receipt.semantic is not None
-        assert transition.receipt.semantic.resolved_label == "right"
-
-    asyncio.run(scenario())
 
 
 def test_live_close_causally_pauses_once_and_is_idempotent(tmp_path: Path) -> None:
@@ -1202,49 +1038,6 @@ def native_vendor_action(target_id: str = "entity-vendor") -> ApproachDialogueTa
     return ApproachDialogueTargetAction(target_id=target_id)
 
 
-def test_world_target_command_rebinds_geometry_inside_input_lease(
-    tmp_path: Path,
-) -> None:
-    async def scenario() -> None:
-        environment, telemetry, controller = native_vendor_environment(tmp_path)
-        telemetry.world_target_screen_position = Vec2(x=0.4, y=0.6)
-        initial = await environment.reset()
-        telemetry.world_target_screen_position = Vec2(x=0.55, y=0.65)
-        action = CommandWorldTargetAction(
-            target_id="entity-copper",
-            context_action=ContextActionKind.OPERATE,
-        )
-
-        transition = await execute_operation(
-            environment,
-            action,
-            command=CommandDispatchContext(
-                command_id="cmd-" + "f" * 32,
-                based_on_revision=initial.world_revision,
-                **_authorized_for(initial, action),
-            ),
-        )
-
-        assert controller.actions == [
-            ClickAction(
-                x=0.55,
-                y=0.65,
-                button=MouseButton.RIGHT,
-            )
-        ]
-        assert transition.receipt.semantic is not None
-        assert transition.receipt.semantic.target_id == "entity-copper"
-        assert transition.receipt.semantic.resolved_label == "operate"
-        assert transition.receipt.semantic.resolved_bounds == NormalizedPointerBounds(
-            min_x=0.55,
-            max_x=0.55,
-            min_y=0.65,
-            max_y=0.65,
-        )
-
-    asyncio.run(scenario())
-
-
 
 def test_squad_member_selection_uses_exact_native_identity_without_pointer_input(
     tmp_path: Path,
@@ -1357,41 +1150,6 @@ def test_native_character_movement_carries_the_complete_selected_group(
 
     asyncio.run(scenario())
 
-
-def test_world_target_command_emits_nothing_when_geometry_disappears(
-    tmp_path: Path,
-) -> None:
-    async def scenario() -> None:
-        environment, telemetry, controller = native_vendor_environment(tmp_path)
-        telemetry.world_target_screen_position = Vec2(x=0.4, y=0.6)
-        initial = await environment.reset()
-        telemetry.world_target_screen_position = None
-
-        transition = await execute_operation(
-            environment,
-            CommandWorldTargetAction(
-                target_id="entity-copper",
-                context_action=ContextActionKind.OPERATE,
-            ),
-            command=CommandDispatchContext(
-                command_id="cmd-" + "f" * 32,
-                based_on_revision=initial.world_revision,
-                **_authorized_for(
-                    initial,
-                    CommandWorldTargetAction(
-                        target_id="entity-copper",
-                        context_action=ContextActionKind.OPERATE,
-                    ),
-                ),
-            ),
-        )
-
-        assert not transition.receipt.executed
-        assert transition.receipt.input_boundary is not None
-        assert transition.receipt.input_boundary.code.value == "binding_absent"
-        assert controller.actions == []
-
-    asyncio.run(scenario())
 
 
 def test_native_vendor_request_precedes_hotkey_and_matching_later_ack(
@@ -1691,124 +1449,9 @@ def control_environment(
     return environment, controller
 
 
-def test_visible_control_clicks_the_observed_bounds_center(tmp_path: Path) -> None:
-    async def scenario() -> None:
-        telemetry = ControlTelemetry([control("Show me your goods.", 0.50)])
-        environment, controller = control_environment(tmp_path, telemetry)
-        await environment.observe()
-
-        transition = await execute_operation(
-            environment,
-            ActivateVisibleControlAction(exact_label="Show me your goods.", role="button"),
-        )
-
-        clicks = [a for a in controller.actions if isinstance(a, ClickAction)]
-        assert len(clicks) == 1
-        # Center of the telemetry-reported bounds, never a model-authored point.
-        assert clicks[0].x == pytest.approx(0.4)
-        assert clicks[0].y == pytest.approx(0.52)
-        assert transition.receipt.executed
-        semantic = transition.receipt.semantic
-        assert semantic is not None
-        assert semantic.resolved_label == "Show me your goods."
-        assert semantic.resolved_role == "button"
-        assert semantic.resolved_bounds is not None
-        assert semantic.source_revision is not None
-        assert "Re-resolved" in semantic.revalidation
-
-    asyncio.run(scenario())
 
 
-def test_two_different_labels_use_the_same_action(tmp_path: Path) -> None:
-    async def scenario() -> None:
-        telemetry = ControlTelemetry(
-            [control("Show me your goods.", 0.50), control("Goodbye.", 0.70)]
-        )
-        environment, controller = control_environment(tmp_path, telemetry)
-        await environment.observe()
 
-        await execute_operation(
-            environment, ActivateVisibleControlAction(exact_label="Goodbye.", role="button")
-        )
-        clicks = [a for a in controller.actions if isinstance(a, ClickAction)]
-        assert clicks[-1].y == pytest.approx(0.72)
-
-        await execute_operation(
-            environment,
-            ActivateVisibleControlAction(exact_label="Show me your goods.", role="button"),
-        )
-        clicks = [a for a in controller.actions if isinstance(a, ClickAction)]
-        assert clicks[-1].y == pytest.approx(0.52)
-
-    asyncio.run(scenario())
-
-
-def test_control_that_disappears_inside_the_lease_emits_zero_input(
-    tmp_path: Path,
-) -> None:
-    async def scenario() -> None:
-        telemetry = ControlTelemetry([control("Show me your goods.", 0.50)])
-        telemetry.controls_after_first_read = [control("Goodbye.", 0.70)]
-        environment, controller = control_environment(tmp_path, telemetry)
-        await environment.observe()
-
-        transition = await execute_operation(
-            environment,
-            ActivateVisibleControlAction(exact_label="Show me your goods.", role="button"),
-        )
-
-        assert not transition.receipt.executed
-        assert transition.receipt.input_boundary is not None
-        assert transition.receipt.input_boundary.code.value == "binding_absent"
-        assert not [a for a in controller.actions if isinstance(a, ClickAction)]
-
-    asyncio.run(scenario())
-
-
-def test_control_that_becomes_ambiguous_inside_the_lease_emits_zero_input(
-    tmp_path: Path,
-) -> None:
-    async def scenario() -> None:
-        telemetry = ControlTelemetry([control("Trade", 0.50)])
-        telemetry.controls_after_first_read = [control("Trade", 0.50), control("Trade", 0.80)]
-        environment, controller = control_environment(tmp_path, telemetry)
-        await environment.observe()
-
-        transition = await execute_operation(
-            environment, ActivateVisibleControlAction(exact_label="Trade", role="button")
-        )
-
-        assert not transition.receipt.executed
-        assert transition.receipt.input_boundary is not None
-        assert transition.receipt.input_boundary.code.value == "binding_ambiguous"
-        assert not [a for a in controller.actions if isinstance(a, ClickAction)]
-
-    asyncio.run(scenario())
-
-
-def test_visible_control_is_semantic_current_not_profile_calibrated(
-    tmp_path: Path,
-) -> None:
-    """A resolution change must not block an action whose bounds are re-read."""
-
-    async def scenario() -> None:
-        telemetry = ControlTelemetry([control("Show me your goods.", 0.50)])
-        controller = ResizeInsideLeaseController(telemetry)  # type: ignore[arg-type]
-        environment = live_environment(
-            tmp_path,
-            telemetry,  # type: ignore[arg-type]
-            controller,
-        )
-        await environment.observe()
-
-        action = ActivateVisibleControlAction(exact_label="Show me your goods.", role="button")
-        transition = await execute_operation(environment, action)
-        assert transition.receipt.executed
-        assert transition.receipt.calibration is not None
-        assert transition.receipt.calibration.action_class is PointerActionClass.SEMANTIC_CURRENT
-        assert transition.receipt.calibration.status is CalibrationStatus.NOT_REQUIRED
-
-    asyncio.run(scenario())
 
 
 def test_semantic_approach_adopts_an_already_active_order_for_the_same_target(
@@ -2099,43 +1742,6 @@ def test_resource_production_issues_exact_monitored_native_command(
         assert acknowledgement.reason == "resource_output_ready"
 
     asyncio.run(scenario())
-
-
-def test_context_inventory_requires_exact_native_terminal(
-    tmp_path: Path,
-) -> None:
-    async def scenario() -> None:
-        environment, _telemetry, controller = native_vendor_environment(
-            tmp_path,
-            status=NativeCommandStatus.COMPLETED,
-            reason="exact_context_inventory_open",
-        )
-        initial = await environment.reset()
-
-        transition = await execute_operation(
-            environment,
-            OpenContextInventoryAction(target_id="entity-copper"),
-            command=CommandDispatchContext(
-                command_id="cmd-" + "4" * 32,
-                based_on_revision=initial.world_revision,
-                **_authorized_for(initial, OpenContextInventoryAction(target_id="entity-copper")),
-            ),
-        )
-
-        assert (
-            len([action for action in controller.actions if isinstance(action, HotkeyAction)]) == 1
-        )
-        assert controller.request is not None
-        assert controller.request.command == "open_context_inventory"
-        assert controller.request.target_id == "entity-copper"
-        acknowledgement = transition.receipt.native_acknowledgement
-        assert acknowledgement is not None
-        assert acknowledgement.status is NativeCommandStatus.COMPLETED
-        assert acknowledgement.reason == "exact_context_inventory_open"
-
-    asyncio.run(scenario())
-
-
 
 
 

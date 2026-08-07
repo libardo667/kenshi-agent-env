@@ -12,25 +12,19 @@ Internal-only definitions are controller phases or runtime operations;
 they still bind through this registry but are not planner-visible offers.
 
 ```text
-definitions             33
-adapter operation kinds  32
-adapter routes           33
-adapters                 14
+definitions             23
+adapter operation kinds  22
+adapter routes           22
+adapters                 10
 ownership proof         PASS
 
 DEFINITIONS
-  activate_visible_control            screens.activate_visible_control                        ActivateVisibleControlAction [visible_controls]
   approach_dialogue_target            dialogue.approach_dialogue_target                       ApproachDialogueTargetAction [dialogue_targets]
-  command_world_target                dialogue.command_world_target                           CommandWorldTargetAction [context_orders]
   consult_advisor                     cognition.advisor                                       ConsultAdvisorAction [runtime]
-  dismiss_screen                      screens.dismiss_screen                                  DismissScreenAction [screens]
   exit_current_building               movement.exit_current_building                          ExitCurrentBuildingAction [native_and_composite]
-  harvest_resource                    resources.harvest_resource                              HarvestResourceAction [native_and_composite]
   move_in_direction                   movement.move_in_direction                              MoveInDirectionAction [native_and_composite]
   move_to_character                   movement.move_to_character                              MoveToCharacterAction [characters]
   noop                                runtime.noop                                            NoopAction [runtime]
-  open_context_inventory              resources.open_context_inventory                        OpenContextInventoryAction [inventory_owners]
-  open_screen                         screens.open_screen                                     OpenScreenAction [screens]
   open_trade_window                   resources.open_trade_window                             OpenTradeWindowAction [trade_windows]
   pause                               runtime.pause                                           PauseAction [runtime]
   perform_character_order             movement.perform_character_order                        PerformCharacterOrderAction [character_orders]
@@ -38,11 +32,8 @@ DEFINITIONS
   produce_resource_output             resources.produce_resource_output                       ProduceResourceOutputAction [by-composition]
   read_fieldbook                      cognition.fieldbook                                     ReadFieldbookAction [runtime]
   recall_memory                       cognition.memory                                        RecallMemoryAction [runtime]
-  recover_camera_view                 camera.recover_camera_view                              RecoverCameraViewAction [native_and_composite]
   regroup_with_squad_member           movement.regroup_with_squad_member                      RegroupWithSquadMemberAction [characters]
   respond_to_immediate_threat         movement.respond_to_immediate_threat                    RespondToImmediateThreatAction [characters]
-  rotate_camera                       camera.rotate_camera                                    RotateCameraAction [native_and_composite]
-  scroll_screen                       screens.scroll_screen                                   ScrollScreenAction [native_and_composite]
   select_squad_member_exact           movement.select_squad_member_exact                      SelectSquadMemberExactAction [characters]
   set_speed                           runtime.set_speed                                       SetSpeedAction [runtime]
   shift_into_body                     movement.shift_into_body                                ShiftIntoBodyAction [body_shift]
@@ -50,18 +41,13 @@ DEFINITIONS
   survey_local_resources              movement.survey_local_resources                         SurveyLocalResourcesAction [native_and_composite]
   transfer_item                       resources.transfer_item                                 TransferItemAction [item_transfers]
   travel_to_map_destination           movement.travel_to_map_destination                      TravelToMapDestinationAction [map]
-  use_game_binding                    screens.use_game_binding                                UseGameBindingAction [characters, game_bindings]
   wait                                runtime.wait                                            WaitAction [runtime]
 
 SOURCE-SPECIFIC COMPLETENESS BOUNDARIES
   runtime: Only choices applicable to the current run state.
-  game_bindings: Witnessed bindings use effect terminals; unwitnessed bindings stop at accepted delivery plus a later observation. Playback, stateful screens, and camera rotation route through semantic adapters.
-  screens: Opening requires an observable exact terminal. Named-window dismissal uses a count terminal; uncaptained dismissal stops at delivery. Dialogue is excluded.
-  visible_controls: Ambiguous or stale controls fail exact rebinding. Activation proves exact delivery and a later observation, not the gameplay meaning of the result.
   context_orders: Native execution proves the reviewed natural-resource operate and squad-character first_aid semantics; other orders require current screen geometry and stop at the generic UI delivery boundary.
   body_shift: Native-assisted stable identity and nearby-character evidence; a body outside the reported radius cannot be offered and a hostile one is deliberately withheld.
   character_orders: Bounded by the native probe budget: the nearest few people are asked what they afford, and the rest report that they were not asked.
-  inventory_owners: Bounded to the nearest few owners. Whether one really has an inventory is Kenshi's answer at dispatch, not a guess here.
   item_transfers: Bounded to the first few moves. Whether one is allowed is Kenshi's answer at dispatch, reported in its own words.
   trade_windows: Bounded to the nearest few. Whether Kenshi pairs a given two is its answer at dispatch.
   dialogue_targets: Native-assisted stable identity and dialogue-role evidence.

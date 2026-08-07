@@ -6,14 +6,9 @@ from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.operation import (
     ControlMode,
     ExitCurrentBuildingAction,
-    HarvestResourceAction,
     MoveToCharacterAction,
     PauseAction,
     StopAction,
-)
-from kenshi_agent.core.planning import (
-    ActivePlanContext,
-    PlanPatch,
 )
 from kenshi_agent.core.telemetry import (
     CharacterState,
@@ -27,8 +22,6 @@ from kenshi_agent.core.telemetry import (
 )
 from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.live_native_smoke_planner import (
-    build_decision,
-    build_output,
     build_plan,
 )
 
@@ -134,26 +127,6 @@ def test_exit_plan_requires_and_preserves_the_observed_indoor_state() -> None:
         )
 
 
-def test_harvest_plan_requires_the_exact_advertised_action() -> None:
-    with pytest.raises(ValueError, match="not currently actionable"):
-        build_plan(
-            observation(indoors=False, advertise_operate=False),
-            action_kind="harvest_resource",
-            target_id=TARGET_ID,
-        )
-
-    plan = build_plan(
-        observation(indoors=False),
-        action_kind="harvest_resource",
-        target_id=TARGET_ID,
-    )
-
-    assert plan.steps[0].action == HarvestResourceAction(
-        actor_id="entity-hep",
-        target_id=TARGET_ID,
-        quantity=1,
-    )
-
 
 def test_character_walk_smoke_requires_one_exact_current_character() -> None:
     plan = build_plan(
@@ -173,39 +146,4 @@ def test_character_walk_smoke_requires_one_exact_current_character() -> None:
         )
 
 
-def test_single_step_refuses_the_continuous_harvest_option() -> None:
-    with pytest.raises(ValueError, match="continuous option ownership"):
-        build_decision(
-            observation(indoors=False),
-            action_kind="harvest_resource",
-            target_id=TARGET_ID,
-        )
 
-
-def test_active_native_smoke_preserves_only_its_future_pause_handoff() -> None:
-    state = observation(indoors=False).model_copy(
-        update={
-            "active_plan": ActivePlanContext(
-                plan_id="live-harvest-resource-smoke",
-                plan_version=1,
-                objective="Operate the exact advertised target.",
-                active_step_id="native-smoke",
-                remaining_actions=2,
-            ),
-        }
-    )
-
-    output = build_output(
-        state,
-        action_kind="harvest_resource",
-        target_id=TARGET_ID,
-    )
-
-    assert isinstance(output, PlanPatch)
-    assert output.plan_id == state.active_plan.plan_id
-    assert output.based_on_plan_version == state.active_plan.plan_version
-    assert output.interrupt_active_step_id is None
-    assert [type(step.action) for step in output.replace_future_steps] == [
-        PauseAction,
-        StopAction,
-    ]

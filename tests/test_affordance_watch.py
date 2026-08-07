@@ -78,28 +78,6 @@ def test_fingerprint_ignores_sequence_but_tracks_selection() -> None:
     assert first.fingerprint() != changed.fingerprint()
 
 
-def test_selecting_a_second_character_does_not_strand_group_orders() -> None:
-    """The defect the watcher found, now fixed.
-
-    Before Slice 1, an `exactly_one` operation stayed on the menu when a second
-    character was selected while its own definition refused it. Confirmed live
-    against a two-character start: harvest_resource, move_in_direction, and
-    perform_context_action were all offered and all unusable, one of them
-    pointed at the iron deposit the pair was standing on.
-
-    A selection-broadcast order is not invalidated by a second character being
-    selected. That is the whole point of broadcasting.
-    """
-
-    pair = current_menu(observation_from_snapshot(snapshot(selected=[PRIMARY, SECOND])))
-    single = current_menu(observation_from_snapshot(snapshot(selected=[PRIMARY])))
-
-    offered_kinds = {row.operation_kind for row in pair.offers}
-
-    assert "move_in_direction" in offered_kinds
-    assert pair.unauthorable_offer_kinds == ()
-    assert single.unauthorable_offer_kinds == ()
-
 
 def test_menu_never_offers_what_the_registry_would_refuse() -> None:
     """Enumeration and authorability answer to one owner now.
@@ -176,33 +154,3 @@ def test_empty_menu_states_that_absence_is_ambiguous() -> None:
     assert "never modeled" in body
 
 
-def test_game_bindings_are_offered_regardless_of_world_state() -> None:
-    """Characterization of a defect, not an endorsement of it.
-
-    Discovered live: the game-binding adapter consults neither `game.loaded`,
-    nor capabilities, nor staleness. With no world loaded and stale telemetry
-    the planner is still offered every binding, including `quickload`,
-    `editor_delete`, and `rebuild_navmesh`. Sections 3.7 and 10.4 of the
-    interaction-scope plan require these to be withheld until a semantic
-    adapter can state their contract; Slice 5 and Slice 7 own the fix.
-
-    This test exists so that fix is a visible, deliberate change rather than a
-    silent one. When bindings become gated, it fails and is rewritten.
-    """
-
-    unloaded = TelemetrySnapshot(
-        sequence=1,
-        captured_at=datetime.now(UTC),
-        capabilities=[],
-        game=GameState(loaded=False),
-        ui=UIState(),
-        squad=[],
-    )
-    menu = current_menu(observation_from_snapshot(unloaded, stale=True))
-
-    binding_semantics = {
-        row.semantic for row in menu.offers if row.operation_kind == "use_game_binding"
-    }
-
-    assert menu.offers
-    assert {"quickload", "editor_delete", "rebuild_navmesh"} <= binding_semantics
