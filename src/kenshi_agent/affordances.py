@@ -297,11 +297,27 @@ def _offer(
     )
 
 
-def _quantity_parameter(maximum: int = 5) -> AffordanceParameterSpec:
+def _quantity_parameter(
+    maximum: int = 5,
+    *,
+    available: str = "",
+) -> AffordanceParameterSpec:
+    """How many, and how many there are.
+
+    The bound used to live only in the schema, described as "gameplay quantity
+    to attempt", so the number the planner had to choose arrived with no sense
+    of what it was choosing between. Saying how many exist is the difference
+    between picking a quantity and guessing one.
+    """
+
     return AffordanceParameterSpec(
         name="quantity",
         kind=AffordanceParameterKind.INTEGER,
-        description="Gameplay quantity to attempt.",
+        description=(
+            f"How many, 1 to {maximum}"
+            + (f" ({available})" if available else "")
+            + "."
+        ),
         minimum=1,
         maximum=maximum,
     )
@@ -788,6 +804,22 @@ def _inventory_offers(observation: Observation) -> Iterable[AffordanceOffer]:
         and owner.get("seller_id")
     }
     paired_vendor_id = next(iter(open_vendor_ids)) if len(open_vendor_ids) == 1 else None
+    # How many of each item an owner actually holds, across cells.
+    #
+    # Kenshi only stacks in a backpack. A character carrying loose goods has one
+    # cell per item, and those cells share a window, role and label - so they are
+    # one affordance, offered once, whose quantity used to come from a single
+    # cell and therefore read as 1. Leaf could see eight raw iron and sell one
+    # per turn, which is the same duplicate-cell fact that made the binder
+    # report a choice as absent.
+    held: dict[tuple[str, str], int] = {}
+    for control in telemetry.ui.visible_controls:
+        if control.role != "item" or not control.item_name:
+            continue
+        key = (control.window or "", control.item_name)
+        held[key] = held.get(key, 0) + (
+            control.item_quantity if control.item_quantity is not None else 1
+        )
     for control in telemetry.ui.visible_controls:
         if control.role != "item" or not control.item_name:
             continue
@@ -803,11 +835,10 @@ def _inventory_offers(observation: Observation) -> Iterable[AffordanceOffer]:
             "item_name": control.item_name,
             "window": control.window,
         }
-        cell_quantity = (
-            str(control.item_quantity) if control.item_quantity is not None else "unknown"
-        )
+        owned_total = held.get((control.window or "", control.item_name), 0)
+        cell_quantity = str(owned_total) if owned_total else "unknown"
         cell_quantity_max = (
-            min(5, control.item_quantity) if control.item_quantity is not None else 5
+            min(5, owned_total) if owned_total else 5
         )
         purchase_quantity_max = cell_quantity_max
         if telemetry.game.money is not None and control.item_base_value:
@@ -833,13 +864,17 @@ def _inventory_offers(observation: Observation) -> Iterable[AffordanceOffer]:
                 source=AffordanceSource.INVENTORY,
                 semantic="buy",
                 description=(
-                    f"Acquire {control.item_name!r} from {control.window!r} "
-                    f"{quoted_charge}; current cell "
-                    f"quantity is {cell_quantity}."
+                    f"{control.window!r} has {cell_quantity} {control.item_name!r} "
+                    f"{quoted_charge}. How many do you want to buy?"
                 ),
                 operation_kind="purchase_item",
                 target=target,
-                parameters=(_quantity_parameter(purchase_quantity_max),),
+                parameters=(
+                    _quantity_parameter(
+                        purchase_quantity_max,
+                        available=f"{cell_quantity} for sale",
+                    ),
+                ),
                 arguments={
                     **base,
                     "expected_price": control.item_base_value,
@@ -853,12 +888,17 @@ def _inventory_offers(observation: Observation) -> Iterable[AffordanceOffer]:
                     source=AffordanceSource.INVENTORY,
                     semantic="sell",
                     description=(
-                        f"Sell {control.item_name!r} from {control.window!r}; "
-                        f"current cell quantity is {cell_quantity}."
+                        f"You have {cell_quantity} {control.item_name!r} in "
+                        f"{control.window!r}. How many do you want to sell?"
                     ),
                     operation_kind="sell_item",
                     target=target,
-                    parameters=(_quantity_parameter(cell_quantity_max),),
+                    parameters=(
+                        _quantity_parameter(
+                            cell_quantity_max,
+                            available=f"you hold {cell_quantity}",
+                        ),
+                    ),
                     arguments={**base, "buyer_id": paired_vendor_id},
                 )
             elif not observation.trade_screen_open():
