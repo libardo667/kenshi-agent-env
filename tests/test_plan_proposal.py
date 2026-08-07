@@ -135,7 +135,7 @@ def test_runtime_compiles_only_model_choice_and_owns_envelope_bookkeeping() -> N
     assert all(step.action.kind == "noop" for step in plan.steps)
     assert all(
         step.affordance is not None
-        and step.affordance.affordance_id == observe["affordance_id"]
+        and step.affordance.semantic == observe["semantic"]
         for step in plan.steps
     )
     assert all(step.success_conditions == [] for step in plan.steps)
@@ -266,7 +266,8 @@ def test_inventory_selection_exposes_the_complete_nonnegative_price_domain(
     offer = next(
         offer
         for offer in offered_affordances(observation)
-        if offer.affordance_id == selected["affordance_id"]
+        if offer.semantic == selected["semantic"]
+        and (offer.target.target_id if offer.target else None) == selected["target_id"]
     )
 
     plan = compile_plan_proposal(
@@ -326,27 +327,21 @@ def test_a_choice_that_is_not_offered_fails_closed() -> None:
         )
 
 
-def test_an_invented_handle_does_not_block_a_choice_that_is_really_offered() -> None:
-    """The failure this contract exists to prevent, asserted directly.
+def test_the_wire_offers_no_handle_to_invent() -> None:
+    """The live failure, prevented by construction rather than tolerated.
 
-    A live run stopped at step zero three times because the model emitted
-    `aff-9f556b8eaba80dbfd68c` - a plausible twenty-hex id that had never
-    existed. The choice it named was real and available; only the handle was
-    invented. That must now compile.
+    A run stopped at step zero three times because the model emitted
+    `aff-9f556b8eaba80dbfd68c` - a plausible id that existed in no observation
+    of any run. It was required to send one and had nothing real to copy.
+
+    A field that is not on the wire cannot be fabricated, and cannot be echoed
+    back to the model by its own retry feedback either.
     """
 
-    observation = _observation()
-    selection = _selected(observation, "observe")
-    selection["affordance_id"] = "aff-00000000000000000000"
+    selection = _selected(_observation(), "observe")
 
-    compiled = compile_plan_proposal(
-        {"objective": "Name the choice, not the hash.", "steps": [{"selection": selection}]},
-        observation=observation,
-        context_id="pc-invented-handle",
-        planning=PlanningConfig(),
-    )
-
-    assert compiled.plan.steps
+    assert "affordance_id" not in selection
+    assert selection["semantic"] == "observe"
 
 
 def test_compiler_preserves_valid_sidecars_and_quarantines_invalid_siblings() -> None:
@@ -418,16 +413,11 @@ def test_hosted_plan_schema_has_one_selection_contract_and_no_action_union() -> 
     # Named, not hashed. `semantic` is what the model must supply; the handle is
     # optional provenance, and the two disambiguators are only needed when a
     # name and target do not pick out one offer.
-    assert set(selection["properties"]) == {
-        "semantic",
-        "target_id",
-        "source",
-        "operation_kind",
-        "affordance_id",
-        "parameters",
-    }
-    assert "semantic" in selection.get("required", [])
-    assert "affordance_id" not in selection.get("required", [])
+    # No handle on the wire at all. Strict projection marks every property
+    # required, so an optional id would still have been demanded of the model -
+    # and a model asked for a twenty-hex hash it does not have invents one.
+    assert set(selection["properties"]) == {"semantic", "target_id", "parameters"}
+    assert "affordance_id" not in selection["properties"]
     assert "anyOf" not in step["properties"]["selection"]
 
 

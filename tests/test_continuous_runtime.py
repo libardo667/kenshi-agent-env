@@ -3329,9 +3329,6 @@ def test_selected_visible_control_uses_runtime_delivery_terminal(tmp_path: Path)
             materialized = bind_affordance(
                 AffordanceSelection(
                     semantic=offer.semantic,
-                    source=offer.source,
-                    operation_kind=offer.operation_kind,
-                    affordance_id=offer.affordance_id,
                     target_id=(offer.target.target_id if offer.target is not None else None),
                 ),
                 current,

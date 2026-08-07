@@ -45,6 +45,8 @@ class Run:
     terminated: bool = False
     turns: list[Turn] = field(default_factory=list)
 
+    fallbacks: "collections.Counter[str]" = field(default_factory=lambda: __import__("collections").Counter())
+
     @property
     def rough(self) -> list[Turn]:
         return [t for t in self.turns if t.status in {"failed", "aborted", "rejected"}]
@@ -113,6 +115,15 @@ def _read(run_id: str) -> Run:
             turn = turn_for(plan_id)
             if turn.status == "pending":
                 turn.status = "succeeded"
+        elif kind == "planner_transport":
+            # A proposal the runtime could not use. These turns *succeed* - the
+            # planner substitutes an observe and carries on - so nothing lands in
+            # the failure band and a permanently stuck run reads as a quiet
+            # sequence of noops. Watched from a phone, that is indistinguishable
+            # from the agent thinking.
+            reason = payload.get("proposal_fallback_reason")
+            if isinstance(reason, str) and reason:
+                run.fallbacks[reason] += 1
         elif kind == "run_finished":
             run.steps_completed = int(payload.get("steps_completed") or 0)
             run.stop_reason = str(payload.get("stop_reason") or "")
@@ -138,6 +149,20 @@ def render_fragment(run: Run) -> str:
 
     rough = run.rough
     outcome = "stopped" if run.terminated else "ran to ceiling"
+    fallback_band = ""
+    if run.fallbacks:
+        rows = "\n".join(
+            f'<li><span class="tag tag--failed">unusable x{count}</span>'
+            f'<p class="rough__why">{_esc(reason)}</p></li>'
+            for reason, count in run.fallbacks.most_common(4)
+        )
+        total = sum(run.fallbacks.values())
+        fallback_band = (
+            '<section class="rough" aria-label="Proposals the runtime could not use">'
+            f'<h2>Unusable proposals <span class="count">{total}</span></h2>'
+            f"<ul>{rows}</ul></section>"
+        )
+
     rough_band = ""
     if rough:
         items = "\n".join(
@@ -188,7 +213,7 @@ def render_fragment(run: Run) -> str:
         rough_count=len(rough),
         outcome=_esc(outcome),
         stop_reason=_esc(run.stop_reason or "still running"),
-        rough_band=rough_band,
+        rough_band=fallback_band + rough_band,
         turns="\n".join(turn_rows),
     )
 

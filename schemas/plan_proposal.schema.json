@@ -44,44 +44,6 @@
           "default": null,
           "title": "Target Id"
         },
-        "source": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/AffordanceSource"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "operation_kind": {
-          "anyOf": [
-            {
-              "maxLength": 80,
-              "minLength": 1,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Operation Kind"
-        },
-        "affordance_id": {
-          "anyOf": [
-            {
-              "pattern": "^aff-[0-9a-f]{20}$",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Affordance Id"
-        },
         "parameters": {
           "items": {
             "$ref": "#/$defs/AffordanceParameter"
@@ -96,23 +58,6 @@
       ],
       "title": "AffordanceSelection",
       "type": "object"
-    },
-    "AffordanceSource": {
-      "enum": [
-        "runtime",
-        "game_binding",
-        "visible_control",
-        "context_order",
-        "dialogue",
-        "inventory",
-        "squad",
-        "nearby_character",
-        "map",
-        "native_operation",
-        "composite_operation"
-      ],
-      "title": "AffordanceSource",
-      "type": "string"
     },
     "ContinuityProposal": {
       "additionalProperties": false,

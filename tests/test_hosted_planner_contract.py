@@ -853,7 +853,7 @@ def test_openrouter_never_executes_an_unadvertised_action_the_model_emits() -> N
                 steps=[
                     ProposedPlanStep(
                         selection=_selection("observe").model_copy(
-                            update={"semantic": "disassemble_the_moon", "affordance_id": None}
+                            update={"semantic": "disassemble_the_moon"}
                         )
                     )
                 ],
@@ -891,7 +891,7 @@ def test_openai_rejects_an_unadvertised_action_after_sdk_parsing() -> None:
         steps=[
             ProposedPlanStep(
                 selection=_selection("observe").model_copy(
-                    update={"semantic": "disassemble_the_moon", "affordance_id": None}
+                    update={"semantic": "disassemble_the_moon"}
                 )
             )
         ],
@@ -1063,7 +1063,7 @@ def test_openrouter_continues_a_length_terminal_with_preserved_reasoning() -> No
     assert result.objective == proposal.objective
     assert result.steps[0].action.kind == "stop"
     assert result.steps[0].affordance is not None
-    assert result.steps[0].affordance.affordance_id == proposal.steps[0].selection.affordance_id
+    assert result.steps[0].affordance.semantic == proposal.steps[0].selection.semantic
     assert result.plan_id == "plan-pc-1"
     assert result.based_on_revision == current.world_revision
     assert len(completions.calls) == 2

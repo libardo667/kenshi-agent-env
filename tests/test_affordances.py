@@ -1015,7 +1015,7 @@ def test_exact_current_offer_is_the_only_action_language() -> None:
     assert rebound.based_on_revision == later_revision
     assert rebound.binding.source_revision == later_revision
 
-    with pytest.raises(ValueError, match="target does not match"):
+    with pytest.raises(ValueError, match="is offered, but not on"):
         bind_affordance(
             selection.model_copy(update={"target_id": "person-invented"}),
             observation,
