@@ -18,15 +18,15 @@ repository, and every captured context-menu witness had exactly one
 character selected.
 
 ```text
-operations               35
-planner-visible          32
+operations               36
+planner-visible          33
 internal-only             3
-native commands          12
-manifest entries         36
+native commands          13
+manifest entries         37
 coverage proof          PASS
 
 PROOF STATUS
-  source_proven     14
+  source_proven     15
   unit_proven        0
   live_proven        0
   unproven          20
@@ -49,6 +49,7 @@ INTERACTION CONTRACT (resolved from the sole operation registry)
   open_context_inventory              global_ui          explicit_recipients ui_transaction   world_outcome_observed  unproven
   open_screen                         global_ui          none                ui_transaction   world_outcome_observed  unproven
   pause                               global_ui          none                none             world_outcome_observed  source_proven
+  perform_character_order             ordinary_order     current_selection   dispatch_only    order_accepted          source_proven
   perform_context_action *            varies             current_selection   varies           varies                  unproven
   produce_resource_output             ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
   purchase_item                       global_ui          explicit_recipients ui_transaction   world_outcome_observed  unproven
@@ -90,6 +91,7 @@ EXECUTION AND ROUTING
   open_context_inventory              atomic_handler     paused_transaction       open_context_inventory     internal-only
   open_screen                         atomic_handler     paused_transaction       -                          screens
   pause                               atomic_handler     any                      -                          runtime
+  perform_character_order             monitored_option   running_for_progress     perform_character_order    character_orders
   perform_context_action              monitored_option   varies                   perform_context_action     context_orders
   produce_resource_output             monitored_option   running_for_progress     produce_resource_output    internal-only
   purchase_item                       composite_option   paused_transaction       -                          inventory
@@ -117,6 +119,7 @@ NATIVE COMMAND ROUTES
   move_in_direction            -> move_in_direction
   move_to_character            -> move_to_character
   open_context_inventory       -> open_context_inventory
+  perform_character_order      -> perform_character_order
   perform_context_action       -> perform_context_action
   produce_resource_output      -> produce_resource_output
   regroup_with_squad_member    -> regroup_with_squad_member

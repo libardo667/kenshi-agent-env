@@ -237,6 +237,7 @@ safety:
     - set_speed
     - wait
     - perform_context_action
+    - perform_character_order
     - approach_dialogue_target
     - command_world_target
     - select_squad_member

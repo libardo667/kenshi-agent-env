@@ -73,6 +73,7 @@ from .core.operation import (
     SelectSquadMemberExactAction,
     SellItemAction,
     SetSpeedAction,
+    PerformCharacterOrderAction,
     ShiftIntoBodyAction,
     StopAction,
     SurveyLocalResourcesAction,
@@ -131,6 +132,8 @@ NATIVE_WALK_DESTINATION_REACHED_RESULT = "walk_destination_reached"
 NATIVE_RESOURCE_OUTPUT_READY_RESULT = "resource_output_ready"
 NATIVE_RESOURCE_TASK_RELEASED_RESULT = "resource_output_ready_task_released"
 NATIVE_CONTEXT_ACTION_CAPABILITY = "control.perform_context_action"
+NATIVE_CHARACTER_ORDER_CAPABILITY = "control.perform_character_order"
+NEARBY_ORDERABLE_TASKS_CAPABILITY = "nearby.orderable_tasks"
 NATIVE_SHIFT_BODY_CAPABILITY = "control.shift_into_body"
 NATIVE_RESOURCE_SURVEY_CAPABILITY = "control.survey_local_resources"
 
@@ -158,6 +161,7 @@ WIRE_COMMAND_BY_CONTROL_CAPABILITY: dict[str, str] = {
     NATIVE_MAP_TRAVEL_CAPABILITY: "travel_to_map_destination",
     NATIVE_EXIT_BUILDING_CAPABILITY: "exit_current_building",
     NATIVE_CONTEXT_ACTION_CAPABILITY: "perform_context_action",
+    NATIVE_CHARACTER_ORDER_CAPABILITY: "perform_character_order",
     NATIVE_PRODUCE_RESOURCE_CAPABILITY: "produce_resource_output",
     NATIVE_OPEN_CONTEXT_INVENTORY_CAPABILITY: "open_context_inventory",
     NATIVE_SHIFT_BODY_CAPABILITY: "shift_into_body",
@@ -710,6 +714,82 @@ def bind_shift_into_body(
         target_id=target.id,
         resolved_label=target.name,
         source_revision=observation.world_revision,
+    )
+
+
+def bind_perform_character_order(
+    action: Action,
+    observation: Observation,
+) -> BoundNamedTarget | BindingFailure:
+    """Bind one order to one exact person Kenshi currently offers it on.
+
+    Eligibility is not re-derived here. Kenshi already answered it per target
+    through `getPlayerTaskProbability`, and the answer travelled in
+    `advertised_tasks`; this binding only proves the named order is among them.
+
+    An unprobed entity fails closed. Probing is budgeted, so an empty list from
+    an unprobed target is silence rather than a denial, and reading silence as
+    permission is exactly how a refused order becomes an unexplained failure
+    mid-run.
+    """
+
+    if not isinstance(action, PerformCharacterOrderAction):
+        return _unbound("Action is not a perform_character_order action.")
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return _unbound("No telemetry is available to bind the order.")
+    if observation.telemetry_stale:
+        return _unbound("Telemetry is stale, so the order cannot be bound.")
+    if failure := _world_interface_error(observation):
+        return _unbound(failure)
+    matches = [entity for entity in telemetry.nearby_entities if entity.id == action.target_id]
+    if not matches:
+        return _unbound(
+            f"Person {action.target_id!r} is not a currently observed nearby character."
+        )
+    if len(matches) > 1:
+        return _unbound(
+            f"Person {action.target_id!r} matches {len(matches)} current entities; "
+            "an ambiguous reference fails closed."
+        )
+    target = matches[0]
+    if not target.advertised_tasks_probed:
+        return _unbound(
+            f"{target.name!r} ({target.id}) was not probed this observation, so what it "
+            "affords is unknown rather than empty."
+        )
+    offered = target.orderable_task_names()
+    if action.order not in offered:
+        return _unbound(
+            f"Kenshi does not currently offer {action.order!r} on {target.name!r} "
+            f"({target.id}). Offered: {', '.join(offered) if offered else 'nothing'}."
+        )
+    return BoundNamedTarget(
+        reason=(
+            f"Bound the order {action.order!r} to current "
+            f"{target.faction or 'unaffiliated'} character {target.name!r} ({target.id}) "
+            f"at distance {target.distance if target.distance is not None else 'unknown'}, "
+            "which Kenshi currently advertises it on."
+        ),
+        target_id=target.id,
+        resolved_label=f"{action.order} on {target.name}",
+        source_revision=observation.world_revision,
+    )
+
+
+def perform_character_order_is_currently_authorable(observation: Observation) -> bool:
+    """Whether any nearby person currently affords any order at all.
+
+    Asked of the world rather than of a role: if Kenshi advertises nothing on
+    anyone nearby, there is no order to offer, and that is the whole condition.
+    """
+
+    telemetry = observation.telemetry
+    if telemetry is None or observation.telemetry_stale:
+        return False
+    return any(
+        entity.advertised_tasks_probed and entity.advertised_tasks
+        for entity in telemetry.nearby_entities
     )
 
 
@@ -3571,6 +3651,48 @@ HARVEST_RESOURCE_DEFINITION = OperationDefinition(
 )
 
 
+PERFORM_CHARACTER_ORDER_DEFINITION = OperationDefinition(
+    kind="perform_character_order",
+    version="1.0",
+    interaction=ordinary_order(
+        recipients=RecipientScope.CURRENT_SELECTION,
+        milestone=CompletionMilestone.ORDER_ACCEPTED,
+    ),
+    operation_type=PerformCharacterOrderAction,
+    summary=(
+        "Issue one order Kenshi already advertises on one exact nearby person. "
+        "Which orders a person affords is the game's own answer, published per "
+        "target, so attacking, looting, and aiding are this one operation under "
+        "different names rather than separate verbs with separate fences."
+    ),
+    argument_source=(
+        "target_id must be an exact currently observed nearby character whose "
+        "advertised tasks were probed this observation; order must be one of that "
+        "person's advertised task names, lowercased, exactly as telemetry reported it."
+    ),
+    allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset(
+        {
+            "nearby.characters",
+            NEARBY_ORDERABLE_TASKS_CAPABILITY,
+            NATIVE_CHARACTER_ORDER_CAPABILITY,
+        }
+    ),
+    capability_aliases=frozenset(),
+    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
+    native_assisted=True,
+    risk=OperationRisk(native_assisted_actions=1),
+    max_primitive_actions=1,
+    reference_fields=("target_id", "order"),
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=OperationExecution.MONITORED_OPTION,
+    receipt_kind="semantic_character_order",
+    bind=bind_perform_character_order,
+    handler_key="movement.perform_character_order",
+    controller_verified=True,
+    authorable_when=perform_character_order_is_currently_authorable,
+)
+
 RESPOND_TO_IMMEDIATE_THREAT_DEFINITION = OperationDefinition(
     kind="respond_to_immediate_threat",
     version="1.0",
@@ -4491,6 +4613,7 @@ OPERATION_DEFINITION_LIST: tuple[OperationDefinition, ...] = (
     PERFORM_CONTEXT_ACTION_DEFINITION,
     PRODUCE_RESOURCE_OUTPUT_DEFINITION,
     HARVEST_RESOURCE_DEFINITION,
+    PERFORM_CHARACTER_ORDER_DEFINITION,
     RESPOND_TO_IMMEDIATE_THREAT_DEFINITION,
     OPEN_CONTEXT_INVENTORY_DEFINITION,
     REGROUP_WITH_SQUAD_MEMBER_DEFINITION,

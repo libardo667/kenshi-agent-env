@@ -71,6 +71,7 @@ class ReplayOperationPort:
     open_screen = _execute
     pause = _execute
     perform_context_action = _execute
+    perform_character_order = _execute
     produce_resource_output = _execute
     purchase_item = _execute
     recover_camera_view = _execute

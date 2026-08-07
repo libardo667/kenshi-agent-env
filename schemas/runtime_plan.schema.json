@@ -1463,6 +1463,37 @@
       "title": "PauseAction",
       "type": "object"
     },
+    "PerformCharacterOrderAction": {
+      "additionalProperties": false,
+      "description": "Issue one order Kenshi already says this person affords.\n\nDeliberately one operation rather than a verb per gameplay action. Kenshi\nanswers `getPlayerTaskProbability` for every task in its own vocabulary\nagainst a given target, so which orders apply to a bandit, a corpse, or a\ndowned squadmate is the engine's judgment, arriving in telemetry as\n`advertised_tasks`. Attacking, looting, and first aid are then the same\noperation with a different name on it.\n\nThe alternative -- one typed action per verb, each with its own eligibility\nfence -- means re-deriving in Python what the game already computed, and\ngetting a new disposition gate wrong once per verb.\n\n`order` is the advertised task name, lowercased. The exact string that\narrived in telemetry is the one that goes back out, so a command stays\nlegible in a run bundle without a lookup table.",
+      "properties": {
+        "kind": {
+          "const": "perform_character_order",
+          "default": "perform_character_order",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "order": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Order",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id",
+        "order"
+      ],
+      "title": "PerformCharacterOrderAction",
+      "type": "object"
+    },
     "PerformContextAction": {
       "additionalProperties": false,
       "description": "Perform one exact contextual task an observed world object advertises.\n\nThe planner copies only a `(target_id, context_action)` pair from current\n`context_targets`. Native code re-resolves the object, rechecks the reviewed\ntask, issues Kenshi's own default order, and proves the selected character's\nAI accepted that exact object/task pair.",
@@ -1587,6 +1618,9 @@
             },
             {
               "$ref": "#/$defs/ShiftIntoBodyAction"
+            },
+            {
+              "$ref": "#/$defs/PerformCharacterOrderAction"
             },
             {
               "$ref": "#/$defs/PerformContextAction"

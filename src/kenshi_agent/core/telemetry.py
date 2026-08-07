@@ -297,6 +297,24 @@ class NearbyEntity(StrictModel):
     screen_position: Vec2 | None = None
     visible: bool | None = None
     conscious: bool | None = None
+    # What Kenshi says this person affords the current selection right now.
+    # The roles above (`has_dialogue`, `has_vendor_list`, ...) are facts about
+    # who someone is; this is the game's own answer about what may be ordered
+    # on them, which is why attacking, looting, and first aid need no role flag
+    # of their own. Probing is budgeted nearest-first, so `probed` False means
+    # "not asked", never "affords nothing" -- an empty list from an unprobed
+    # entity is silence, not a denial.
+    advertised_tasks: list[AdvertisedTask] = Field(default_factory=list, max_length=64)
+    advertised_tasks_probed: bool = False
+
+    def orderable_task_names(self) -> tuple[str, ...]:
+        """Lowercased task names this person currently affords, wire-ready.
+
+        The plugin resolves an order by this exact name, so the same string
+        that arrives in telemetry is the one that goes back out as a command.
+        """
+
+        return tuple(sorted(task.name.lower() for task in self.advertised_tasks))
 
     def is_dialogue_target(self) -> bool:
         """Deterministic "can the agent approach and talk to this person" fence.
@@ -324,6 +342,14 @@ class NearbyEntity(StrictModel):
         talk target that additionally owns a vendor list and leads its shop
         squad. Trade is the downstream sub-task; the approach primitive itself
         is the general `is_dialogue_target`.
+
+        `has_vendor_list` is the load-bearing term -- no list, no trade window.
+        `is_squad_leader` is redundant in practice and kept only as a fence:
+        across every recorded run, no talkable vendor-list holder was a
+        non-leader (15536 sightings, 0 exceptions), because Kenshi's shopkeepers
+        lead their own shop squad. Do not cite it as the reason a vendor was
+        rejected without checking dialogue first -- the guards that look like
+        non-leader vendors are excluded by `has_dialogue`, not by leadership.
         """
 
         return (
@@ -1046,6 +1072,18 @@ non-empty floor would make the recovery unreachable at exactly the moment it is
 the whole point.
 """
 
+# Commands whose meaning is incomplete without naming which action to take.
+# `perform_context_action` names a reviewed semantic ("operate", "first_aid");
+# `perform_character_order` names one of Kenshi's own task names, which is why
+# the field is shared rather than duplicated: both answer "which of this
+# target's advertised actions".
+NATIVE_COMMANDS_NAMING_AN_ACTION: frozenset[str] = frozenset(
+    {
+        "perform_context_action",
+        "perform_character_order",
+    }
+)
+
 NATIVE_COMMANDS_NAMING_A_TARGET: frozenset[str] = frozenset(
     {
         "approach_confirmed_vendor",
@@ -1054,6 +1092,8 @@ NATIVE_COMMANDS_NAMING_A_TARGET: frozenset[str] = frozenset(
         "regroup_with_squad_member",
         "travel_to_map_destination",
         "perform_context_action",
+        # Names the exact person the order is issued against.
+        "perform_character_order",
         "produce_resource_output",
         "open_context_inventory",
         # Diagnostic probe: names the exact body to move between platoons.
@@ -1097,11 +1137,11 @@ def require_consistent_wire_shape(
             raise ValueError(f"a {command} {subject} must not name a target")
         if bearing_degrees != 0.0 or distance_units != 0.0:
             raise ValueError(f"a {command} {subject} must not carry direction fields")
-    if command == "perform_context_action":
+    if command in NATIVE_COMMANDS_NAMING_AN_ACTION:
         if not context_action:
-            raise ValueError(f"a context-action {subject} requires its reviewed semantic")
+            raise ValueError(f"a {command} {subject} requires its named action")
     elif context_action:
-        raise ValueError(f"only a context-action {subject} may name a context action")
+        raise ValueError(f"only a {subject} that names an action may carry one")
     if command != "produce_resource_output" and minimum_output_quantity != 1:
         raise ValueError("only resource production may request a larger output quantity")
 
@@ -1128,6 +1168,7 @@ NativeWireCommand = Literal[
     "travel_to_map_destination",
     "exit_current_building",
     "perform_context_action",
+    "perform_character_order",
     "produce_resource_output",
     "open_context_inventory",
     "survey_local_resources",

@@ -934,6 +934,7 @@
             "travel_to_map_destination",
             "exit_current_building",
             "perform_context_action",
+            "perform_character_order",
             "produce_resource_output",
             "open_context_inventory",
             "survey_local_resources"
@@ -1323,6 +1324,19 @@
           ],
           "default": null,
           "title": "Conscious"
+        },
+        "advertised_tasks": {
+          "items": {
+            "$ref": "#/$defs/AdvertisedTask"
+          },
+          "maxItems": 64,
+          "title": "Advertised Tasks",
+          "type": "array"
+        },
+        "advertised_tasks_probed": {
+          "default": false,
+          "title": "Advertised Tasks Probed",
+          "type": "boolean"
         }
       },
       "required": [

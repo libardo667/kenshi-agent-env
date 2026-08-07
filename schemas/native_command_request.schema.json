@@ -69,6 +69,7 @@
         "travel_to_map_destination",
         "exit_current_building",
         "perform_context_action",
+        "perform_character_order",
         "produce_resource_output",
         "open_context_inventory",
         "survey_local_resources"

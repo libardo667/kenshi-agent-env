@@ -274,6 +274,7 @@ class MockOperationPort:
     open_context_inventory = _record
     open_screen = _record
     perform_context_action = _record
+    perform_character_order = _record
     produce_resource_output = _record
     purchase_item = _record
     regroup_with_squad_member = _record

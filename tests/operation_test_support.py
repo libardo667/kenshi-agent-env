@@ -45,6 +45,7 @@ _EXACT_METHODS = frozenset(
         "open_context_inventory",
         "open_screen",
         "pause",
+        "perform_character_order",
         "perform_context_action",
         "produce_resource_output",
         "purchase_item",

@@ -21,6 +21,7 @@ from ...core.operation import (
     MoveInDirectionAction,
     MoveToCharacterAction,
     PauseAction,
+    PerformCharacterOrderAction,
     RegroupWithSquadMemberAction,
     RespondToImmediateThreatAction,
     SelectSquadMemberAction,
@@ -36,6 +37,7 @@ from ...core.transport import (
     CommandDispatchContext,
     Transition,
 )
+from ...core.telemetry import ContextActionKind
 from ...input_boundary import ExecutionToken
 from ...operation_definitions import BoundOperation
 from ...options import (
@@ -101,6 +103,10 @@ class MovementMechanicsPort(Protocol):
     ) -> Transition: ...
 
     async def respond_to_immediate_threat(
+        self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
+    ) -> Transition: ...
+
+    async def perform_character_order(
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
     ) -> Transition: ...
 
@@ -375,6 +381,9 @@ def movement_handlers(
         "movement.survey_local_resources": NativeMovementHandler(
             port.survey_local_resources, planning_config
         ),
+        "movement.perform_character_order": NativeMovementHandler(
+            port.perform_character_order, planning_config
+        ),
         "movement.respond_to_immediate_threat": ThreatResponseHandler(
             port.respond_to_immediate_threat,
             port.move_in_direction,
@@ -396,6 +405,62 @@ class KenshiMovementMechanics:
     ) -> Transition:
         return await self._surface.run_exact(
             action, command=command, token=token, receipt=self._execute_runtime_threat
+        )
+
+    async def perform_character_order(
+        self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
+    ) -> Transition:
+        return await self._surface.run_exact(
+            action, command=command, token=token, receipt=self._execute_character_order_operation
+        )
+
+    async def _execute_character_order_operation(
+        self, action: Action, started: datetime, command: CommandDispatchContext | None
+    ) -> ActionReceipt:
+        return await self._execute_character_order(
+            cast(PerformCharacterOrderAction, action),
+            started,
+            await self._surface.require_command(command),
+        )
+
+    async def _execute_character_order(
+        self,
+        action: PerformCharacterOrderAction,
+        started: datetime,
+        command: CommandDispatchContext,
+    ) -> ActionReceipt:
+        """Issue one Kenshi-advertised order against one exact nearby person."""
+
+        semantic = SemanticActionReceipt(
+            action_kind=action.kind,
+            contract_version=operations.PERFORM_CHARACTER_ORDER_DEFINITION.version,
+            target_id=action.target_id,
+            resolved_label=action.order,
+            source_revision=command.based_on_revision,
+            revalidation=(
+                "Re-bound the exact nearby person and asked Kenshi again whether it "
+                "still advertises this order on them; native code owns the issued "
+                "task and its terminal proof."
+            ),
+        )
+        return await self._surface.run_native_order(
+            action,
+            started,
+            command,
+            target_id=action.target_id,
+            pulse_seconds=self._surface.controls_config.native_movement_pulse_seconds,
+            require_vendor_role=False,
+            semantic=semantic,
+            continue_until_terminal=True,
+            wire_command=native_commands.NATIVE_CHARACTER_ORDER_WIRE_COMMAND,
+            context_action=ContextActionKind(action.order),
+            # An order is not a conversation. Refusing non-talkable targets here
+            # would exclude exactly the people an order is for: hostiles, the
+            # unconscious, and the dead.
+            require_dialogue_target=False,
+            task_started_reasons=(
+                operations.PERFORM_CHARACTER_ORDER_DEFINITION.native_task_started_reasons
+            ),
         )
 
     async def select_squad_member(

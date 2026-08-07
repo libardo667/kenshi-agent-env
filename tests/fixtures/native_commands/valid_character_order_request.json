@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.2",
+  "command_id": "cmd-26262626262626262626262626262626",
+  "command": "perform_character_order",
+  "control_mode": "native_assisted",
+  "identity_session_id": "session-0000000000000001-0000000000000001",
+  "based_on_revision": {
+    "telemetry_sequence": 19,
+    "frame_sequence": 6,
+    "capability_epoch": 2,
+    "observed_at_monotonic": 20.0
+  },
+  "selected_character_ids": [
+    "entity-selected"
+  ],
+  "target_id": "entity-downed-bandit",
+  "context_action": "loot_target",
+  "bearing_degrees": 0.0,
+  "distance_units": 0.0,
+  "minimum_output_quantity": 1
+}

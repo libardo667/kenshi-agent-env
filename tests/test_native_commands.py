@@ -143,11 +143,11 @@ def test_context_action_request_requires_a_reviewed_semantic() -> None:
     )
 
     assert context.context_action == "first_aid"
-    with pytest.raises(ValidationError, match="requires its reviewed semantic"):
+    with pytest.raises(ValidationError, match="requires its named action"):
         NativeCommandRequest.model_validate(
             valid | {"command": "perform_context_action"}
         )
-    with pytest.raises(ValidationError, match="only a context-action command"):
+    with pytest.raises(ValidationError, match="may carry one"):
         NativeCommandRequest.model_validate(
             valid | {"context_action": "first_aid"}
         )

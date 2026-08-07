@@ -48,6 +48,7 @@ from .core.planning import screen_is_open
 from .core.telemetry import (
     CharacterState,
     ContextActionKind,
+    NearbyEntity,
     WorldTarget,
     is_runtime_owned_visible_control,
     map_destination_travel_available,
@@ -55,7 +56,9 @@ from .core.telemetry import (
 )
 from .non_progress import unchanged_definitive_no_op_reason
 from .operation_definitions import (
+    NATIVE_CHARACTER_ORDER_CAPABILITY,
     NATIVE_SHIFT_BODY_CAPABILITY,
+    NEARBY_ORDERABLE_TASKS_CAPABILITY,
     OPERATION_DEFINITIONS,
     SQUAD_REGROUP_ARRIVAL_DISTANCE,
     BindingFailure,
@@ -758,6 +761,74 @@ def _body_shift_offers(observation: Observation) -> Iterable[AffordanceOffer]:
         )
 
 
+# One person affording a dozen distinct orders is already an unusual scene;
+# the cap keeps a crowd from crowding out every other kind of choice.
+MAX_ORDERS_OFFERED_PER_PERSON = 12
+
+
+def _character_order_description(order: str, entity: NearbyEntity) -> str:
+    """Say what the order is, on whom, and in what state they are.
+
+    The order keeps Kenshi's own name rather than a prettier synonym. A run
+    bundle a year from now should let someone match the choice to the engine
+    task it issued, and a translation layer would break that for the sake of
+    reading slightly better.
+    """
+
+    standing = "unconscious" if entity.conscious is False else "conscious"
+    distance = f"{entity.distance:g} away" if entity.distance is not None else "distance unknown"
+    return (
+        f"Order the current selection to {order.replace('_', ' ')} "
+        f"{entity.name!r} ({entity.faction or 'no faction'}, {standing}, {distance}). "
+        f"Kenshi currently advertises this order on them as {order.upper()}."
+    )
+
+
+def _character_order_offers(observation: Observation) -> Iterable[AffordanceOffer]:
+    """Offer every order Kenshi currently advertises on every nearby person.
+
+    Deliberately uncurated. The engine already answered, per target, which of
+    its own tasks apply, so this enumerates that answer instead of re-deriving
+    it. Attacking, looting, and aiding are not special cases here; they are
+    whatever Kenshi said yes to on someone standing nearby.
+
+    Unprobed people are skipped rather than offered empty: probing is budgeted,
+    so silence about what someone affords is not a claim that they afford
+    nothing.
+    """
+
+    telemetry = observation.telemetry
+    if telemetry is None or observation.control_mode is not ControlMode.NATIVE_ASSISTED:
+        return
+    capabilities = set(telemetry.capabilities)
+    required = {
+        NATIVE_CHARACTER_ORDER_CAPABILITY,
+        NEARBY_ORDERABLE_TASKS_CAPABILITY,
+        "nearby.characters",
+    }
+    if not required <= capabilities:
+        return
+    if telemetry.ui.active_screen != "world":
+        return
+    for entity in telemetry.nearby_entities:
+        if not entity.advertised_tasks_probed:
+            continue
+        for order in entity.orderable_task_names()[:MAX_ORDERS_OFFERED_PER_PERSON]:
+            yield _offer(
+                observation,
+                source=AffordanceSource.NEARBY_CHARACTER,
+                semantic=order,
+                description=_character_order_description(order, entity),
+                operation_kind="perform_character_order",
+                target=AffordanceTarget(
+                    target_id=entity.id,
+                    label=entity.name,
+                    kind="character",
+                ),
+                arguments={"target_id": entity.id, "order": order},
+            )
+
+
 def _dialogue_target_offers(observation: Observation) -> Iterable[AffordanceOffer]:
     telemetry = observation.telemetry
     if telemetry is None or observation.control_mode is not ControlMode.NATIVE_ASSISTED:
@@ -1399,6 +1470,19 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
             "deliberately withheld."
         ),
         enumerate=_body_shift_offers,
+    ),
+    AffordanceAdapter(
+        name="character_orders",
+        sources=frozenset({AffordanceSource.NEARBY_CHARACTER}),
+        operation_kinds=frozenset({"perform_character_order"}),
+        denominator=(
+            "Every order Kenshi currently advertises on every probed nearby person."
+        ),
+        completeness_boundary=(
+            "Bounded by the native probe budget: the nearest few people are asked what "
+            "they afford, and the rest report that they were not asked."
+        ),
+        enumerate=_character_order_offers,
     ),
     AffordanceAdapter(
         name="dialogue_targets",

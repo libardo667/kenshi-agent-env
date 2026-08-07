@@ -480,6 +480,30 @@ class ShiftIntoBodyAction(StrictModel):
     target_id: str = Field(min_length=1, max_length=200)
 
 
+class PerformCharacterOrderAction(StrictModel):
+    """Issue one order Kenshi already says this person affords.
+
+    Deliberately one operation rather than a verb per gameplay action. Kenshi
+    answers `getPlayerTaskProbability` for every task in its own vocabulary
+    against a given target, so which orders apply to a bandit, a corpse, or a
+    downed squadmate is the engine's judgment, arriving in telemetry as
+    `advertised_tasks`. Attacking, looting, and first aid are then the same
+    operation with a different name on it.
+
+    The alternative -- one typed action per verb, each with its own eligibility
+    fence -- means re-deriving in Python what the game already computed, and
+    getting a new disposition gate wrong once per verb.
+
+    `order` is the advertised task name, lowercased. The exact string that
+    arrived in telemetry is the one that goes back out, so a command stays
+    legible in a run bundle without a lookup table.
+    """
+
+    kind: Literal["perform_character_order"] = "perform_character_order"
+    target_id: str = Field(min_length=1, max_length=200)
+    order: str = Field(min_length=1, max_length=80, pattern=r"^[a-z][a-z0-9_]*$")
+
+
 class MoveToCharacterAction(StrictModel):
     """Walk to any exact observed nearby character without talking to them.
 
@@ -960,6 +984,7 @@ AtomicRuntimeOperation: TypeAlias = (
     | RotateCameraAction
     | MoveToCharacterAction
     | ShiftIntoBodyAction
+    | PerformCharacterOrderAction
     | MoveInDirectionAction
     | TravelToMapDestinationAction
     | ExitCurrentBuildingAction
@@ -1023,6 +1048,7 @@ Action: TypeAlias = (
     | SelectSquadMemberExactAction
     | RotateCameraAction
     | ShiftIntoBodyAction
+    | PerformCharacterOrderAction
     | PerformContextAction
     | ProduceResourceOutputAction
     | OpenContextInventoryAction
@@ -1030,7 +1056,6 @@ Action: TypeAlias = (
     | RespondToImmediateThreatAction
     | RegroupWithSquadMemberAction
     | MoveToCharacterAction
-    | ShiftIntoBodyAction
     | MoveInDirectionAction
     | TravelToMapDestinationAction
     | ExitCurrentBuildingAction
@@ -1055,6 +1080,7 @@ SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
         "select_squad_member",
         "select_squad_member_exact",
         "rotate_camera",
+        "perform_character_order",
         "perform_context_action",
         "produce_resource_output",
         "open_context_inventory",

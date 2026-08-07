@@ -28,6 +28,9 @@ NATIVE_EXIT_BUILDING_WIRE_COMMAND: Literal["exit_current_building"] = (
 NATIVE_CONTEXT_ACTION_WIRE_COMMAND: Literal["perform_context_action"] = (
     "perform_context_action"
 )
+NATIVE_CHARACTER_ORDER_WIRE_COMMAND: Literal["perform_character_order"] = (
+    "perform_character_order"
+)
 NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND: Literal["produce_resource_output"] = (
     "produce_resource_output"
 )

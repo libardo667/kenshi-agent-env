@@ -149,6 +149,12 @@ namespace KenshiAgentTelemetry
                command == "regroup_with_squad_member" ||
                command == "travel_to_map_destination" ||
                command == "perform_context_action" ||
+               // One order, on one nearby person, named by Kenshi's own task
+               // vocabulary. Deliberately not a verb per gameplay action: the
+               // engine decides which orders a target affords, so attacking,
+               // looting, and first aid arrive through the same command rather
+               // than as three hand-written whitelists.
+               command == "perform_character_order" ||
                command == "produce_resource_output" ||
                command == "open_context_inventory";
     }
@@ -166,6 +172,23 @@ namespace KenshiAgentTelemetry
             {
                 return false;
             }
+        }
+        return true;
+    }
+
+    bool IsLowerSnakeCaseName(const std::string& value)
+    {
+        if (value.empty() || value.size() > 80)
+            return false;
+        if (value[0] < 'a' || value[0] > 'z')
+            return false;
+        for (size_t index = 0; index < value.size(); ++index)
+        {
+            const char character = value[index];
+            const bool lower = character >= 'a' && character <= 'z';
+            const bool digit = character >= '0' && character <= '9';
+            if (!lower && !digit && character != '_')
+                return false;
         }
         return true;
     }
@@ -401,10 +424,25 @@ namespace KenshiAgentTelemetry
             }
             const bool isContextAction =
                 request.command == "perform_context_action";
+            const bool isCharacterOrder =
+                request.command == "perform_character_order";
             if (isContextAction)
             {
                 if (request.contextAction != "operate" &&
                     request.contextAction != "first_aid")
+                {
+                    rejectionReason = "malformed_request";
+                    return false;
+                }
+            }
+            else if (isCharacterOrder)
+            {
+                // The order is named, not enumerated here: the plugin resolves
+                // it against Kenshi's task vocabulary and then asks Kenshi
+                // whether it applies to this target. Validating the shape is
+                // this layer's job; validating the meaning is the engine's.
+                if (request.contextAction.empty() ||
+                    !IsLowerSnakeCaseName(request.contextAction))
                 {
                     rejectionReason = "malformed_request";
                     return false;

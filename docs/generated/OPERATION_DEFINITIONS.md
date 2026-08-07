@@ -12,10 +12,10 @@ Internal-only definitions are controller phases or runtime operations;
 they still bind through this registry but are not planner-visible offers.
 
 ```text
-definitions             35
-adapter operation kinds  32
-adapter routes           33
-adapters                 11
+definitions             36
+adapter operation kinds  33
+adapter routes           34
+adapters                 12
 ownership proof         PASS
 
 DEFINITIONS
@@ -34,6 +34,7 @@ DEFINITIONS
   open_context_inventory              resources.open_context_inventory                        OpenContextInventoryAction [by-composition]
   open_screen                         screens.open_screen                                     OpenScreenAction [screens]
   pause                               runtime.pause                                           PauseAction [runtime]
+  perform_character_order             movement.perform_character_order                        PerformCharacterOrderAction [character_orders]
   perform_context_action              resources.perform_context_action                        PerformContextAction [context_orders]
   produce_resource_output             resources.produce_resource_output                       ProduceResourceOutputAction [by-composition]
   purchase_item                       trade.purchase_item                                     PurchaseItemAction [inventory]
@@ -62,6 +63,7 @@ SOURCE-SPECIFIC COMPLETENESS BOUNDARIES
   visible_controls: Ambiguous or stale controls fail exact rebinding. Activation proves exact delivery and a later observation, not the gameplay meaning of the result.
   context_orders: Native execution proves the reviewed natural-resource operate and squad-character first_aid semantics; other orders require current screen geometry and stop at the generic UI delivery boundary.
   body_shift: Native-assisted stable identity and nearby-character evidence; a body outside the reported radius cannot be offered and a hostile one is deliberately withheld.
+  character_orders: Bounded by the native probe budget: the nearest few people are asked what they afford, and the rest report that they were not asked.
   dialogue_targets: Native-assisted stable identity and dialogue-role evidence.
   inventory: Transactions require unambiguous counterpart identity and conservation evidence. Equip currently proves exact delivery, not final equipment state.
   characters: Offers require the source-specific selection, identity, geometry, and safety facts.

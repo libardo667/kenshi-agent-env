@@ -146,6 +146,10 @@ namespace
     // needs each (kind, task) pair once, not every target every 500ms, and
     // the agent can only act on what is near it. Unprobed targets say so.
     const unsigned int MAX_PROBED_WORLD_TARGETS = 16;
+    // Probing walks the whole task vocabulary per target, so nearby people get
+    // a tighter budget than world targets: there are more of them, and only the
+    // close ones are actionable anyway.
+    const unsigned int MAX_PROBED_NEARBY_CHARACTERS = 8;
     // Full-discovery scan. Every object category Kenshi declares is asked, so
     // a category nobody anticipated is found rather than excluded by omission.
     // It reuses the existing radii rather than introducing its own, so
@@ -1309,6 +1313,34 @@ namespace
     // `isOrderValidForSelection` is checked first because it is a cheap
     // selection-level filter, and it is the same pair the existing first-aid
     // route already uses to authorize a dispatch.
+    // The wire names an order the way the telemetry advertised it: the
+    // vocabulary name, lowercased. Resolving here keeps raw task numbers off
+    // the wire, so a command stays readable in a run bundle a year from now.
+    bool ResolveAdvertisedTaskName(const std::string& name, TaskType& resolved)
+    {
+        if (name.empty())
+            return false;
+        unsigned int vocabularyCount = 0;
+        const KenshiAgentTelemetry::TaskTypeVocabularyEntry* vocabulary =
+            KenshiAgentTelemetry::TaskTypeVocabulary(vocabularyCount);
+        for (unsigned int index = 0; index < vocabularyCount; ++index)
+        {
+            std::string candidate = vocabulary[index].name;
+            for (size_t offset = 0; offset < candidate.size(); ++offset)
+            {
+                candidate[offset] = static_cast<char>(
+                    std::tolower(
+                        static_cast<unsigned char>(candidate[offset])));
+            }
+            if (candidate == name)
+            {
+                resolved = static_cast<TaskType>(vocabulary[index].value);
+                return true;
+            }
+        }
+        return false;
+    }
+
     void ProbeAdvertisedTasks(
         PlayerInterface* player,
         RootObject* target,
@@ -3337,6 +3369,8 @@ namespace
             request.command == "exit_current_building";
         const bool isContextAction =
             request.command == "perform_context_action";
+        const bool isCharacterOrder =
+            request.command == "perform_character_order";
         const bool isResourceProduction =
             request.command == "produce_resource_output";
         const bool isContextInventory =
@@ -3349,6 +3383,7 @@ namespace
             request.command == "shift_into_body";
         if (isBodyShift || isBodyShiftProbe || isApproach || isMove || isSquadSelection || isSquadRegroup ||
             isDirection || isMapTravel || isBuildingExit || isContextAction ||
+            isCharacterOrder ||
             isResourceProduction || isContextInventory || isResourceSurvey)
             g_lastNativeCommand = request.command;
         if (!isApproach &&
@@ -3359,6 +3394,7 @@ namespace
             !isMapTravel &&
             !isBuildingExit &&
             !isContextAction &&
+            !isCharacterOrder &&
             !isResourceProduction &&
             !isContextInventory &&
             !isResourceSurvey &&
@@ -3682,6 +3718,104 @@ namespace
                 true,
                 true);
             g_lastNativeCommandResult = "resource_survey_published";
+            return;
+        }
+
+        if (isCharacterOrder)
+        {
+            TaskType orderedTask = NULL_TASK;
+            if (!ResolveAdvertisedTaskName(request.contextAction, orderedTask))
+            {
+                RejectNativeCommand(request, "context_action_unavailable");
+                return;
+            }
+            bool exactIdentityFound = false;
+            // Deliberately the nearby-character finder, not the dialogue-target
+            // one: an order is not a conversation. Hostiles, the unconscious,
+            // and the dead are all legitimately orderable-at, and which of them
+            // afford which order is the next check's business, not this one's.
+            Character* target = FindExactNearbyCharacter(
+                player,
+                request.targetId,
+                exactIdentityFound);
+            if (target == NULL)
+            {
+                RejectNativeCommand(
+                    request,
+                    exactIdentityFound
+                        ? "target_role_invalid"
+                        : "target_lifetime_changed");
+                return;
+            }
+            // Kenshi is the authority on whether this order applies to this
+            // target, and it is asked again here rather than trusting the
+            // offer: a target that stopped affording the order between
+            // publication and dispatch must be refused, not ordered at.
+            float taskProbability = 0.0f;
+            if (!player->isOrderValidForSelection(orderedTask) ||
+                !player->getPlayerTaskProbability(
+                    orderedTask,
+                    target,
+                    taskProbability) ||
+                !(taskProbability > 0.0f))
+            {
+                RejectNativeCommand(request, "context_action_unavailable");
+                return;
+            }
+            Character* orderingActor = selectedHandle.getCharacter();
+            const hand& targetHandle = target->getHandle();
+            const bool exactTaskAlreadyActive =
+                HasExactContextGoal(
+                    orderingActor,
+                    orderedTask,
+                    targetHandle);
+            if (!exactTaskAlreadyActive)
+            {
+                player->newPlayerTaskSelectedCharacters(
+                    orderedTask,
+                    targetHandle,
+                    target->isIndoors().getBuilding(),
+                    target->getPosition(),
+                    false);
+            }
+            AddNativeAcknowledgement(
+                request,
+                "accepted",
+                exactTaskAlreadyActive
+                    ? "adopted_existing_task"
+                    : "issued",
+                true,
+                false);
+            g_activeNativeCommand.active = true;
+            g_activeNativeCommand.commandId = request.commandId;
+            g_activeNativeCommand.targetId = request.targetId;
+            g_activeNativeCommand.selectedCharacterId = selectedId;
+            g_activeNativeCommand.selectedCharacterIds =
+                request.selectedCharacterIds;
+            g_activeNativeCommand.targetHandle = targetHandle;
+            g_activeNativeCommand.selectedHandle = selectedHandle;
+            g_activeNativeCommand.isWalk = false;
+            g_activeNativeCommand.hasFixedDestination = false;
+            g_activeNativeCommand.isMapTravel = false;
+            g_activeNativeCommand.mapInteriorOrderIssued = false;
+            g_activeNativeCommand.isBuildingExit = false;
+            g_activeNativeCommand.isContextAction = true;
+            g_activeNativeCommand.isResourceProduction = false;
+            g_activeNativeCommand.resourceTaskObserved = false;
+            g_activeNativeCommand.minimumOutputQuantity = 1;
+            g_activeNativeCommand.expectedTask = orderedTask;
+            KenshiAgentTelemetry::ResetNativeMovementPauseWindow(
+                g_activeNativeCommand.pauseWindow);
+            KenshiAgentTelemetry::ResetNativeMovementStallWindow(
+                g_activeNativeCommand.stallWindow);
+            KenshiAgentTelemetry::ResetNativeOutdoorConfirmationWindow(
+                g_activeNativeCommand.outdoorWindow);
+            g_activeNativeCommand.originX = 0.0f;
+            g_activeNativeCommand.originZ = 0.0f;
+            g_lastNativeCommandResult =
+                exactTaskAlreadyActive
+                    ? "adopted_existing_task"
+                    : "issued";
             return;
         }
 
@@ -5030,6 +5164,41 @@ namespace
                 0,
                 selected);
 
+            // Ask Kenshi which orders it would actually offer on each nearby
+            // person, exactly as world targets are already probed. Legality is
+            // the game's answer rather than ours, which is what makes
+            // attacking, looting, and first aid reachable without a
+            // hand-written whitelist and a new disposition fence per verb.
+            // Nearest first, because the budget is smaller than the crowd.
+            std::vector<std::pair<float, std::string> > probeOrder;
+            for (lektor<RootObject*>::iterator it = nearbyCharacters.begin();
+                 it != nearbyCharacters.end();
+                 ++it)
+            {
+                Character* candidate = reinterpret_cast<Character*>(*it);
+                if (candidate == NULL || !candidate->isValid() ||
+                    candidate == selected || candidate->isPlayerCharacter())
+                    continue;
+                const std::string candidateId = StableEntityId(candidate);
+                if (candidateId.empty())
+                    continue;
+                probeOrder.push_back(
+                    std::pair<float, std::string>(
+                        Distance(candidate->getPosition(), selectedPosition),
+                        candidateId));
+            }
+            std::sort(probeOrder.begin(), probeOrder.end());
+            std::set<std::string> probeIds;
+            for (unsigned int probed = 0;
+                 probed < probeOrder.size() &&
+                     KenshiAgentTelemetry::IsWithinTargetProbeBudget(
+                         probed,
+                         MAX_PROBED_NEARBY_CHARACTERS);
+                 ++probed)
+            {
+                probeIds.insert(probeOrder[probed].second);
+            }
+
             bool first = true;
             for (lektor<RootObject*>::iterator it = nearbyCharacters.begin();
                  it != nearbyCharacters.end();
@@ -5105,6 +5274,16 @@ namespace
                 }
                 json << "\"visible\":" << JsonBool(hasScreenPosition) << ",";
                 json << "\"conscious\":" << JsonBool(!target->isUnconcious());
+                json << ",";
+                const bool probeThisTarget =
+                    probeIds.find(targetId) != probeIds.end();
+                std::vector<KenshiAgentTelemetry::AdvertisedTask> advertised;
+                if (probeThisTarget)
+                    ProbeAdvertisedTasks(player, *it, advertised);
+                KenshiAgentTelemetry::AppendAdvertisedTasks(
+                    json,
+                    probeThisTarget,
+                    advertised);
                 json << "}";
             }
         }

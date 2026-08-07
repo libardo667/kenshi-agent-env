@@ -34,6 +34,7 @@ namespace KenshiAgentTelemetry
             "ui.context_menu.orders",
             "nearby.characters",
             "nearby.roles",
+            "nearby.orderable_tasks",
             "control.approach_vendor",
             "control.move_to_character",
             "control.select_squad_member",
@@ -49,6 +50,7 @@ namespace KenshiAgentTelemetry
             "control.produce_resource_output",
             "control.open_context_inventory",
             "control.shift_into_body",
+            "control.perform_character_order",
             "identity.stable_handles",
         };
         static const char* const conditional[] =

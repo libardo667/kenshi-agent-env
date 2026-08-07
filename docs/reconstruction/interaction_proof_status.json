@@ -232,6 +232,16 @@
       "note": "Refuses a dead, unconscious, or hostile body natively as well as in the binding. Entering a body is not repeatable against the same evidence, so it is at_most_once."
     },
     {
+      "operation_kind": "perform_character_order",
+      "proof_status": "source_proven",
+      "evidence": [
+        "KenshiAgentTelemetry.cpp ProbeAdvertisedTasks: walks the generated TaskType vocabulary asking PlayerInterface::isOrderValidForSelection and getPlayerTaskProbability(task, target, p) per target, so which orders a person affords is Kenshi's answer rather than a Python role heuristic; the same probe already backed natural-resource targets and is now pointed at nearby characters",
+        "KenshiAgentTelemetry.cpp perform_character_order: resolves the wire's lowercased vocabulary name to its TaskType, re-proves getPlayerTaskProbability at dispatch so an order that lapsed between publication and dispatch is refused, adopts an identical active goal via HasExactContextGoal instead of reissuing, then newPlayerTaskSelectedCharacters(task, handle, building, position, false) -- the same generic call that already carries MOVE_CUS_ORDERED and PLAYER_TALK_TO",
+        "Target resolution deliberately uses FindExactNearbyCharacter, which applies no disposition filter, rather than FindExactDialogueTarget: an order is not a conversation, and hostiles, the unconscious, and the dead are exactly who orders are for"
+      ],
+      "note": "Not yet dispatched live; no run has issued an order through this path. The probe budget means an unprobed person reports advertised_tasks_probed false, and both the binding and the affordance treat that as unknown rather than empty."
+    },
+    {
       "operation_kind": "stop",
       "proof_status": "source_proven",
       "evidence": [

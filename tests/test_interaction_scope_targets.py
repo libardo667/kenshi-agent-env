@@ -175,6 +175,7 @@ def test_native_command_names_remain_the_known_set() -> None:
         "travel_to_map_destination",
         "exit_current_building",
         "perform_context_action",
+        "perform_character_order",
         "produce_resource_output",
         "open_context_inventory",
         "survey_local_resources",
