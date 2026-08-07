@@ -1115,6 +1115,12 @@ def _character_offers(observation: Observation) -> Iterable[AffordanceOffer]:
         return
     capabilities = set(telemetry.capabilities)
     selected = next((member for member in telemetry.squad if member.selected), None)
+    # Selection is native or it does not happen. There used to be a pointer
+    # fallback offered whenever this was false, which meant two operations for
+    # one act: one that asks Kenshi to select a character and one that clicks
+    # the portrait. Coexistence like that is what the desktop subsystem exists
+    # to serve, so the fallback is gone rather than kept for a mode nothing
+    # live uses.
     exact_selection = bool(
         observation.control_mode is ControlMode.NATIVE_ASSISTED
         and "control.select_squad_member" in capabilities
@@ -1122,7 +1128,7 @@ def _character_offers(observation: Observation) -> Iterable[AffordanceOffer]:
         and telemetry.ui.selected_character_id is not None
         and telemetry.ui.selected_character_id in telemetry.ui.selected_character_ids
     )
-    for member in telemetry.squad:
+    for member in telemetry.squad if exact_selection else []:
         target = AffordanceTarget(
             target_id=member.id,
             label=member.name,
@@ -1137,9 +1143,7 @@ def _character_offers(observation: Observation) -> Iterable[AffordanceOffer]:
                     f"Replace the current selection with only {member.name!r}, "
                     "deselecting every other party member."
                 ),
-                operation_kind=(
-                    "select_squad_member_exact" if exact_selection else "select_squad_member"
-                ),
+                operation_kind="select_squad_member_exact",
                 target=target,
                 arguments={"target_id": member.id},
             )
@@ -1667,7 +1671,6 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
         ),
         operation_kinds=frozenset(
             {
-                "select_squad_member",
                 "select_squad_member_exact",
                 "use_game_binding",
                 "regroup_with_squad_member",

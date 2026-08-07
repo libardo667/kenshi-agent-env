@@ -3636,41 +3636,6 @@ COMMAND_WORLD_TARGET_DEFINITION = OperationDefinition(
 )
 
 
-SELECT_SQUAD_MEMBER_DEFINITION = OperationDefinition(
-    kind="select_squad_member",
-    version="1.0",
-    interaction=selection_mutation(),
-    operation_type=SelectSquadMemberAction,
-    summary=(
-        "Select one exact current squad member with Kenshi's Mouse1 binding at "
-        "that member's unique current lower-HUD portrait, re-resolved inside "
-        "the input lease."
-    ),
-    argument_source=(
-        "target_id must be copied from a current squad entry whose unique name "
-        "matches exactly one current lower-HUD portrait label."
-    ),
-    allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
-    required_capabilities=frozenset(
-        {
-            "squad.basic",
-            VISIBLE_CONTROLS_CAPABILITY,
-        }
-    ),
-    capability_aliases=frozenset(),
-    pointer_class=PointerActionClass.SEMANTIC_CURRENT,
-    native_assisted=False,
-    risk=OperationRisk(pointer_actions=1),
-    max_primitive_actions=1,
-    reference_fields=("target_id",),
-    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=OperationExecution.ATOMIC_HANDLER,
-    receipt_kind="semantic_squad_selection",
-    bind=bind_select_squad_member,
-    handler_key="movement.select_squad_member",
-    derive_completion_conditions=_selected_squad_member,
-    authorable_when=squad_member_selection_is_currently_authorable,
-)
 
 
 SELECT_SQUAD_MEMBER_EXACT_DEFINITION = OperationDefinition(
@@ -4935,7 +4900,6 @@ OPERATION_DEFINITION_LIST: tuple[OperationDefinition, ...] = (
     APPROACH_DIALOGUE_TARGET_DEFINITION,
     OPEN_SCREEN_DEFINITION,
     COMMAND_WORLD_TARGET_DEFINITION,
-    SELECT_SQUAD_MEMBER_DEFINITION,
     SELECT_SQUAD_MEMBER_EXACT_DEFINITION,
     ROTATE_CAMERA_DEFINITION,
     PERFORM_CONTEXT_ACTION_DEFINITION,

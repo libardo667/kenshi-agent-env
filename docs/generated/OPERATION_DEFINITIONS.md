@@ -12,9 +12,9 @@ Internal-only definitions are controller phases or runtime operations;
 they still bind through this registry but are not planner-visible offers.
 
 ```text
-definitions             37
-adapter operation kinds  35
-adapter routes           36
+definitions             36
+adapter operation kinds  34
+adapter routes           35
 adapters                 14
 ownership proof         PASS
 
@@ -45,7 +45,6 @@ DEFINITIONS
   respond_to_immediate_threat         movement.respond_to_immediate_threat                    RespondToImmediateThreatAction [characters]
   rotate_camera                       camera.rotate_camera                                    RotateCameraAction [native_and_composite]
   scroll_screen                       screens.scroll_screen                                   ScrollScreenAction [native_and_composite]
-  select_squad_member                 movement.select_squad_member                            SelectSquadMemberAction [characters]
   select_squad_member_exact           movement.select_squad_member_exact                      SelectSquadMemberExactAction [characters]
   sell_item                           trade.sell_item                                         SellItemAction [inventory]
   set_speed                           runtime.set_speed                                       SetSpeedAction [runtime]

@@ -26,7 +26,11 @@ from pathlib import Path
 
 from ..affordances import AFFORDANCE_ADAPTERS
 from ..core.transport import NativeCommandRequest
-from ..operation_definitions import OPERATION_DEFINITION_LIST, OperationDefinition
+from ..operation_definitions import (
+    OPERATION_DEFINITION_LIST,
+    OperationDefinition,
+    native_wire_command_for,
+)
 
 MANIFEST_PATH = (
     Path(__file__).resolve().parents[3]
@@ -82,11 +86,10 @@ REGISTRY_OWNED_FIELDS = frozenset(
 # macro and no longer describes what the command does. Renaming it is a
 # protocol change and belongs to the Slice 2 bump, not here - this map records
 # the mismatch rather than papering over it.
-NATIVE_COMMAND_OWNERS: dict[str, str] = {
-    "approach_confirmed_vendor": "approach_dialogue_target",
-}
-
-VESTIGIAL_NATIVE_COMMAND_NAMES = frozenset(NATIVE_COMMAND_OWNERS)
+# Wire names that do not match the operation issuing them. Kept as a record of
+# the exceptions, not as the lookup: `native_command_owner` derives ownership
+# from the registry, so this cannot drift out of agreement with it.
+VESTIGIAL_NATIVE_COMMAND_NAMES = frozenset({"approach_confirmed_vendor"})
 
 
 DIAGNOSTIC_ONLY_NATIVE_COMMANDS: frozenset[str] = frozenset({"shift_body_platoon"})
@@ -125,9 +128,22 @@ def all_native_command_names() -> tuple[str, ...]:
 
 
 def native_command_owner(command: str) -> str:
-    """The operation kind that issues one wire command."""
+    """The operation kind that issues one wire command.
 
-    return NATIVE_COMMAND_OWNERS.get(command, command)
+    Derived from the registry rather than looked up. This was a hand-written
+    map defaulting to the identity, which held while every operation happened
+    to share its name with its route and broke the moment one did not:
+    `select_squad_member_exact` issues `select_squad_member`, so retiring the
+    pointer-driven `select_squad_member` left the route apparently unowned.
+
+    Definitions declare their own routes now, so ownership is a lookup rather
+    than a second copy that has to be remembered.
+    """
+
+    for definition in OPERATION_DEFINITION_LIST:
+        if native_wire_command_for(definition) == command:
+            return definition.kind
+    return command
 
 
 @dataclass(frozen=True, slots=True)

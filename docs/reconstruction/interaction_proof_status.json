@@ -193,14 +193,6 @@
       "note": "Scrolling within an owned window."
     },
     {
-      "operation_kind": "select_squad_member",
-      "proof_status": "source_proven",
-      "evidence": [
-        "operation_definitions.py SELECT_SQUAD_MEMBER_DEFINITION changes selection; it issues no order to the prior selection"
-      ],
-      "note": "Changing who is selected is not commanding whoever was selected. Its terminal is the observed selection state."
-    },
-    {
       "operation_kind": "select_squad_member_exact",
       "proof_status": "source_proven",
       "evidence": [

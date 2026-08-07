@@ -18,15 +18,15 @@ repository, and every captured context-menu witness had exactly one
 character selected.
 
 ```text
-operations               37
-planner-visible          35
+operations               36
+planner-visible          34
 internal-only             2
 native commands          14
-manifest entries         38
+manifest entries         37
 coverage proof          PASS
 
 PROOF STATUS
-  source_proven     15
+  source_proven     14
   unit_proven        0
   live_proven        1
   unproven          20
@@ -60,7 +60,6 @@ INTERACTION CONTRACT (resolved from the sole operation registry)
   respond_to_immediate_threat         ordinary_order     explicit_recipients dispatch_only    order_accepted          unproven
   rotate_camera                       global_ui          none                none             input_delivered         source_proven
   scroll_screen                       global_ui          none                ui_transaction   input_delivered         unproven
-  select_squad_member                 selection_mutation explicit_recipients none             world_outcome_observed  source_proven
   select_squad_member_exact           selection_mutation explicit_recipients none             world_outcome_observed  source_proven
   sell_item                           global_ui          explicit_recipients ui_transaction   world_outcome_observed  unproven
   set_speed                           global_ui          none                none             world_outcome_observed  source_proven
@@ -86,7 +85,7 @@ EXECUTION AND ROUTING
   equip_item                          atomic_handler     paused_transaction       -                          inventory
   exit_current_building               monitored_option   running_for_progress     exit_current_building      native_and_composite
   harvest_resource                    composite_option   running_for_progress     -                          native_and_composite
-  move_in_direction                   monitored_option   running_for_progress     move_in_direction          native_and_composite
+  move_in_direction                   monitored_option   running_for_progress     -                          native_and_composite
   move_to_character                   monitored_option   running_for_progress     move_to_character          characters
   noop                                atomic_handler     any                      -                          runtime
   open_context_inventory              atomic_handler     paused_transaction       open_context_inventory     inventory_owners
@@ -100,11 +99,10 @@ EXECUTION AND ROUTING
   recall_memory                       atomic_handler     any                      -                          runtime
   recover_camera_view                 atomic_handler     any                      -                          native_and_composite
   regroup_with_squad_member           monitored_option   running_for_progress     regroup_with_squad_member  characters
-  respond_to_immediate_threat         monitored_option   running_for_progress     -                          characters
+  respond_to_immediate_threat         monitored_option   running_for_progress     move_in_direction          characters
   rotate_camera                       atomic_handler     any                      -                          native_and_composite
   scroll_screen                       atomic_handler     paused_transaction       -                          native_and_composite
-  select_squad_member                 atomic_handler     any                      select_squad_member        characters
-  select_squad_member_exact           atomic_handler     any                      -                          characters
+  select_squad_member_exact           atomic_handler     any                      select_squad_member        characters
   sell_item                           composite_option   paused_transaction       -                          inventory
   set_speed                           atomic_handler     any                      -                          runtime
   shift_into_body                     atomic_handler     running_for_progress     shift_into_body            body_shift
@@ -118,14 +116,14 @@ EXECUTION AND ROUTING
 NATIVE COMMAND ROUTES
   approach_confirmed_vendor    -> approach_dialogue_target (vestigial name)
   exit_current_building        -> exit_current_building
-  move_in_direction            -> move_in_direction
+  move_in_direction            -> respond_to_immediate_threat
   move_to_character            -> move_to_character
   open_context_inventory       -> open_context_inventory
   perform_character_order      -> perform_character_order
   perform_context_action       -> perform_context_action
   produce_resource_output      -> produce_resource_output
   regroup_with_squad_member    -> regroup_with_squad_member
-  select_squad_member          -> select_squad_member
+  select_squad_member          -> select_squad_member_exact
   shift_into_body              -> shift_into_body
   survey_local_resources       -> survey_local_resources
   transfer_item                -> transfer_item

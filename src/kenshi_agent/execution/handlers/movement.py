@@ -15,16 +15,13 @@ from ...core.evidence import SemanticActionReceipt
 from ...core.observation import Observation
 from ...core.operation import (
     Action,
-    ClickAction,
     ExitCurrentBuildingAction,
-    MouseButton,
     MoveInDirectionAction,
     MoveToCharacterAction,
     PauseAction,
     PerformCharacterOrderAction,
     RegroupWithSquadMemberAction,
     RespondToImmediateThreatAction,
-    SelectSquadMemberAction,
     SelectSquadMemberExactAction,
     SetSpeedAction,
     ShiftIntoBodyAction,
@@ -59,17 +56,12 @@ from ..types import (
     OperationResult,
     OperationStatus,
 )
-from .input_binding import authorized_input_binding
 from .kenshi_surface import KenshiControlSurface
 
 MovementOperation = Callable[..., Coroutine[Any, Any, Transition]]
 
 
 class MovementMechanicsPort(Protocol):
-    async def select_squad_member(
-        self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
-    ) -> Transition: ...
-
     async def select_squad_member_exact(
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
     ) -> Transition: ...
@@ -354,7 +346,6 @@ def movement_handlers(
     planning_config: PlanningConfig,
 ) -> dict[str, OperationHandler]:
     return {
-        "movement.select_squad_member": AtomicMovementHandler(port.select_squad_member),
         "movement.select_squad_member_exact": AtomicMovementHandler(
             port.select_squad_member_exact,
             verify_native_terminal=True,
@@ -464,17 +455,6 @@ class KenshiMovementMechanics:
             ),
         )
 
-    async def select_squad_member(
-        self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
-    ) -> Transition:
-        return await self._surface.run_exact(
-            action,
-            command=command,
-            token=token,
-            receipt=lambda current, started, dispatch: self._execute_select_operation(
-                current, started, dispatch, token
-            ),
-        )
 
     async def select_squad_member_exact(
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
@@ -560,17 +540,40 @@ class KenshiMovementMechanics:
             }
         )
 
-    async def _execute_select_operation(
+
+    async def _execute_select_squad_member_exact(
         self,
-        action: Action,
+        action: SelectSquadMemberExactAction,
         started: datetime,
-        command: CommandDispatchContext | None,
-        token: ExecutionToken | None,
+        command: CommandDispatchContext,
     ) -> ActionReceipt:
-        del command
-        return await self._execute_select_squad_member(
-            cast(SelectSquadMemberAction, action), started, token
+        """Select and verify one exact squad identity through native code."""
+
+        pulse_seconds = self._surface.controls_config.native_movement_pulse_seconds
+        semantic = SemanticActionReceipt(
+            action_kind=action.kind,
+            contract_version=operations.SELECT_SQUAD_MEMBER_EXACT_DEFINITION.version,
+            target_id=action.target_id,
+            source_revision=command.based_on_revision,
+            revalidation=(
+                "Re-bound the exact current squad target and singular selection "
+                "basis; native code owns selection and terminal verification."
+            ),
         )
+        return await self._surface.run_native_order(
+            action,
+            started,
+            command,
+            target_id=action.target_id,
+            pulse_seconds=pulse_seconds,
+            require_vendor_role=False,
+            wire_fields=operations.wire_fields_for(action),
+            semantic=semantic,
+            wire_command=native_commands.NATIVE_SQUAD_SELECTION_WIRE_COMMAND,
+            require_dialogue_target=False,
+            accepted_is_terminal_error=True,
+        )
+
 
     async def _execute_select_exact_operation(
         self, action: Action, started: datetime, command: CommandDispatchContext | None
@@ -635,85 +638,6 @@ class KenshiMovementMechanics:
             await self._surface.require_command(command),
         )
 
-    async def _execute_select_squad_member(
-        self,
-        action: SelectSquadMemberAction,
-        started: datetime,
-        token: ExecutionToken | None,
-    ) -> ActionReceipt:
-        """Left-click one exact squad portrait after in-lease revalidation."""
-
-        binding, observation = authorized_input_binding(
-            action,
-            token,
-            operations.BoundVisibleTarget,
-        )
-        bounds = binding.resolved_bounds
-        x = (bounds.min_x + bounds.max_x) / 2.0
-        y = (bounds.min_y + bounds.max_y) / 2.0
-        primitive_receipt = await self._surface.controller.execute(
-            ClickAction(
-                x=x,
-                y=y,
-                button=MouseButton.LEFT,
-            )
-        )
-        semantic = SemanticActionReceipt(
-            action_kind=action.kind,
-            contract_version=operations.SELECT_SQUAD_MEMBER_DEFINITION.version,
-            target_id=binding.target_id,
-            resolved_label=binding.resolved_label,
-            resolved_bounds=bounds,
-            source_revision=observation.world_revision,
-            revalidation=(
-                "Re-resolved the exact squad member and current lower-HUD portrait "
-                f"inside the input lease before Mouse1. {binding.reason}"
-            ),
-        )
-        return primitive_receipt.model_copy(
-            update={
-                "action": action,
-                "semantic": semantic,
-                "message": (
-                    f"Selected current squad member {binding.target_id!r} with "
-                    "Mouse1. A later observation must confirm the singular "
-                    "selected character."
-                ),
-            }
-        )
-
-    async def _execute_select_squad_member_exact(
-        self,
-        action: SelectSquadMemberExactAction,
-        started: datetime,
-        command: CommandDispatchContext,
-    ) -> ActionReceipt:
-        """Select and verify one exact squad identity through native code."""
-
-        pulse_seconds = self._surface.controls_config.native_movement_pulse_seconds
-        semantic = SemanticActionReceipt(
-            action_kind=action.kind,
-            contract_version=operations.SELECT_SQUAD_MEMBER_EXACT_DEFINITION.version,
-            target_id=action.target_id,
-            source_revision=command.based_on_revision,
-            revalidation=(
-                "Re-bound the exact current squad target and singular selection "
-                "basis; native code owns selection and terminal verification."
-            ),
-        )
-        return await self._surface.run_native_order(
-            action,
-            started,
-            command,
-            target_id=action.target_id,
-            pulse_seconds=pulse_seconds,
-            require_vendor_role=False,
-            wire_fields=operations.wire_fields_for(action),
-            semantic=semantic,
-            wire_command=native_commands.NATIVE_SQUAD_SELECTION_WIRE_COMMAND,
-            require_dialogue_target=False,
-            accepted_is_terminal_error=True,
-        )
 
     async def _execute_directional_move(
         self,

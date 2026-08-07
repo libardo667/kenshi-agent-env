@@ -38,7 +38,6 @@ from kenshi_agent.core.operation import (
     RegroupWithSquadMemberAction,
     RespondToImmediateThreatAction,
     RotateCameraAction,
-    SelectSquadMemberAction,
     SelectSquadMemberExactAction,
     SetSpeedAction,
     ThreatResponseStrategy,
@@ -1247,53 +1246,6 @@ def test_world_target_command_rebinds_geometry_inside_input_lease(
 
     asyncio.run(scenario())
 
-
-def test_squad_member_selection_rebinds_geometry_inside_input_lease(
-    tmp_path: Path,
-) -> None:
-    async def scenario() -> None:
-        environment, telemetry, controller = native_vendor_environment(tmp_path)
-        telemetry.squad_target_portrait_bounds = NormalizedPointerBounds(
-            min_x=0.38,
-            max_x=0.44,
-            min_y=0.84,
-            max_y=0.94,
-        )
-        initial = await environment.reset()
-        telemetry.squad_target_portrait_bounds = NormalizedPointerBounds(
-            min_x=0.49,
-            max_x=0.55,
-            min_y=0.84,
-            max_y=0.94,
-        )
-
-        transition = await execute_operation(
-            environment,
-            SelectSquadMemberAction(target_id="entity-ruka"),
-            command=CommandDispatchContext(
-                command_id="cmd-" + "e" * 32,
-                based_on_revision=initial.world_revision,
-                **_authorized_for(initial, SelectSquadMemberAction(target_id="entity-ruka")),
-            ),
-        )
-
-        assert controller.actions == [
-            ClickAction(
-                x=0.52,
-                y=(0.84 + 0.94) / 2.0,
-                button=MouseButton.LEFT,
-            )
-        ]
-        assert transition.receipt.semantic is not None
-        assert transition.receipt.semantic.target_id == "entity-ruka"
-        assert transition.receipt.semantic.resolved_bounds == NormalizedPointerBounds(
-            min_x=0.49,
-            max_x=0.55,
-            min_y=0.84,
-            max_y=0.94,
-        )
-
-    asyncio.run(scenario())
 
 
 def test_squad_member_selection_uses_exact_native_identity_without_pointer_input(

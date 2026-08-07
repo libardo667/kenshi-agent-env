@@ -25,7 +25,6 @@ from kenshi_agent.core.operation import (
     ReadFieldbookAction,
     RecallMemoryAction,
     ScrollAction,
-    SelectSquadMemberAction,
     SelectSquadMemberExactAction,
     SetSpeedAction,
     TravelToMapDestinationAction,
@@ -141,19 +140,27 @@ def test_live_client_pointer_requires_known_window_dimensions() -> None:
 
 
 def test_exact_squad_selection_can_reduce_a_current_multi_selection() -> None:
-    config = safety_config().model_copy(update={"allow_action_kinds": ["select_squad_member"]})
+    config = safety_config().model_copy(
+        update={"allow_action_kinds": ["select_squad_member_exact"]}
+    )
     guard = OperationPolicy(
         config,
         control_mode=ControlMode.NATIVE_ASSISTED,
     )
-    action = SelectSquadMemberAction(target_id="entity-nam")
+    action = SelectSquadMemberExactAction(target_id="entity-nam")
     observation = Observation(
         run_id="squad-selection",
         step_index=0,
         mode="live",
         control_mode=ControlMode.NATIVE_ASSISTED,
         telemetry=TelemetrySnapshot(
-            capabilities=["squad.basic", "ui.visible_controls"],
+            capabilities=[
+                "squad.basic",
+                "ui.visible_controls",
+                "control.select_squad_member",
+                "identity.stable_handles",
+            ],
+            identity_session_id="session-exact-squad-selection",
             game=GameState(loaded=True, paused=True),
             ui=UIState(
                 active_screen="world",
