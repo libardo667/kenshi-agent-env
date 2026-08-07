@@ -322,6 +322,10 @@ namespace
     KenshiAgentTelemetry::RuntimeContextMenuTargetOwnership
         g_runtimeContextMenuTarget;
     std::wstring g_outputDirectory;
+    // Last-write stamp of the native command request file, so the plug-in can
+    // notice a new request without the agent pressing a key at the game.
+    DWORD g_lastRequestWriteLow = 0;
+    DWORD g_lastRequestWriteHigh = 0;
 
     class SamplingGuard
     {
@@ -6547,6 +6551,50 @@ namespace
         }
     }
 
+    // Whether the request file has been replaced since the last look.
+    //
+    // The transport used to be "write the file, then press ctrl+shift+f10", so
+    // dispatching a native command required sending keystrokes to the game.
+    // That one keystroke was the last reason the agent needed the desktop at
+    // all: every operation that moved a pointer has been retired, and without
+    // this the input subsystem exists solely to tap a hotkey at itself.
+    //
+    // Watching the file is the same handshake with the middleman removed. The
+    // update hook already runs every frame on the game thread, which is exactly
+    // where a request has to be read anyway.
+    bool NativeCommandRequestChanged()
+    {
+        if (g_outputDirectory.empty())
+            return false;
+        std::wstring path = g_outputDirectory;
+        if (!path.empty() && path[path.size() - 1] != L'\\')
+            path += L'\\';
+        path += NATIVE_COMMAND_REQUEST_FILE_W;
+
+        WIN32_FILE_ATTRIBUTE_DATA attributes;
+        if (!GetFileAttributesExW(
+                path.c_str(),
+                GetFileExInfoStandard,
+                &attributes))
+        {
+            return false;
+        }
+        const FILETIME& written = attributes.ftLastWriteTime;
+        if (written.dwLowDateTime == g_lastRequestWriteLow &&
+            written.dwHighDateTime == g_lastRequestWriteHigh)
+        {
+            return false;
+        }
+        // A first sighting is not a new request: the file may have been left by
+        // an earlier session, and replaying it would issue a command nobody
+        // asked for this run.
+        const bool firstSighting =
+            g_lastRequestWriteLow == 0 && g_lastRequestWriteHigh == 0;
+        g_lastRequestWriteLow = written.dwLowDateTime;
+        g_lastRequestWriteHigh = written.dwHighDateTime;
+        return !firstSighting;
+    }
+
     void PlayerInterfaceUpdateHook(PlayerInterface* player)
     {
         g_originalPlayerInterfaceUpdate(player);
@@ -6559,9 +6607,13 @@ namespace
             (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0 &&
             (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0 &&
             (GetAsyncKeyState(VK_F10) & 0x8000) != 0;
-        if (approachVendorHotkeyDown && !g_approachVendorHotkeyWasDown)
-            ProcessNativeCommandRequest(player);
+        // Either signal dispatches: the file changing, or the hotkey, which is
+        // retained for `scripts/dispatch_native_command.py` and manual probing.
+        const bool hotkeyPressed =
+            approachVendorHotkeyDown && !g_approachVendorHotkeyWasDown;
         g_approachVendorHotkeyWasDown = approachVendorHotkeyDown;
+        if (NativeCommandRequestChanged() || hotkeyPressed)
+            ProcessNativeCommandRequest(player);
 
         const DWORD now = GetTickCount();
         if (ou != NULL &&

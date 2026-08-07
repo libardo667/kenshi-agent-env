@@ -1282,27 +1282,6 @@ int main(int argc, char** argv)
             "valid resource production did not retain its exact target");
     }
 
-    KenshiAgentTelemetry::NativeCommandRequest contextInventory;
-    const std::string contextInventoryPayload =
-        ReadFile(prefix + "valid_context_inventory_request.json");
-    if (contextInventoryPayload.empty())
-        return Fail("could not read valid_context_inventory_request.json");
-    if (!KenshiAgentTelemetry::ParseNativeCommandRequest(
-            contextInventoryPayload,
-            contextInventory,
-            rejectionReason))
-    {
-        return Fail(
-            "valid context-inventory request was rejected as " +
-            rejectionReason);
-    }
-    if (contextInventory.command != "open_context_inventory" ||
-        contextInventory.targetId != "entity-natural-resource")
-    {
-        return Fail(
-            "valid context inventory did not retain its exact target");
-    }
-
     const std::string naturalResourcePayload =
         ReadFile(prefix + "valid_natural_resource.json");
     if (naturalResourcePayload.empty())

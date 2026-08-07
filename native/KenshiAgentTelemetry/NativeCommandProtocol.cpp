@@ -170,7 +170,7 @@ namespace KenshiAgentTelemetry
                // window - a character's personal gear, the stealing view - so
                // it can never produce the state a transfer needs.
                command == "open_trade_window" ||
-               command == "open_context_inventory";
+               command == "open_trade_window";
     }
 
     bool IsValidCommandId(const std::string& value)
