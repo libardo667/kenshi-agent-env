@@ -128,11 +128,17 @@ OPAQUE_CHARACTER_SELECTION_GAME_BINDINGS: frozenset[GameBinding] = frozenset(
 # current modal reaches an explicit close terminal.
 INTERFACE_SCOPED_OPERATION_KINDS: frozenset[str] = frozenset(
     {
-        "activate_visible_control",
         "consult_advisor",
-        "dismiss_screen",
-        "equip_item",
         "noop",
+        # A transfer exists only while two inventories are open, so gating it
+        # behind a clear interface withheld the one operation that requires the
+        # opposite. It was the last mirror of the retired clicking surface: this
+        # list still named six operations that no longer exist and none of the
+        # ones that replaced them.
+        "transfer_item",
+        # Pairing a second inventory while one is already open is how a trade
+        # or a looting window is reached at all.
+        "open_trade_window",
         # Playback is declared global_ui: it suspends the whole world and is
         # orthogonal to what is on screen, exactly as it is for a player, who
         # can pause with the inventory open. Gating it behind a clear interface
@@ -140,12 +146,9 @@ INTERFACE_SCOPED_OPERATION_KINDS: frozenset[str] = frozenset(
         # start. `wait` is deliberately not here - it is only meaningful while
         # the world both runs and is being watched.
         "pause",
-        "purchase_item",
         "set_speed",
         "read_fieldbook",
         "recall_memory",
-        "scroll_screen",
-        "sell_item",
         "stop",
     }
 )
@@ -643,6 +646,17 @@ def _character_order_offers(observation: Observation) -> Iterable[AffordanceOffe
 MAX_INVENTORY_OWNERS_OFFERED = 12
 
 
+def _semantic_slug(value: str) -> str:
+    """A stable lower-snake fragment for naming one choice among many."""
+
+    cleaned = "".join(
+        character.lower() if character.isalnum() else "_" for character in value
+    ).strip("_")
+    while "__" in cleaned:
+        cleaned = cleaned.replace("__", "_")
+    return cleaned or "unnamed"
+
+
 MAX_TRADE_WINDOWS_OFFERED = 12
 
 
@@ -737,14 +751,33 @@ def _item_transfer_offers(observation: Observation) -> Iterable[AffordanceOffer]
             if destination.owner_id == source.owner_id:
                 continue
             for section in source.sections:
+                if section.equipped:
+                    # Not offered until an equipped transfer is proven safe.
+                    continue
                 for item in section.items:
                     if offered >= MAX_TRANSFERS_OFFERED:
                         return
                     offered += 1
+                    # The item and destination are part of the semantic, not
+                    # decoration. The target is the *source* inventory, so two
+                    # items in it collapsed to one indistinguishable choice and
+                    # the planner's selection was refused for matching two.
+                    # `_character_order_offers` learned this first: one person
+                    # affording several orders needs the order in the semantic.
+                    #
+                    # The slot is in the name because the item's name is not its
+                    # identity: two characters carry identically named gear, and
+                    # one inventory can hold the same item twice. Section and
+                    # coordinates are what the engine transfers by, so they are
+                    # what distinguishes one choice from another.
                     yield _offer(
                         observation,
                         source=AffordanceSource.INVENTORY,
-                        semantic="transfer_item",
+                        semantic=(
+                            f"transfer_{_semantic_slug(item.item_name)}"
+                            f"_{_semantic_slug(section.name)}_{item.x}_{item.y}"
+                            f"_to_{_semantic_slug(destination.owner_name)}"
+                        ),
                         description=(
                             f"Move {item.item_name!r} from {source.owner_name!r} "
                             f"to {destination.owner_name!r}. Kenshi decides "

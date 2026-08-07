@@ -1026,6 +1026,9 @@ class InventorySectionView(StrictModel):
     """One named grid within an inventory."""
 
     name: str = Field(max_length=80)
+    # Worn or wielded rather than carried. Kenshi transfers an equipped item by
+    # a different path, and calling its transfer on one crashed the game.
+    equipped: bool = False
     width: int = Field(ge=0)
     height: int = Field(ge=0)
     items: list[InventorySlotItem] = Field(default_factory=list, max_length=128)

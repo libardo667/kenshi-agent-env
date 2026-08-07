@@ -2812,6 +2812,12 @@ namespace
                         json << ",";
                     firstSection = false;
                     json << "{\"name\":\"" << JsonEscape(section->name) << "\",";
+                    // Worn or wielded, rather than carried. Kenshi's transfer
+                    // takes a different path for an equipped item, and calling
+                    // it on one crashed the game -- both characters' only items
+                    // sat in `hip` and `legs`, which are equipment slots.
+                    json << "\"equipped\":"
+                         << JsonBool(section->isAnEquippedItemSection) << ",";
                     json << "\"width\":" << section->width << ",";
                     json << "\"height\":" << section->height << ",";
                     json << "\"items\":[";
@@ -4718,6 +4724,14 @@ namespace
             if (section == NULL)
             {
                 RejectNativeCommand(request, "section_absent");
+                return;
+            }
+            if (section->isAnEquippedItemSection)
+            {
+                // Refused until proven. `RClickAutoTrade` on an equipped item
+                // crashed Kenshi outright, and an engine call that is unsafe to
+                // make is not one to keep making while working out why.
+                RejectNativeCommand(request, "section_is_equipment");
                 return;
             }
             Item* item = section->getItemAt(request.slotX, request.slotY);

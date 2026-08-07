@@ -3549,6 +3549,11 @@
           "title": "Name",
           "type": "string"
         },
+        "equipped": {
+          "default": false,
+          "title": "Equipped",
+          "type": "boolean"
+        },
         "width": {
           "minimum": 0,
           "title": "Width",
