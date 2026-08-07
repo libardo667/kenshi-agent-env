@@ -26,8 +26,10 @@ import pytest
 from kenshi_agent.core.interaction import RecipientScope
 from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.operation import (
+    Action,
     ControlMode,
     PerformCharacterOrderAction,
+    PerformContextAction,
 )
 from kenshi_agent.core.telemetry import (
     NATIVE_COMMANDS_NAMING_AN_ACTION,
@@ -52,6 +54,7 @@ from kenshi_agent.native_commands import (
     NATIVE_CHARACTER_ORDER_WIRE_COMMAND,
     NATIVE_CONTEXT_ACTION_WIRE_COMMAND,
 )
+from kenshi_agent.operation_definitions import wire_fields_for
 from kenshi_agent.options import StatefulNativeMovementOption
 
 ACTOR = "char-tuner"
@@ -167,13 +170,32 @@ def _command() -> CommandDispatchContext:
 
 
 def _request(wire_command: str, *, target_id: str, context_action: str | None):
+    """Build a request the way a handler does: with the operation's projection.
+
+    The action is real rather than None because the request's fields now come
+    from the operation projecting itself, which is the point - a request and the
+    acknowledgement it will be matched against are the same mapping read in
+    opposite directions, so a test that supplied no action was testing a shape
+    that can no longer occur.
+    """
+
+    if wire_command == NATIVE_CONTEXT_ACTION_WIRE_COMMAND:
+        action: Action = PerformContextAction(
+            target_id=target_id,
+            context_action=ContextActionKind(context_action or "operate"),
+        )
+    else:
+        action = PerformCharacterOrderAction(
+            target_id=target_id, order=context_action or ORDER
+        )
     surface = KenshiControlSurface(_StubPort(_snapshot()))  # type: ignore[arg-type]
     return surface._native_approach_request(
         target_id,
         _command(),
-        action=None,  # type: ignore[arg-type]
+        action=action,
         require_vendor_role=False,
         require_dialogue_target=False,
+        wire_fields=wire_fields_for(action),
         wire_command=wire_command,  # type: ignore[arg-type]
         context_action=(
             ContextActionKind(context_action) if context_action is not None else None
@@ -323,9 +345,12 @@ def test_an_unprobed_target_cannot_have_an_order_formed_for_it() -> None:
         surface._native_approach_request(
             SUBJECT,
             _command(),
-            action=None,  # type: ignore[arg-type]
+            action=PerformCharacterOrderAction(target_id=SUBJECT, order=ORDER),
             require_vendor_role=False,
             require_dialogue_target=False,
+            wire_fields=wire_fields_for(
+                PerformCharacterOrderAction(target_id=SUBJECT, order=ORDER)
+            ),
             wire_command=NATIVE_CHARACTER_ORDER_WIRE_COMMAND,  # type: ignore[arg-type]
             context_action=ContextActionKind(ORDER),
         )

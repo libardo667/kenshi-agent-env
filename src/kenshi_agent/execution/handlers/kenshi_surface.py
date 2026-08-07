@@ -128,30 +128,26 @@ def _observes_inventory_owner(telemetry: TelemetrySnapshot, target_id: str) -> b
     )
 
 
-def _transfer_request_fields(
+def _transfer_precondition_error(
     action: Action,
     telemetry: TelemetrySnapshot,
-) -> dict[str, object]:
-    """The wire fields that make a request a transfer.
+) -> str | None:
+    """Why a transfer cannot be issued now, or None.
 
-    Both ends are proved open here rather than merely observed, because a slot
-    is only meaningful inside the inventory that reported it.
+    Both ends must be proved open rather than merely observed, because a slot is
+    only meaningful inside the inventory that reported it. The fields the
+    request carries come from the operation's projection; this only decides
+    whether the world still supports sending it.
     """
 
     if not isinstance(action, TransferItemAction):
-        raise RuntimeError("A native transfer request requires a transfer_item action.")
+        return "A native transfer request requires a transfer_item action."
     held = {inventory.owner_id for inventory in telemetry.ui.open_inventories}
     if action.source_owner_id not in held:
-        raise RuntimeError("Native transfer source inventory is not open.")
+        return "Native transfer source inventory is not open."
     if action.destination_owner_id not in held:
-        raise RuntimeError("Native transfer destination inventory is not open.")
-    return {
-        "target_id": action.source_owner_id,
-        "destination_id": action.destination_owner_id,
-        "section_name": action.section_name,
-        "slot_x": action.slot_x,
-        "slot_y": action.slot_y,
-    }
+        return "Native transfer destination inventory is not open."
+    return None
 
 
 # Commands whose whole request is "this command, at that target". They differed
@@ -791,6 +787,10 @@ class KenshiControlSurface:
         target_id: str,
         pulse_seconds: float,
         require_vendor_role: bool,
+        # The operation's own projection of itself onto wire fields. Supplied by
+        # the handler because it is operation semantics, which this surface
+        # deliberately holds none of - it only delivers.
+        wire_fields: dict[str, object],
         wire_command: NativeWireCommand = native_commands.NATIVE_APPROACH_WIRE_COMMAND,
         require_dialogue_target: bool = True,
         bearing_degrees: float = 0.0,
@@ -845,6 +845,7 @@ class KenshiControlSurface:
                 command,
                 action=action,
                 require_vendor_role=require_vendor_role,
+                wire_fields=wire_fields,
                 wire_command=wire_command,
                 require_dialogue_target=require_dialogue_target,
                 bearing_degrees=bearing_degrees,
@@ -1323,6 +1324,7 @@ class KenshiControlSurface:
         *,
         action: Action,
         require_vendor_role: bool,
+        wire_fields: dict[str, object],
         wire_command: NativeWireCommand = native_commands.NATIVE_APPROACH_WIRE_COMMAND,
         require_dialogue_target: bool = True,
         bearing_degrees: float = 0.0,
@@ -1417,135 +1419,131 @@ class KenshiControlSurface:
                 "Native squad regrouping requires actor_id to remain the exact "
                 "current selection at issue time."
             )
-        if wire_command == native_commands.NATIVE_DIRECTION_WIRE_COMMAND:
-            # References nobody: the destination is derived from where the
-            # character already stands, which is what makes it available in a
-            # place a destination list would be empty.
-            return self._native_request(
-                command,
-                wire_command,
-                observation,
-                selected_ids,
-                bearing_degrees=bearing_degrees,
-                distance_units=distance_units,
-            )
+        # Preconditions first, then one build for every command.
+        #
+        # Each branch used to end in its own `_native_request(...)` call with
+        # the wire fields listed by hand, which made this the second copy of a
+        # mapping the acknowledgement matcher also kept. They disagreed exactly
+        # once and it cost a live run: `perform_character_order` lost its order
+        # name here while the matcher had no rule for it there -- two symptoms
+        # of one missing entry, in two places that had to be edited together
+        # and were not.
+        #
+        # The fields now come from the operation's own projection, so a request
+        # and the acknowledgement it will be matched against cannot describe
+        # different things. What is left in the branches is what they were
+        # always really for: proving the world still supports this command.
+        failure = self._native_request_precondition_error(
+            wire_command,
+            telemetry,
+            action,
+            target_id=target_id,
+            selected_ids=selected_ids,
+            context_action=context_action,
+            require_dialogue_target=require_dialogue_target,
+            require_vendor_role=require_vendor_role,
+        )
+        if failure is not None:
+            raise RuntimeError(failure)
+        return self._native_request(
+            command,
+            wire_command,
+            observation,
+            selected_ids,
+            **wire_fields,
+        )
+
+    def _native_request_precondition_error(
+        self,
+        wire_command: NativeWireCommand,
+        telemetry: TelemetrySnapshot,
+        action: Action,
+        *,
+        target_id: str,
+        selected_ids: list[str],
+        context_action: ContextActionKind | None,
+        require_dialogue_target: bool,
+        require_vendor_role: bool,
+    ) -> str | None:
+        """Why the world cannot currently support this command, or None."""
+
+        if wire_command in {
+            native_commands.NATIVE_DIRECTION_WIRE_COMMAND,
+            native_commands.NATIVE_RESOURCE_SURVEY_WIRE_COMMAND,
+        }:
+            # Reference nobody: a direction derives its destination from where
+            # the character already stands, and a survey reads the resource
+            # field underneath the primary.
+            return None
         if wire_command == native_commands.NATIVE_EXIT_BUILDING_WIRE_COMMAND:
             selected = [character for character in telemetry.squad if character.selected]
-            # Being indoors is mechanics; how many characters may be ordered
-            # out is the contract's. Requiring one contradicted the
-            # declared CURRENT_SELECTION scope, and Kenshi broadcasts a
-            # move order to the whole selection.
+            # Being indoors is mechanics; how many characters may be ordered out
+            # is the contract's. Requiring one contradicted the declared
+            # CURRENT_SELECTION scope, and Kenshi broadcasts a move order to the
+            # whole selection.
             if not selected or any(member.indoors is not True for member in selected):
-                raise RuntimeError(
+                return (
                     "Native building exit requires the selected character to be "
                     "confirmed indoors at issue time."
                 )
-            return self._native_request(
-                command,
-                wire_command,
-                observation,
-                selected_ids,
-            )
-        if wire_command == native_commands.NATIVE_RESOURCE_SURVEY_WIRE_COMMAND:
-            # A survey references nobody and nothing: it reads Kenshi's resource
-            # field where the primary stands. Without this branch it fell
-            # through to the targeted route and was refused for having no
-            # target_id, so the operation was offered to the agent and could
-            # never be dispatched - the native command counter never
-            # incremented for it across two live runs.
-            return self._native_request(
-                command,
-                wire_command,
-                observation,
-                selected_ids,
-            )
+            return None
         if wire_command == native_commands.NATIVE_MAP_TRAVEL_WIRE_COMMAND:
-            map_destinations = [
+            destinations = [
                 destination
                 for destination in telemetry.known_map_destinations
                 if destination.id == target_id
             ]
-            if len(map_destinations) != 1:
-                raise RuntimeError(
-                    "Native map destination is absent, undiscovered, or ambiguous at issue time."
+            if len(destinations) != 1:
+                return (
+                    "Native map destination is absent, undiscovered, or ambiguous "
+                    "at issue time."
                 )
-            return self._native_request(
-                command,
-                wire_command,
-                observation,
-                selected_ids,
-                target_id=target_id,
-            )
+            return None
         if wire_command == native_commands.NATIVE_TRANSFER_WIRE_COMMAND:
-            return self._native_request(
-                command,
-                wire_command,
-                observation,
-                selected_ids,
-                **_transfer_request_fields(action, telemetry),
-            )
+            return _transfer_precondition_error(action, telemetry)
         if wire_command in _TARGET_ONLY_WIRE_COMMANDS:
-            failure = _target_only_command_error(
+            return _target_only_command_error(
                 wire_command, telemetry, target_id, selected_ids
             )
-            if failure is not None:
-                raise RuntimeError(failure)
-            return self._native_request(
-                command,
-                wire_command,
-                observation,
-                selected_ids,
-                target_id=target_id,
-            )
         if not target_id:
-            raise RuntimeError("Native approach requires an exact target_id.")
-        request_context_action = self._context_action_for_target(
-            wire_command,
-            target_id,
-            telemetry.world_targets,
-            context_action,
-        )
-        if request_context_action is not None:
-            return self._native_request(
-                command,
-                wire_command,
-                observation,
-                selected_ids,
-                target_id=target_id,
-                context_action=request_context_action,
-                minimum_output_quantity=minimum_output_quantity,
-            )
+            return "Native approach requires an exact target_id."
+        if self._world_target_advertises(wire_command, target_id, telemetry, context_action):
+            return None
         target = next(
             (entity for entity in telemetry.nearby_entities if entity.id == target_id),
             None,
         )
         if target is None:
-            raise RuntimeError("Native command target is absent from current nearby telemetry.")
+            return "Native command target is absent from current nearby telemetry."
         if require_dialogue_target and (
             not target.is_dialogue_target() or target.conscious is not True
         ):
-            raise RuntimeError(
-                "Native command target lacks exact current conscious non-hostile dialogue evidence."
+            return (
+                "Native command target lacks exact current conscious non-hostile "
+                "dialogue evidence."
             )
         if require_vendor_role and not target.is_confirmed_vendor():
-            raise RuntimeError("Native command target lacks exact safe current vendor evidence.")
-        order_context_action = self._context_action_for_person(
-            wire_command,
-            target,
-            context_action,
-        )
-        return NativeCommandRequest(
-            schema_version="1.2",
-            command_id=command.command_id,
-            # The wire name is a legacy alias retained so the proven installed
-            # plug-in keeps parsing this request without a rebuild.
-            command=wire_command,
-            control_mode=ControlMode.NATIVE_ASSISTED,
-            identity_session_id=telemetry.identity_session_id,
-            based_on_revision=observation.world_revision,
-            selected_character_ids=list(selected_ids),
-            target_id=target_id,
-            context_action=order_context_action,
+            return "Native command target lacks exact safe current vendor evidence."
+        self._context_action_for_person(wire_command, target, context_action)
+        return None
+
+    def _world_target_advertises(
+        self,
+        wire_command: NativeWireCommand,
+        target_id: str,
+        telemetry: TelemetrySnapshot,
+        context_action: ContextActionKind | None,
+    ) -> bool:
+        """Whether this command resolves against an advertising world target."""
+
+        return (
+            self._context_action_for_target(
+                wire_command,
+                target_id,
+                telemetry.world_targets,
+                context_action,
+            )
+            is not None
         )
 
     async def _wait_for_native_acknowledgement(

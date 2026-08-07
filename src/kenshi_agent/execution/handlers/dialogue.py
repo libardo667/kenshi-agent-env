@@ -229,6 +229,7 @@ class KenshiDialogueMechanics:
             target_id=action.target_id,
             pulse_seconds=pulse_seconds,
             require_vendor_role=False,
+            wire_fields=operations.wire_fields_for(action),
             semantic=semantic,
             continue_until_terminal=True,
             paused_dialogue_terminal=True,
