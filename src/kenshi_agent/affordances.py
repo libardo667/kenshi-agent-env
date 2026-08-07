@@ -1640,9 +1640,13 @@ def _bind_adapter_selection(
         and (interface_clear or offer.operation_kind in INTERFACE_SCOPED_OPERATION_KINDS)
         and _offer_binds_now(offer, observation)
     ]
-    if len(matches) != 1:
-        raise ValueError("affordance is absent from the adapter's current source")
-    offer = matches[0]
+    distinct = {offer.affordance_id: offer for offer in matches}
+    if len(distinct) != 1:
+        raise ValueError(
+            f"{len(distinct)} distinct offers match inside {adapter.name!r}; "
+            "exactly one must"
+        )
+    offer = next(iter(distinct.values()))
     if offer.source not in adapter.sources or offer.operation_kind not in adapter.operation_kinds:
         raise RuntimeError(f"adapter {adapter.name!r} emitted an undeclared offer")
     expected_target_id = offer.target.target_id if offer.target else None
@@ -1737,22 +1741,29 @@ def bind_affordance(
     """Route a selection back to its issuing adapter for exact current binding."""
 
     resolved = resolve_selection(selection, observation)
-    matches = [
-        adapter
+    # Deduplicate before counting. An id is derived from what a choice *is*, so
+    # a repeated identical offer is the same choice seen twice, not ambiguity: a
+    # trade window holding ten identically-labelled cells emits ten identical
+    # `activate_visible_control` offers, because a visible control is keyed on
+    # window, role and label. `offered_affordances` already collapses them, so
+    # the planner sees one and picks it correctly - and this raw walk then found
+    # ten and refused, reporting the choice as absent when it was over-present.
+    matches = {
+        adapter.name: adapter
         for adapter in AFFORDANCE_ADAPTERS
         for offer in adapter.offers(observation)
         if offer.affordance_id == resolved.affordance_id
-    ]
+    }
     if len(matches) != 1:
         # `resolve_selection` already refused anything it could not place, and it
         # resolves against the same adapters, so reaching here means two adapters
         # claim one offer id. That is a registry inconsistency rather than a bad
         # choice, and saying so keeps it from being read as the caller's fault.
         raise RuntimeError(
-            f"{len(matches)} adapters claim affordance {resolved.affordance_id!r}; "
-            "exactly one must issue it"
+            f"{len(matches)} adapters claim affordance {resolved.affordance_id!r} "
+            f"({', '.join(sorted(matches))}); exactly one must issue it"
         )
-    return matches[0].bind(selection, observation, offer=resolved)
+    return next(iter(matches.values())).bind(selection, observation, offer=resolved)
 
 
 def bound_affordance(bound: BoundOperation) -> BoundAffordance:
