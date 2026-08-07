@@ -34,12 +34,6 @@
       "note": "Movement is plausibly group-scoped while the dialogue outcome belongs to one participant. Which character becomes that participant is unproven; section 13.9 is its proof. Its wire command is still named approach_confirmed_vendor."
     },
     {
-      "operation_kind": "collect_resource_output",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "Internal harvest phase. One explicit collection recipient; section 10.5 requires that this phase stop imposing singleton selection on the whole composite."
-    },
-    {
       "operation_kind": "command_world_target",
       "proof_status": "unproven",
       "evidence": [],
@@ -58,12 +52,6 @@
       "proof_status": "unproven",
       "evidence": [],
       "note": "Same open question as open_screen."
-    },
-    {
-      "operation_kind": "equip_item",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "The inventory window belongs to one character. Whether that character is Kenshi's primary or the first selected roster member is the section 13.7 proof; today affordances.py resolves it by roster iteration, which is the defect."
     },
     {
       "operation_kind": "exit_current_building",
@@ -159,12 +147,6 @@
       "note": "Holds an ordinary order until output exists. Its release path calls removeJob/clearOrders/halt on a claimed-owned queue; that ownership claim is unproven and is the section 13.6 obligation."
     },
     {
-      "operation_kind": "purchase_item",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "Bounded trade transaction against one owned window pair. Recipient resolution shares the section 13.7 proof."
-    },
-    {
       "operation_kind": "read_fieldbook",
       "proof_status": "source_proven",
       "evidence": [
@@ -221,12 +203,6 @@
         "operation_definitions.py SELECT_SQUAD_MEMBER_EXACT_DEFINITION targets named character identity"
       ],
       "note": "Changing who is selected is not commanding whoever was selected. Its recipients are the characters the action names, and its terminal is the observed selection state."
-    },
-    {
-      "operation_kind": "sell_item",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "Same window ownership and recipient question as purchase_item."
     },
     {
       "operation_kind": "set_speed",

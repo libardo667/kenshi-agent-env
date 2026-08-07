@@ -18,29 +18,27 @@ repository, and every captured context-menu witness had exactly one
 character selected.
 
 ```text
-operations               37
-planner-visible          35
-internal-only             2
+operations               33
+planner-visible          32
+internal-only             1
 native commands          15
-manifest entries         38
+manifest entries         34
 coverage proof          PASS
 
 PROOF STATUS
   source_proven     15
   unit_proven        0
   live_proven        1
-  unproven          20
+  unproven          16
   withheld           2
 
 INTERACTION CONTRACT (resolved from the sole operation registry)
   operation                           kind               recipients          selection        milestone               proof
   activate_visible_control            global_ui          none                ui_transaction   input_delivered         withheld
   approach_dialogue_target            ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
-  collect_resource_output             global_ui          explicit_recipients ui_transaction   world_outcome_observed  unproven
   command_world_target                ordinary_order     current_selection   dispatch_only    order_accepted          unproven
   consult_advisor                     runtime_only       none                none             input_delivered         source_proven
   dismiss_screen                      global_ui          none                ui_transaction   world_outcome_observed  unproven
-  equip_item                          global_ui          explicit_recipients ui_transaction   world_outcome_observed  unproven
   exit_current_building               ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
   harvest_resource                    ordinary_order     explicit_recipients ui_transaction   world_outcome_observed  unproven
   move_in_direction                   ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
@@ -53,7 +51,6 @@ INTERACTION CONTRACT (resolved from the sole operation registry)
   perform_character_order             ordinary_order     current_selection   dispatch_only    order_accepted          live_proven
   perform_context_action *            varies             current_selection   varies           varies                  unproven
   produce_resource_output             ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
-  purchase_item                       global_ui          explicit_recipients ui_transaction   world_outcome_observed  unproven
   read_fieldbook                      runtime_only       none                none             input_delivered         source_proven
   recall_memory                       runtime_only       none                none             input_delivered         source_proven
   recover_camera_view                 global_ui          none                none             world_outcome_observed  source_proven
@@ -62,7 +59,6 @@ INTERACTION CONTRACT (resolved from the sole operation registry)
   rotate_camera                       global_ui          none                none             input_delivered         source_proven
   scroll_screen                       global_ui          none                ui_transaction   input_delivered         unproven
   select_squad_member_exact           selection_mutation explicit_recipients none             world_outcome_observed  source_proven
-  sell_item                           global_ui          explicit_recipients ui_transaction   world_outcome_observed  unproven
   set_speed                           global_ui          none                none             world_outcome_observed  source_proven
   shift_into_body                     ordinary_order     named_body          dispatch_only    world_outcome_observed  source_proven
   stop                                runtime_only       none                none             input_delivered         source_proven
@@ -79,11 +75,9 @@ EXECUTION AND ROUTING
   operation                           exec               playback                 native cmd                 visibility
   activate_visible_control            atomic_handler     paused_transaction       -                          visible_controls
   approach_dialogue_target            monitored_option   running_for_progress     approach_confirmed_vendor  dialogue_targets
-  collect_resource_output             atomic_handler     paused_transaction       -                          internal-only
   command_world_target                atomic_handler     running_for_progress     -                          context_orders
   consult_advisor                     atomic_handler     any                      -                          runtime
   dismiss_screen                      atomic_handler     paused_transaction       -                          screens
-  equip_item                          atomic_handler     paused_transaction       -                          inventory
   exit_current_building               monitored_option   running_for_progress     exit_current_building      native_and_composite
   harvest_resource                    composite_option   running_for_progress     -                          native_and_composite
   move_in_direction                   monitored_option   running_for_progress     -                          native_and_composite
@@ -96,7 +90,6 @@ EXECUTION AND ROUTING
   perform_character_order             monitored_option   running_for_progress     perform_character_order    character_orders
   perform_context_action              monitored_option   varies                   perform_context_action     context_orders
   produce_resource_output             monitored_option   running_for_progress     produce_resource_output    internal-only
-  purchase_item                       composite_option   paused_transaction       -                          inventory
   read_fieldbook                      atomic_handler     any                      -                          runtime
   recall_memory                       atomic_handler     any                      -                          runtime
   recover_camera_view                 atomic_handler     any                      -                          native_and_composite
@@ -105,7 +98,6 @@ EXECUTION AND ROUTING
   rotate_camera                       atomic_handler     any                      -                          native_and_composite
   scroll_screen                       atomic_handler     paused_transaction       -                          native_and_composite
   select_squad_member_exact           atomic_handler     any                      select_squad_member        characters
-  sell_item                           composite_option   paused_transaction       -                          inventory
   set_speed                           atomic_handler     any                      -                          runtime
   shift_into_body                     atomic_handler     running_for_progress     shift_into_body            body_shift
   stop                                atomic_handler     any                      -                          runtime

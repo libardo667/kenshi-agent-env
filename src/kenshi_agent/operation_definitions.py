@@ -4594,66 +4594,6 @@ DISMISS_SCREEN_DEFINITION = OperationDefinition(
     derive_completion_conditions=_dismissed_screen_closed,
 )
 
-PURCHASE_ITEM_DEFINITION = OperationDefinition(
-    kind="purchase_item",
-    version="2.2",
-    interaction=global_ui(
-        recipients=RecipientScope.EXPLICIT_RECIPIENTS,
-        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
-        selection=SelectionDependency.UI_TRANSACTION,
-        playback=PlaybackRequirement.PAUSED_TRANSACTION,
-    ),
-    operation_type=PurchaseItemAction,
-    summary=(
-        "Acquire a bounded quantity of one item from exact seller-owned cells. "
-        "The controller binds the exact open player-window owner, rebinds each "
-        "unit, and proves that owner's carried gain against the exact quoted "
-        "charge, including a zero-cost transfer."
-    ),
-    argument_source=(
-        "cell_label, item_name, expected_price and window come from one "
-        "visible_controls item entry; seller_id is the exact stable id of that "
-        "vendor group; quantity is the useful bounded amount, 1-5. "
-        "expected_price must equal that entry's nonnegative buy_price exactly; "
-        "zero means free. sell_price is what a trader pays you and is rejected "
-        "here."
-    ),
-    allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
-    required_capabilities=frozenset(
-        {
-            VISIBLE_CONTROLS_CAPABILITY,
-            "ui.tooltip",
-            "ui.inventory",
-            "game.money",
-            "game.pause",
-            "identity.stable_handles",
-            "nearby.characters",
-            "nearby.shop_owners",
-            "squad.basic",
-            "squad.inventory",
-        }
-    ),
-    capability_aliases=frozenset(),
-    pointer_class=PointerActionClass.SEMANTIC_CURRENT,
-    native_assisted=False,
-    risk=OperationRisk(pointer_actions=1, purchase_actions=1),
-    max_primitive_actions=10,
-    reference_fields=(
-        "cell_label",
-        "item_name",
-        "expected_price",
-        "quantity",
-        "seller_id",
-    ),
-    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=OperationExecution.COMPOSITE_OPTION,
-    receipt_kind="semantic_purchase",
-    bind=bind_purchase_item,
-    handler_key="trade.purchase_item",
-    derive_risk=_bounded_trade_risk,
-    derive_primitive_action_bound=_bounded_trade_primitive_action_bound,
-    controller_verified=True,
-)
 
 
 def bind_open_screen(
@@ -4851,151 +4791,9 @@ SCROLL_SCREEN_DEFINITION = OperationDefinition(
 )
 
 
-SELL_ITEM_DEFINITION = OperationDefinition(
-    kind="sell_item",
-    version="2.1",
-    interaction=global_ui(
-        recipients=RecipientScope.EXPLICIT_RECIPIENTS,
-        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
-        selection=SelectionDependency.UI_TRANSACTION,
-        playback=PlaybackRequirement.PAUSED_TRANSACTION,
-    ),
-    operation_type=SellItemAction,
-    summary=(
-        "Sell a bounded quantity from the exact observed player-window owner. "
-        "The controller rebinds every unit and proves that owner's carried loss "
-        "plus purse gain."
-    ),
-    argument_source=(
-        "cell_label from a visible_controls entry with role 'item'; window must "
-        "resolve to one selected squad member's own name; item_name copied from "
-        "that cell's own entry; buyer_id the exact stable id of the one active shop "
-        "owner; quantity is the useful bounded amount, 1-5. No price is given: "
-        "the shop's offer is not exported."
-    ),
-    allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
-    required_capabilities=frozenset(
-        {
-            VISIBLE_CONTROLS_CAPABILITY,
-            "ui.inventory",
-            "squad.inventory",
-            "game.money",
-            "identity.stable_handles",
-            "nearby.characters",
-            "nearby.shop_owners",
-        }
-    ),
-    capability_aliases=frozenset(),
-    pointer_class=PointerActionClass.SEMANTIC_CURRENT,
-    native_assisted=False,
-    # Counted against the purchase budget: a sale is as irreversible as a buy.
-    risk=OperationRisk(pointer_actions=1, purchase_actions=1),
-    max_primitive_actions=10,
-    reference_fields=("cell_label", "item_name", "quantity", "window", "buyer_id"),
-    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=OperationExecution.COMPOSITE_OPTION,
-    receipt_kind="semantic_sell",
-    bind=bind_sell_item,
-    handler_key="trade.sell_item",
-    derive_risk=_bounded_trade_risk,
-    derive_primitive_action_bound=_bounded_trade_primitive_action_bound,
-    controller_verified=True,
-)
 
 
-EQUIP_ITEM_DEFINITION = OperationDefinition(
-    kind="equip_item",
-    version="1.1",
-    interaction=global_ui(
-        recipients=RecipientScope.EXPLICIT_RECIPIENTS,
-        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
-        selection=SelectionDependency.UI_TRANSACTION,
-        playback=PlaybackRequirement.PAUSED_TRANSACTION,
-    ),
-    operation_type=EquipItemAction,
-    summary=(
-        "Equip the item in one exact selected squad-owned inventory window. "
-        "Refused while any trade is open, because there the same right-click "
-        "sells the item instead."
-    ),
-    argument_source=(
-        "cell_label from a visible_controls entry with role 'item'; window must "
-        "resolve to one selected squad member's own name; item_name copied from "
-        "that cell's own entry."
-    ),
-    allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
-    required_capabilities=frozenset(
-        {VISIBLE_CONTROLS_CAPABILITY, "ui.inventory", "squad.inventory"}
-    ),
-    capability_aliases=frozenset(),
-    pointer_class=PointerActionClass.SEMANTIC_CURRENT,
-    native_assisted=False,
-    risk=OperationRisk(pointer_actions=1),
-    max_primitive_actions=1,
-    reference_fields=("cell_label", "window"),
-    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=OperationExecution.ATOMIC_HANDLER,
-    receipt_kind="semantic_equip",
-    bind=bind_equip_item,
-    handler_key="inventory.equip_item",
-)
 
-COLLECT_RESOURCE_OUTPUT_DEFINITION = OperationDefinition(
-    kind="collect_resource_output",
-    version="1.2",
-    interaction=global_ui(
-        recipients=RecipientScope.EXPLICIT_RECIPIENTS,
-        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
-        selection=SelectionDependency.UI_TRANSACTION,
-        playback=PlaybackRequirement.PAUSED_TRANSACTION,
-    ),
-    operation_type=CollectResourceOutputAction,
-    summary=(
-        "Right-click one exact observed output cell into the selected character. "
-        "The exact resource inventory and selected character's own inventory "
-        "must be the only two open inventory owners; after open_context_inventory, "
-        "use toggle_inventory to open the destination. Loaded shop-owner characters "
-        "do not define the current UI layout. "
-        "Success requires a causally later equal source loss and destination gain "
-        "from complete inventories; a click receipt is never enough."
-    ),
-    argument_source=(
-        "target_id is the open resource group's exact target_id; copy cell_label, "
-        "item_name, item_quantity as source_quantity, window, and section='out' "
-        "from one item in that same group."
-    ),
-    allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
-    required_capabilities=frozenset(
-        {
-            VISIBLE_CONTROLS_CAPABILITY,
-            CONTEXT_INVENTORY_TARGET_CAPABILITY,
-            NATIVE_CONTEXT_TARGETS_CAPABILITY,
-            "ui.inventory",
-            "squad.inventory",
-            "identity.stable_handles",
-        }
-    ),
-    capability_aliases=frozenset(),
-    pointer_class=PointerActionClass.SEMANTIC_CURRENT,
-    native_assisted=False,
-    risk=OperationRisk(pointer_actions=2),
-    max_primitive_actions=4,
-    reference_fields=(
-        "target_id",
-        "cell_label",
-        "item_name",
-        "source_quantity",
-        "window",
-        "section",
-    ),
-    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=OperationExecution.ATOMIC_HANDLER,
-    receipt_kind="semantic_resource_transfer",
-    bind=bind_collect_resource_output,
-    handler_key="resources.collect_resource_output",
-    controller_verified=True,
-    authorable_when=resource_output_is_currently_authorable,
-)
 
 OPERATION_DEFINITION_LIST: tuple[OperationDefinition, ...] = (
     NOOP_DEFINITION,
@@ -5028,13 +4826,9 @@ OPERATION_DEFINITION_LIST: tuple[OperationDefinition, ...] = (
     SURVEY_LOCAL_RESOURCES_DEFINITION,
     ACTIVATE_VISIBLE_CONTROL_DEFINITION,
     DISMISS_SCREEN_DEFINITION,
-    PURCHASE_ITEM_DEFINITION,
     USE_GAME_BINDING_DEFINITION,
     RECOVER_CAMERA_VIEW_DEFINITION,
     SCROLL_SCREEN_DEFINITION,
-    SELL_ITEM_DEFINITION,
-    EQUIP_ITEM_DEFINITION,
-    COLLECT_RESOURCE_OUTPUT_DEFINITION,
 )
 
 

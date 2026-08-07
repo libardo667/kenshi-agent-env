@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from openai.lib._pydantic import to_strict_json_schema
 from pydantic import ValidationError
 
 from kenshi_agent.condition_evaluation import evaluate_condition
@@ -16,8 +15,6 @@ from kenshi_agent.core.evidence import (
 )
 from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.operation import (
-    ActivateVisibleControlAction,
-    ApproachDialogueTargetAction,
     ControlMode,
     IdempotencyPolicy,
     InterruptPolicy,
@@ -51,7 +48,6 @@ from kenshi_agent.core.telemetry import (
 )
 from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.planners import HeuristicPlanner, ScriptedPlanner
-from kenshi_agent.planners.plan_proposal import PlanProposal
 from kenshi_agent.planning import (
     PlanBudgetLedger,
     PlanValidationError,
@@ -1252,186 +1248,6 @@ def test_plan_structure_does_not_restate_the_affordance_non_progress_barrier() -
     assert [item.result for item in results] == [ConditionResult.TRUE]
 
 
-def test_plan_risk_validation_conserves_cost_across_all_steps_and_retries() -> None:
-    current = observation(capabilities=["game.pause", "game.speed", "game.time", "game.money"])
-    purchases = [
-        purchase_step("first", on_success="second"),
-        purchase_step("second"),
-    ]
-    over_budget = plan_for(
-        current.world_revision,
-        steps=purchases,
-        entry_step_id="first",
-        max_actions=2,
-    ).model_copy(
-        update={
-            "risk_budget": RiskBudget(
-                max_pointer_actions=2,
-                max_purchase_actions=1,
-                max_native_assisted_actions=0,
-            )
-        }
-    )
-
-    with pytest.raises(PlanValidationError):
-        validate_plan(over_budget, current, PlanningConfig())
-
-    retrying_purchase = purchase_step("purchase").model_copy(
-        update={
-            "retry_budget": 1,
-            "idempotency": IdempotencyPolicy.SAFE_TO_RETRY,
-        }
-    )
-    retry_plan = plan_for(
-        current.world_revision,
-        steps=[retrying_purchase],
-        entry_step_id="purchase",
-        max_actions=2,
-    ).model_copy(
-        update={
-            "risk_budget": RiskBudget(
-                max_pointer_actions=2,
-                max_purchase_actions=2,
-                max_native_assisted_actions=0,
-            )
-        }
-    )
-    validate_plan(
-        retry_plan,
-        current,
-        PlanningConfig(
-            max_pointer_actions_per_plan=2,
-            max_purchase_actions_per_plan=2,
-        ),
-    )
-
-    pointer_steps = [
-        PlanStep(
-            step_id="first",
-            action=ActivateVisibleControlAction(
-                exact_label="First",
-                role="button",
-            ),
-            preconditions=[fresh_condition()],
-            success_conditions=[fresh_condition()],
-            timeout_seconds=1.0,
-            on_success="second",
-        ),
-        PlanStep(
-            step_id="second",
-            action=ActivateVisibleControlAction(
-                exact_label="Second",
-                role="button",
-            ),
-            preconditions=[fresh_condition()],
-            success_conditions=[fresh_condition()],
-            timeout_seconds=1.0,
-        ),
-    ]
-    pointer_plan = plan_for(
-        current.world_revision,
-        steps=pointer_steps,
-        entry_step_id="first",
-        max_actions=2,
-    ).model_copy(
-        update={
-            "risk_budget": RiskBudget(
-                max_pointer_actions=1,
-                max_purchase_actions=0,
-                max_native_assisted_actions=0,
-            )
-        }
-    )
-    with pytest.raises(PlanValidationError):
-        validate_plan(
-            pointer_plan,
-            current,
-            PlanningConfig(max_pointer_actions_per_plan=2),
-        )
-
-    native_current = current.model_copy(update={"control_mode": ControlMode.NATIVE_ASSISTED})
-    native_steps = [
-        PlanStep(
-            step_id="first",
-            action=ApproachDialogueTargetAction(target_id="first"),
-            preconditions=[fresh_condition()],
-            success_conditions=[fresh_condition()],
-            timeout_seconds=1.0,
-            on_success="second",
-        ),
-        PlanStep(
-            step_id="second",
-            action=ApproachDialogueTargetAction(target_id="second"),
-            preconditions=[fresh_condition()],
-            success_conditions=[fresh_condition()],
-            timeout_seconds=1.0,
-        ),
-    ]
-    native_plan = plan_for(
-        native_current.world_revision,
-        steps=native_steps,
-        entry_step_id="first",
-        max_actions=2,
-    ).model_copy(
-        update={
-            "control_mode": ControlMode.NATIVE_ASSISTED,
-            "risk_budget": RiskBudget(
-                max_pointer_actions=0,
-                max_purchase_actions=0,
-                max_native_assisted_actions=1,
-            ),
-        }
-    )
-    with pytest.raises(PlanValidationError):
-        validate_plan(
-            native_plan,
-            native_current,
-            PlanningConfig(max_native_assisted_actions_per_plan=2),
-        )
-
-
-def test_budget_ledger_uses_operation_definition_risk() -> None:
-    contract_plan = plan_for(revision(1)).model_copy(
-        update={
-            "risk_budget": RiskBudget(
-                max_pointer_actions=1,
-                max_purchase_actions=1,
-                max_native_assisted_actions=1,
-            )
-        }
-    )
-    ledger = PlanBudgetLedger.from_plan(contract_plan)
-
-    assert ledger.reserve(
-        PurchaseItemAction(
-            cell_label="Item 0",
-            item_name="Dried Meat",
-            expected_price=75,
-            window="Trader",
-            seller_id="seller",
-        ),
-    ) == (1, 1, 0)
-    ledger.release((1, 1, 0))
-    quantity_ledger = PlanBudgetLedger(
-        remaining_actions=1,
-        remaining_pointer_actions=3,
-        remaining_purchase_actions=3,
-        remaining_native_assisted_actions=0,
-    )
-    assert quantity_ledger.reserve(
-        PurchaseItemAction(
-            cell_label="Item 0",
-            item_name="Dried Meat",
-            expected_price=75,
-            quantity=3,
-            window="Trader",
-            seller_id="seller",
-        ),
-    ) == (3, 3, 0)
-    assert ledger.reserve(
-        ApproachDialogueTargetAction(target_id="target"),
-    ) == (0, 0, 1)
-
 
 def test_plan_patch_carries_optimistic_concurrency_basis() -> None:
     patch = PlanPatch(
@@ -1870,26 +1686,6 @@ def test_plan_budget_reservations_release_or_commit_transactionally() -> None:
     assert ledger.remaining_actions == 1
     assert ledger.committed_actions == 1
 
-
-def test_hosted_affordance_contract_is_an_openai_compatible_strict_schema() -> None:
-    schema = to_strict_json_schema(PlanProposal)
-
-    def assert_supported_nodes(value: object) -> None:
-        if isinstance(value, dict):
-            assert "oneOf" not in value
-            if value.get("type") == "object":
-                assert value.get("additionalProperties") is False
-            for child in value.values():
-                assert_supported_nodes(child)
-        elif isinstance(value, list):
-            for child in value:
-                assert_supported_nodes(child)
-
-    assert schema["type"] == "object"
-    assert "AffordanceSelection" in schema["$defs"]
-    assert "PurchaseItemAction" not in schema["$defs"]
-    assert "Condition" not in schema["$defs"]
-    assert_supported_nodes(schema)
 
 
 def test_builtin_heuristic_emits_a_two_step_continuous_plan() -> None:

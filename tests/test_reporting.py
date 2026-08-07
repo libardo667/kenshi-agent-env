@@ -1,26 +1,16 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
 from io import StringIO
 
-from kenshi_agent.core.evidence import (
-    PurchaseEvidence,
-    PurchaseStatus,
-    SemanticActionReceipt,
-)
 from kenshi_agent.core.operation import (
     ControlMode,
     MoveInDirectionAction,
     PauseAction,
-    PurchaseItemAction,
 )
 from kenshi_agent.core.planning import PlannerDecision
-from kenshi_agent.core.transport import ActionReceipt
 from kenshi_agent.reporting import (
     MAX_SPOKEN_REASONING_CHARS,
     ConsoleDecisionReporter,
-    describe_action,
-    describe_receipt,
     format_action,
 )
 
@@ -50,121 +40,6 @@ def test_format_action_renders_operation_arguments_compactly() -> None:
     )
 
 
-def test_console_reporter_streams_decision_and_receipt() -> None:
-    stream = StringIO()
-    narrator = RecordingNarrator()
-    reporter = ConsoleDecisionReporter(
-        run_id="visible-run",
-        planner_name="openai",
-        model_name="gpt-5.6-luna",
-        control_mode=ControlMode.NATIVE_ASSISTED,
-        stream=stream,
-        narrator=narrator,
-    )
-    decision = PlannerDecision(
-        intent="Buy food before leaving town.",
-        rationale="The squad has money but no travel rations.",
-        action=PurchaseItemAction(
-            cell_label="seller-cell-9",
-            item_name="Dried Meat",
-            expected_price=72,
-            window="Trade inventory",
-            seller_id="entity-technical-identifier",
-        ),
-        confidence=0.8,
-    )
-    started = datetime.now(UTC)
-    receipt = ActionReceipt(
-        action=decision.action,
-        accepted=True,
-        executed=True,
-        dry_run=False,
-        started_at=started,
-        finished_at=started + timedelta(seconds=0.75),
-        primitive_actions=1,
-        message=(
-            "Native acknowledgement cmd-deadbeef reached a causal future "
-            "telemetry revision."
-        ),
-    )
-
-    reporter.run_started(30)
-    reporter.planning_started(3)
-    reporter.planning_started(3)
-    reporter.decision(
-        step_index=3,
-        source="planner",
-        decision=decision,
-        latency_seconds=1.25,
-    )
-    reporter.action_receipt(step_index=3, receipt=receipt)
-    reporter.run_finished(steps_completed=1, stop_reason="Test complete.")
-
-    output = stream.getvalue()
-    assert "gpt-5.6-luna | 30 turns" in output
-    assert "control=native_assisted" in output
-    assert "step 03  OBSERVE -> thinking" in output
-    assert "DECIDE  1.25s | planner" in output
-    assert "Why     The squad has money" in output
-    assert "Action  purchase_item(" in output
-    assert "DONE    0.75s" in output
-    assert "Kenshi Agent finished | 1 turns | Test complete." in output
-
-    spoken = " ".join(text for text, _ in narrator.utterances)
-    assert spoken.count("I'm thinking") == 1
-    assert "Buy food before leaving town." in spoken
-    assert "The squad has money but no travel rations." in spoken
-    assert "Buying Dried Meat." in spoken
-    assert "Done." in spoken
-    assert "cmd-deadbeef" not in spoken
-    assert "causal future" not in spoken
-    assert "telemetry revision" not in spoken
-    assert "entity-technical-identifier" not in spoken
-    assert "seller-cell-9" not in spoken
-    assert "purchase_item" not in spoken
-
-
-def test_free_vendor_acquisition_is_narrated_as_pickup_not_spending() -> None:
-    action = PurchaseItemAction(
-        cell_label="wanted-poster",
-        item_name="WANTED: The Red Bandit",
-        expected_price=0,
-        window="BARMAN",
-        seller_id="entity-barman",
-    )
-    started = datetime.now(UTC)
-    receipt = ActionReceipt(
-        action=action,
-        accepted=True,
-        executed=True,
-        dry_run=False,
-        started_at=started,
-        finished_at=started,
-        primitive_actions=2,
-        semantic=SemanticActionReceipt(
-            action_kind="purchase_item",
-            contract_version="2.1",
-            revalidation="Rebound the exact free seller-owned cell.",
-            purchase=PurchaseEvidence(
-                status=PurchaseStatus.PURCHASED,
-                seller_id="entity-barman",
-                selected_character_id="entity-player",
-                item_name="WANTED: The Red Bandit",
-                expected_price=0,
-                requested_quantity=1,
-                purchased_quantity=1,
-                money_before=100,
-                money_after=100,
-                inventory_quantity_before=0,
-                inventory_quantity_after=1,
-                observed_after_sequence=2,
-                reason="Conserved the free acquisition.",
-            ),
-        ),
-    )
-
-    assert describe_action(action) == "Picking up WANTED: The Red Bandit."
-    assert describe_receipt(receipt) == "Picked up 1 WANTED: The Red Bandit."
 
 
 def test_console_reporter_narrates_continuous_plan_and_each_action() -> None:

@@ -12,20 +12,18 @@ Internal-only definitions are controller phases or runtime operations;
 they still bind through this registry but are not planner-visible offers.
 
 ```text
-definitions             37
-adapter operation kinds  35
-adapter routes           36
-adapters                 15
+definitions             33
+adapter operation kinds  32
+adapter routes           33
+adapters                 14
 ownership proof         PASS
 
 DEFINITIONS
   activate_visible_control            screens.activate_visible_control                        ActivateVisibleControlAction [visible_controls]
   approach_dialogue_target            dialogue.approach_dialogue_target                       ApproachDialogueTargetAction [dialogue_targets]
-  collect_resource_output             resources.collect_resource_output                       CollectResourceOutputAction [by-composition]
   command_world_target                dialogue.command_world_target                           CommandWorldTargetAction [context_orders]
   consult_advisor                     cognition.advisor                                       ConsultAdvisorAction [runtime]
   dismiss_screen                      screens.dismiss_screen                                  DismissScreenAction [screens]
-  equip_item                          inventory.equip_item                                    EquipItemAction [inventory]
   exit_current_building               movement.exit_current_building                          ExitCurrentBuildingAction [native_and_composite]
   harvest_resource                    resources.harvest_resource                              HarvestResourceAction [native_and_composite]
   move_in_direction                   movement.move_in_direction                              MoveInDirectionAction [native_and_composite]
@@ -38,7 +36,6 @@ DEFINITIONS
   perform_character_order             movement.perform_character_order                        PerformCharacterOrderAction [character_orders]
   perform_context_action              resources.perform_context_action                        PerformContextAction [context_orders]
   produce_resource_output             resources.produce_resource_output                       ProduceResourceOutputAction [by-composition]
-  purchase_item                       trade.purchase_item                                     PurchaseItemAction [inventory]
   read_fieldbook                      cognition.fieldbook                                     ReadFieldbookAction [runtime]
   recall_memory                       cognition.memory                                        RecallMemoryAction [runtime]
   recover_camera_view                 camera.recover_camera_view                              RecoverCameraViewAction [native_and_composite]
@@ -47,7 +44,6 @@ DEFINITIONS
   rotate_camera                       camera.rotate_camera                                    RotateCameraAction [native_and_composite]
   scroll_screen                       screens.scroll_screen                                   ScrollScreenAction [native_and_composite]
   select_squad_member_exact           movement.select_squad_member_exact                      SelectSquadMemberExactAction [characters]
-  sell_item                           trade.sell_item                                         SellItemAction [inventory]
   set_speed                           runtime.set_speed                                       SetSpeedAction [runtime]
   shift_into_body                     movement.shift_into_body                                ShiftIntoBodyAction [body_shift]
   stop                                runtime.stop                                            StopAction [runtime]
@@ -69,7 +65,6 @@ SOURCE-SPECIFIC COMPLETENESS BOUNDARIES
   item_transfers: Bounded to the first few moves. Whether one is allowed is Kenshi's answer at dispatch, reported in its own words.
   trade_windows: Bounded to the nearest few. Whether Kenshi pairs a given two is its answer at dispatch.
   dialogue_targets: Native-assisted stable identity and dialogue-role evidence.
-  inventory: Transactions require unambiguous counterpart identity and conservation evidence. Equip currently proves exact delivery, not final equipment state.
   characters: Offers require the source-specific selection, identity, geometry, and safety facts.
   map: Only destinations with authoritative current travel applicability.
   native_and_composite: Only operations with a current binder and declared runtime completion boundary. Scrolling proves exact delivery, not newly revealed content.

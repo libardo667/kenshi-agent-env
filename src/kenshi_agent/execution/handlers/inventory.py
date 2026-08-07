@@ -162,8 +162,6 @@ def _cancelled(
 
 def inventory_handlers(port: InventoryMechanicsPort) -> dict[str, OperationHandler]:
     return {
-        "inventory.equip_item": InventoryDeliveryHandler(port.equip_item),
-        "resources.collect_resource_output": ResourceTransferHandler(port.collect_resource_output),
     }
 
 

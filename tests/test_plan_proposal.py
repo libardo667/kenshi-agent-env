@@ -13,14 +13,12 @@ from kenshi_agent.core.operation import (
 from kenshi_agent.core.telemetry import (
     CharacterState,
     ContextActionKind,
-    Disposition,
     GameState,
     NearbyEntity,
     NormalizedPointerBounds,
     TelemetrySnapshot,
     UIState,
     Vec3,
-    VisibleUIControl,
     WorldTarget,
 )
 from kenshi_agent.core.world import WorldStateRevision
@@ -189,107 +187,6 @@ def test_context_order_compiles_through_generic_target_adapter() -> None:
     assert step.affordance.target.target_id == target.id
     assert plan.risk_budget.max_native_assisted_actions == 1
     assert step.timeout_seconds == 30
-
-
-@pytest.mark.parametrize(
-    ("unit_price", "expected_max_spend"),
-    [(125, 375), (0, 0)],
-)
-def test_inventory_selection_exposes_the_complete_nonnegative_price_domain(
-    unit_price: int,
-    expected_max_spend: int,
-) -> None:
-    actor = CharacterState(
-        id="actor-1",
-        name="Bark",
-        selected=True,
-        alive=True,
-        conscious=True,
-        down=False,
-    )
-    vendor = NearbyEntity(
-        id="vendor-1",
-        name="Barman",
-        is_animal=False,
-        disposition=Disposition.NEUTRAL,
-        distance=10,
-        has_vendor_list=True,
-        shop_inventory_owner=True,
-    )
-    cell = VisibleUIControl(
-        label="cell 2",
-        role="item",
-        window="BARMAN",
-        bounds=_bounds(2),
-        item_name="Dried Meat",
-        item_base_value=unit_price,
-        item_quantity=4,
-        selected_inventory_accepts_item=True,
-    )
-    player_window = VisibleUIControl(
-        label="BARK",
-        role="text",
-        window="BARK",
-        bounds=_bounds(3),
-    )
-    observation = _observation(
-        capabilities=[
-            "ui.visible_controls",
-            "ui.tooltip",
-            "ui.inventory",
-            "ui.inventory_cell_item",
-            "ui.inventory_cell_item_value",
-            "ui.inventory_cell_item_quantity",
-            "ui.inventory_cell_acceptance",
-            "identity.stable_handles",
-            "nearby.characters",
-            "nearby.roles",
-            "nearby.shop_owners",
-            "squad.basic",
-            "squad.inventory",
-            "game.money",
-            "game.pause",
-        ],
-        ui=UIState(
-            active_screen="trade",
-            visible_controls=[cell, player_window],
-            visible_controls_complete=True,
-            selected_character_id=actor.id,
-            selected_character_ids=[actor.id],
-            open_inventory_windows=2,
-        ),
-        squad=[actor],
-        nearby=[vendor],
-        active_shop_trader_count=1,
-    )
-    selected = _selected(observation, "buy", quantity=3)
-    offer = next(
-        offer
-        for offer in offered_affordances(observation)
-        if offer.semantic == selected["semantic"]
-        and (offer.target.target_id if offer.target else None) == selected["target_id"]
-    )
-
-    plan = compile_plan_proposal(
-        {"objective": "Buy three portions.", "steps": [{"selection": selected}]},
-        observation=observation,
-        context_id="pc-buy",
-        planning=PlanningConfig(
-            max_pointer_actions_per_plan=8,
-            max_purchase_actions_per_plan=5,
-        ),
-    ).plan
-
-    action = plan.steps[0].action
-    assert action.kind == "purchase_item"
-    assert action.item_name == "Dried Meat"
-    assert action.expected_price == unit_price
-    assert action.seller_id == vendor.id
-    assert action.quantity == 3
-    assert ("for free" in offer.description) is (unit_price == 0)
-    assert plan.risk_budget.max_pointer_actions == 3
-    assert plan.risk_budget.max_purchase_actions == 3
-    assert plan.risk_budget.max_spend == expected_max_spend
 
 
 def test_a_choice_that_is_not_offered_fails_closed() -> None:

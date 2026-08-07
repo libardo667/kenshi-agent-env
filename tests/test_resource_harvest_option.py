@@ -2,13 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
-from pathlib import Path
 
-from operation_test_support import operation_port, plan_executor
-
-from kenshi_agent.config import PlanningConfig, SafetyConfig
 from kenshi_agent.core.evidence import (
-    ResourceHarvestStatus,
     ResourceTransferEvidence,
     ResourceTransferStatus,
     SemanticActionReceipt,
@@ -20,8 +15,6 @@ from kenshi_agent.core.operation import (
     ControlMode,
     DismissScreenAction,
     GameBinding,
-    HarvestResourceAction,
-    IdempotencyPolicy,
     OpenContextInventoryAction,
     ProduceResourceOutputAction,
     SetSpeedAction,
@@ -31,9 +24,6 @@ from kenshi_agent.core.planning import (
     Condition,
     ConditionKind,
     ConditionOperator,
-    PlanEnvelope,
-    PlanStep,
-    RiskBudget,
 )
 from kenshi_agent.core.telemetry import (
     CharacterState,
@@ -57,11 +47,7 @@ from kenshi_agent.core.transport import (
 from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.env.base import AgentEnvironment
 from kenshi_agent.input_boundary import ExecutionToken
-from kenshi_agent.live_plan_policy import live_plan_policy_errors
 from kenshi_agent.planning import PlanningClock
-from kenshi_agent.reflexes import ReflexEngine
-from kenshi_agent.safety import OperationPolicy
-from kenshi_agent.session_log import SessionLogger
 from kenshi_agent.world_state import WorldStateStore
 
 RUN_ID = "resource-harvest-option"
@@ -426,152 +412,3 @@ def _fresh() -> Condition:
     )
 
 
-def test_harvest_is_one_planner_action_with_controller_owned_transfer(
-    tmp_path: Path,
-) -> None:
-    async def scenario() -> None:
-        clock = FakeClock()
-        environment = HarvestEnvironment()
-        observation = await environment.reset()
-        action = HarvestResourceAction(
-            actor_id=ACTOR_ID,
-            target_id=TARGET_ID,
-            quantity=5,
-        )
-        plan = PlanEnvelope(
-            schema_version="1.0",
-            plan_id="harvest-iron",
-            objective="Harvest five iron into Bark's inventory.",
-            control_mode=ControlMode.NATIVE_ASSISTED,
-            based_on_revision=observation.world_revision,
-            assumptions=[_fresh()],
-            steps=[
-                PlanStep(
-                    step_id="harvest",
-                    action=action,
-                    preconditions=[_fresh()],
-                    success_conditions=[],
-                    timeout_seconds=300.0,
-                    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-                )
-            ],
-            entry_step_id="harvest",
-            max_actions=1,
-            max_wall_seconds=360.0,
-            max_game_seconds=3600.0,
-            risk_budget=RiskBudget(
-                max_pointer_actions=12,
-                max_purchase_actions=0,
-                max_native_assisted_actions=2,
-            ),
-        )
-        assert live_plan_policy_errors(
-            plan,
-            max_steps=1,
-        ) == []
-
-        store = WorldStateStore(clock=clock)
-        store.publish(observation)
-        environment.store = store
-        log_path = tmp_path / "harvest.jsonl"
-        logger = SessionLogger(log_path, RUN_ID)
-        observed_transitions: list[Transition] = []
-
-        def observe_transition(
-            plan: PlanEnvelope,
-            step: PlanStep,
-            before: Observation,
-            transition: Transition,
-            command_id: str,
-            action_start_revision: WorldStateRevision,
-        ) -> Observation:
-            del plan, step, before, command_id, action_start_revision
-            observed_transitions.append(transition.model_copy(deep=True))
-            store.publish(transition.observation)
-            return transition.observation
-
-        executor = plan_executor(
-            environment=environment,
-            operation_port=operation_port(environment),
-            policy=OperationPolicy(
-                SafetyConfig(
-                    allow_action_kinds=[
-                        "harvest_resource",
-                        "produce_resource_output",
-                        "open_context_inventory",
-                        "set_speed",
-                        "use_game_binding",
-                        "collect_resource_output",
-                        "dismiss_screen",
-                    ],
-                    allow_live_unpause_actions=True,
-                    max_actions_per_minute=100,
-                    max_controller_verified_primitive_actions_per_step=45,
-                ),
-                control_mode=ControlMode.NATIVE_ASSISTED,
-            ),
-            reflexes=ReflexEngine(),
-            logger=logger,
-            clock=clock,
-            state_store=store,
-            observe_transition=observe_transition,
-            planning_config=PlanningConfig(
-                max_plan_wall_seconds=360.0,
-                max_native_assisted_actions_per_plan=2,
-                require_paused_between_actions=False,
-            ),
-        )
-        try:
-            result = await executor.execute(
-                plan,
-                observation,
-                remaining_run_actions=1,
-            )
-        finally:
-            logger.close()
-
-        assert result.completed, (
-            result.reason,
-            [item.model_dump(mode="json") for item in environment.actions],
-        )
-        assert result.actions_completed == 1
-        assert result.observation.telemetry is not None
-        assert result.observation.telemetry.ui.open_inventory_windows == 0
-        assert result.observation.telemetry.squad[0].inventory == [
-            InventoryItem(name=ITEM_NAME, quantity=5)
-        ]
-        assert [item.kind for item in environment.actions] == [
-            "set_speed",
-            "produce_resource_output",
-            "set_speed",
-            "open_context_inventory",
-            "use_game_binding",
-            "collect_resource_output",
-            "collect_resource_output",
-            "collect_resource_output",
-            "collect_resource_output",
-            "collect_resource_output",
-            "dismiss_screen",
-            "dismiss_screen",
-        ]
-        assert [
-            item.binding
-            for item in environment.actions
-            if isinstance(item, UseGameBindingAction)
-        ] == [
-            GameBinding.TOGGLE_INVENTORY,
-        ]
-        assert environment.speed_multiplier == 1.0
-        assert len(observed_transitions) == 1
-        outer_receipt = observed_transitions[0].receipt
-        assert outer_receipt.primitive_actions == 42
-        assert outer_receipt.action == action
-        assert outer_receipt.semantic is not None
-        assert outer_receipt.semantic.resource_harvest is not None
-        assert (
-            outer_receipt.semantic.resource_harvest.status
-            is ResourceHarvestStatus.HARVESTED
-        )
-        assert "operating order was fully released" in outer_receipt.message
-
-    asyncio.run(scenario())

@@ -200,8 +200,6 @@ def _cancelled(
 
 def trade_handlers(port: TradeMechanicsPort) -> dict[str, OperationHandler]:
     return {
-        "trade.purchase_item": PurchaseHandler(port.purchase_item),
-        "trade.sell_item": SaleHandler(port.sell_item),
     }
 
 

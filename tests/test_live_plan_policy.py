@@ -731,12 +731,6 @@ class TestDerivedRiskBudget:
             }
         )
 
-    def test_a_plan_that_buys_no_longer_has_to_also_say_it_buys(self) -> None:
-        """Four plans in one live run died for exactly this omission."""
-        from kenshi_agent.live_plan_policy import with_covering_risk_budget
-
-        covered = with_covering_risk_budget(self._buying_plan(declared=0))
-        assert covered.risk_budget.max_purchase_actions == 1
 
     def test_headroom_the_planner_asked_for_is_left_alone(self) -> None:
         """A higher budget states intent across the patches that may follow."""

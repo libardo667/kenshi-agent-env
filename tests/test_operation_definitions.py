@@ -18,7 +18,6 @@ from kenshi_agent.core.operation import (
     CommandWorldTargetAction,
     ControlMode,
     ExitCurrentBuildingAction,
-    IdempotencyPolicy,
     MoveInDirectionAction,
     MoveToCharacterAction,
     OpenContextInventoryAction,
@@ -56,7 +55,6 @@ from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.operation_definitions import (
     ACTIVATE_VISIBLE_CONTROL_DEFINITION,
     APPROACH_DIALOGUE_TARGET_DEFINITION,
-    COLLECT_RESOURCE_OUTPUT_DEFINITION,
     COMMAND_WORLD_TARGET_DEFINITION,
     EXIT_CURRENT_BUILDING_DEFINITION,
     MOVE_IN_DIRECTION_DEFINITION,
@@ -64,7 +62,6 @@ from kenshi_agent.operation_definitions import (
     OPEN_CONTEXT_INVENTORY_DEFINITION,
     PERFORM_CONTEXT_ACTION_DEFINITION,
     PRODUCE_RESOURCE_OUTPUT_DEFINITION,
-    PURCHASE_ITEM_DEFINITION,
     REGROUP_WITH_SQUAD_MEMBER_DEFINITION,
     SELECT_SQUAD_MEMBER_EXACT_DEFINITION,
     TRAVEL_TO_MAP_DESTINATION_DEFINITION,
@@ -999,145 +996,11 @@ class TestCollectResourceOutput:
             window="COPPER RESOURCE",
         )
 
-    def test_binds_exact_output_cell_to_exact_context_target(self) -> None:
-        binding = COLLECT_RESOURCE_OUTPUT_DEFINITION.bind(
-            self._action(),
-            self._state(),
-        )
 
-        assert binding.bound
-        assert binding.target_id == "entity-copper"
-        assert binding.item_name == "Raw Iron"
-        assert binding.resolved_bounds == _bounds(0.5)
 
-    def test_requires_the_selected_characters_open_destination_inventory(self) -> None:
-        contract = COLLECT_RESOURCE_OUTPUT_DEFINITION
 
-        binding = contract.bind(
-            self._action(),
-            self._state(player_inventory_open=False),
-        )
 
-        assert not binding.bound
-        assert "selected character" in binding.reason
-        assert "inventory" in binding.reason
 
-    def test_requires_the_game_owned_destination_fit_verdict(self) -> None:
-        contract = COLLECT_RESOURCE_OUTPUT_DEFINITION
-
-        for accepts_item in (False, None):
-            binding = contract.bind(
-                self._action(),
-                self._state(selected_inventory_accepts_item=accepts_item),
-            )
-
-            assert not binding.bound
-            assert "does not explicitly accept" in binding.reason
-
-    def test_loaded_shop_traders_never_override_exact_resource_window_owners(
-        self,
-    ) -> None:
-        contract = COLLECT_RESOURCE_OUTPUT_DEFINITION
-
-        for loaded_shop_traders in range(257):
-            binding = contract.bind(
-                self._action(),
-                self._state(
-                    active_screen="trade",
-                    active_shop_trader_count=loaded_shop_traders,
-                ),
-            )
-
-            assert binding.bound, binding.reason
-
-    def test_rejects_wrong_target_section_and_quantity(self) -> None:
-        contract = COLLECT_RESOURCE_OUTPUT_DEFINITION
-        wrong_target = self._state(context_target_id="entity-other")
-
-        assert not contract.bind(self._action(), wrong_target).bound
-        assert "collect_resource_output" not in {
-            offer.operation_kind for offer in offered_affordances(wrong_target)
-        }
-        assert not contract.bind(
-            self._action(), self._state(section="main")
-        ).bound
-        assert not contract.bind(
-            self._action(source_quantity=2),
-            self._state(source_quantity=1),
-        ).bound
-
-    def test_a_third_inventory_owner_fails_closed(self) -> None:
-        state = self._state(active_shop_trader_count=2)
-        assert state.telemetry is not None
-        controls = list(state.telemetry.ui.visible_controls or [])
-        controls.append(
-            VisibleUIControl(
-                label="Dried Meat",
-                window="ZU",
-                role="item",
-                item_name="Dried Meat",
-                item_quantity=5,
-                section="main",
-                bounds=_bounds(0.9),
-            )
-        )
-        unexplained_window = state.model_copy(
-            update={
-                "telemetry": state.telemetry.model_copy(
-                    update={
-                        "ui": state.telemetry.ui.model_copy(
-                            update={
-                                "open_inventory_windows": 3,
-                                "visible_controls": controls,
-                            }
-                        )
-                    }
-                )
-            },
-            deep=True,
-        )
-
-        binding = COLLECT_RESOURCE_OUTPUT_DEFINITION.bind(
-            self._action(),
-            unexplained_window,
-        )
-
-        assert not binding.bound
-        assert "exactly two inventory windows" in binding.reason
-
-    def test_rejects_incomplete_source_or_destination_observation(self) -> None:
-        state = self._state()
-        assert state.telemetry is not None
-        incomplete_controls = state.model_copy(
-            update={
-                "telemetry": state.telemetry.model_copy(
-                    update={
-                        "ui": state.telemetry.ui.model_copy(
-                            update={"visible_controls_complete": False}
-                        )
-                    }
-                )
-            },
-            deep=True,
-        )
-        incomplete_inventory = state.model_copy(
-            update={
-                "telemetry": state.telemetry.model_copy(
-                    update={
-                        "squad": [
-                            state.telemetry.squad[0].model_copy(
-                                update={"inventory_complete": False}
-                            )
-                        ]
-                    }
-                )
-            },
-            deep=True,
-        )
-
-        contract = COLLECT_RESOURCE_OUTPUT_DEFINITION
-        assert not contract.bind(self._action(), incomplete_controls).bound
-        assert not contract.bind(self._action(), incomplete_inventory).bound
 
 
 class TestDefinitionPolicy:
@@ -1162,15 +1025,6 @@ class TestDefinitionPolicy:
         assert "approach_dialogue_target" not in kinds
         assert "activate_visible_control" in kinds
 
-    def test_missing_capability_withholds_an_action(self) -> None:
-        state = observation(
-            capabilities=["ui.visible_controls"],
-            controls=[VisibleUIControl(label="Trade", role="button", bounds=_bounds(0.5))],
-        )
-        kinds = [offer.operation_kind for offer in offered_affordances(state)]
-        assert "activate_visible_control" in kinds
-        # Purchase needs the tooltip capability, which is absent here.
-        assert "purchase_item" not in kinds
 
     def test_legacy_capability_alias_still_satisfies_the_contract(self) -> None:
         """The installed plug-in emits the vendor-named capability."""
@@ -1619,83 +1473,6 @@ class TestAffordancesAreAdvertised:
             offer.operation_kind for offer in offered_affordances(clear)
         }
 
-    def test_modal_withholds_blocked_world_action_but_keeps_recovery(self) -> None:
-        target = WorldTarget(
-            id="entity-copper",
-            name="Copper Resource",
-            kind="natural_resource",
-            position=Vec3(x=1.0, y=0.0, z=2.0),
-            distance=40.0,
-            context_actions=[ContextActionKind.OPERATE],
-            default_task="operate_machinery",
-        )
-        capabilities = [
-            "control.produce_resource_output",
-            "control.open_context_inventory",
-            "world.context_targets",
-            "ui.context_inventory_target",
-            "ui.visible_controls",
-            "game.pause",
-            "game.speed",
-            "squad.basic",
-            "squad.health",
-            "squad.inventory",
-            "ui.inventory",
-            "identity.stable_handles",
-        ]
-        selected = CharacterState(
-            id="entity-bark",
-            name="Bark",
-            selected=True,
-            alive=True,
-            conscious=True,
-            down=False,
-            in_combat=False,
-            inventory_complete=True,
-        )
-        world = observation(
-            ui=UIState(
-                active_screen="world",
-                modal_open=False,
-                dialogue_open=False,
-                selected_character_id=selected.id,
-                selected_character_ids=[selected.id],
-            ),
-            capabilities=capabilities,
-            squad=[selected],
-            world_targets=[target],
-        )
-        inventory = observation(
-            ui=UIState(
-                active_screen="inventory",
-                modal_open=True,
-                dialogue_open=False,
-                open_inventory_windows=1,
-                selected_character_id=selected.id,
-                selected_character_ids=[selected.id],
-            ),
-            capabilities=capabilities,
-            squad=[selected],
-            world_targets=[target],
-        )
-
-        world_kinds = {offer.operation_kind for offer in offered_affordances(world)}
-        inventory_kinds = {
-            offer.operation_kind for offer in offered_affordances(inventory)
-        }
-
-        assert "harvest_resource" in world_kinds
-        assert "harvest_resource" not in inventory_kinds
-        assert "produce_resource_output" not in world_kinds
-        assert "collect_resource_output" not in world_kinds
-        assert "perform_context_action" not in world_kinds
-        assert "dismiss_screen" in inventory_kinds
-        # Opening an inventory is a first-class choice now, not a private step
-        # inside the harvest composite. While it was composition-only the
-        # planner could not choose it at all, so asked to open an inventory the
-        # agent dragged the mouse to the INV button - in the same run where it
-        # named a barman four hundred units away from telemetry.
-        assert "open_context_inventory" in world_kinds
 
     def test_visible_control_digest_marks_ambiguity(self) -> None:
         state = observation(
@@ -1882,100 +1659,17 @@ class TestPurchaseSafety:
         fields.update(overrides)
         return PurchaseItemAction(**fields)  # type: ignore[arg-type]
 
-    def test_a_purchase_matching_its_own_tooltip_binds(self) -> None:
-        binding = PURCHASE_ITEM_DEFINITION.bind(self._action(), self._state())
-        assert binding.bound, binding.reason
-        assert binding.target_id == self.SELLER
-        assert binding.resolved_bounds == _bounds(0.5)
 
-    def test_a_tooltip_describing_another_widget_is_refused(self) -> None:
-        binding = PURCHASE_ITEM_DEFINITION.bind(
-            self._action(), self._state(tooltip_over_cell=False)
-        )
-        assert not binding.bound
-        assert "does not belong to cell" in binding.reason
 
-    def test_a_wrong_item_name_is_refused(self) -> None:
-        binding = PURCHASE_ITEM_DEFINITION.bind(
-            self._action(item_name="Ancient Katana"), self._state()
-        )
-        assert not binding.bound
-        assert "does not name" in binding.reason
 
-    def test_a_wrong_price_is_refused(self) -> None:
-        binding = PURCHASE_ITEM_DEFINITION.bind(self._action(expected_price=5), self._state())
-        assert not binding.bound
-        assert "does not show price" in binding.reason
 
-    def test_a_price_that_is_only_a_substring_is_refused(self) -> None:
-        """c.52 must not satisfy a claim of c.5."""
 
-        binding = PURCHASE_ITEM_DEFINITION.bind(
-            self._action(expected_price=5),
-            self._state(tooltip="Dried Meat\n[Food]\nValue c.52"),
-        )
-        assert not binding.bound
 
-    def test_no_visible_tooltip_is_refused(self) -> None:
-        binding = PURCHASE_ITEM_DEFINITION.bind(
-            self._action(), self._state(tooltip_visible=False)
-        )
-        assert not binding.bound
-        assert "hover the cell first" in binding.reason
 
-    def test_a_seller_who_is_not_the_active_shop_owner_is_refused(self) -> None:
-        binding = PURCHASE_ITEM_DEFINITION.bind(self._action(), self._state(shop_owner=False))
-        assert not binding.bound
-        assert "verified non-hostile shop owner" in binding.reason
 
-    def test_a_cell_outside_the_sellers_window_is_refused(self) -> None:
-        """Ownership is the cell's window, not a count of traders in the world.
 
-        `active_shop_trader_count` is a registry of shop traders loaded in the
-        world - it reads 5 in a bar with nothing open - so gating on it being
-        exactly 1 made this action unbindable everywhere, which is why the agent
-        could open a shop and never buy. What proves the item is the shop's is
-        that the cell sits in the shop's own inventory window.
-        """
 
-        binding = PURCHASE_ITEM_DEFINITION.bind(
-            self._action(cell_label="item_7", window="HEP"), self._state()
-        )
-        assert not binding.bound
-        assert "not the seller's own inventory" in binding.reason
 
-    def test_many_traders_in_the_world_do_not_block_a_purchase(self) -> None:
-        binding = PURCHASE_ITEM_DEFINITION.bind(self._action(), self._state(traders=5))
-        assert binding.bound, binding.reason
-
-    def test_the_window_caption_matches_the_seller_case_insensitively(self) -> None:
-        """Kenshi captions the window "BARMAN" while the character is "Barman"."""
-
-        binding = PURCHASE_ITEM_DEFINITION.bind(self._action(), self._state())
-        assert binding.bound, binding.reason
-
-    def test_an_absent_cell_is_refused(self) -> None:
-        binding = PURCHASE_ITEM_DEFINITION.bind(
-            self._action(cell_label="item_99"), self._state()
-        )
-        assert not binding.bound
-        assert "No current item cell" in binding.reason
-
-    def test_purchase_is_at_most_once_and_costs_a_purchase_budget(self) -> None:
-        assert PURCHASE_ITEM_DEFINITION.idempotency is IdempotencyPolicy.AT_MOST_ONCE
-        assert PURCHASE_ITEM_DEFINITION.risk.purchase_actions == 1
-        action = self._action(quantity=3)
-        assert PURCHASE_ITEM_DEFINITION.risk_for(action).as_tuple() == (3, 3, 0)
-        assert PURCHASE_ITEM_DEFINITION.primitive_action_bound_for(action) == 6
-
-    def test_purchase_says_nothing_about_what_kind_of_item_is_worth_buying(self) -> None:
-        """Task intent lives in config, not in the purchase contract."""
-
-        binding = PURCHASE_ITEM_DEFINITION.bind(
-            self._action(item_name="Ancient Katana", expected_price=865),
-            self._state(tooltip="Ancient Katana\n[Weapon]\nValue c.865"),
-        )
-        assert binding.bound, binding.reason
 
 
 class TestWindowAttribution:
@@ -2112,103 +1806,8 @@ class TestPurchaseUsesExportedCellFacts:
             deep=True,
         )
 
-    def test_a_named_cell_needs_no_tooltip(self) -> None:
-        binding = PURCHASE_ITEM_DEFINITION.bind(
-            PurchaseItemAction(
-                cell_label="Bread",
-                item_name="Bread",
-                expected_price=52,
-                window="BARMAN",
-            seller_id="entity-barman",
-            ),
-            self._trade_state(),
-        )
-        assert binding.bound, binding.reason
 
-    def test_a_price_that_disagrees_with_the_cell_is_refused_with_the_real_one(
-        self,
-    ) -> None:
-        """The cell states the charge, so a disagreeing price is now a defect.
 
-        This assertion used to run the other way, on the reasoning that a
-        trader applies its own multiplier and "the asking price is never
-        exported". The export was simply of the wrong side of the trade: the
-        sell value, what the trader pays out. `item_base_value` is the charge,
-        live-confirmed against a debit, so a mismatch means the plan is
-        reasoning about money the game never quoted.
-
-        The refusal has to name the real price. A plan told only that its
-        number is wrong can do nothing but guess a second one.
-        """
-
-        binding = PURCHASE_ITEM_DEFINITION.bind(
-            PurchaseItemAction(
-                cell_label="Bread",
-                item_name="Bread",
-                expected_price=5,
-                window="BARMAN",
-                seller_id="entity-barman",
-            ),
-            self._trade_state(),
-        )
-        assert not binding.bound
-        assert "costs 52" in binding.reason
-        assert "declare expected_price 52" in binding.reason
-
-    def test_a_mispriced_purchase_is_not_reported_as_a_missing_cell(self) -> None:
-        """The failure this must never regress to.
-
-        Narrowing candidates by price once refused outright when nothing
-        matched, so a wrong `expected_price` came back as "no current item cell
-        matches" - which sent the agent hunting a c.38 Dried Meat it was
-        looking straight at. Narrowing stays permissive; only the explicit
-        price check rejects, and it says what is actually wrong.
-
-        Needs two same-named cells or the narrowing branch never runs at all,
-        which is what made an earlier version of this test unable to fail for
-        its own stated reason.
-        """
-
-        duplicates = [
-            VisibleUIControl(
-                label="Tooth Pick",
-                role="item",
-                window="BARMAN",
-                bounds=_bounds(offset),
-                item_name="Tooth Pick",
-                item_base_value=390,
-                item_quantity=1,
-            )
-            for offset in (0.4, 0.5)
-        ]
-
-        binding = PURCHASE_ITEM_DEFINITION.bind(
-            PurchaseItemAction(
-                cell_label="Tooth Pick",
-                item_name="Tooth Pick",
-                expected_price=5,
-                window="BARMAN",
-                seller_id="entity-barman",
-            ),
-            self._trade_state(duplicates),
-        )
-        assert not binding.bound
-        assert "No current item cell matches" not in binding.reason
-        assert "costs 390" in binding.reason
-
-    def test_a_name_that_disagrees_with_the_cell_is_refused(self) -> None:
-        binding = PURCHASE_ITEM_DEFINITION.bind(
-            PurchaseItemAction(
-                cell_label="Bread",
-                item_name="Ancient Katana",
-                expected_price=52,
-                window="BARMAN",
-            seller_id="entity-barman",
-            ),
-            self._trade_state(),
-        )
-        assert not binding.bound
-        assert "holds 'Bread'" in binding.reason
 
 
 class TestAmbiguityMatchesTheBinder:
@@ -2224,39 +1823,6 @@ class TestAmbiguityMatchesTheBinder:
             bounds=_bounds(0.5),
         )
 
-    def test_a_stack_of_identical_items_is_not_ambiguous(self) -> None:
-        """Two Greenfruit are two Greenfruit; either will do.
-
-        The binder already resolves interchangeable cells, but the digest
-        counted bare labels and flagged both. Since the prompt forbids
-        authoring an ambiguous entry, a stack of anything became unsellable and
-        the agent refused its own duplicate stock on our own advice.
-        """
-        state = observation(
-            controls=[self._cell("Greenfruit", 22), self._cell("Greenfruit", 22)],
-            capabilities=["ui.visible_controls"],
-        )
-        entries = state.visible_control_digest()
-        assert entries and not any(entry["ambiguous"] for entry in entries)
-
-        from kenshi_agent.core.operation import SellItemAction
-        from kenshi_agent.operation_definitions import SELL_ITEM_DEFINITION
-
-        binding = SELL_ITEM_DEFINITION.bind(
-            SellItemAction(
-                cell_label="Greenfruit",
-                item_name="Greenfruit",
-                window="HEP",
-                buyer_id=VENDOR_ID,
-            ),
-            state,
-        )
-        # Selling needs more than an unambiguous cell - a selected owner, a
-        # buyer - so this does not assert it binds. It asserts the two agree
-        # about ambiguity, which is the thing that disagreed.
-        assert "ambiguous" not in binding.reason, (
-            f"the binder called interchangeable stock ambiguous: {binding.reason}"
-        )
 
     def test_same_name_at_different_prices_still_fails_closed(self) -> None:
         """Distinguishable duplicates are a real ambiguity: the price differs."""
@@ -2345,19 +1911,3 @@ class TestPurchaseBindingCarriesCellFacts:
             deep=True,
         )
 
-    def test_every_cell_fact_survives_the_binding(self) -> None:
-        binding = PURCHASE_ITEM_DEFINITION.bind(
-            PurchaseItemAction(
-                cell_label="Bread",
-                item_name="Bread",
-                expected_price=52,
-                window="BARMAN",
-                seller_id="entity-barman",
-            ),
-            self._state(),
-        )
-        assert binding.bound, binding.reason
-        assert binding.item_name == "Bread"
-        assert binding.item_base_value == 52
-        assert binding.item_sell_value == 13
-        assert binding.item_quantity == 3

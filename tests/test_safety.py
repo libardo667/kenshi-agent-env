@@ -714,133 +714,8 @@ def generic_purchase_config() -> SafetyConfig:
     )
 
 
-def test_generic_purchase_budget_conserves_pending_and_committed_authority() -> None:
-    guard = OperationPolicy(generic_purchase_config())
-    ledger = ActionBudgetLedger(guard.config)
-    action = generic_purchase_action()
-    observation = generic_purchase_observation()
-
-    first = reserve_action(ledger, action, observation)
-    second = reserve_action(ledger, action, observation)
-    with pytest.raises(ActionBudgetError, match="purchase limit"):
-        reserve_action(ledger, action, observation)
-
-    for _ in range(3):
-        assert guard.revalidate(action, observation) == action
-    ledger.commit(first)
-    ledger.release(second)
-    replacement = reserve_action(ledger, action, observation)
-    ledger.commit(replacement)
-    with pytest.raises(ActionBudgetError, match="purchase limit"):
-        reserve_action(ledger, action, observation)
-
-    one_at_a_time = ActionBudgetLedger(generic_purchase_config())
-    one_at_a_time.commit(reserve_action(one_at_a_time, action, observation))
-    second_after_commit = reserve_action(one_at_a_time, action, observation)
-    assert second_after_commit.purchase_actions == 1
 
 
-def test_bounded_purchase_reserves_every_unit_and_its_total_spend() -> None:
-    action = generic_purchase_action().model_copy(update={"quantity": 2})
-    observation = generic_purchase_observation()
-    config = generic_purchase_config().model_copy(
-        update={
-            "min_money_after_purchase": 924,
-            "max_purchases_per_run": 2,
-        }
-    )
-    ledger = ActionBudgetLedger(config)
-
-    reservation = reserve_action(ledger, action, observation)
-    assert reservation.purchase_actions == 2
-    assert reservation.primitive_actions == 4
-    with pytest.raises(ActionBudgetError, match="purchase limit"):
-        reserve_action(ledger, generic_purchase_action(), observation)
-
-    too_little_reserve = config.model_copy(update={"min_money_after_purchase": 925})
-    with pytest.raises(SafetyViolation, match="would leave 924 cats"):
-        OperationPolicy(too_little_reserve).validate(action, observation)
-
-
-def test_generic_purchase_limits_are_inclusive_and_independent() -> None:
-    action = generic_purchase_action()
-    observation = generic_purchase_observation()
-    assert (
-        OperationPolicy(generic_purchase_config()).validate(
-            action,
-            observation,
-        )
-        == action
-    )
-
-    for config_update, observation_update in [
-        ({"max_purchase_price": 37}, {}),
-        ({"min_money_after_purchase": 963}, {}),
-        ({"required_purchase_tooltip_markers": ["[Medical]"]}, {}),
-        (
-            {},
-            {
-                "telemetry": observation.telemetry.model_copy(
-                    update={
-                        "ui": observation.telemetry.ui.model_copy(
-                            update={"active_screen": "inventory"}
-                        )
-                    }
-                )
-            },
-        ),
-        (
-            {},
-            {
-                "telemetry": observation.telemetry.model_copy(
-                    update={
-                        "ui": observation.telemetry.ui.model_copy(
-                            update={"selected_character_ids": []}
-                        )
-                    }
-                )
-            },
-        ),
-    ]:
-        with pytest.raises(SafetyViolation):
-            OperationPolicy(
-                generic_purchase_config().model_copy(update=config_update),
-            ).validate(action, observation.model_copy(update=observation_update))
-
-
-def test_generic_purchase_budget_uses_the_bound_window_owner_in_a_group() -> None:
-    observation = generic_purchase_observation()
-    assert observation.telemetry is not None
-    plant = CharacterState(
-        id="player:2",
-        name="Plant",
-        selected=True,
-        inventory_complete=True,
-    )
-    grouped = observation.model_copy(
-        update={
-            "telemetry": observation.telemetry.model_copy(
-                update={
-                    "squad": [plant, *observation.telemetry.squad],
-                    "ui": observation.telemetry.ui.model_copy(
-                        update={
-                            "selected_character_id": plant.id,
-                            "selected_character_ids": ["player:1", plant.id],
-                        }
-                    ),
-                }
-            )
-        },
-        deep=True,
-    )
-
-    assert (
-        OperationPolicy(generic_purchase_config()).validate(
-            generic_purchase_action(),
-            grouped,
-        )
-        == generic_purchase_action()
-    )
 
 
 def test_generic_purchase_marker_requires_real_tooltip_text() -> None:
@@ -900,19 +775,6 @@ def test_contracted_purchase_requires_fresh_capable_live_state(
         )
 
 
-def test_mock_purchase_contract_spends_neither_live_purchase_authority_nor_evidence() -> None:
-    config = generic_purchase_config().model_copy(update={"max_purchases_per_run": 0})
-    guard = OperationPolicy(config)
-    observation = generic_purchase_observation().model_copy(
-        update={"run_id": "mock-purchase", "mode": "mock"}
-    )
-    action = generic_purchase_action()
-
-    assert guard.validate(action, observation) == action
-    assert guard.revalidate(action, observation) == action
-    ledger = ActionBudgetLedger(config)
-    assert reserve_action(ledger, action, observation).purchase_actions == 0
-
 
 def test_wait_limit() -> None:
     guard = OperationPolicy(safety_config())
@@ -958,34 +820,4 @@ def trade_in_progress_observation() -> Observation:
     )
 
 
-def test_purchase_survives_a_trade_screen_kenshi_labels_inventory() -> None:
-    action = generic_purchase_action()
-    observation = trade_in_progress_observation()
 
-    assert (
-        OperationPolicy(generic_purchase_config()).validate(
-            action,
-            observation,
-        )
-        == action
-    )
-
-
-def test_purchase_still_refuses_a_solo_inventory_with_no_trader_window() -> None:
-    """One window open is our own bag, not a shop. This must stay refused."""
-
-    action = generic_purchase_action()
-    observation = trade_in_progress_observation()
-    assert observation.telemetry is not None
-    solo = observation.model_copy(
-        update={
-            "telemetry": observation.telemetry.model_copy(
-                update={
-                    "ui": observation.telemetry.ui.model_copy(update={"open_inventory_windows": 1})
-                }
-            )
-        }
-    )
-
-    with pytest.raises(SafetyViolation, match="trade"):
-        OperationPolicy(generic_purchase_config()).validate(action, solo)

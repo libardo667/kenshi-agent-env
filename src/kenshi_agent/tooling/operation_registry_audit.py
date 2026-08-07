@@ -72,7 +72,6 @@ REACHED_BY_COMPOSITION: frozenset[str] = frozenset(
         # button, in the same run where it identified a barman four hundred
         # units away from telemetry. An operation that works and cannot be
         # chosen is not reached by composition, it is unreachable.
-        "collect_resource_output",
         "produce_resource_output",
     }
 )

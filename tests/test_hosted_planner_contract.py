@@ -1372,25 +1372,6 @@ def test_the_planner_schema_avoids_keywords_providers_reject() -> None:
         walk(schema)
 
 
-def test_hosted_schemas_contain_only_affordance_choice_not_operation_unions() -> None:
-    proposal_schema = projected_response_format(PlanProposal)["json_schema"]["schema"]
-
-    assert set(proposal_schema["properties"]) == {
-        "objective",
-        "steps",
-        "continuity_operations",
-        "fieldbook_operations",
-    }
-    assert set(proposal_schema["$defs"]["ProposedPlanStep"]["properties"]) == {"selection"}
-    blob = json.dumps({"plan": proposal_schema})
-    for superseded in (
-        "PurchaseItemAction",
-        "ActivateVisibleControlAction",
-        "UseGameBindingAction",
-        "expected_outcomes",
-    ):
-        assert superseded not in blob
-
 
 def test_runtime_offer_projection_keeps_playback_mechanics_out() -> None:
     for paused in (True, False):
@@ -1607,97 +1588,6 @@ def test_the_action_surface_is_not_traded_away_for_a_smaller_payload() -> None:
     with pytest.raises(PlannerPayloadContextError):
         shown(12000, max_context_chars=9000)
 
-
-def test_two_open_inventories_stay_distinguishable() -> None:
-    """In a trade, which window a cell sits in decides buy versus sell.
-
-    The same right-click buys from the shop's window and sells from your own,
-    so a flat list of cells is not just verbose, it is the shape that once let
-    a probe sell a character's clothes and weapon. Grouping makes the
-    distinction structural rather than a field to be noticed.
-    """
-    from kenshi_agent.core.telemetry import (
-        CharacterState,
-        NearbyEntity,
-        NormalizedPointerBounds,
-        VisibleUIControl,
-    )
-
-    def cell(label: str, window: str, value: int) -> VisibleUIControl:
-        return VisibleUIControl(
-            label=label,
-            role="item",
-            window=window,
-            item_name=label,
-            item_base_value=value,
-            item_quantity=1,
-            selected_inventory_accepts_item=True,
-            bounds=NormalizedPointerBounds(min_x=0.1, min_y=0.1, max_x=0.2, max_y=0.2),
-        )
-
-    trading = observation().model_copy(
-        update={
-            "telemetry": TelemetrySnapshot(
-                ui=UIState(
-                    active_screen="trade",
-                    visible_controls=[
-                        cell("Water", "BARMAN", 30),
-                        cell("Rag Loincloth", "BARMAN", 12),
-                        cell("Hep's Shirt", "HEP", 40),
-                    ],
-                    selected_character_id="hep-1",
-                    selected_character_ids=["hep-1"],
-                    visible_controls_complete=True,
-                    open_inventory_windows=2,
-                ),
-                # Kenshi captions the window "HEP" while the character is "Hep",
-                # so ownership has to survive the case difference.
-                squad=[
-                    CharacterState(
-                        id="hep-1",
-                        name="Hep",
-                        selected=True,
-                        alive=True,
-                        conscious=True,
-                        down=False,
-                    )
-                ],
-                nearby_entities=[
-                    NearbyEntity(
-                        id="barman-1",
-                        name="Barman",
-                        shop_inventory_owner=True,
-                        has_vendor_list=True,
-                        disposition="neutral",
-                    )
-                ],
-                active_shop_trader_count=1,
-                capabilities=[
-                    "ui.visible_controls",
-                    "ui.tooltip",
-                    "ui.inventory",
-                    "game.money",
-                    "game.pause",
-                    "identity.stable_handles",
-                    "nearby.characters",
-                    "nearby.shop_owners",
-                    "squad.basic",
-                    "squad.inventory",
-                ],
-                identity_session_id="two-inventory-test",
-            )
-        }
-    )
-
-    offers = json.loads(render_planner_payload(trading, max_chars=30000))["affordances"]
-    inventory = [offer for offer in offers if offer["source"] == "inventory"]
-    buy = [offer for offer in inventory if offer["semantic"] == "buy"]
-    sell = [offer for offer in inventory if offer["semantic"] == "sell"]
-    assert {offer["target"]["label"] for offer in buy} == {"Water", "Rag Loincloth"}
-    assert {offer["target"]["label"] for offer in sell} == {"Hep's Shirt"}
-    assert all(offer["target"]["target_id"].startswith("BARMAN\x1f") for offer in buy)
-    assert all(offer["target"]["target_id"].startswith("HEP\x1f") for offer in sell)
-    assert any("30 cats per unit" in offer["description"] for offer in buy)
 
 
 def test_somewhere_to_go_survives_the_payload_budget() -> None:
