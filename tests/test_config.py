@@ -12,6 +12,7 @@ from kenshi_agent.core.continuity import MemoryRetrievalPolicy
 from kenshi_agent.core.operation import (
     ControlMode,
 )
+from kenshi_agent.safety import action_kind_is_allowlisted
 
 
 def test_default_config_loads_and_resolves_paths(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -171,12 +172,20 @@ def test_canonical_live_config_authorizes_semantic_actions_not_raw_input(
     assert "require_cli_execute_flag" not in type(config.safety).model_fields
     assert config.safety.emergency_stop_key == "f12"
 
-    kinds = set(config.safety.allow_action_kinds)
-    assert {"approach_dialogue_target", "activate_visible_control"} <= kinds
-    # Raw controller primitives are never live-allowlisted.
-    assert not kinds & {"click", "key", "hotkey", "move_cursor", "scroll"}
+    allowed = config.safety.allow_action_kinds
+    assert all(
+        action_kind_is_allowlisted(kind, allowed)
+        for kind in ("approach_dialogue_target", "activate_visible_control")
+    )
+    # Raw controller primitives are never live-allowlisted. The wildcard admits
+    # registered operations and nothing else, which is the property the
+    # hand-written list of thirty-seven names was protecting.
+    assert not any(
+        action_kind_is_allowlisted(kind, allowed)
+        for kind in ("click", "key", "hotkey", "move_cursor", "scroll")
+    )
 
-    assert "skill" not in kinds
+    assert not action_kind_is_allowlisted("skill", allowed)
     assert "allow_skills" not in type(config.safety).model_fields
     assert "macros" not in type(config).model_fields
 
@@ -196,19 +205,25 @@ def test_canonical_live_config_allowlists_every_affordance_operation(
     assert afforded_operations, "expected at least one affordance operation"
 
     config = load_config(root / "config" / "live.yaml")
-    allowed = set(config.safety.allow_action_kinds)
-    missing = sorted(afforded_operations - allowed)
-    assert not missing, f"canonical live config does not allowlist: {missing}"
+    allowed = config.safety.allow_action_kinds
+    missing = sorted(
+        kind for kind in afforded_operations
+        if not action_kind_is_allowlisted(kind, allowed)
+    )
+    assert not missing, f"canonical live config does not admit: {missing}"
     controller_verified_max = max(
         contract.max_primitive_actions
         for contract in OPERATION_DEFINITIONS.values()
-        if contract.kind in allowed and contract.controller_verified
+        if action_kind_is_allowlisted(contract.kind, allowed) and contract.controller_verified
     )
     assert (
         config.safety.max_controller_verified_primitive_actions_per_step
         >= controller_verified_max
     )
-    assert not allowed & {"click", "key", "hotkey", "move_cursor", "scroll"}
+    assert not any(
+        action_kind_is_allowlisted(kind, allowed)
+        for kind in ("click", "key", "hotkey", "move_cursor", "scroll")
+    )
 
 
 def test_canonical_live_config_does_not_claim_a_specific_save_campaign(
@@ -260,7 +275,7 @@ def test_every_memory_enabled_config_allows_the_cognitive_read(
     config = load_config(root / "config" / config_name)
 
     assert config.memory.enabled
-    assert "recall_memory" in config.safety.allow_action_kinds
+    assert action_kind_is_allowlisted("recall_memory", config.safety.allow_action_kinds)
 
 
 def test_wsl_cache_reclaim_requires_a_real_memory_floor() -> None:

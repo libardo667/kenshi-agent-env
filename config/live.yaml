@@ -230,44 +230,13 @@ safety:
   # owner-window and seller binding prevents the wrong-item click. The exported
   # item_value is base worth, not an authoritative shop charge, so no preventive
   # price guarantee is claimed; later money telemetry reveals the actual debit.
+  # Every operation the registry defines. This enumerated all of them by
+  # hand, which made it a copy of the registry rather than a policy: a new
+  # operation was silently un-runnable until someone remembered this file.
+  # A narrower list here is still a real restriction for anything wanting
+  # one, and an empty list still denies everything.
   allow_action_kinds:
-    - noop
-    - stop
-    - pause
-    - set_speed
-    - wait
-    - perform_context_action
-    - perform_character_order
-    - approach_dialogue_target
-    - command_world_target
-    - select_squad_member
-    - select_squad_member_exact
-    - rotate_camera
-    - survey_local_resources
-    - move_to_character
-    - move_in_direction
-    - travel_to_map_destination
-    - exit_current_building
-    - harvest_resource
-    - respond_to_immediate_threat
-    - regroup_with_squad_member
-    - produce_resource_output
-    - open_context_inventory
-    - activate_visible_control
-    - dismiss_screen
-    - purchase_item
-    - open_screen
-    - use_game_binding
-    - scroll_screen
-    - sell_item
-    - equip_item
-    - collect_resource_output
-    - transfer_item
-    - recover_camera_view
-    - shift_into_body
-    - consult_advisor
-    - recall_memory
-    - read_fieldbook
+    - "*"
 memory:
   enabled: true
   retrieval_policy: deterministic

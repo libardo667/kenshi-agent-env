@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from .affordances import OPERATION_BINDING_AUTHORITY, OperationBindingError
 from .config import SafetyConfig
 from .core.authority import AuthorizationCode
@@ -19,7 +21,34 @@ from .core.operation import (
     WaitAction,
     is_controller_primitive,
 )
-from .operation_definitions import BoundOperation
+from .operation_definitions import OPERATION_DEFINITIONS, BoundOperation
+
+ALL_REGISTERED_OPERATIONS = "*"
+"""Admit every operation the registry defines, without enumerating them.
+
+The canonical live config listed all thirty-seven by hand, so adding an
+operation meant remembering to add it here too, and a ratchet existed only to
+assert the two lists still agreed. That is a mirror of the registry, not a
+policy. This says the same thing once.
+
+Empty still means deny everything: a config that forgets this must not silently
+admit the whole registry.
+"""
+
+
+def action_kind_is_allowlisted(kind: str, allowed: Sequence[str]) -> bool:
+    """Whether policy admits this action kind.
+
+    The wildcard admits registered *operations* and nothing else. Raw controller
+    primitives - click, key, hotkey, move_cursor, scroll - are deliberately not
+    operations and are never admitted by it, which is the property the
+    hand-written list was protecting when it named thirty-seven operations and
+    none of the primitives.
+    """
+
+    if kind in allowed:
+        return True
+    return ALL_REGISTERED_OPERATIONS in allowed and kind in OPERATION_DEFINITIONS
 
 
 class SafetyViolation(RuntimeError):
@@ -241,7 +270,7 @@ class OperationPolicy:
         action: Action,
         observation: Observation,
     ) -> None:
-        if action.kind not in self.config.allow_action_kinds:
+        if not action_kind_is_allowlisted(action.kind, self.config.allow_action_kinds):
             raise SafetyViolation(  # mutation: reason
                 f"Action kind {action.kind!r} is not allowlisted."  # mutation: reason
             )

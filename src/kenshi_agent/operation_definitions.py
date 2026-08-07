@@ -153,37 +153,24 @@ NATIVE_TRANSFER_CAPABILITY = "control.transfer_item"
 # another. Names line up with the capability everywhere except the approach,
 # which kept its original wire name; that exception is written down here rather
 # than lived with.
-WIRE_COMMAND_BY_CONTROL_CAPABILITY: dict[str, str] = {
-    NATIVE_APPROACH_CAPABILITY: "approach_confirmed_vendor",
-    LEGACY_NATIVE_APPROACH_CAPABILITY: "approach_confirmed_vendor",
-    NATIVE_MOVE_CAPABILITY: "move_to_character",
-    NATIVE_SQUAD_SELECTION_CAPABILITY: "select_squad_member",
-    NATIVE_SQUAD_REGROUP_CAPABILITY: "regroup_with_squad_member",
-    NATIVE_DIRECTION_CAPABILITY: "move_in_direction",
-    NATIVE_MAP_TRAVEL_CAPABILITY: "travel_to_map_destination",
-    NATIVE_EXIT_BUILDING_CAPABILITY: "exit_current_building",
-    NATIVE_CONTEXT_ACTION_CAPABILITY: "perform_context_action",
-    NATIVE_CHARACTER_ORDER_CAPABILITY: "perform_character_order",
-    NATIVE_PRODUCE_RESOURCE_CAPABILITY: "produce_resource_output",
-    NATIVE_OPEN_CONTEXT_INVENTORY_CAPABILITY: "open_context_inventory",
-    NATIVE_TRANSFER_CAPABILITY: "transfer_item",
-    NATIVE_SHIFT_BODY_CAPABILITY: "shift_into_body",
-    NATIVE_RESOURCE_SURVEY_CAPABILITY: "survey_local_resources",
-}
 
 
 def native_wire_command_for(definition: OperationDefinition) -> str | None:
-    """The native command this operation dispatches, from its own contract.
+    """The native command this operation dispatches, declared by the operation.
 
-    None when the operation declares no control capability, which is the honest
-    answer for anything that sends no native command.
+    This used to scan `sorted(required_capabilities)` for the first capability
+    appearing in a lookup table, which made an operation's dispatch route a
+    consequence of alphabetical order. For anything requiring one control
+    capability that happened to be right; for anything requiring several it was
+    arbitrary, and two operations were quietly wrong -- `harvest_resource`
+    resolved to `open_context_inventory` and `respond_to_immediate_threat` to
+    `move_in_direction`, in both cases because that capability sorted first.
+
+    A route is not derivable from a permission set. It is a fact about the
+    operation, so the operation states it.
     """
 
-    for capability in sorted(definition.required_capabilities):
-        wire = WIRE_COMMAND_BY_CONTROL_CAPABILITY.get(capability)
-        if wire is not None:
-            return wire
-    return None
+    return definition.wire_command or None
 CONTEXT_INVENTORY_TARGET_CAPABILITY = "ui.context_inventory_target"
 
 VISIBLE_CONTROLS_CAPABILITY = "ui.visible_controls"
@@ -2753,6 +2740,9 @@ class OperationDefinition:
     execution: OperationExecution
     receipt_kind: str
     bind: Callable[[Action, Observation], OperationBinding]
+    # The native command this operation dispatches, or empty when it sends none.
+    # Declared rather than derived: see `native_wire_command_for`.
+    wire_command: str = ""
     handler_key: str = ""
     emits_world_command: bool = True
     requires_fresh_telemetry: bool = True
@@ -3464,6 +3454,7 @@ WAIT_DEFINITION = _runtime_control_definition(
 )
 APPROACH_DIALOGUE_TARGET_DEFINITION = OperationDefinition(
     kind="approach_dialogue_target",
+    wire_command="approach_confirmed_vendor",
     version="1.0",
     interaction=ordinary_order(
         recipients=RecipientScope.CURRENT_SELECTION,
@@ -3579,6 +3570,7 @@ SELECT_SQUAD_MEMBER_DEFINITION = OperationDefinition(
 
 SELECT_SQUAD_MEMBER_EXACT_DEFINITION = OperationDefinition(
     kind="select_squad_member_exact",
+    wire_command="select_squad_member",
     version="1.0",
     interaction=selection_mutation(),
     operation_type=SelectSquadMemberExactAction,
@@ -3642,6 +3634,7 @@ ROTATE_CAMERA_DEFINITION = OperationDefinition(
 
 PERFORM_CONTEXT_ACTION_DEFINITION = OperationDefinition(
     kind="perform_context_action",
+    wire_command="perform_context_action",
     version="1.0",
     resolve_interaction=resolve_context_action_interaction,
     _dynamic_recipient_scope=RecipientScope.CURRENT_SELECTION,
@@ -3688,6 +3681,7 @@ PERFORM_CONTEXT_ACTION_DEFINITION = OperationDefinition(
 
 PRODUCE_RESOURCE_OUTPUT_DEFINITION = OperationDefinition(
     kind="produce_resource_output",
+    wire_command="produce_resource_output",
     version="1.0",
     interaction=ordinary_order(
         recipients=RecipientScope.CURRENT_SELECTION,
@@ -3798,6 +3792,7 @@ HARVEST_RESOURCE_DEFINITION = OperationDefinition(
 
 PERFORM_CHARACTER_ORDER_DEFINITION = OperationDefinition(
     kind="perform_character_order",
+    wire_command="perform_character_order",
     version="1.0",
     interaction=ordinary_order(
         recipients=RecipientScope.CURRENT_SELECTION,
@@ -3840,6 +3835,7 @@ PERFORM_CHARACTER_ORDER_DEFINITION = OperationDefinition(
 
 RESPOND_TO_IMMEDIATE_THREAT_DEFINITION = OperationDefinition(
     kind="respond_to_immediate_threat",
+    wire_command="move_in_direction",
     version="1.0",
     interaction=ordinary_order(
         recipients=RecipientScope.EXPLICIT_RECIPIENTS,
@@ -3886,6 +3882,7 @@ RESPOND_TO_IMMEDIATE_THREAT_DEFINITION = OperationDefinition(
 
 OPEN_CONTEXT_INVENTORY_DEFINITION = OperationDefinition(
     kind="open_context_inventory",
+    wire_command="open_context_inventory",
     version="1.0",
     interaction=global_ui(
         recipients=RecipientScope.EXPLICIT_RECIPIENTS,
@@ -3931,6 +3928,7 @@ OPEN_CONTEXT_INVENTORY_DEFINITION = OperationDefinition(
 
 TRANSFER_ITEM_DEFINITION = OperationDefinition(
     kind="transfer_item",
+    wire_command="transfer_item",
     version="1.0",
     interaction=global_ui(
         recipients=RecipientScope.NONE,
@@ -3990,6 +3988,7 @@ TRANSFER_ITEM_DEFINITION = OperationDefinition(
 
 REGROUP_WITH_SQUAD_MEMBER_DEFINITION = OperationDefinition(
     kind="regroup_with_squad_member",
+    wire_command="regroup_with_squad_member",
     version="1.0",
     interaction=ordinary_order(
         recipients=RecipientScope.EXPLICIT_RECIPIENTS,
@@ -4038,6 +4037,7 @@ REGROUP_WITH_SQUAD_MEMBER_DEFINITION = OperationDefinition(
 
 MOVE_IN_DIRECTION_DEFINITION = OperationDefinition(
     kind="move_in_direction",
+    wire_command="move_in_direction",
     version="1.0",
     interaction=ordinary_order(
         recipients=RecipientScope.CURRENT_SELECTION,
@@ -4077,6 +4077,7 @@ MOVE_IN_DIRECTION_DEFINITION = OperationDefinition(
 
 TRAVEL_TO_MAP_DESTINATION_DEFINITION = OperationDefinition(
     kind="travel_to_map_destination",
+    wire_command="travel_to_map_destination",
     version="1.0",
     interaction=ordinary_order(
         recipients=RecipientScope.CURRENT_SELECTION,
@@ -4124,6 +4125,7 @@ TRAVEL_TO_MAP_DESTINATION_DEFINITION = OperationDefinition(
 
 SURVEY_LOCAL_RESOURCES_DEFINITION = OperationDefinition(
     kind="survey_local_resources",
+    wire_command="survey_local_resources",
     version="1.0",
     # A survey reads the world; it commands nobody, so it has no recipients.
     #
@@ -4183,6 +4185,7 @@ SURVEY_LOCAL_RESOURCES_DEFINITION = OperationDefinition(
 
 EXIT_CURRENT_BUILDING_DEFINITION = OperationDefinition(
     kind="exit_current_building",
+    wire_command="exit_current_building",
     version="1.0",
     interaction=ordinary_order(
         recipients=RecipientScope.CURRENT_SELECTION,
@@ -4226,6 +4229,7 @@ EXIT_CURRENT_BUILDING_DEFINITION = OperationDefinition(
 
 SHIFT_INTO_BODY_DEFINITION = OperationDefinition(
     kind="shift_into_body",
+    wire_command="shift_into_body",
     version="1.0",
     interaction=ordinary_order(
         recipients=RecipientScope.NAMED_BODY,
@@ -4284,6 +4288,7 @@ SHIFT_INTO_BODY_DEFINITION = OperationDefinition(
 
 MOVE_TO_CHARACTER_DEFINITION = OperationDefinition(
     kind="move_to_character",
+    wire_command="move_to_character",
     version="1.0",
     interaction=ordinary_order(
         recipients=RecipientScope.CURRENT_SELECTION,

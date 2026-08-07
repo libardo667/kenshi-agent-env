@@ -416,6 +416,16 @@ class SafetyConfig(ConfigModel):
     # ["[Food]"] so nothing else can be bought, while the generic purchase
     # contract itself stays indifferent to what an item is.
     required_purchase_tooltip_markers: list[str] = Field(default_factory=list, max_length=8)
+    # Which operations may be dispatched. Empty still means deny everything, so
+    # a config that forgets this cannot silently admit the whole registry.
+    #
+    # `ALL_REGISTERED_OPERATIONS` admits every operation the registry defines.
+    # The canonical live config used to enumerate all of them by hand, which
+    # made it a mirror of the registry rather than a policy: adding an operation
+    # meant remembering to add it here too, and a ratchet existed solely to
+    # assert the two lists still agreed. An explicit wildcard says the same
+    # thing without a second copy, and a narrower list is still a real
+    # restriction for anything that wants one.
     allow_action_kinds: list[str] = Field(default_factory=list)
 
 
