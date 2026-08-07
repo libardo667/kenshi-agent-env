@@ -2303,6 +2303,26 @@ namespace
             g_activeNativeCommand.targetHandle);
     }
 
+    // Whether Kenshi is holding nothing at all for this character.
+    //
+    // An order that does not take leaves the character idle, and the position
+    // stall detector then reports it ten seconds later as `movement_stalled` --
+    // blaming the pathfinder for an order the engine dropped. Measured across
+    // five stalls in one live run, every one of them had `hasPlayerOrders`
+    // false, `orders_count` zero and a NULL_TASK activity: nobody was stuck,
+    // nobody was walking, there was simply no order left to carry out.
+    bool HoldsNoOrderAtAll(Character* character)
+    {
+        if (character == NULL || !character->isValid())
+            return false;
+        AI* ai = character->getAI();
+        AITaskSytem* tasks = ai != NULL ? ai->getTaskSystem() : NULL;
+        if (tasks == NULL)
+            return false;
+        return !tasks->hasPlayerOrders() &&
+               tasks->getCurrentGoal().key() == NULL_TASK;
+    }
+
     bool TryGetInventorySectionQuantity(
         Building* target,
         const std::string& sectionName,
@@ -3556,7 +3576,15 @@ namespace
                     here.z,
                     GetTickCount()))
             {
-                FinishActiveNativeCommand("cancelled", "movement_stalled");
+                // Say which of the two silences this was. A character that holds
+                // no order and no goal is not stuck: Kenshi took the order and
+                // let it go, and reporting that as `movement_stalled` sends the
+                // agent to look at pathing for a problem that was never there.
+                FinishActiveNativeCommand(
+                    "cancelled",
+                    HoldsNoOrderAtAll(walker)
+                        ? "order_not_retained"
+                        : "movement_stalled");
             }
             return;
         }
