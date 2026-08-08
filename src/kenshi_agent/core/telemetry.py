@@ -1326,6 +1326,14 @@ NativeWireCommand = Literal[
     # single-window opener beside it shows a character's personal gear, which
     # is the stealing view and not a state a transfer can act in.
     "open_trade_window",
+    # The clock. Kenshi owns it through `GameWorld::userPause` and
+    # `GameWorld::setGameSpeed`, so these stopped being keystrokes -- and with
+    # them the last gameplay use of the keyboard. They name no target, no
+    # direction and no action; a pause carries a state and a speed carries a
+    # multiplier. The safety pause keeps its key deliberately: a stop that
+    # depends on the plug-in answering is not a stop.
+    "pause",
+    "set_speed",
     "survey_local_resources",
 ]
 

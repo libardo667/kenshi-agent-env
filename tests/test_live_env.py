@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -472,65 +473,40 @@ def test_live_observation_reports_human_input_and_emergency_stop(
 
 
 @pytest.mark.parametrize(
-    ("speed", "target_key", "multiplier"),
-    [(1, "f2", 1.0), (2, "f3", 3.0), (3, "f4", 5.0)],
+    ("speed", "multiplier"),
+    [(1, 1.0), (2, 3.0), (3, 5.0)],
 )
-def test_set_speed_owns_starting_a_paused_world(
+def test_set_speed_starts_a_paused_world_without_touching_the_keyboard(
     tmp_path: Path,
     speed: Literal[1, 2, 3],
-    target_key: str,
     multiplier: float,
 ) -> None:
+    """A paused world ends up running at the requested gear, natively.
+
+    This replaces a test that asserted the keystroke composite -- f2 first to
+    resume, then the gear key -- which existed because Kenshi's speed keys
+    select a rate without resuming. `GameWorld::setGameSpeed` plus `userPause`
+    does both, so the invariant survives and the ordering rule that lived above
+    the engine does not. The keyboard assertion is the point of the new one:
+    zero keys, and the multiplier carried on the wire.
+    """
+
     async def scenario() -> None:
-        telemetry = PulseTelemetry()
+        environment, telemetry, controller = native_vendor_environment(tmp_path)
         telemetry.capabilities = ["game.pause", "game.speed"]
-        controller = PulseController(telemetry)
-        environment = live_environment(
-            tmp_path,
-            telemetry,
-            controller,
-        )
+        telemetry.paused = True
 
         await environment.reset()
         transition = await execute_operation(environment, SetSpeedAction(speed=speed))
 
-        expected_keys = ["f2"] if speed == 1 else ["f2", target_key]
         assert [
             action.key for action in controller.actions if isinstance(action, KeyAction)
-        ] == expected_keys
+        ] == []
+        assert transition.receipt.primitive_actions == 0
+        assert controller.time_control_request is not None
+        assert controller.time_control_request.command == "set_speed"
+        assert controller.time_control_request.speed_multiplier == multiplier
         assert telemetry.paused is False
-        assert telemetry.speed_multiplier == multiplier
-        assert transition.receipt.primitive_actions == len(expected_keys)
-        assert "running" in transition.receipt.message
-
-    asyncio.run(scenario())
-
-
-def test_set_speed_reissues_an_idempotent_gear_after_a_dropped_key(
-    tmp_path: Path,
-) -> None:
-    async def scenario() -> None:
-        telemetry = PulseTelemetry()
-        telemetry.paused = False
-        telemetry.speed_multiplier = 5.0
-        telemetry.capabilities = ["game.pause", "game.speed"]
-        controller = PulseController(telemetry, ignore_speed_key_once="f2")
-        environment = live_environment(
-            tmp_path,
-            telemetry,
-            controller,
-        )
-
-        await environment.reset()
-        transition = await execute_operation(environment, SetSpeedAction(speed=1))
-
-        assert [action.key for action in controller.actions if isinstance(action, KeyAction)] == [
-            "f2",
-            "f2",
-        ]
-        assert telemetry.paused is False
-        assert telemetry.speed_multiplier == 1.0
-        assert transition.receipt.primitive_actions == 2
 
     asyncio.run(scenario())
 
@@ -639,8 +615,16 @@ class NativePulseTelemetry(PulseTelemetry):
         self.known_map_destinations: list[KnownMapDestination] = []
         self.selected_character_id = "entity-selected"
         self.selected_character_ids = ["entity-selected"]
+        # Called before each read, so a command delivered by the request file
+        # alone is answered. The plug-in dispatches on the file changing as
+        # well as on the trigger hotkey, and time control uses only the file --
+        # a double that answers exclusively on a keystroke cannot represent a
+        # command that sends none.
+        self.on_read: Callable[[], None] | None = None
 
     def read(self) -> TelemetryRead:
+        if self.on_read is not None:
+            self.on_read()
         self.sequence += 1
         return TelemetryRead(
             snapshot=TelemetrySnapshot(
@@ -905,6 +889,54 @@ class NativeAckController(PulseController):
         self.reason = reason
         self.request_seen_before_hotkey = False
         self.request: NativeCommandRequest | None = None
+        self.time_control_request: NativeCommandRequest | None = None
+
+    def acknowledge_unsent_request(self) -> None:
+        """Answer a request that arrived by file alone, as the plug-in does."""
+
+        if not self.request_path.is_file():
+            return
+        pending = NativeCommandRequest.model_validate_json(
+            self.request_path.read_bytes()
+        )
+        if (
+            self.time_control_request is not None
+            and pending.command_id == self.time_control_request.command_id
+        ):
+            return
+        if pending.command not in {"pause", "set_speed"}:
+            return
+        # Kept apart from `self.request`, which is the operation's own request
+        # and what tests inspect. Time control now travels the same file, and
+        # folding the two together made a pause look like the order under test.
+        self.time_control_request = pending
+        basis = pending.based_on_revision.telemetry_sequence
+        assert basis is not None
+        sequence = max(self.telemetry.sequence + 1, basis + 1)
+        if pending.command == "pause":
+            self.telemetry.paused = pending.paused
+        else:
+            self.telemetry.paused = False
+        self.telemetry.native_control = NativeControlState(
+            available=True,
+            acknowledgements=[
+                NativeCommandAcknowledgement(
+                    command_id=pending.command_id,
+                    command=pending.command,
+                    status=NativeCommandStatus.COMPLETED,
+                    reason=(
+                        ("world_paused" if pending.paused else "world_running")
+                        if pending.command == "pause"
+                        else "world_speed_set"
+                    ),
+                    selected_character_ids=pending.selected_character_ids,
+                    based_on_telemetry_sequence=basis,
+                    acknowledged_at_telemetry_sequence=sequence,
+                    accepted_at_telemetry_sequence=sequence,
+                    terminal_at_telemetry_sequence=sequence,
+                )
+            ],
+        )
 
     async def execute(self, action: PrimitiveInputAction) -> ActionReceipt:
         if isinstance(action, HotkeyAction):
@@ -1011,6 +1043,7 @@ def native_vendor_environment(
         complete_map_travel_on_unpause=complete_map_travel_on_unpause,
         reason=reason,
     )
+    telemetry.on_read = controller.acknowledge_unsent_request
     environment = LiveEnvironment(
         run_id="native-command-test",
         run_dir=tmp_path,

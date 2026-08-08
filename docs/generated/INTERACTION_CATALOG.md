@@ -21,7 +21,7 @@ character selected.
 operations               23
 planner-visible          22
 internal-only             1
-native commands          14
+native commands          16
 manifest entries         24
 coverage proof          PASS
 
@@ -70,7 +70,7 @@ EXECUTION AND ROUTING
   move_to_character                   monitored_option   running_for_progress     move_to_character          characters
   noop                                atomic_handler     any                      -                          runtime
   open_trade_window                   atomic_handler     paused_transaction       open_trade_window          trade_windows
-  pause                               atomic_handler     any                      -                          runtime
+  pause                               atomic_handler     any                      pause                      runtime
   perform_character_order             monitored_option   running_for_progress     perform_character_order    character_orders
   perform_context_action              monitored_option   varies                   perform_context_action     context_orders
   produce_resource_output             monitored_option   running_for_progress     produce_resource_output    internal-only
@@ -79,7 +79,7 @@ EXECUTION AND ROUTING
   regroup_with_squad_member           monitored_option   running_for_progress     regroup_with_squad_member  characters
   respond_to_immediate_threat         monitored_option   running_for_progress     move_in_direction          characters
   select_squad_member_exact           atomic_handler     any                      select_squad_member        characters
-  set_speed                           atomic_handler     any                      -                          runtime
+  set_speed                           atomic_handler     any                      set_speed                  runtime
   shift_into_body                     atomic_handler     running_for_progress     shift_into_body            body_shift
   stop                                atomic_handler     any                      -                          runtime
   survey_local_resources              atomic_handler     any                      survey_local_resources     native_and_composite
@@ -93,11 +93,13 @@ NATIVE COMMAND ROUTES
   move_in_direction            -> respond_to_immediate_threat
   move_to_character            -> move_to_character
   open_trade_window            -> open_trade_window
+  pause                        -> pause
   perform_character_order      -> perform_character_order
   perform_context_action       -> perform_context_action
   produce_resource_output      -> produce_resource_output
   regroup_with_squad_member    -> regroup_with_squad_member
   select_squad_member          -> select_squad_member_exact
+  set_speed                    -> set_speed
   shift_into_body              -> shift_into_body
   survey_local_resources       -> survey_local_resources
   transfer_item                -> transfer_item

@@ -54,7 +54,9 @@ from ...core.transport import (
     CommandDispatchContext,
     NativeCommandRequest,
     Transition,
+    new_command_id,
 )
+from ...core.world import WorldStateRevision
 from ...input_boundary import ExecutionToken
 from ...telemetry import TelemetryReader, TelemetryReadError
 
@@ -490,19 +492,91 @@ class KenshiControlSurface:
             f"pause key {self.controls_config.pause_key!r}"
         )
 
+    def _native_time_control_available(self) -> bool:
+        """Whether the plug-in can be asked to control the clock right now.
+
+        A native command needs an identity session, which only the plug-in
+        supplies. Without one there is nothing to send a request to, so the
+        keyboard is not legacy here -- it is the path that still works when the
+        native side is absent, which is the same reason the safety pause keeps
+        its key.
+        """
+
+        try:
+            result = self.telemetry_reader.read()
+        except TelemetryReadError:
+            return False
+        return not result.stale and bool(result.snapshot.identity_session_id)
+
+    async def _dispatch_time_control(
+        self,
+        wire_command: NativeWireCommand,
+        **wire_fields: object,
+    ) -> NativeCommandAcknowledgement:
+        """One time-control command, straight to the engine.
+
+        No keystroke and no trigger hotkey. The plug-in dispatches on the
+        request file changing as well as on the hotkey, and the file watch is
+        what actually carried this in testing, so nothing is sent to the
+        desktop at all.
+        """
+
+        result = self.telemetry_reader.read()
+        if result.stale:
+            raise RuntimeError("Refusing to control playback from stale telemetry.")
+        snapshot = result.snapshot
+        request = NativeCommandRequest(
+            schema_version="1.4",
+            command_id=new_command_id(),
+            command=wire_command,
+            control_mode=ControlMode.NATIVE_ASSISTED,
+            identity_session_id=snapshot.identity_session_id,
+            based_on_revision=WorldStateRevision(
+                telemetry_sequence=snapshot.sequence,
+                capability_epoch=0,
+            ),
+            selected_character_ids=list(snapshot.ui.selected_character_ids),
+            **wire_fields,  # type: ignore[arg-type]
+        )
+        request_path = self.telemetry_reader.path.parent / NATIVE_COMMAND_REQUEST_FILE
+        native_commands.write_native_command_request_atomic(request_path, request)
+        return await self._wait_for_native_acknowledgement(request)
+
     async def apply_pause_request(
         self,
         paused: bool,
         *,
         safety: bool = False,
     ) -> tuple[int, str]:
-        primitives, description = self.pause_primitives(paused)
-        primitive_count = 0
-        for primitive in primitives:
-            execute = self.controller.execute_safety if safety else self.controller.execute
-            receipt = await execute(primitive)
-            primitive_count += receipt.primitive_actions
-        return primitive_count, description
+        """Pause or resume, natively unless this is the kill switch.
+
+        Kenshi owns the clock through `GameWorld::userPause`, so an ordinary
+        pause is a native command and costs no keystroke. The safety path
+        deliberately keeps the keyboard: it runs when the world is in a state
+        the agent could not resolve, sometimes with telemetry stale or the
+        plug-in not answering, and a stop that depends on the thing that may
+        have failed is not a stop. That is the one keyboard use the desktop
+        subsystem still exists for.
+        """
+
+        if safety or not self._native_time_control_available():
+            primitives, description = self.pause_primitives(paused)
+            primitive_count = 0
+            for primitive in primitives:
+                execute = (
+                    self.controller.execute_safety if safety else self.controller.execute
+                )
+                receipt = await execute(primitive)
+                primitive_count += receipt.primitive_actions
+            return primitive_count, description
+
+        acknowledgement = await self._dispatch_time_control(
+            "pause",
+            paused=paused,
+        )
+        return 0, (
+            f"native pause(paused={paused}) -> {acknowledgement.reason}"
+        )
 
     async def apply_playback_speed(
         self,
@@ -540,15 +614,40 @@ class KenshiControlSurface:
                 ),
             )
 
-        primitive_count = 0
-        if paused:
-            primitive_count += await self._establish_playback_gear(1)
+        if not self._native_time_control_available():
+            primitive_count = 0
+            if paused:
+                primitive_count += await self._establish_playback_gear(1)
+            if action.speed != 1:
+                primitive_count += await self._establish_playback_gear(action.speed)
+            elif not paused:
+                primitive_count += await self._establish_playback_gear(1)
+            return ActionReceipt(
+                action=action,
+                accepted=True,
+                executed=True,
+                dry_run=False,
+                started_at=started,
+                finished_at=datetime.now(UTC),
+                primitive_actions=primitive_count,
+                message=(
+                    "Controller causally confirmed Kenshi running at "
+                    f"speed gear {action.speed} ({expected:g}x)."
+                ),
+            )
 
-        if action.speed != 1:
-            primitive_count += await self._establish_playback_gear(action.speed)
-        elif not paused:
-            primitive_count += await self._establish_playback_gear(1)
-
+        # One command, not a keystroke composite.
+        #
+        # Kenshi's speed keys select a rate without resuming, so a paused world
+        # needed gear 1 pressed first and then the requested gear -- an ordering
+        # that lived here as a rule *about* Kenshi rather than as something
+        # Kenshi said. `GameWorld::setGameSpeed` takes the multiplier and
+        # `userPause` takes the state, and the plug-in does both, so the
+        # composite is gone along with the last gameplay keystroke.
+        acknowledgement = await self._dispatch_time_control(
+            "set_speed",
+            speed_multiplier=expected,
+        )
         return ActionReceipt(
             action=action,
             accepted=True,
@@ -556,10 +655,10 @@ class KenshiControlSurface:
             dry_run=False,
             started_at=started,
             finished_at=datetime.now(UTC),
-            primitive_actions=primitive_count,
+            primitive_actions=0,
             message=(
-                "Controller causally confirmed Kenshi running at "
-                f"speed gear {action.speed} ({expected:g}x)."
+                f"Kenshi set speed gear {action.speed} ({expected:g}x) natively: "
+                f"{acknowledgement.reason}."
             ),
         )
 

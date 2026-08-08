@@ -1811,6 +1811,8 @@
             "produce_resource_output",
             "transfer_item",
             "open_trade_window",
+            "pause",
+            "set_speed",
             "survey_local_resources"
           ],
           "title": "Command",
