@@ -112,7 +112,7 @@ class CommandDispatchContext(StrictModel):
 
 
 class NativeCommandRequest(StrictModel):
-    schema_version: Literal["1.2"]
+    schema_version: Literal["1.3"]
     command_id: str = Field(pattern=r"^cmd-[0-9a-f]{32}$")
     command: NativeWireCommand
     control_mode: Literal[ControlMode.NATIVE_ASSISTED]
@@ -139,6 +139,11 @@ class NativeCommandRequest(StrictModel):
     section_name: str = Field(default="", max_length=80)
     slot_x: int = Field(default=0, ge=0)
     slot_y: int = Field(default=0, ge=0)
+    # Time control, which Kenshi owns through `GameWorld::userPause` and
+    # `GameWorld::setGameSpeed`. `speed_multiplier` is Kenshi's own unit; the
+    # ordinal gears above it are ours, and stay ours.
+    paused: bool = False
+    speed_multiplier: float = Field(default=0.0, ge=0.0, le=1000.0)
 
     @model_validator(mode="after")
     def validate_native_fences(self) -> NativeCommandRequest:

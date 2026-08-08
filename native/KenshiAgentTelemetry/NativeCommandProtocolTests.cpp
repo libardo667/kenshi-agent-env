@@ -1306,6 +1306,67 @@ int main(int argc, char** argv)
         return Fail("valid trade window did not retain both parties and its type");
     }
 
+    // Time control, parsed here for the same reason: the rule lives in this
+    // parser and in Python's projection, and a command added to one and not the
+    // other is how a well-formed request came back `malformed_request` three
+    // live runs running.
+    KenshiAgentTelemetry::NativeCommandRequest pauseRequest;
+    const std::string pausePayload =
+        ReadFile(prefix + "valid_pause_request.json");
+    if (pausePayload.empty())
+        return Fail("could not read valid_pause_request.json");
+    if (!KenshiAgentTelemetry::ParseNativeCommandRequest(
+            pausePayload,
+            pauseRequest,
+            rejectionReason))
+    {
+        return Fail("valid pause request was rejected as " + rejectionReason);
+    }
+    if (pauseRequest.command != "pause" ||
+        !pauseRequest.pauseRequested ||
+        pauseRequest.speedMultiplier != 0.0)
+    {
+        return Fail("valid pause did not retain its requested state");
+    }
+
+    KenshiAgentTelemetry::NativeCommandRequest speedRequest;
+    const std::string speedPayload =
+        ReadFile(prefix + "valid_set_speed_request.json");
+    if (speedPayload.empty())
+        return Fail("could not read valid_set_speed_request.json");
+    if (!KenshiAgentTelemetry::ParseNativeCommandRequest(
+            speedPayload,
+            speedRequest,
+            rejectionReason))
+    {
+        return Fail("valid set_speed request was rejected as " + rejectionReason);
+    }
+    if (speedRequest.command != "set_speed" ||
+        speedRequest.speedMultiplier != 3.0)
+    {
+        return Fail("valid set_speed did not retain its multiplier");
+    }
+
+    // A speed with no multiplier names no rate, and a pause carrying one is
+    // saying two things at once. Both are malformed rather than defaulted,
+    // because a defaulted rate is a guess about what the planner meant.
+    KenshiAgentTelemetry::NativeCommandRequest degenerate;
+    std::string speedWithoutRate = speedPayload;
+    const size_t ratePosition = speedWithoutRate.find("\"speed_multiplier\": 3.0");
+    if (ratePosition == std::string::npos)
+        return Fail("set_speed fixture no longer carries a readable multiplier");
+    speedWithoutRate.replace(
+        ratePosition,
+        std::string("\"speed_multiplier\": 3.0").size(),
+        "\"speed_multiplier\": 0.0");
+    if (KenshiAgentTelemetry::ParseNativeCommandRequest(
+            speedWithoutRate,
+            degenerate,
+            rejectionReason))
+    {
+        return Fail("set_speed without a multiplier was accepted");
+    }
+
     const std::string naturalResourcePayload =
         ReadFile(prefix + "valid_natural_resource.json");
     if (naturalResourcePayload.empty())

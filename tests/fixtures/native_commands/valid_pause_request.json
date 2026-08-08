@@ -1,20 +1,19 @@
 {
   "schema_version": "1.3",
-  "command_id": "cmd-0123456789abcdef0123456789abcdef",
-  "command": "shift_into_body",
+  "command_id": "cmd-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa01",
+  "command": "pause",
   "control_mode": "native_assisted",
   "identity_session_id": "session-0000000000000001-0000000000000001",
   "based_on_revision": {
-    "telemetry_sequence": 17,
-    "frame_sequence": 5,
+    "telemetry_sequence": 15,
+    "frame_sequence": null,
     "capability_epoch": 2,
-    "observed_at_monotonic": 19.25
+    "observed_at_monotonic": 16.0
   },
   "selected_character_ids": [
-    "entity-selected",
-    "entity-companion"
+    "entity-selected"
   ],
-  "target_id": "entity-body-to-enter",
+  "target_id": "",
   "context_action": "",
   "bearing_degrees": 0.0,
   "distance_units": 0.0,
@@ -23,6 +22,6 @@
   "section_name": "",
   "slot_x": 0,
   "slot_y": 0,
-  "paused": false,
+  "paused": true,
   "speed_multiplier": 0.0
 }

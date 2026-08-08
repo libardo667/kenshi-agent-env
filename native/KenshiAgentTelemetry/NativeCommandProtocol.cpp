@@ -107,7 +107,9 @@ namespace KenshiAgentTelemetry
           distanceUnits(0.0),
           minimumOutputQuantity(1),
           slotX(0),
-          slotY(0)
+          slotY(0),
+          pauseRequested(false),
+          speedMultiplier(0.0)
     {
     }
 
@@ -130,8 +132,18 @@ namespace KenshiAgentTelemetry
     {
         return NativeCommandNamesTarget(command) ||
                NativeCommandCarriesDirection(command) ||
+               NativeCommandControlsTime(command) ||
                command == "exit_current_building" ||
                command == "survey_local_resources";
+    }
+
+    // Pausing and setting speed are `GameWorld::userPause` and
+    // `GameWorld::setGameSpeed`, not keystrokes. They name no target and carry
+    // no bearing, so they are their own shape rather than a target command with
+    // its target left out.
+    bool NativeCommandControlsTime(const std::string& command)
+    {
+        return command == "pause" || command == "set_speed";
     }
 
     bool NativeCommandCarriesDirection(const std::string& command)
@@ -275,7 +287,9 @@ namespace KenshiAgentTelemetry
             "destination_id",
             "section_name",
             "slot_x",
-            "slot_y"
+            "slot_y",
+            "paused",
+            "speed_multiplier"
         };
         static const char* const revisionKeys[] = {
             "telemetry_sequence",
@@ -311,6 +325,9 @@ namespace KenshiAgentTelemetry
             request.sectionName = root.get<std::string>("section_name", "");
             request.slotX = root.get<int>("slot_x", -1);
             request.slotY = root.get<int>("slot_y", -1);
+            request.pauseRequested = root.get<bool>("paused", false);
+            request.speedMultiplier =
+                root.get<double>("speed_multiplier", 0.0);
             request.basedOnTelemetrySequence =
                 root.get<unsigned long long>(
                     "based_on_revision.telemetry_sequence",
@@ -322,7 +339,7 @@ namespace KenshiAgentTelemetry
                 rejectionReason = "malformed_request";
                 return false;
             }
-            if (root.get<std::string>("schema_version") != "1.2" ||
+            if (root.get<std::string>("schema_version") != "1.3" ||
                 !IsValidCommandId(request.commandId) ||
                 request.command.empty() ||
                 request.command.size() > 80 ||
@@ -404,10 +421,29 @@ namespace KenshiAgentTelemetry
                 NativeCommandCarriesDirection(request.command);
             const bool isTargeted =
                 NativeCommandNamesTarget(request.command);
+            const bool isTimeControl =
+                NativeCommandControlsTime(request.command);
             const bool isBuildingExit =
-                !isDirection && !isTargeted &&
+                !isDirection && !isTargeted && !isTimeControl &&
                 IsKnownNativeCommand(request.command);
-            if (isDirection)
+            if (isTimeControl)
+            {
+                // Kenshi takes a multiplier; the gears above it are ours. A
+                // pause carries none, and a speed must name a positive one.
+                const bool isPause = request.command == "pause";
+                if (!request.targetId.empty() ||
+                    request.bearingDegrees != 0.0 ||
+                    request.distanceUnits != 0.0 ||
+                    (isPause && request.speedMultiplier != 0.0) ||
+                    (!isPause &&
+                     !(request.speedMultiplier > 0.0 &&
+                       request.speedMultiplier <= 1000.0)))
+                {
+                    rejectionReason = "malformed_request";
+                    return false;
+                }
+            }
+            else if (isDirection)
             {
                 if (!request.targetId.empty() ||
                     !(request.bearingDegrees >= 0.0) ||

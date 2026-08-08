@@ -4244,7 +4244,11 @@ namespace
             request.command == "shift_body_platoon";
         const bool isBodyShift =
             request.command == "shift_into_body";
-        if (isBodyShift || isBodyShiftProbe || isApproach || isMove || isSquadSelection || isSquadRegroup ||
+        // Time control. Kenshi owns the clock through `GameWorld`, so pausing
+        // and setting speed stopped being keystrokes.
+        const bool isPause = request.command == "pause";
+        const bool isSetSpeed = request.command == "set_speed";
+        if (isPause || isSetSpeed || isBodyShift || isBodyShiftProbe || isApproach || isMove || isSquadSelection || isSquadRegroup ||
             isDirection || isMapTravel || isBuildingExit || isContextAction ||
             isCharacterOrder ||
             isResourceProduction || isContextInventory || isResourceSurvey ||
@@ -4265,7 +4269,9 @@ namespace
             !isTransfer &&
             !isTradeWindow &&
             !isBodyShiftProbe &&
-            !isBodyShift)
+            !isBodyShift &&
+            !isPause &&
+            !isSetSpeed)
         {
             // The telemetry acknowledgement schema is intentionally limited
             // to reviewed commands. Do not publish an unparseable ack.
@@ -4300,6 +4306,66 @@ namespace
                 return;
             }
             RejectNativeCommand(request, "stale_revision");
+            return;
+        }
+
+        if (isPause || isSetSpeed)
+        {
+            // The clock, from the engine that owns it.
+            //
+            // These were the last two operations reaching Kenshi through a
+            // keystroke, and the keystroke was not a neutral delivery detail:
+            // the speed keys select a rate without resuming, so setting gear 2
+            // on a paused world needed two presses in a fixed order, and that
+            // ordering lived in the controller as a rule about Kenshi rather
+            // than as something Kenshi said. `setGameSpeed` takes the
+            // multiplier and `userPause` takes the state, so the composite
+            // disappears.
+            //
+            // Completed on the spot rather than monitored: `isPaused` and
+            // `getFrameSpeedMultiplier` are the same fields telemetry already
+            // publishes, so the terminal is read back here from the engine
+            // instead of being inferred from the request having been sent.
+            if (ou == NULL)
+            {
+                RejectNativeCommand(request, "game_world_unavailable");
+                return;
+            }
+            if (isSetSpeed)
+            {
+                ou->setGameSpeed(
+                    static_cast<float>(request.speedMultiplier), false);
+                // A speed is a *running* state. Kenshi keeps the rate while
+                // paused, so selecting one without resuming would report a
+                // gear the world is not moving at.
+                ou->userPause(false);
+            }
+            else
+            {
+                ou->userPause(request.pauseRequested);
+            }
+            const bool pausedNow = ou->isPaused();
+            const bool reachedPause =
+                isPause && pausedNow == request.pauseRequested;
+            const bool reachedSpeed = isSetSpeed && !pausedNow;
+            if (!reachedPause && !reachedSpeed)
+            {
+                AddNativeAcknowledgement(
+                    request, "cancelled", "time_control_refused", false, true);
+                g_lastNativeCommandResult = "time_control_refused";
+                return;
+            }
+            AddNativeAcknowledgement(
+                request,
+                "completed",
+                isPause ? (pausedNow ? "world_paused" : "world_running")
+                        : "world_speed_set",
+                true,
+                true);
+            g_lastNativeCommandResult =
+                isPause ? (pausedNow ? "world_paused" : "world_running")
+                        : "world_speed_set";
+            g_lastNativeCommandTargetId.clear();
             return;
         }
 

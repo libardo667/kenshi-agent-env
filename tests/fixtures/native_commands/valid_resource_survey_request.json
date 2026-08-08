@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.2",
+  "schema_version": "1.3",
   "command_id": "cmd-11111111111111111111111111111111",
   "command": "survey_local_resources",
   "control_mode": "native_assisted",
@@ -21,5 +21,7 @@
   "destination_id": "",
   "section_name": "",
   "slot_x": 0,
-  "slot_y": 0
+  "slot_y": 0,
+  "paused": false,
+  "speed_multiplier": 0.0
 }

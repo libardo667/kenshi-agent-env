@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.2",
+  "schema_version": "1.3",
   "command_id": "cmd-66666666666666666666666666666666",
   "command": "transfer_item",
   "control_mode": "native_assisted",
@@ -21,5 +21,7 @@
   "destination_id": "entity-destination-owner",
   "section_name": "main",
   "slot_x": 2,
-  "slot_y": 1
+  "slot_y": 1,
+  "paused": false,
+  "speed_multiplier": 0.0
 }

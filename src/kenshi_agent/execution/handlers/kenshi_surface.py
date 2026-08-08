@@ -1307,7 +1307,7 @@ class KenshiControlSurface:
         telemetry = observation.telemetry
         assert telemetry is not None and telemetry.identity_session_id
         return NativeCommandRequest(
-            schema_version="1.2",
+            schema_version="1.3",
             command_id=command.command_id,
             command=wire_command,
             control_mode=ControlMode.NATIVE_ASSISTED,

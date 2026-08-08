@@ -47,6 +47,13 @@ namespace KenshiAgentTelemetry
         std::string sectionName;
         int slotX;
         int slotY;
+        // Time control, which Kenshi owns directly: `GameWorld::userPause` and
+        // `GameWorld::setGameSpeed`. These were the last two operations reaching
+        // the game through a keystroke, and a keystroke is why setting a faster
+        // gear could not start a paused world -- the speed keys select a rate
+        // without resuming, so the controller had to press twice.
+        bool pauseRequested;
+        double speedMultiplier;
     };
 
     struct NativeCommandAcknowledgement
@@ -95,6 +102,7 @@ namespace KenshiAgentTelemetry
     bool IsKnownNativeCommand(const std::string& command);
     bool NativeCommandNamesTarget(const std::string& command);
     bool NativeCommandCarriesDirection(const std::string& command);
+    bool NativeCommandControlsTime(const std::string& command);
 
     bool IsValidCommandId(const std::string& value);
 

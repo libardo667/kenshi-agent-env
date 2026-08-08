@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.2",
+  "schema_version": "1.3",
   "command_id": "cmd-25252525252525252525252525252525",
   "command": "perform_context_action",
   "control_mode": "native_assisted",
@@ -21,5 +21,7 @@
   "destination_id": "",
   "section_name": "",
   "slot_x": 0,
-  "slot_y": 0
+  "slot_y": 0,
+  "paused": false,
+  "speed_multiplier": 0.0
 }
