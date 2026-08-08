@@ -1056,6 +1056,12 @@ class OpenInventory(StrictModel):
     money: int
     total_weight: float
     sections: list[InventorySectionView] = Field(default_factory=list, max_length=16)
+    # Kenshi's own `isWithinRangeToTrade` between this window and the selected
+    # character. An open window is not a reachable one: a trade window opened
+    # against a shopkeeper across town shows two full inventories and refuses
+    # every transfer, and the only signal was `OUT_OF_RANGE` after the attempt.
+    # None means the engine could not be asked, which is silence, not a denial.
+    within_trade_range: bool | None = None
 
 
 class UIState(StrictModel):

@@ -734,6 +734,14 @@ def _item_transfer_offers(observation: Observation) -> Iterable[AffordanceOffer]
     letting the engine refuse is more faithful than a Python rule that guesses
     which ones are sensible. Looting, buying, selling and giving are not four
     kinds of offer here; they are this offer with different owners.
+
+    Reach is the one exception, and it is not an exception to that principle:
+    `within_trade_range` is Kenshi's `isWithinRangeToTrade`, not a distance rule
+    invented here. An out-of-reach window refuses every move in it, so offering
+    its contents is offering choices that cannot be dispatched - measured live,
+    a trade window opened against a shopkeeper across town advertised three
+    carried items and refused all three. Unknown reach still offers: None means
+    the engine was not asked, which is silence rather than a denial.
     """
 
     telemetry = observation.telemetry
@@ -747,8 +755,12 @@ def _item_transfer_offers(observation: Observation) -> Iterable[AffordanceOffer]
 
     offered = 0
     for source in inventories:
+        if source.within_trade_range is False:
+            continue
         for destination in inventories:
             if destination.owner_id == source.owner_id:
+                continue
+            if destination.within_trade_range is False:
                 continue
             for section in source.sections:
                 if section.equipped:

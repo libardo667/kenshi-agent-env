@@ -249,6 +249,10 @@ namespace
         bool active;
         std::string commandId;
         std::string targetId;
+        // The other side of a two-sided command. A trade window is only open
+        // when *both* requested owners are, so the pair has to be remembered to
+        // be checked.
+        std::string destinationId;
         std::string selectedCharacterId;
         std::vector<std::string> selectedCharacterIds;
         hand targetHandle;
@@ -377,6 +381,7 @@ namespace
         g_activeNativeCommand.active = false;
         g_activeNativeCommand.commandId.clear();
         g_activeNativeCommand.targetId.clear();
+        g_activeNativeCommand.destinationId.clear();
         g_activeNativeCommand.selectedCharacterId.clear();
         g_activeNativeCommand.selectedCharacterIds.clear();
         // Cleared with the rest, or a finished walk would leave the next
@@ -2704,6 +2709,129 @@ namespace
         json << "\"item_type\":" << static_cast<int>(item->getItemType()) << ",";
     }
 
+    typedef InventoryGUI::TradeResult (*RClickAutoTradeFunction)(
+        InventoryGUI*,
+        const std::string&,
+        int,
+        int,
+        InventoryGUI*,
+        bool,
+        bool);
+
+    typedef bool (*WithinRangeToTradeFunction)(
+        InventoryGUI*,
+        RootObject*,
+        bool);
+
+    // `RClickAutoTrade` is the right-click transfer, and the five item
+    // operations in this project simulate it with a mouse.
+    //
+    // The header marks it protected, but KenshiLib exports its stub mangled as
+    // public (`?RClickAutoTrade@InventoryGUI@@QEAA...`), so the symbol is
+    // reachable; only C++ access control is in the way. A derived class may
+    // name a protected member of its base, which is all this exists to do. It
+    // is never constructed -- the destructor is left undefined so that trying
+    // would not link.
+    struct InventoryTradeReach : public InventoryGUI
+    {
+        static RClickAutoTradeFunction Resolve()
+        {
+            return reinterpret_cast<RClickAutoTradeFunction>(
+                KenshiLib::GetRealAddress(
+                    &InventoryTradeReach::RClickAutoTrade));
+        }
+
+        static WithinRangeToTradeFunction ResolveRange()
+        {
+            return reinterpret_cast<WithinRangeToTradeFunction>(
+                KenshiLib::GetRealAddress(
+                    &InventoryTradeReach::isWithinRangeToTrade));
+        }
+
+    private:
+        ~InventoryTradeReach();
+    };
+
+    // Whether Kenshi considers these two close enough to trade, asked rather
+    // than assumed.
+    //
+    // `RClickAutoTrade` already answers `OUT_OF_RANGE`, but only once an item is
+    // being moved -- so the agent could open a trade window with a shopkeeper
+    // across town, see two healthy inventories, and learn about the distance
+    // only by failing. `isWithinRangeToTrade` is the same predicate the engine
+    // consults, available before anything is attempted, which makes the reach
+    // of an open window a fact the agent can read instead of a rule invented
+    // above the game.
+    bool InventoryWindowIsWithinTradeRange(
+        InventoryGUI* window,
+        Character* other,
+        bool& known)
+    {
+        known = false;
+        if (window == NULL || other == NULL || !other->isValid())
+            return false;
+        WithinRangeToTradeFunction withinRange = InventoryTradeReach::ResolveRange();
+        if (withinRange == NULL)
+            return false;
+        known = true;
+        return withinRange(window, static_cast<RootObject*>(other), false);
+    }
+
+    // The one id an open inventory's owner is advertised under.
+    //
+    // Both the telemetry that offers a window and the command that acts on one
+    // must derive the id here, or they are naming different things with the
+    // same string.
+    std::string OpenInventoryOwnerId(const hand& owner)
+    {
+        Character* ownerCharacter = owner.getCharacter();
+        if (ownerCharacter != NULL && ownerCharacter->isValid())
+            return StableEntityId(ownerCharacter);
+        return StableEntityId(owner);
+    }
+
+    // An open inventory window, found the way it was advertised: by walking the
+    // engine's own map and comparing ids.
+    //
+    // The obvious implementation -- rebuild a `hand` from the id and call
+    // `getInventoryWindow` -- is wrong, and was. A `hand` is not a pointer; it
+    // carries `container` and `containerSerial` beside `index` and `serial`, so
+    // two handles to one character compare unequal once the character's
+    // container changes. `Character::getHandle()` returns a handle built from
+    // where the character is *now*, while the map still holds the key it was
+    // opened under. Measured live: telemetry advertised Barman and Fish as open
+    // inventories on the same frames that three `transfer_item` calls were
+    // refused `inventory_not_open`, because the rebuilt handles missed keys
+    // sitting in the map.
+    //
+    // This is the same defect that broke selection when unconscious characters
+    // changed platoon: identity reconstructed from an id is not identity. So
+    // nothing is reconstructed here. If an engine handle is ever needed for one
+    // of these windows, take `it->first` -- the key the engine itself stored --
+    // rather than building a new one.
+    InventoryGUI* FindOpenInventoryWindow(
+        ForgottenGUI* gui,
+        const std::string& ownerId)
+    {
+        if (gui == NULL || ownerId.empty())
+            return NULL;
+        for (ogre_unordered_map<hand, InventoryGUI*>::type::const_iterator it =
+                 gui->inventoryWindowsOpen.begin();
+             it != gui->inventoryWindowsOpen.end();
+             ++it)
+        {
+            InventoryGUI* window = it->second;
+            if (window == NULL || !window->isVisible())
+                continue;
+            if (window->getInventory() == NULL)
+                continue;
+            if (OpenInventoryOwnerId(it->first) != ownerId)
+                continue;
+            return window;
+        }
+        return NULL;
+    }
+
     // Every inventory Kenshi currently has open, whatever owns it.
     //
     // `context_inventory_target_id` reads `ForgottenGUI::inventoryWindowBuilding`
@@ -2723,7 +2851,10 @@ namespace
     // `InventoryGUI::RClickAutoTrade` takes a section name and an x/y, so an
     // item's slot is what names it to the engine. A cell label scraped off a
     // MyGUI widget is not.
-    void AppendOpenInventories(std::ostringstream& json, ForgottenGUI* gui)
+    void AppendOpenInventories(
+        std::ostringstream& json,
+        ForgottenGUI* gui,
+        Character* selected)
     {
         json << "\"open_inventories\":[";
         bool complete = true;
@@ -2762,16 +2893,16 @@ namespace
                         : (ownerBuilding != NULL
                                ? "building"
                                : (ownerItem != NULL ? "item" : "unknown"));
-                std::string ownerId;
+                // The id a transfer will later be asked to resolve, derived by
+                // the one function that resolves it.
+                const std::string ownerId = OpenInventoryOwnerId(owner);
                 std::string ownerName;
                 if (ownerCharacter != NULL && ownerCharacter->isValid())
                 {
-                    ownerId = StableEntityId(ownerCharacter);
                     ownerName = ownerCharacter->getName();
                 }
                 else
                 {
-                    ownerId = StableEntityId(owner);
                     RootObject* ownerObject = owner.getRootObject();
                     if (ownerObject != NULL && ownerObject->isValid())
                         ownerName = ownerObject->getName();
@@ -2791,6 +2922,14 @@ namespace
                      << ",";
                 json << "\"money\":" << inventory->getMoney() << ",";
                 json << "\"total_weight\":" << inventory->getTotalWeight() << ",";
+                // Kenshi's own reach test between this window and the selected
+                // character. Null when the engine could not be asked, which is
+                // silence rather than a denial.
+                bool rangeKnown = false;
+                const bool withinRange =
+                    InventoryWindowIsWithinTradeRange(window, selected, rangeKnown);
+                json << "\"within_trade_range\":"
+                     << (rangeKnown ? JsonBool(withinRange) : "null") << ",";
                 json << "\"sections\":[";
                 bool firstSection = true;
                 unsigned int sectionCount = 0;
@@ -2930,36 +3069,6 @@ namespace
         return false;
     }
 
-    typedef InventoryGUI::TradeResult (*RClickAutoTradeFunction)(
-        InventoryGUI*,
-        const std::string&,
-        int,
-        int,
-        InventoryGUI*,
-        bool,
-        bool);
-
-    // `RClickAutoTrade` is the right-click transfer, and the five item
-    // operations in this project simulate it with a mouse.
-    //
-    // The header marks it protected, but KenshiLib exports its stub mangled as
-    // public (`?RClickAutoTrade@InventoryGUI@@QEAA...`), so the symbol is
-    // reachable; only C++ access control is in the way. A derived class may
-    // name a protected member of its base, which is all this exists to do. It
-    // is never constructed -- the destructor is left undefined so that trying
-    // would not link.
-    struct InventoryTradeReach : public InventoryGUI
-    {
-        static RClickAutoTradeFunction Resolve()
-        {
-            return reinterpret_cast<RClickAutoTradeFunction>(
-                KenshiLib::GetRealAddress(
-                    &InventoryTradeReach::RClickAutoTrade));
-        }
-
-    private:
-        ~InventoryTradeReach();
-    };
 
     void AppendSelectedInventoryFit(
         std::ostringstream& json,
@@ -3304,10 +3413,24 @@ namespace
 
         if (g_activeNativeCommand.isTradeWindowPending)
         {
-            // The pair is observed, not assumed. Two open windows is the state
-            // a transfer acts in, so that is the terminal.
-            if (gui != NULL && gui->getNumOpenInventoryWindows() >= 2)
+            // The pair is observed, not counted. "Two windows are open" was the
+            // old terminal, and it reported `trade_window_open` for a pairing a
+            // transfer then could not find on either side -- a count cannot say
+            // *whose* windows those are.
+            //
+            // The terminal is now the state the next command actually needs:
+            // both requested owners resolvable by the same advertised id the
+            // agent will send back. Completion evidence and the agent's own view
+            // of the world come from one function, so a window that this reports
+            // as open is a window `transfer_item` can act on.
+            if (gui != NULL &&
+                FindOpenInventoryWindow(
+                    gui, g_activeNativeCommand.targetId) != NULL &&
+                FindOpenInventoryWindow(
+                    gui, g_activeNativeCommand.destinationId) != NULL)
+            {
                 FinishActiveNativeCommand("completed", "trade_window_open");
+            }
             return;
         }
 
@@ -4654,6 +4777,7 @@ namespace
             g_activeNativeCommand.active = true;
             g_activeNativeCommand.commandId = request.commandId;
             g_activeNativeCommand.targetId = request.targetId;
+            g_activeNativeCommand.destinationId = request.destinationId;
             g_activeNativeCommand.selectedCharacterId = selectedId;
             g_activeNativeCommand.selectedCharacterIds = request.selectedCharacterIds;
             g_activeNativeCommand.selectedHandle = selectedHandle;
@@ -4688,23 +4812,24 @@ namespace
                 RejectNativeCommand(request, "conflicting_modal_open");
                 return;
             }
-            hand sourceHandle;
-            hand destinationHandle;
-            if (!FindExactOwnerHandle(player, request.targetId, sourceHandle) ||
-                !FindExactOwnerHandle(
-                    player, request.destinationId, destinationHandle))
+            // Resolved out of the window map by advertised id, never by a
+            // rebuilt handle. Both sides have to be open, which is why opening
+            // one no longer refuses because another already is -- and each side
+            // is named separately, because "one of the two was missing" sent me
+            // looking at range and window lifetime for a run that had both
+            // windows sitting open the whole time.
+            InventoryGUI* source =
+                FindOpenInventoryWindow(gui, request.targetId);
+            if (source == NULL)
             {
-                RejectNativeCommand(request, "target_lifetime_changed");
+                RejectNativeCommand(request, "source_inventory_not_open");
                 return;
             }
-            InventoryGUI* source = gui->getInventoryWindow(sourceHandle);
             InventoryGUI* destination =
-                gui->getInventoryWindow(destinationHandle);
-            if (source == NULL || destination == NULL)
+                FindOpenInventoryWindow(gui, request.destinationId);
+            if (destination == NULL)
             {
-                // Both windows have to be open, which is why opening one no
-                // longer refuses because another already is.
-                RejectNativeCommand(request, "inventory_not_open");
+                RejectNativeCommand(request, "destination_inventory_not_open");
                 return;
             }
             if (source == destination)
@@ -4712,13 +4837,10 @@ namespace
                 RejectNativeCommand(request, "same_inventory");
                 return;
             }
+            // Both non-NULL by construction: `FindOpenInventoryWindow` skips
+            // windows without an inventory, so a window it returns has one.
             Inventory* sourceInventory = source->getInventory();
             Inventory* destinationInventory = destination->getInventory();
-            if (sourceInventory == NULL || destinationInventory == NULL)
-            {
-                RejectNativeCommand(request, "inventory_not_open");
-                return;
-            }
             InventorySection* section =
                 sourceInventory->getSection(request.sectionName);
             if (section == NULL)
@@ -5286,6 +5408,7 @@ namespace
             g_activeNativeCommand.active = true;
             g_activeNativeCommand.commandId = request.commandId;
             g_activeNativeCommand.targetId.clear();
+            g_activeNativeCommand.destinationId.clear();
             g_activeNativeCommand.selectedCharacterId =
                 request.selectedCharacterId;
             g_activeNativeCommand.targetHandle = hand();
@@ -5655,7 +5778,7 @@ namespace
         json << "\"management_screen_open\":" << JsonBool(managementOpen) << ",";
         json << "\"management_tab\":" << managementTab << ",";
         json << "\"open_inventory_windows\":" << openInventoryWindows << ",";
-        AppendOpenInventories(json, gui);
+        AppendOpenInventories(json, gui, selected);
         json << "\"dialogue_open\":" << JsonBool(dialogueOpen) << ",";
         std::string dialogueTargetId;
         json << "\"dialogue_target_id\":";

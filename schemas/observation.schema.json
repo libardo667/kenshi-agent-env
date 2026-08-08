@@ -5104,6 +5104,18 @@
           "maxItems": 16,
           "title": "Sections",
           "type": "array"
+        },
+        "within_trade_range": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Within Trade Range"
         }
       },
       "required": [
