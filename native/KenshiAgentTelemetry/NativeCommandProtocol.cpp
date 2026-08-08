@@ -135,6 +135,7 @@ namespace KenshiAgentTelemetry
                NativeCommandCarriesDirection(command) ||
                NativeCommandControlsTime(command) ||
                NativeCommandDrivesTitleScreen(command) ||
+               NativeCommandClosesWindows(command) ||
                command == "exit_current_building" ||
                command == "survey_local_resources";
     }
@@ -147,6 +148,16 @@ namespace KenshiAgentTelemetry
     bool NativeCommandDrivesTitleScreen(const std::string& command)
     {
         return command == "continue_game" || command == "load_game";
+    }
+
+    // Closing what we opened. `open_trade_window` had no counterpart, so a
+    // window the agent opened could only be dismissed by hand -- and `./dev
+    // stop` and `./dev recover` both refuse a loaded world with a modal up,
+    // which left the game unclosable after an agent opened a trade with a
+    // non-shop owner.
+    bool NativeCommandClosesWindows(const std::string& command)
+    {
+        return command == "close_trade_window";
     }
 
     // Pausing and setting speed are `GameWorld::userPause` and
@@ -445,7 +456,8 @@ namespace KenshiAgentTelemetry
             const bool isTimeControl =
                 NativeCommandControlsTime(request.command);
             const bool isTitleScreen =
-                NativeCommandDrivesTitleScreen(request.command);
+                NativeCommandDrivesTitleScreen(request.command) ||
+                NativeCommandClosesWindows(request.command);
             const bool isBuildingExit =
                 !isDirection && !isTargeted && !isTimeControl && !isTitleScreen &&
                 IsKnownNativeCommand(request.command);

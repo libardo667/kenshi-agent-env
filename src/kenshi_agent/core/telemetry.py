@@ -1334,6 +1334,12 @@ NativeWireCommand = Literal[
     # depends on the plug-in answering is not a stop.
     "pause",
     "set_speed",
+    # Closing what we opened. `open_trade_window` shipped without a counterpart,
+    # so a window the agent opened could only be dismissed by hand -- and both
+    # `./dev stop` and `./dev recover` refuse a loaded world with a modal up,
+    # which left the game unclosable after the agent opened a trade with a
+    # non-shop owner.
+    "close_trade_window",
     "survey_local_resources",
 ]
 

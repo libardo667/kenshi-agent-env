@@ -1055,6 +1055,7 @@
             "open_trade_window",
             "pause",
             "set_speed",
+            "close_trade_window",
             "survey_local_resources"
           ],
           "title": "Command",

@@ -175,30 +175,38 @@ def test_unknown_reach_is_silence_rather_than_a_denial() -> None:
     assert "transfer_rice_bowl_backpack_content_0_0_to_barman" in semantics
 
 
-def test_equipped_sections_are_never_offered() -> None:
+def test_worn_gear_is_offered_because_a_body_is_mostly_wearing_it() -> None:
+    """Equipped sections are transferable, and hiding them broke looting.
+
+    This replaces a test asserting the opposite. That refusal was inherited
+    from a crash blamed on equipment, which turned out to be a return-convention
+    mismatch that crashed every transfer regardless of section. Measured live:
+    an unconscious character offered a Katana and ragged Halfpants, both worn,
+    and nothing else -- so refusing worn gear refused the whole corpse.
+    """
+
     armed = _inventory(
-        "entity-guard",
-        "Guard",
+        "entity-burn",
+        "Burn",
         player_owned=False,
         sections=[
             InventorySectionView(
-                name="hip", equipped=True, width=2, height=2, items=[_item("Katana", 0, 0)]
+                name="back", equipped=True, width=2, height=2, items=[_item("Katana", 0, 0)]
             ),
             InventorySectionView(
-                name="backpack_content",
-                equipped=False,
-                width=8,
-                height=8,
-                items=[_item("Dried Meat", 1, 1)],
+                name="legs",
+                equipped=True,
+                width=4,
+                height=4,
+                items=[_item("Halfpants", 0, 0)],
             ),
         ],
     )
 
     semantics = _transfer_semantics([_fish(), armed])
 
-    assert "transfer_dried_meat_backpack_content_1_1_to_fish" in semantics
-    assert not any("katana" in semantic for semantic in semantics)
-
+    assert "transfer_katana_back_0_0_to_fish" in semantics
+    assert "transfer_halfpants_legs_0_0_to_fish" in semantics
 
 def test_identically_named_items_stay_distinguishable_by_slot() -> None:
     hoarder = _inventory(

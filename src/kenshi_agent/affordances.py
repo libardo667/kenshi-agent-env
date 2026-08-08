@@ -782,9 +782,9 @@ def _item_transfer_offers(observation: Observation) -> Iterable[AffordanceOffer]
             if destination.within_trade_range is False:
                 continue
             for section in source.sections:
-                if section.equipped:
-                    # Not offered until an equipped transfer is proven safe.
-                    continue
+                # Worn gear is offered. It is most of what a body has, and the
+                # refusal that hid it was inherited from a crash that turned out
+                # to be a calling convention, not equipment.
                 for item in section.items:
                     # The item and destination are part of the semantic, not
                     # decoration. The target is the *source* inventory, so two

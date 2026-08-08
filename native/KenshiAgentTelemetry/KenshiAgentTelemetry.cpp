@@ -4280,9 +4280,10 @@ namespace
             request.command == "shift_into_body";
         // Time control. Kenshi owns the clock through `GameWorld`, so pausing
         // and setting speed stopped being keystrokes.
+        const bool isCloseTradeWindow = request.command == "close_trade_window";
         const bool isPause = request.command == "pause";
         const bool isSetSpeed = request.command == "set_speed";
-        if (isPause || isSetSpeed || isBodyShift || isBodyShiftProbe || isApproach || isMove || isSquadSelection || isSquadRegroup ||
+        if (isCloseTradeWindow || isPause || isSetSpeed || isBodyShift || isBodyShiftProbe || isApproach || isMove || isSquadSelection || isSquadRegroup ||
             isDirection || isMapTravel || isBuildingExit || isContextAction ||
             isCharacterOrder ||
             isResourceProduction || isContextInventory || isResourceSurvey ||
@@ -4305,7 +4306,8 @@ namespace
             !isBodyShiftProbe &&
             !isBodyShift &&
             !isPause &&
-            !isSetSpeed)
+            !isSetSpeed &&
+            !isCloseTradeWindow)
         {
             // The telemetry acknowledgement schema is intentionally limited
             // to reviewed commands. Do not publish an unparseable ack.
@@ -4340,6 +4342,22 @@ namespace
                 return;
             }
             RejectNativeCommand(request, "stale_revision");
+            return;
+        }
+
+        if (isCloseTradeWindow)
+        {
+            if (gui == NULL)
+            {
+                RejectNativeCommand(request, "gui_unavailable");
+                return;
+            }
+            gui->closeTradeWindow();
+            gui->closeAllInventories();
+            AddNativeAcknowledgement(
+                request, "completed", "trade_window_closed", true, true);
+            g_lastNativeCommand = request.command;
+            g_lastNativeCommandResult = "trade_window_closed";
             return;
         }
 
@@ -5004,14 +5022,18 @@ namespace
                 RejectNativeCommand(request, "section_absent");
                 return;
             }
-            if (section->isAnEquippedItemSection)
-            {
-                // Refused until proven. `RClickAutoTrade` on an equipped item
-                // crashed Kenshi outright, and an engine call that is unsafe to
-                // make is not one to keep making while working out why.
-                RejectNativeCommand(request, "section_is_equipment");
-                return;
-            }
+            // Equipped sections are transferable, and refusing them made
+            // looting nearly useless: a body's whole estate is what it is
+            // wearing. Measured live -- an unconscious character offered a
+            // Katana and a pair of ragged Halfpants, both worn, and nothing
+            // else at all.
+            //
+            // The refusal was inherited from a misdiagnosis. It was added
+            // because `RClickAutoTrade` crashed on an equipped item, and that
+            // crash turned out to be the return-convention mismatch that
+            // crashed it on *every* item regardless of section. Nothing calls
+            // that function now; transfers go through the inventory model,
+            // which unequips as part of removing.
             Item* item = section->getItemAt(request.slotX, request.slotY);
             if (item == NULL || !item->isValid())
             {
