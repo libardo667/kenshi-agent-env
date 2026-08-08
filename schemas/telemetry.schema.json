@@ -1579,6 +1579,18 @@
           ],
           "default": null,
           "title": "Within Trade Range"
+        },
+        "registered_trade_partner": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Registered Trade Partner"
         }
       },
       "required": [
