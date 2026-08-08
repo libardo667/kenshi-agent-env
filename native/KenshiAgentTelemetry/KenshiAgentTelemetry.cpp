@@ -5132,7 +5132,38 @@ namespace
                 // from one inventory and refused by the other is destroyed by
                 // silence.
                 sourceInventory->tryAddItem(removed, movedQuantity);
-                RejectNativeCommand(request, "destination_refused_item");
+
+                // Then check, because "refused" was a lie. Measured live: two
+                // `destination_refused_item` rejections left two Building
+                // Material and one Iron Plates sitting in the buyer's pack with
+                // no money charged, because `tryAddItem` can place part of a
+                // stack, still answer false, and leave the rollback unable to
+                // reclaim what it already placed. Reporting a rejection while
+                // goods moved is a silent transfer of someone else's property.
+                //
+                // What is true is whatever the destination now holds. If it
+                // gained anything the move partly happened, so it is charged
+                // for and reported as partial rather than denied.
+                const int strandedGain =
+                    pricedGameData != NULL
+                        ? destinationInventory->getNumItems(pricedGameData) -
+                              destinationHeldBefore
+                        : 0;
+                if (strandedGain <= 0)
+                {
+                    RejectNativeCommand(request, "destination_refused_item");
+                    return;
+                }
+                if (shopTradeOpen && unitCost > 0 && payer != NULL && payee != NULL)
+                {
+                    const int strandedCharge = unitCost * strandedGain;
+                    payer->takeMoney(strandedCharge);
+                    payee->takeMoney(-strandedCharge);
+                }
+                AddNativeAcknowledgement(
+                    request, "completed", "item_partly_transferred", true, true);
+                g_lastNativeCommandResult = "item_partly_transferred";
+                g_lastNativeCommandTargetId = request.targetId;
                 return;
             }
             const unsigned int destinationAfter =
