@@ -4972,22 +4972,64 @@ namespace
                     destinationInventory->getAllItems().size());
             const int sourceMoneyBefore = sourceInventory->getMoney();
 
-            RClickAutoTradeFunction trade = InventoryTradeReach::Resolve();
-            if (trade == NULL)
+            // Moved through the inventory, not through the mouse handler.
+            //
+            // `InventoryGUI::RClickAutoTrade` crashed Kenshi on every call --
+            // three live runs, faulting inside itself reading -1. It crashed on
+            // an equipped item, on a shopkeeper's stock, and finally on a plain
+            // give of one carried item between two player characters standing
+            // together, with no money and no shop involved. State was never the
+            // variable; the call was. It is a protected member of the *GUI*
+            // class, reached normally from `sectionMouseButtonPressed`, and it
+            // consults the window's live mouse state (`hasMouse`,
+            // `getSlotWithMouse`, `getMouseItem`). Invoked out of band with the
+            // pointer nowhere near the window, that state reads as -1.
+            //
+            // `Inventory` is the authority on items; `InventoryGUI` renders
+            // them and handles clicks on them. So the move happens on the
+            // model: `removeItemDontDestroy_returnsItem` off the source and
+            // `addItem` onto the destination, both public, both virtual, both
+            // dispatched through Kenshi's own vtable.
+            //
+            // What this deliberately does not do is pay. `RClickAutoTrade`
+            // carried Kenshi's adjudication with it -- cannot afford, that is
+            // mine, a thief was spotted -- and a model-level move carries none
+            // of it, so performing one against a shopkeeper's stock would be
+            // taking the goods rather than buying them. `getNPCTrader` is
+            // Kenshi's own answer to "is a shop trade open", and a transfer
+            // refuses while one is, rather than quietly stealing.
+            if (InventoryGUI::getNPCTrader() != NULL)
             {
-                RejectNativeCommand(request, "transfer_unavailable");
+                RejectNativeCommand(request, "payment_path_unavailable");
                 return;
             }
-            const InventoryGUI::TradeResult result =
-                trade(
-                    source,
-                    request.sectionName,
-                    request.slotX,
-                    request.slotY,
-                    destination,
-                    true,
-                    true);
-            const char* const verdict = TradeResultName(result.value);
+            const int movedQuantity = item->quantity > 0 ? item->quantity : 1;
+            if (!destinationInventory->hasRoomForItem(item->getGameData()))
+            {
+                RejectNativeCommand(request, "no_room");
+                return;
+            }
+            Item* removed =
+                sourceInventory->removeItemDontDestroy_returnsItem(
+                    item, movedQuantity, false);
+            if (removed == NULL)
+            {
+                RejectNativeCommand(request, "source_would_not_release_item");
+                return;
+            }
+            // `tryAddItem` rather than `addItem`: the four-argument form takes
+            // `dropOnFail` and `destroyOnFail`, and neither is an acceptable
+            // outcome for a refused transfer -- one puts the item on the floor
+            // and the other deletes it.
+            if (!destinationInventory->tryAddItem(removed, movedQuantity))
+            {
+                // Put it back rather than leaving it nowhere. An item removed
+                // from one inventory and refused by the other is destroyed by
+                // silence.
+                sourceInventory->tryAddItem(removed, movedQuantity);
+                RejectNativeCommand(request, "destination_refused_item");
+                return;
+            }
             const unsigned int destinationAfter =
                 static_cast<unsigned int>(
                     destinationInventory->getAllItems().size());
@@ -4996,21 +5038,15 @@ namespace
                 section->getItemAt(request.slotX, request.slotY) != item;
 
             g_lastNativeCommandTargetId = request.targetId;
-            if (result.value != InventoryGUI::TradeResult::OK)
-            {
-                AddNativeAcknowledgement(request, "cancelled", verdict, false, true);
-                g_lastNativeCommandResult = verdict;
-                return;
-            }
             if (!destinationGained && !sourceSlotReleased)
             {
-                // Kenshi permitted it and nothing moved. Reported as its own
+                // Both sides say nothing happened. Reported as its own
                 // condition rather than as success, because a transfer that
                 // silently does nothing is the failure the conservation check
                 // exists to catch.
                 AddNativeAcknowledgement(
-                    request, "cancelled", "permitted_without_moving", false, true);
-                g_lastNativeCommandResult = "permitted_without_moving";
+                    request, "cancelled", "moved_without_moving", false, true);
+                g_lastNativeCommandResult = "moved_without_moving";
                 return;
             }
             (void)sourceMoneyBefore;
