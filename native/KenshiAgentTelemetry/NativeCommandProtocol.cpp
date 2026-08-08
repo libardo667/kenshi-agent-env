@@ -405,7 +405,14 @@ namespace KenshiAgentTelemetry
             // edges could disagree with the definition they were both meant to
             // enforce - and it silently rejected any group-scoped command that
             // had not been added to both lists.
-            if (selectedIds.empty() || selectedIds.size() > 64)
+            // A menu command has no characters to name, because no world is
+            // loaded yet. Every other command still requires a recipient; this
+            // is the one shape where empty is the truthful answer rather than a
+            // missing field.
+            const bool titleScreenCommand =
+                NativeCommandDrivesTitleScreen(request.command);
+            if ((selectedIds.empty() && !titleScreenCommand) ||
+                selectedIds.size() > 64)
             {
                 rejectionReason = "malformed_request";
                 return false;

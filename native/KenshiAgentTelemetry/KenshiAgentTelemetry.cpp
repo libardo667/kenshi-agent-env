@@ -6927,7 +6927,14 @@ namespace
         json << "\"sequence\":" << ++g_sequence << ",";
         json << "\"captured_at\":\"" << UtcNowIso8601() << "\",";
         json << "\"source\":\"kenshilib-plugin-title\",";
-        json << "\"capabilities\":[\"ui.visible_controls\"],";
+        // Published here too, because a command sent to the menu has to be
+        // fenced against the same session as one sent in game. Omitting it
+        // meant `continue_game` could not be addressed at all: the request
+        // needs an identity to carry and telemetry offered none.
+        json << "\"identity_session_id\":\""
+             << IdentitySessionId() << "\",";
+        json << "\"capabilities\":[\"ui.visible_controls\","
+                "\"control.continue_game\",\"control.load_game\"],";
         json << "\"game\":{\"loaded\":false},";
         json << "\"ui\":{";
         json << "\"active_screen\":\"title\",";
@@ -6946,10 +6953,34 @@ namespace
             json << "null";
         json << ",\"context_inventory_target_id\":null";
         json << "},";
+        // The real block, not a placeholder. The menu accepts commands now,
+        // so reporting `available: false` with no acknowledgements here would
+        // hide both the capability and every verdict it produces -- a command
+        // could be pressed and nothing would say whether it was.
         json << "\"native_control\":{";
-        json << "\"available\":false,";
-        json << "\"acknowledgements\":[],";
-        json << "\"last_command_sequence\":0";
+        json << "\"available\":true,";
+        json << "\"acknowledgements\":[";
+        for (unsigned int index = 0;
+             index < g_nativeAcknowledgementCount;
+             ++index)
+        {
+            if (index > 0)
+                json << ",";
+            json << SerializeNativeCommandAcknowledgement(
+                g_nativeAcknowledgements[index]);
+        }
+        json << "],";
+        json << "\"last_command_sequence\":" << g_nativeCommandSequence;
+        if (!g_lastNativeCommand.empty())
+        {
+            json << ",\"last_command\":\""
+                 << JsonEscape(g_lastNativeCommand) << "\"";
+        }
+        if (!g_lastNativeCommandResult.empty())
+        {
+            json << ",\"last_result\":\""
+                 << JsonEscape(g_lastNativeCommandResult) << "\"";
+        }
         json << "},";
         json << "\"squad\":[],";
         json << "\"active_shop_trader_count\":null,";

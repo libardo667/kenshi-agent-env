@@ -149,7 +149,13 @@ def test_native_plugin_exports_bounded_visible_semantic_ui_controls() -> None:
     assert "#include <mygui/MyGUI_Gui.h>" in source
     assert "#include <kenshi/gui/TitleScreen.h>" in source
     assert "BuildTitleSnapshot" in source
-    assert '"capabilities\\\":[\\\"ui.visible_controls\\\"]' in source
+    # Asserted as membership, not as an exact literal. This was pinned to the
+    # whole capability list, so adding the title screen's own commands broke it
+    # without anything being wrong -- a freshness check wearing a test costume.
+    # What matters is that the title snapshot advertises what it can actually
+    # do, which now includes pressing its own menu.
+    assert '\\"ui.visible_controls\\"' in source
+    assert '\\"control.continue_game\\"' in source
     assert '"game\\\":{\\\"loaded\\\":false}' in source
     assert '"source\\\":\\\"kenshilib-plugin-title\\\"' in source
     assert "GetRealAddress(&TitleScreen::_NV_update)" in source
