@@ -3427,14 +3427,44 @@ namespace
             // agent will send back. Completion evidence and the agent's own view
             // of the world come from one function, so a window that this reports
             // as open is a window `transfer_item` can act on.
-            if (gui != NULL &&
-                FindOpenInventoryWindow(
-                    gui, g_activeNativeCommand.targetId) != NULL &&
-                FindOpenInventoryWindow(
-                    gui, g_activeNativeCommand.destinationId) != NULL)
+            InventoryGUI* firstWindow =
+                gui != NULL
+                    ? FindOpenInventoryWindow(
+                          gui, g_activeNativeCommand.targetId)
+                    : NULL;
+            InventoryGUI* secondWindow =
+                gui != NULL
+                    ? FindOpenInventoryWindow(
+                          gui, g_activeNativeCommand.destinationId)
+                    : NULL;
+            if (firstWindow == NULL || secondWindow == NULL)
+                return;
+
+            // Open is not the same as reachable, and `showTradeWindow` does not
+            // care: it draws whichever two hands it is given, from any distance.
+            // Measured twice by Levi -- a trade screen against a shopkeeper on
+            // the far side of The Hub, refusing every transfer in it, because
+            // the window has no proximity opinion and the refusal only arrives
+            // once an item is moved.
+            //
+            // So the engine is asked the moment there is something to ask it
+            // about. `isWithinRangeToTrade` is the same predicate the transfer
+            // consults, and a pairing that fails it is closed rather than left
+            // standing: a trade window that cannot trade is a worse state to
+            // hand back than no window at all.
+            Character* selected =
+                player != NULL ? player->selectedCharacter.getCharacter() : NULL;
+            bool rangeKnown = false;
+            const bool reachable =
+                InventoryWindowIsWithinTradeRange(
+                    secondWindow, selected, rangeKnown);
+            if (rangeKnown && !reachable)
             {
-                FinishActiveNativeCommand("completed", "trade_window_open");
+                gui->closeTradeWindow();
+                FinishActiveNativeCommand("cancelled", "out_of_trade_range");
+                return;
             }
+            FinishActiveNativeCommand("completed", "trade_window_open");
             return;
         }
 
