@@ -134,8 +134,19 @@ namespace KenshiAgentTelemetry
         return NativeCommandNamesTarget(command) ||
                NativeCommandCarriesDirection(command) ||
                NativeCommandControlsTime(command) ||
+               NativeCommandDrivesTitleScreen(command) ||
                command == "exit_current_building" ||
                command == "survey_local_resources";
+    }
+
+    // The main menu, before any world exists. `./dev launch` reaches it by
+    // clicking pixels, which is the last synthesized mouse in this project;
+    // these are the handlers those buttons call. `new_game` is absent on
+    // purpose -- KenshiLib marks `TitleScreen::newGame` `no_addr`, so there is
+    // no symbol behind it.
+    bool NativeCommandDrivesTitleScreen(const std::string& command)
+    {
+        return command == "continue_game" || command == "load_game";
     }
 
     // Pausing and setting speed are `GameWorld::userPause` and
@@ -426,10 +437,23 @@ namespace KenshiAgentTelemetry
                 NativeCommandNamesTarget(request.command);
             const bool isTimeControl =
                 NativeCommandControlsTime(request.command);
+            const bool isTitleScreen =
+                NativeCommandDrivesTitleScreen(request.command);
             const bool isBuildingExit =
-                !isDirection && !isTargeted && !isTimeControl &&
+                !isDirection && !isTargeted && !isTimeControl && !isTitleScreen &&
                 IsKnownNativeCommand(request.command);
-            if (isTimeControl)
+            if (isTitleScreen)
+            {
+                if (!request.targetId.empty() ||
+                    request.bearingDegrees != 0.0 ||
+                    request.distanceUnits != 0.0 ||
+                    request.quantity != 0)
+                {
+                    rejectionReason = "malformed_request";
+                    return false;
+                }
+            }
+            else if (isTimeControl)
             {
                 // Kenshi takes a multiplier; the gears above it are ours. A
                 // pause carries none, and a speed must name a positive one.

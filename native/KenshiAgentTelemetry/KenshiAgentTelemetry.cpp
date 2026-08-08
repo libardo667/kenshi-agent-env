@@ -2724,6 +2724,37 @@ namespace
     // equipment, shop state, trade rosters and the mouse. The verdict is a
     // 4-byte enum, so an `int` return carries it in EAX with no hidden pointer
     // and leaves `this` where the function expects it.
+    // The title screen's own menu handlers.
+    //
+    // `./dev launch` reaches the main menu by clicking its pixels, which is the
+    // last thing in this project that synthesizes a mouse. The handlers are
+    // right here: `continueGame` and `loadGame` are the same functions the
+    // buttons call, private on `TitleScreen` and reachable the way every other
+    // protected member here is. They return void, so the return-convention trap
+    // that cost four crashes on `RClickAutoTrade` cannot apply.
+    //
+    // `newGame` is deliberately absent: KenshiLib marks it `no_addr`, so there
+    // is no symbol to call and pretending otherwise would be inventing one.
+    typedef void (*TitleScreenActionFunction)(TitleScreen*, MyGUI::Widget*);
+
+    struct TitleScreenReach : public TitleScreen
+    {
+        static TitleScreenActionFunction ResolveContinue()
+        {
+            return reinterpret_cast<TitleScreenActionFunction>(
+                KenshiLib::GetRealAddress(&TitleScreenReach::continueGame));
+        }
+
+        static TitleScreenActionFunction ResolveLoad()
+        {
+            return reinterpret_cast<TitleScreenActionFunction>(
+                KenshiLib::GetRealAddress(&TitleScreenReach::loadGame));
+        }
+
+    private:
+        ~TitleScreenReach();
+    };
+
     typedef int (*RClickAutoTradeFunction)(
         InventoryGUI*,
         const std::string&,
@@ -7067,9 +7098,71 @@ namespace
         }
     }
 
+    // One menu press, from the main menu, with no world yet.
+    //
+    // The in-game path processes commands from `PlayerInterface::update`, which
+    // does not run here -- which is why `native_control.available` read false on
+    // the title screen and every launch had to be clicked.
+    void ProcessTitleScreenCommandRequest(TitleScreen* titleScreen)
+    {
+        std::string payload;
+        std::string readError;
+        if (!KenshiAgentTelemetry::ReadUtf8Bounded(
+                g_outputDirectory,
+                NATIVE_COMMAND_REQUEST_FILE_W,
+                MAX_NATIVE_COMMAND_BYTES,
+                payload,
+                readError))
+        {
+            return;
+        }
+        NativeCommandRequest request;
+        std::string rejection;
+        if (!ParseNativeCommandRequest(payload, request, rejection))
+            return;
+        if (!KenshiAgentTelemetry::NativeCommandDrivesTitleScreen(request.command))
+            return;
+        if (FindNativeAcknowledgement(request.commandId) >= 0)
+            return;
+        if (request.controlMode != "native_assisted")
+        {
+            RejectNativeCommand(request, "wrong_control_mode");
+            return;
+        }
+        if (request.identitySessionId != IdentitySessionId())
+        {
+            RejectNativeCommand(request, "identity_session_mismatch");
+            return;
+        }
+        if (titleScreen == NULL)
+        {
+            RejectNativeCommand(request, "title_screen_absent");
+            return;
+        }
+        TitleScreenActionFunction press =
+            request.command == "continue_game"
+                ? TitleScreenReach::ResolveContinue()
+                : TitleScreenReach::ResolveLoad();
+        if (press == NULL)
+        {
+            RejectNativeCommand(request, "title_screen_action_unavailable");
+            return;
+        }
+        // The handlers take the widget that raised the event and Kenshi's own
+        // buttons pass their own; nothing here identifies a sender, so NULL is
+        // the honest argument rather than a widget invented to look like one.
+        press(titleScreen, NULL);
+        AddNativeAcknowledgement(
+            request, "accepted", "title_screen_action_pressed", true, true);
+        g_lastNativeCommand = request.command;
+        g_lastNativeCommandResult = "title_screen_action_pressed";
+    }
+
     void TitleScreenUpdateHook(TitleScreen* titleScreen)
     {
         g_originalTitleScreenUpdate(titleScreen);
+        if (NativeCommandRequestChanged())
+            ProcessTitleScreenCommandRequest(titleScreen);
         const DWORD now = GetTickCount();
         if ((ou == NULL || !ou->initialized) &&
             now - g_lastSnapshotTick >=

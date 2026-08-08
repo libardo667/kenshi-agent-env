@@ -107,6 +107,7 @@ namespace KenshiAgentTelemetry
     bool NativeCommandNamesTarget(const std::string& command);
     bool NativeCommandCarriesDirection(const std::string& command);
     bool NativeCommandControlsTime(const std::string& command);
+    bool NativeCommandDrivesTitleScreen(const std::string& command);
 
     bool IsValidCommandId(const std::string& value);
 
