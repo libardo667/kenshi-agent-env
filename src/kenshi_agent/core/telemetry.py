@@ -1062,11 +1062,6 @@ class OpenInventory(StrictModel):
     # every transfer, and the only signal was `OUT_OF_RANGE` after the attempt.
     # None means the engine could not be asked, which is silence, not a denial.
     within_trade_range: bool | None = None
-    # Whether Kenshi has this window on its own trade roster
-    # (`InventoryGUI::traders`), which is what its transfer reads to learn what
-    # a move between two windows means. An open window is not necessarily an
-    # enrolled one. None means the engine could not be asked.
-    registered_trade_partner: bool | None = None
 
 
 class UIState(StrictModel):

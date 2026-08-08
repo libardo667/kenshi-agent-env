@@ -2752,53 +2752,6 @@ namespace
         ~InventoryTradeReach();
     };
 
-    // Kenshi's own record of who is party to the current trade.
-    //
-    // `InventoryGUI::traders` maps each participating window to an
-    // `InventoryTradeData` -- its owner, whether payment is required, whether
-    // items may be dropped -- and `RClickAutoTrade` reads it to decide what a
-    // move between two windows means. KenshiLib declares the member but exports
-    // no storage for it, so it is reached the way KenshiLib reaches everything
-    // else: by the documented RVA against the running module.
-    typedef std::map<
-        InventoryGUI*,
-        InventoryGUI::InventoryTradeData,
-        std::less<InventoryGUI*>,
-        Ogre::STLAllocator<
-            std::pair<InventoryGUI* const, InventoryGUI::InventoryTradeData>,
-            Ogre::GeneralAllocPolicy> > TradePartnerMap;
-
-    // `InventoryGUI.h`: `static ... traders; // RVA = 0x212FB00 Static Member`.
-    const size_t TRADE_PARTNER_MAP_RVA = 0x212FB00;
-
-    const TradePartnerMap* TradePartners()
-    {
-        static const TradePartnerMap* resolved = NULL;
-        static bool attempted = false;
-        if (!attempted)
-        {
-            attempted = true;
-            const char* base =
-                reinterpret_cast<const char*>(::GetModuleHandleW(NULL));
-            if (base != NULL)
-            {
-                resolved = reinterpret_cast<const TradePartnerMap*>(
-                    base + TRADE_PARTNER_MAP_RVA);
-            }
-        }
-        return resolved;
-    }
-
-    bool IsRegisteredTradePartner(InventoryGUI* window, bool& known)
-    {
-        known = false;
-        const TradePartnerMap* partners = TradePartners();
-        if (window == NULL || partners == NULL)
-            return false;
-        known = true;
-        return partners->find(window) != partners->end();
-    }
-
     // Whether Kenshi considers these two close enough to trade, asked rather
     // than assumed.
     //
@@ -2981,11 +2934,6 @@ namespace
                 // `RClickAutoTrade` faulted reading -1 with both windows open,
                 // in range, and holding the right item, so what the engine
                 // requires around the call is the thing being measured.
-                bool partnerKnown = false;
-                const bool isPartner =
-                    IsRegisteredTradePartner(window, partnerKnown);
-                json << "\"registered_trade_partner\":"
-                     << (partnerKnown ? JsonBool(isPartner) : "null") << ",";
                 json << "\"sections\":[";
                 bool firstSection = true;
                 unsigned int sectionCount = 0;
@@ -4957,32 +4905,6 @@ namespace
             if (source == destination)
             {
                 RejectNativeCommand(request, "same_inventory");
-                return;
-            }
-            // Refused unless Kenshi has both windows on its own trade roster.
-            //
-            // `RClickAutoTrade` faulted reading -1 inside itself with both
-            // windows open, both in range, and the requested slot holding the
-            // item -- twice, taking the game down with it. It reads
-            // `InventoryGUI::traders` to learn what a move between two windows
-            // means, and a window the engine never enrolled has no entry there.
-            // Whether that is the fault or not, an engine call whose stated
-            // preconditions cannot be confirmed is not one to keep making at
-            // the cost of the process.
-            bool sourceRegistrationKnown = false;
-            bool destinationRegistrationKnown = false;
-            const bool sourceRegistered =
-                IsRegisteredTradePartner(source, sourceRegistrationKnown);
-            const bool destinationRegistered =
-                IsRegisteredTradePartner(destination, destinationRegistrationKnown);
-            if (sourceRegistrationKnown && !sourceRegistered)
-            {
-                RejectNativeCommand(request, "source_not_a_trade_partner");
-                return;
-            }
-            if (destinationRegistrationKnown && !destinationRegistered)
-            {
-                RejectNativeCommand(request, "destination_not_a_trade_partner");
                 return;
             }
             // Both non-NULL by construction: `FindOpenInventoryWindow` skips
