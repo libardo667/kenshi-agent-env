@@ -15,7 +15,6 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from .condition_evaluation import evaluate_conditions
-from .control.calibration import calibration_allows_input
 from .core.authority import AuthorizationCode, InputBoundaryDecision
 from .core.observation import Observation
 from .core.operation import (
@@ -28,7 +27,6 @@ from .core.planning import (
     ConditionResult,
 )
 from .core.transport import (
-    CalibrationReport,
     InputBoundaryReport,
 )
 from .core.world import WorldStateRevision
@@ -96,11 +94,9 @@ class ExecutionToken(_ExecutionTokenState):
         self,
         *,
         lease_wait_seconds: float = 0.0,
-        calibration: CalibrationReport | None = None,
     ) -> InputBoundaryReport:
         report = self._decide(
             lease_wait_seconds=lease_wait_seconds,
-            calibration=calibration,
         )
         self._reports.append(report)
         return report
@@ -150,19 +146,12 @@ class ExecutionToken(_ExecutionTokenState):
         self,
         *,
         lease_wait_seconds: float,
-        calibration: CalibrationReport | None = None,
     ) -> InputBoundaryReport:
-        # Calibration is resolved inside the lease by the caller. A profile that
-        # drifted during the wait must block here even when every typed
-        # condition still holds, because the coordinates no longer mean anything.
-        if calibration is not None and not calibration_allows_input(calibration):
-            return self._reject(
-                AuthorizationCode.CALIBRATION_DRIFTED,
-                "Calibration identity is no longer usable "  # mutation: diagnostic-only
-                "at the input boundary "  # mutation: diagnostic-only
-                f"({calibration.status.value}): {calibration.reason}",  # mutation: diagnostic-only
-                lease_wait_seconds=lease_wait_seconds,
-            )
+        # The calibration gate that stood here is gone with the pointer.
+        # It asked whether a click would still land where it was aimed, and
+        # nothing aims any more: every operation is COORDINATE_INDEPENDENT, for
+        # which the check returns `not_required` even against a window of
+        # entirely the wrong size. A fence that cannot close is not a fence.
 
         observation = self.latest_observation()
         if observation is None:

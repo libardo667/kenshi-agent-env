@@ -19,7 +19,6 @@ from ... import native_commands
 from ...config import CaptureConfig, ControlsConfig, RuntimeConfig
 from ...control.base import InputController, PrimitiveInputAction
 from ...control.calibration import (
-    calibration_allows_input,
     evaluate_calibration_identity,
     validate_expected_client_size,
 )
@@ -298,13 +297,9 @@ class KenshiControlSurface:
                     "action aborted."
                 )
             async with self.controller.input_lease(alt_tab_on_restore=True):
-                calibration = self.calibration_report(token.pointer_class)
                 lease_wait = self.controller.input_lease_wait_seconds()
                 boundary = (
-                    token.revalidate(
-                        lease_wait_seconds=lease_wait,
-                        calibration=calibration,
-                    )
+                    token.revalidate(lease_wait_seconds=lease_wait)
                     if token is not None
                     else None
                 )
@@ -324,13 +319,10 @@ class KenshiControlSurface:
                         ),
                         error_type="InputBoundaryRejected",
                     )
-                elif not calibration_allows_input(calibration):
-                    self._raise_for_calibration(calibration)
-                    raise AssertionError("Calibration rejection did not raise.")
                 else:
                     action_receipt = await receipt(action, started, command)
                 action_receipt = action_receipt.model_copy(
-                    update={"input_boundary": boundary, "calibration": calibration}
+                    update={"input_boundary": boundary}
                 )
             if lease_wait >= 0.01:
                 action_receipt = action_receipt.model_copy(
