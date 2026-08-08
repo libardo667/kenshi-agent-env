@@ -2461,6 +2461,11 @@
       "title": "Nearby Entities",
       "type": "array"
     },
+    "nearby_entities_complete": {
+      "default": true,
+      "title": "Nearby Entities Complete",
+      "type": "boolean"
+    },
     "world_targets": {
       "items": {
         "$ref": "#/$defs/WorldTarget"
@@ -2475,6 +2480,11 @@
       "maxItems": 64,
       "title": "Discovered Objects",
       "type": "array"
+    },
+    "discovered_objects_complete": {
+      "default": true,
+      "title": "Discovered Objects Complete",
+      "type": "boolean"
     },
     "prospect_survey": {
       "anyOf": [

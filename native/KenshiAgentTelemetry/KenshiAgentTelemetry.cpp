@@ -1966,8 +1966,14 @@ namespace
         PlayerInterface* player,
         GameWorld* ou,
         RootObject* selected,
-        const Ogre::Vector3& selectedPosition)
+        const Ogre::Vector3& selectedPosition,
+        bool& complete)
     {
+        // Reported, not assumed. Each category scan is bounded, and a scan that
+        // filled its budget has not seen the category -- it has stopped looking
+        // at it. Saying so is what lets an agent tell an empty world from an
+        // exhausted budget.
+        complete = true;
         unsigned int categoryCount = 0;
         const KenshiAgentTelemetry::ItemTypeVocabularyEntry* categories =
             KenshiAgentTelemetry::ItemTypeVocabulary(categoryCount);
@@ -2001,6 +2007,8 @@ namespace
                 static_cast<itemType>(category.value),
                 MAX_DISCOVERED_PER_CATEGORY,
                 selected);
+            if (static_cast<int>(found.size()) >= MAX_DISCOVERED_PER_CATEGORY)
+                complete = false;
 
             for (lektor<RootObject*>::iterator it = found.begin();
                  it != found.end();
@@ -2056,6 +2064,8 @@ namespace
             MAX_DISCOVERED_CHARACTERS,
             0,
             selected);
+        if (static_cast<int>(nearbyCharacters.size()) >= MAX_DISCOVERED_CHARACTERS)
+            complete = false;
         for (lektor<RootObject*>::iterator it = nearbyCharacters.begin();
              it != nearbyCharacters.end();
              ++it)
@@ -6548,6 +6558,8 @@ namespace
         }
         json << "],";
         json << "\"nearby_entities\":[";
+        // Hoisted so the completeness answer outlives the scan that produced it.
+        int nearbyCharacterCount = 0;
         if (ou != NULL && selected != NULL && selected->isValid())
         {
             lektor<RootObject*> nearbyCharacters;
@@ -6684,8 +6696,21 @@ namespace
                     advertised);
                 json << "}";
             }
+            nearbyCharacterCount = static_cast<int>(nearbyCharacters.size());
         }
         json << "],";
+        // Whether that list is everything, said out loud.
+        //
+        // The sphere is genuinely unbounded -- a crowd can be larger than any
+        // budget -- so a cap here is honest. Reporting the result as though it
+        // were the whole world is not: an agent cannot tell "nobody else is
+        // near" from "we stopped counting", and those call for opposite
+        // decisions. The bounded lists that already do this
+        // (`open_inventories_complete`) are the pattern; these were the ones
+        // that stayed quiet.
+        json << "\"nearby_entities_complete\":"
+             << JsonBool(nearbyCharacterCount < MAX_NEARBY_CHARACTERS)
+             << ",";
         // `selection_orderable_tasks` was published here and has been removed.
         //
         // It existed to split the order question in half -- "may this selection
@@ -6700,6 +6725,7 @@ namespace
         json << "\"prospect_survey\":";
         AppendProspectSurvey(json);
         json << ",";
+        bool discoveredObjectsComplete = true;
         json << "\"discovered_objects\":[";
         if (ou != NULL && player != NULL && selected != NULL && selected->isValid())
         {
@@ -6708,7 +6734,8 @@ namespace
                 player,
                 ou,
                 selected,
-                selected->getPosition());
+                selected->getPosition(),
+                discoveredObjectsComplete);
         }
         json << "],";
         bool worldTargetScanAtCapacity = false;

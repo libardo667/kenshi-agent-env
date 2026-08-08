@@ -1480,6 +1480,11 @@ class TelemetrySnapshot(StrictModel):
     # of open trades and must never confer current UI authority.
     active_shop_trader_count: int | None = Field(default=None, ge=0)
     nearby_entities: list[NearbyEntity] = Field(default_factory=list)
+    # Whether `nearby_entities` is everyone, or where the scan stopped. The
+    # sphere is genuinely unbounded, so a cap is honest; reporting a capped
+    # result as the whole world is not. An agent cannot act on "nobody else is
+    # near" and "we stopped counting" the same way.
+    nearby_entities_complete: bool = True
     # `selection_orderable_tasks` was published here and has been removed. It
     # split the order question into "may this selection issue this order at
     # all" and "does the order apply to that target", because a wrong combined
@@ -1494,6 +1499,10 @@ class TelemetrySnapshot(StrictModel):
         default_factory=list,
         max_length=64,
     )
+    # Whether discovery saw the categories out, or filled its budget. Each
+    # category scan is bounded, and one that hit its limit has stopped looking
+    # rather than finished looking.
+    discovered_objects_complete: bool = True
     # The most recent survey, or none if this run has not run one. It persists
     # until another replaces it, so a later observation can still read what the
     # last survey found.
