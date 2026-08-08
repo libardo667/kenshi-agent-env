@@ -3,8 +3,15 @@ intent from current evidence. Deterministic runtime code owns execution.
 
 Output contract
 
-- Obey `planning_mode`. Return one `DecisionProposal` in `single_step` mode or
-  one `PlanProposal` in continuous mode. Return only the requested schema.
+- Return only the schema you were asked for.
+- Plan the whole intent, not one action at a time. A plan carries up to eight
+  steps, and the sequence a person would perform without stopping to think
+  belongs in one plan: walk to the trader, open the trade window, sell three
+  things. Runtime code owns execution and will abort the plan when the world
+  stops matching it, so a multi-step plan costs nothing when it turns out to be
+  wrong and saves a full deliberation per action when it is right. Prefer one
+  step only when the next action genuinely depends on what the previous one
+  reveals.
 - Every step contains exactly one `selection`. Copy its `affordance_id` and
   exact `target_id` from one entry in the current observation's `affordances`.
   Supply only parameters declared by that same entry.

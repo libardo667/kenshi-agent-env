@@ -577,7 +577,11 @@ def _body_shift_offers(observation: Observation) -> Iterable[AffordanceOffer]:
 
 # One person affording a dozen distinct orders is already an unusual scene;
 # the cap keeps a crowd from crowding out every other kind of choice.
-MAX_ORDERS_OFFERED_PER_PERSON = 12
+# Also uncapped, and for the same reason. Twelve orders per person, chosen
+# silently, with nothing saying a thirteenth was dropped -- Kenshi's own menu
+# already decided what this person affords, and cutting its answer down is
+# overruling the authority we went to the trouble of asking.
+MAX_ORDERS_OFFERED_PER_PERSON = None
 
 
 def _character_order_description(order: str, entity: NearbyEntity) -> str:
@@ -627,7 +631,7 @@ def _character_order_offers(observation: Observation) -> Iterable[AffordanceOffe
     for entity in telemetry.nearby_entities:
         if not entity.advertised_tasks_probed:
             continue
-        for order in entity.orderable_task_names()[:MAX_ORDERS_OFFERED_PER_PERSON]:
+        for order in entity.orderable_task_names():
             yield _offer(
                 observation,
                 source=AffordanceSource.NEARBY_CHARACTER,
@@ -722,7 +726,23 @@ def _trade_window_offers(observation: Observation) -> Iterable[AffordanceOffer]:
         )
 
 
-MAX_TRANSFERS_OFFERED = 24
+# No cap. A shop's contents are bounded and knowable, and a silent limit on
+# them is not a smaller world -- it is a world the agent cannot tell apart from
+# a smaller one. Truncation manufactures exactly the confusion the tri-state
+# exists to prevent: it produces "not asked" wearing the face of "there is
+# nothing there". Commerce is the case that makes it obvious, because an agent
+# shown an arbitrary slice of a shop cannot compare prices, cannot decide what
+# to sell, and cannot see that the thing it wants is even present.
+#
+# Measured live: the Barman's ~30 items filled a 24-offer cap in the *first*
+# direction, so every offer was buying and not one sale was ever offered. The
+# agent was told, in effect, that selling did not exist.
+#
+# The structural fix is to stop enumerating the cartesian product of items and
+# destinations and make the item a *parameter* of one move -- enumerate verbs,
+# parameterize nouns -- so the offer set stops scaling with world size. Until
+# that lands, completeness beats compactness: an offer set that is merely large
+# is a cost, while one that is quietly partial is a lie.
 
 
 def _item_transfer_offers(observation: Observation) -> Iterable[AffordanceOffer]:
@@ -753,7 +773,6 @@ def _item_transfer_offers(observation: Observation) -> Iterable[AffordanceOffer]
     if len(inventories) < 2:
         return
 
-    offered = 0
     for source in inventories:
         if source.within_trade_range is False:
             continue
@@ -767,9 +786,6 @@ def _item_transfer_offers(observation: Observation) -> Iterable[AffordanceOffer]
                     # Not offered until an equipped transfer is proven safe.
                     continue
                 for item in section.items:
-                    if offered >= MAX_TRANSFERS_OFFERED:
-                        return
-                    offered += 1
                     # The item and destination are part of the semantic, not
                     # decoration. The target is the *source* inventory, so two
                     # items in it collapsed to one indistinguishable choice and
