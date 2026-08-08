@@ -231,6 +231,7 @@ WIRE_FIELD_DEFAULTS: WireFields = {
     "slot_y": 0,
     "paused": False,
     "speed_multiplier": 0.0,
+    "quantity": 0,
 }
 
 

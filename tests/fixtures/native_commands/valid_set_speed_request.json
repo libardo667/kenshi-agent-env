@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.3",
+  "schema_version": "1.4",
   "command_id": "cmd-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb02",
   "command": "set_speed",
   "control_mode": "native_assisted",
@@ -23,5 +23,6 @@
   "slot_x": 0,
   "slot_y": 0,
   "paused": false,
-  "speed_multiplier": 3.0
+  "speed_multiplier": 3.0,
+  "quantity": 0
 }

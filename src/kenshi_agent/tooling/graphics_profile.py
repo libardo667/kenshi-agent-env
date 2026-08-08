@@ -251,6 +251,36 @@ def _managed_documents(
     return tuple(documents)
 
 
+def _settings_agree(expected: str, actual: str | None) -> bool:
+    """Whether an installed setting is the profile's, allowing Kenshi's rounding.
+
+    Compared as strings, `npc range` failed launch as expected '1500', found
+    '1500.02' - Kenshi had written the value back through its own slider and
+    changed it by 0.0013%. An exact-string check on a float-valued setting
+    cannot be satisfied for long, and rewriting the file at every launch treats
+    the symptom while the next write-back re-breaks it.
+
+    Numeric settings therefore compare numerically, within one part in a
+    thousand of the expected magnitude. That absorbs a write-back and nothing
+    else: the ordinal settings that actually mean something are small integers,
+    where the nearest wrong value differs by tens of percent - shadow quality 1
+    against 2 is still a mismatch, and so is a foliage range someone halved.
+    Non-numeric values keep exact comparison.
+    """
+
+    if actual is None:
+        return False
+    if actual == expected:
+        return True
+    try:
+        expected_value = float(expected)
+        actual_value = float(actual)
+    except ValueError:
+        return False
+    tolerance = max(abs(expected_value) * 0.001, 1e-9)
+    return abs(actual_value - expected_value) <= tolerance
+
+
 def _document_mismatches(managed: _ManagedDocument) -> list[GraphicsMismatch]:
     document = _parse_settings(_read_text_exact(managed.path))
     folded_section = (
@@ -267,7 +297,7 @@ def _document_mismatches(managed: _ManagedDocument) -> list[GraphicsMismatch]:
     for folded, (profile_key, expected) in _expected_settings(managed.expected).items():
         actual_entry = document.values.get((folded_section, folded))
         actual = actual_entry[1] if actual_entry is not None else None
-        if actual != expected:
+        if not _settings_agree(expected, actual):
             mismatches.append(
                 GraphicsMismatch(
                     key=profile_key,

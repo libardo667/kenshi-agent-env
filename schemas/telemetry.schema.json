@@ -1787,6 +1787,19 @@
           "default": null,
           "title": "Modal Open"
         },
+        "shop_trader_name": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Shop Trader Name"
+        },
         "dialogue_open": {
           "anyOf": [
             {

@@ -1067,6 +1067,12 @@ class OpenInventory(StrictModel):
 class UIState(StrictModel):
     active_screen: str | None = None
     modal_open: bool | None = None
+    # Kenshi's own `InventoryGUI::getNPCTrader()`: who the player is trading
+    # with for money, or None. This is the switch a transfer uses to decide
+    # between the engine's priced adjudicator and a plain inventory move, and
+    # it is exported because a switch that silently reads None would move a
+    # shopkeeper's goods for free.
+    shop_trader_name: str | None = Field(default=None, max_length=200)
     dialogue_open: bool | None = None
     dialogue_target_id: str | None = None
     dialogue_options: list[str] | None = None

@@ -46,6 +46,13 @@ def main() -> int:
         default="",
         help="Reviewed context semantic, required by perform_context_action.",
     )
+    # The transfer's own address. These lagged the protocol: a transfer could
+    # not be dispatched by hand at all, which is why its first diagnosis needed
+    # a planner and a model in the loop to press the button.
+    parser.add_argument("--destination-id", default="")
+    parser.add_argument("--section-name", default="")
+    parser.add_argument("--slot-x", type=int, default=0)
+    parser.add_argument("--slot-y", type=int, default=0)
     parser.add_argument("--timeout", type=float, default=15.0)
     args = parser.parse_args()
 
@@ -65,7 +72,7 @@ def main() -> int:
 
     command_id = new_command_id()
     request = NativeCommandRequest(
-        schema_version="1.3",
+        schema_version="1.4",
         command_id=command_id,
         command=args.command,  # type: ignore[arg-type]
         control_mode="native_assisted",
@@ -81,6 +88,10 @@ def main() -> int:
         selected_character_ids=list(snapshot.ui.selected_character_ids),
         target_id=args.target_id,
         context_action=args.context_action,
+        destination_id=args.destination_id,
+        section_name=args.section_name,
+        slot_x=args.slot_x,
+        slot_y=args.slot_y,
     )
     write_native_command_request_atomic(
         config.telemetry.file.parent / "native_command.request.json",

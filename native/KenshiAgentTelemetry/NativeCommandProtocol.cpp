@@ -109,7 +109,8 @@ namespace KenshiAgentTelemetry
           slotX(0),
           slotY(0),
           pauseRequested(false),
-          speedMultiplier(0.0)
+          speedMultiplier(0.0),
+          quantity(0)
     {
     }
 
@@ -289,7 +290,8 @@ namespace KenshiAgentTelemetry
             "slot_x",
             "slot_y",
             "paused",
-            "speed_multiplier"
+            "speed_multiplier",
+            "quantity"
         };
         static const char* const revisionKeys[] = {
             "telemetry_sequence",
@@ -328,6 +330,7 @@ namespace KenshiAgentTelemetry
             request.pauseRequested = root.get<bool>("paused", false);
             request.speedMultiplier =
                 root.get<double>("speed_multiplier", 0.0);
+            request.quantity = root.get<int>("quantity", 0);
             request.basedOnTelemetrySequence =
                 root.get<unsigned long long>(
                     "based_on_revision.telemetry_sequence",
@@ -339,7 +342,7 @@ namespace KenshiAgentTelemetry
                 rejectionReason = "malformed_request";
                 return false;
             }
-            if (root.get<std::string>("schema_version") != "1.3" ||
+            if (root.get<std::string>("schema_version") != "1.4" ||
                 !IsValidCommandId(request.commandId) ||
                 request.command.empty() ||
                 request.command.size() > 80 ||
@@ -474,6 +477,13 @@ namespace KenshiAgentTelemetry
                 return false;
             }
             else if (!isTargeted)
+            {
+                rejectionReason = "malformed_request";
+                return false;
+            }
+            if (request.quantity < 0 ||
+                request.quantity > 1000 ||
+                (request.command != "transfer_item" && request.quantity != 0))
             {
                 rejectionReason = "malformed_request";
                 return false;

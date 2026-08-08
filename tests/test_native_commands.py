@@ -27,7 +27,7 @@ def revision(sequence: int | None = 7) -> WorldStateRevision:
 
 def request() -> NativeCommandRequest:
     return NativeCommandRequest(
-        schema_version="1.3",
+        schema_version="1.4",
         command_id=COMMAND_ID,
         command="approach_confirmed_vendor",
         control_mode=ControlMode.NATIVE_ASSISTED,

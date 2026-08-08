@@ -112,7 +112,7 @@ class CommandDispatchContext(StrictModel):
 
 
 class NativeCommandRequest(StrictModel):
-    schema_version: Literal["1.3"]
+    schema_version: Literal["1.4"]
     command_id: str = Field(pattern=r"^cmd-[0-9a-f]{32}$")
     command: NativeWireCommand
     control_mode: Literal[ControlMode.NATIVE_ASSISTED]
@@ -144,6 +144,9 @@ class NativeCommandRequest(StrictModel):
     # ordinal gears above it are ours, and stay ours.
     paused: bool = False
     speed_multiplier: float = Field(default=0.0, ge=0.0, le=1000.0)
+    # How many of a stack to move; 0 means the whole stack. Explicit because a
+    # buy is priced by it, and an implicit count is one the agent never chose.
+    quantity: int = Field(default=0, ge=0, le=1000)
 
     @model_validator(mode="after")
     def validate_native_fences(self) -> NativeCommandRequest:

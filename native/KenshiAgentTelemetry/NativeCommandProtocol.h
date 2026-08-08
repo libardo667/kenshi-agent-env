@@ -54,6 +54,10 @@ namespace KenshiAgentTelemetry
         // without resuming, so the controller had to press twice.
         bool pauseRequested;
         double speedMultiplier;
+        // How many of a stack to move. Zero means the whole stack, which is
+        // what a transfer always silently did: one buy took every Meatwrap the
+        // shop had, and nothing in the request said so.
+        int quantity;
     };
 
     struct NativeCommandAcknowledgement

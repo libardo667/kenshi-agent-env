@@ -48,7 +48,7 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "const": "1.3",
+      "const": "1.4",
       "title": "Schema Version",
       "type": "string"
     },
@@ -178,6 +178,13 @@
       "minimum": 0.0,
       "title": "Speed Multiplier",
       "type": "number"
+    },
+    "quantity": {
+      "default": 0,
+      "maximum": 1000,
+      "minimum": 0,
+      "title": "Quantity",
+      "type": "integer"
     }
   },
   "required": [

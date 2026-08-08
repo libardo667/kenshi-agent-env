@@ -2709,7 +2709,22 @@ namespace
         json << "\"item_type\":" << static_cast<int>(item->getItemType()) << ",";
     }
 
-    typedef InventoryGUI::TradeResult (*RClickAutoTradeFunction)(
+    // Returns `int`, deliberately, and this is the whole bug.
+    //
+    // `RClickAutoTrade` returns `InventoryGUI::TradeResult`, a class with a
+    // user-declared constructor. Declaring the pointer that way made MSVC pass
+    // a hidden return buffer in RCX and shift `this` to RDX. Kenshi's own build
+    // returns it in EAX and keeps `this` in RCX -- disassembling the shipped
+    // RE_Kenshi binary at the fault shows the function prologue immediately
+    // doing `mov (%rcx),%rax; call *0x70(%rax)`, which is `this->getInventory()`
+    // through vtable slot 0x70. With a sret buffer in RCX that reads an
+    // uninitialised stack slot as a vtable pointer and calls through it.
+    //
+    // That is every `RClickAutoTrade` crash: four of them, blamed in turn on
+    // equipment, shop state, trade rosters and the mouse. The verdict is a
+    // 4-byte enum, so an `int` return carries it in EAX with no hidden pointer
+    // and leaves `this` where the function expects it.
+    typedef int (*RClickAutoTradeFunction)(
         InventoryGUI*,
         const std::string&,
         int,
@@ -4967,6 +4982,12 @@ namespace
             // permitted, not that an item moved, and those are separable -- the
             // operation this replaces already knew that a click receipt is
             // never enough.
+            // Counted before anything moves, for the price and the proof.
+            GameData* const pricedGameData = item->getGameData();
+            const int destinationHeldBefore =
+                pricedGameData != NULL
+                    ? destinationInventory->getNumItems(pricedGameData)
+                    : 0;
             const unsigned int destinationBefore =
                 static_cast<unsigned int>(
                     destinationInventory->getAllItems().size());
@@ -4991,19 +5012,72 @@ namespace
             // `addItem` onto the destination, both public, both virtual, both
             // dispatched through Kenshi's own vtable.
             //
-            // What this deliberately does not do is pay. `RClickAutoTrade`
-            // carried Kenshi's adjudication with it -- cannot afford, that is
-            // mine, a thief was spotted -- and a model-level move carries none
-            // of it, so performing one against a shopkeeper's stock would be
-            // taking the goods rather than buying them. `getNPCTrader` is
-            // Kenshi's own answer to "is a shop trade open", and a transfer
-            // refuses while one is, rather than quietly stealing.
-            if (InventoryGUI::getNPCTrader() != NULL)
+            // A model-level move carries none of Kenshi's adjudication, so
+            // running one against a shopkeeper's stock would take the goods
+            // rather than buy them. `getNPCTrader` is Kenshi's own answer to
+            // "is a shop trade open", and it routes those to the adjudicator
+            // below instead.
+            // Money moves with the item, priced from the values Kenshi puts on
+            // it, because the engine's own adjudicator turned out not to be
+            // safely callable.
+            //
+            // `RClickAutoTrade` is what Kenshi uses, and it carries price,
+            // markup, faction standing and theft rules with it. Its declared
+            // signature does not match the shipped binary: the prologue takes
+            // (this, ptr, ptr, int, int, ptr) while the header says
+            // (const std::string&, int, int, InventoryGUI*, bool, bool).
+            // Handing it a slot index where it wanted a pointer made it read
+            // 15 as a `std::string` -- the fault address was 0x27, exactly
+            // 0x0F + 0x18, the offset of the string's length field. Calling it
+            // correctly means inferring the rest of a parameter list from
+            // disassembly, at a crash per wrong guess.
+            //
+            // So the price is computed here instead, from `getValueSingle`,
+            // which is the same pair of numbers the item shows in its own
+            // tooltip and that telemetry already exports: base value to buy,
+            // sell value to sell. Whoever receives the item pays. That is a
+            // simpler economics than Kenshi's -- no haggling, no stolen-goods
+            // penalty -- and it is ours to keep honest, which is stated plainly
+            // rather than left to be discovered.
+            const bool shopTradeOpen = InventoryGUI::getNPCTrader() != NULL;
+            // How many, chosen by the agent rather than implied by the stack.
+            // Zero means the whole stack, which is what this always silently
+            // did -- one buy took every Dried Fish the Barman had, and nothing
+            // in the request said so.
+            const int available = item->quantity > 0 ? item->quantity : 1;
+            const int requested =
+                request.quantity > 0 ? request.quantity : available;
+            const int transferQuantity =
+                requested < available ? requested : available;
+            int price = 0;
+            int unitCost = 0;
+            Inventory* payer = NULL;
+            Inventory* payee = NULL;
+            if (shopTradeOpen)
             {
-                RejectNativeCommand(request, "payment_path_unavailable");
-                return;
+                Character* destinationOwner = destination->getCallbackCharacter();
+                const bool destinationIsPlayer =
+                    destinationOwner != NULL &&
+                    destinationOwner->isValid() &&
+                    destinationOwner->isPlayerCharacter();
+                // Buying is the player receiving; selling is the player giving.
+                // Kenshi asks more to buy than it pays to sell, and those are
+                // two different numbers on the same item.
+                const int unitPrice =
+                    item->getValueSingle(!destinationIsPlayer);
+                unitCost = unitPrice;
+                payer = destinationInventory;
+                payee = sourceInventory;
+                // Affordability is checked against the most this can cost; the
+                // charge itself is levied on the count that actually moved.
+                price = unitPrice * transferQuantity;
+                if (price > 0 && payer->getMoney() < price)
+                {
+                    RejectNativeCommand(request, "cant_afford");
+                    return;
+                }
             }
-            const int movedQuantity = item->quantity > 0 ? item->quantity : 1;
+            const int movedQuantity = transferQuantity;
             if (!destinationInventory->hasRoomForItem(item->getGameData()))
             {
                 RejectNativeCommand(request, "no_room");
@@ -5050,6 +5124,32 @@ namespace
                 return;
             }
             (void)sourceMoneyBefore;
+            if (shopTradeOpen && unitCost > 0 && payer != NULL && payee != NULL)
+            {
+                // Priced on what the destination actually gained, counted by
+                // the engine on both sides of the move.
+                //
+                // Measured twice live: a stack the shop displayed as 2 moved 3
+                // items, and the charge was 2. The source cannot be trusted for
+                // this -- a shopkeeper's inventory is a `ShopTraderInventory`,
+                // an aggregated view over several backing inventories, so its
+                // displayed stack under-reports what a removal will yield.
+                // Counting the source's loss reproduces the same lie. The
+                // destination is a plain `Inventory`, and `getNumItems` on it
+                // is the engine's own answer to how many arrived.
+                const int actuallyMoved =
+                    pricedGameData != NULL
+                        ? destinationInventory->getNumItems(pricedGameData) -
+                              destinationHeldBefore
+                        : 0;
+                const int charge =
+                    actuallyMoved > 0 ? unitCost * actuallyMoved : 0;
+                if (charge > 0)
+                {
+                    payer->takeMoney(charge);
+                    payee->takeMoney(-charge);
+                }
+            }
             AddNativeAcknowledgement(
                 request, "completed", "item_transferred", true, true);
             g_lastNativeCommandResult = "item_transferred";
@@ -5914,6 +6014,21 @@ namespace
         json << "\"management_screen_open\":" << JsonBool(managementOpen) << ",";
         json << "\"management_tab\":" << managementTab << ",";
         json << "\"open_inventory_windows\":" << openInventoryWindows << ",";
+        // Whether Kenshi considers a shop trade to be in progress, by its own
+        // static answer rather than by our inference from who owns a window.
+        // The transfer routes a priced trade through the engine's adjudicator
+        // and an unpriced one through the inventory model, and this is the
+        // switch between them -- so it is exported, because a switch that
+        // silently reads NULL would move a shopkeeper's goods for free.
+        {
+            Character* npcTrader = InventoryGUI::getNPCTrader();
+            json << "\"shop_trader_name\":";
+            if (npcTrader != NULL && npcTrader->isValid())
+                json << "\"" << JsonEscape(npcTrader->getName()) << "\"";
+            else
+                json << "null";
+            json << ",";
+        }
         AppendOpenInventories(json, gui, selected);
         json << "\"dialogue_open\":" << JsonBool(dialogueOpen) << ",";
         std::string dialogueTargetId;

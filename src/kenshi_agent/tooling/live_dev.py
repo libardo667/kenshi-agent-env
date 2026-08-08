@@ -2638,6 +2638,31 @@ def _telemetry_payload(result: TelemetryRead) -> dict[str, object]:
         "screen": snapshot.ui.active_screen,
         "money": snapshot.game.money,
         "active_shop_trader_count": snapshot.active_shop_trader_count,
+        # The trade state, because every question asked of this digest during
+        # the transfer work had to be answered by opening the raw telemetry file
+        # instead: is a shop trade open, whose windows are up, and can they
+        # reach each other. A digest that omits the subject of the current work
+        # is a digest you read once and then stop trusting.
+        "shop_trader_name": snapshot.ui.shop_trader_name,
+        "open_inventories": [
+            {
+                "owner_name": inventory.owner_name,
+                "owner_id": inventory.owner_id,
+                "owner_kind": inventory.owner_kind,
+                "player_owned": inventory.player_owned,
+                "within_trade_range": inventory.within_trade_range,
+                "money": inventory.money,
+                "sections": [
+                    {
+                        "name": section.name,
+                        "equipped": section.equipped,
+                        "items": len(section.items),
+                    }
+                    for section in inventory.sections
+                ],
+            }
+            for inventory in snapshot.ui.open_inventories
+        ],
         "native_control": snapshot.native_control.model_dump(mode="json"),
         "selected": selected.model_dump(mode="json") if selected else None,
         "nearby_entity_count": len(snapshot.nearby_entities),
