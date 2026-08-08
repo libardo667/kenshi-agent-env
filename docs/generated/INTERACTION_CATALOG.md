@@ -21,9 +21,9 @@ character selected.
 operations               23
 planner-visible          22
 internal-only             1
-native commands          17
+native commands          16
 manifest entries         24
-coverage proof          FAIL
+coverage proof          PASS
 
 PROOF STATUS
   source_proven     13
@@ -89,7 +89,6 @@ EXECUTION AND ROUTING
 
 NATIVE COMMAND ROUTES
   approach_confirmed_vendor    -> approach_dialogue_target (vestigial name)
-  close_trade_window           -> close_trade_window
   exit_current_building        -> exit_current_building
   move_in_direction            -> respond_to_immediate_threat
   move_to_character            -> move_to_character
@@ -108,6 +107,4 @@ NATIVE COMMAND ROUTES
 
 SEMANTIC SUBCASES
   perform_context_action:operate                unproven
-
-NATIVE COMMANDS WITHOUT A DEFINITION: close_trade_window
 ```

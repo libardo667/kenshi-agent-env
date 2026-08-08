@@ -133,7 +133,18 @@ def test_diagnostic_only_routes_are_exactly_the_reviewed_set() -> None:
         all_native_command_names,
     )
 
-    assert DIAGNOSTIC_ONLY_NATIVE_COMMANDS == {"shift_body_platoon"}
+    # Widened once, deliberately. `close_trade_window` is recovery rather than
+    # gameplay: the opener shipped without a counterpart, and both `./dev stop`
+    # and `./dev recover` refuse a loaded world while a modal is up, so a trade
+    # the agent opened with a non-shop owner left the game unclosable by any
+    # tool. Making it planner-visible instead is what a real operation would
+    # mean, and trying that made the runtime pick it in fifty tests whose
+    # doubles never acknowledge it -- fair warning that a recovery verb needs
+    # its own lifecycle before it joins the gameplay language.
+    assert DIAGNOSTIC_ONLY_NATIVE_COMMANDS == {
+        "shift_body_platoon",
+        "close_trade_window",
+    }
     assert DIAGNOSTIC_ONLY_NATIVE_COMMANDS <= set(all_native_command_names())
 
 
