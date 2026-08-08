@@ -203,7 +203,7 @@ namespace
     const unsigned int MAX_INVENTORY_ITEMS_PER_SECTION = 128;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "1.17.0";
+    const char* PROTOCOL_VERSION = "1.18.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -4268,8 +4268,6 @@ namespace
             request.command == "perform_character_order";
         const bool isResourceProduction =
             request.command == "produce_resource_output";
-        const bool isContextInventory =
-            request.command == "open_context_inventory";
         const bool isTransfer = request.command == "transfer_item";
         const bool isTradeWindow = request.command == "open_trade_window";
         const bool isResourceSurvey =
@@ -4286,7 +4284,7 @@ namespace
         if (isCloseTradeWindow || isPause || isSetSpeed || isBodyShift || isBodyShiftProbe || isApproach || isMove || isSquadSelection || isSquadRegroup ||
             isDirection || isMapTravel || isBuildingExit || isContextAction ||
             isCharacterOrder ||
-            isResourceProduction || isContextInventory || isResourceSurvey ||
+            isResourceProduction || isResourceSurvey ||
             isTransfer || isTradeWindow)
             g_lastNativeCommand = request.command;
         if (!isApproach &&
@@ -4299,7 +4297,6 @@ namespace
             !isContextAction &&
             !isCharacterOrder &&
             !isResourceProduction &&
-            !isContextInventory &&
             !isResourceSurvey &&
             !isTransfer &&
             !isTradeWindow &&
@@ -5250,64 +5247,6 @@ namespace
             return;
         }
 
-        if (isContextInventory)
-        {
-            // Opens the inventory of whatever the id names: a body, a crate, a
-            // shopkeeper, a squadmate.
-            //
-            // This used to resolve through `FindExactNaturalResource` and
-            // require `InspectNaturalResource(...).structurallyRecognized`, so
-            // it could only ever open a mining crate -- a looted body was
-            // unreachable by construction rather than by policy. Kenshi's own
-            // opener is `showInventory(hand, ...)` and its window map is keyed
-            // by `hand`; neither has ever cared what kind of thing the handle
-            // names. The narrow finder was ours, not the engine's.
-            if (gui == NULL || gui->inDialogue() || gui->hasModalMessage())
-            {
-                RejectNativeCommand(request, "conflicting_modal_open");
-                return;
-            }
-            hand ownerHandle;
-            if (!FindExactOwnerHandle(player, request.targetId, ownerHandle))
-            {
-                RejectNativeCommand(request, "target_lifetime_changed");
-                return;
-            }
-            g_lastNativeCommandTargetId = request.targetId;
-            RootObject* ownerObject = ownerHandle.getRootObject();
-            if (ownerObject != NULL && ownerObject->isValid())
-                g_lastNativeCommandTarget = ownerObject->getName();
-            if (gui->hasInventoryWindowOpen(ownerHandle))
-            {
-                AddNativeAcknowledgement(
-                    request,
-                    "completed",
-                    "exact_context_inventory_open",
-                    true,
-                    true);
-                g_lastNativeCommandResult = "exact_context_inventory_open";
-                return;
-            }
-            // Deliberately no refusal for other open windows. The old
-            // `conflicting_inventory_open` fence encoded the assumption that
-            // one window is the whole interaction -- and a transfer needs two
-            // open at once. That assumption is what made looting, buying and
-            // giving look like three different problems.
-            gui->showInventory(ownerHandle, true, 0.0f, 0.0f);
-            if (!gui->hasInventoryWindowOpen(ownerHandle))
-            {
-                RejectNativeCommand(request, "context_inventory_not_opened");
-                return;
-            }
-            AddNativeAcknowledgement(
-                request,
-                "completed",
-                "exact_context_inventory_open",
-                true,
-                true);
-            g_lastNativeCommandResult = "exact_context_inventory_open";
-            return;
-        }
 
         if (isContextAction || isResourceProduction)
         {
@@ -5336,56 +5275,6 @@ namespace
             const hand& targetHandle = target->getHandle();
             g_lastNativeCommandTarget = target->getName();
             g_lastNativeCommandTargetId = request.targetId;
-            if (isContextInventory)
-            {
-                if (gui == NULL ||
-                    gui->inDialogue() ||
-                    gui->hasModalMessage())
-                {
-                    RejectNativeCommand(
-                        request,
-                        "conflicting_modal_open");
-                    return;
-                }
-                if (gui->hasInventoryWindowOpen(targetHandle))
-                {
-                    AddNativeAcknowledgement(
-                        request,
-                        "completed",
-                        "exact_context_inventory_open",
-                        true,
-                        true);
-                    g_lastNativeCommandResult =
-                        "exact_context_inventory_open";
-                    return;
-                }
-                if (gui->isAnyInventoryWindowOpen())
-                {
-                    RejectNativeCommand(
-                        request,
-                        "conflicting_inventory_open");
-                    return;
-                }
-                InventoryGUI* opened =
-                    gui->showInventoryBuilding(targetHandle);
-                if (opened == NULL ||
-                    !gui->hasInventoryWindowOpen(targetHandle))
-                {
-                    RejectNativeCommand(
-                        request,
-                        "context_inventory_not_opened");
-                    return;
-                }
-                AddNativeAcknowledgement(
-                    request,
-                    "completed",
-                    "exact_context_inventory_open",
-                    true,
-                    true);
-                g_lastNativeCommandResult =
-                    "exact_context_inventory_open";
-                return;
-            }
 
             Character* selected = selectedHandle.getCharacter();
             const bool exactTaskAlreadyActive =

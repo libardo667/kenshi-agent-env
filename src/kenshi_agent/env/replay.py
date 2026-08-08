@@ -58,33 +58,19 @@ class ReplayOperationPort:
             success=None,
         )
 
-    activate_visible_control = _execute
     approach_dialogue_target = _execute
-    collect_resource_output = _execute
-    command_world_target = _execute
-    dismiss_screen = _execute
-    equip_item = _execute
     exit_current_building = _execute
     move_in_direction = _execute
     move_to_character = _execute
-    open_context_inventory = _execute
-    open_screen = _execute
     pause = _execute
     perform_context_action = _execute
     perform_character_order = _execute
     produce_resource_output = _execute
-    purchase_item = _execute
-    recover_camera_view = _execute
     regroup_with_squad_member = _execute
     respond_to_immediate_threat = _execute
-    rotate_camera = _execute
-    scroll_screen = _execute
-    select_squad_member = _execute
     select_squad_member_exact = _execute
-    sell_item = _execute
     set_speed = _execute
     travel_to_map_destination = _execute
-    use_game_binding = _execute
     wait = _execute
 
     async def control_pause(

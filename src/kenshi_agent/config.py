@@ -216,26 +216,6 @@ class LaunchConfig(ConfigModel):
         return self
 
 
-class CameraRecoveryConfig(ConfigModel):
-    """Fixed, bounded controller policy for ``recover_camera_view``."""
-
-    candidate_settle_seconds: float = Field(default=0.30, ge=0.0, le=3.0)
-    clear_score_threshold: float = Field(default=0.72, ge=0.0, le=1.0)
-    anchor_max_distance: float = Field(default=30.0, gt=0.0, le=1000.0)
-    max_lower_floors: int = Field(default=2, ge=0, le=2)
-    portrait_click_hold_seconds: float = Field(default=0.12, ge=0.0, le=1.0)
-    portrait_click_interval_seconds: float = Field(default=0.08, ge=0.0, le=1.0)
-    floor_click_hold_seconds: float = Field(default=0.12, ge=0.0, le=1.0)
-    zoom_out_key: str = Field(default="end", min_length=1, max_length=32)
-    zoom_out_hold_seconds: float = Field(default=0.30, ge=0.0, le=2.0)
-    rotate_left_key: str = Field(default="q", min_length=1, max_length=32)
-    rotate_right_key: str = Field(default="e", min_length=1, max_length=32)
-    orbit_hold_seconds: float = Field(default=0.35, gt=0.0, le=2.0)
-    tilt_up_key: str = Field(default="comma", min_length=1, max_length=32)
-    tilt_down_key: str = Field(default="period", min_length=1, max_length=32)
-    tilt_hold_seconds: float = Field(default=0.35, gt=0.0, le=2.0)
-
-
 class ControlsConfig(ConfigModel):
     pause_key: str = "space"
     speed_keys: dict[int, str] = Field(default_factory=lambda: {1: "f2", 2: "f3", 3: "f4"})
@@ -279,17 +259,6 @@ class ControlsConfig(ConfigModel):
     # moves the cursor but activates nothing. Keep the proven semantic-control
     # hold time as an ordinary controller knob.
     control_activation_hold_seconds: float = Field(default=0.12, ge=0.0, le=1.0)
-    # An inventory or shop cell resolves what it holds from the hovered widget,
-    # so the pointer has to land and be seen there before the button goes down.
-    # A ClickAction moves and presses with only `relative_pointer_settle_seconds`
-    # between them - six milliseconds - and six live purchases in a row did
-    # nothing at all while the same click with a third of a second in front of
-    # it transferred the item every time.
-    item_cell_hover_seconds: float = Field(default=0.35, ge=0.0, le=2.0)
-    # Key that backs out of an open screen. Coordinate-independent, so it works
-    # regardless of resolution or calibration.
-    dismiss_screen_key: str = Field(default="escape", min_length=1, max_length=32)
-    camera_recovery: CameraRecoveryConfig = Field(default_factory=CameraRecoveryConfig)
 
     def expected_calibration_identity(self) -> CalibrationIdentity:
         return CalibrationIdentity(
@@ -403,19 +372,6 @@ class SafetyConfig(ConfigModel):
     max_wait_seconds: float = Field(default=10.0, ge=0.0, le=60.0)
     block_clicks_when_telemetry_stale: bool = True
     allow_live_unpause_actions: bool = False
-    # Spending limits are opt-in. It is a game the operator is choosing to let
-    # an agent play, so how freely it trades is a preference, not a safety
-    # boundary — null means unlimited. The fences that stop it buying the
-    # *wrong* thing (the cell must bind, the tooltip must name this item at this
-    # price, the seller must be the one verified trader) are not configurable
-    # and always apply.
-    max_purchase_price: int | None = Field(default=None, ge=1)
-    min_money_after_purchase: int | None = Field(default=None, ge=0)
-    max_purchases_per_run: int | None = Field(default=None, ge=0)
-    # Task intent, deliberately separate from purchase safety: a food run sets
-    # ["[Food]"] so nothing else can be bought, while the generic purchase
-    # contract itself stays indifferent to what an item is.
-    required_purchase_tooltip_markers: list[str] = Field(default_factory=list, max_length=8)
     # Which operations may be dispatched. Empty still means deny everything, so
     # a config that forgets this cannot silently admit the whole registry.
     #

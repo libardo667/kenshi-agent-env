@@ -11,22 +11,15 @@ from typing import TYPE_CHECKING, cast
 from PIL import Image, ImageDraw, ImageFont
 
 from ..affordances import OPERATION_BINDING_AUTHORITY
-from ..camera_recovery import score_camera_observation
 from ..config import MockConfig
-from ..core.evidence import (
-    CameraRecoveryEvidence,
-    CameraRecoveryStatus,
-    SemanticActionReceipt,
-)
+from ..core.evidence import SemanticActionReceipt
 from ..core.observation import Observation
 from ..core.operation import (
     GAME_SPEED_MULTIPLIER_BY_GEAR,
     Action,
-    ActivateVisibleControlAction,
     ApproachDialogueTargetAction,
     ControlMode,
     PauseAction,
-    RecoverCameraViewAction,
     SetSpeedAction,
     WaitAction,
 )
@@ -52,8 +45,6 @@ from ..core.world import WorldStateRevision
 from ..operation_definitions import (
     BindingFailure,
     BoundActor,
-    BoundCameraRecovery,
-    BoundVisibleControl,
     definition_for,
 )
 from .base import AgentEnvironment
@@ -160,24 +151,6 @@ class MockOperationPort:
     ) -> Transition:
         return await self._semantic(action, command=command, token=token)
 
-    async def activate_visible_control(
-        self,
-        action: Action,
-        *,
-        command: CommandDispatchContext,
-        token: ExecutionToken | None,
-    ) -> Transition:
-        return await self._semantic(action, command=command, token=token)
-
-    async def recover_camera_view(
-        self,
-        action: Action,
-        *,
-        command: CommandDispatchContext,
-        token: ExecutionToken | None,
-    ) -> Transition:
-        return await self._semantic(action, command=command, token=token)
-
     async def _semantic(
         self,
         action: Action,
@@ -186,18 +159,13 @@ class MockOperationPort:
         token: ExecutionToken | None,
     ) -> Transition:
         del token
-        typed = cast(
-            ApproachDialogueTargetAction
-            | ActivateVisibleControlAction
-            | RecoverCameraViewAction,
-            action,
-        )
+        typed = cast(ApproachDialogueTargetAction, action)
         message, semantic = self._environment._apply_semantic_action(typed)
         return await self._finish(
             typed,
             command,
             message=message,
-            primitive_actions=0 if isinstance(typed, RecoverCameraViewAction) else 1,
+            primitive_actions=1,
             semantic=semantic,
         )
 
@@ -264,32 +232,20 @@ class MockOperationPort:
             events=observation.events,
         )
 
-    collect_resource_output = _record
-    command_world_target = _record
-    dismiss_screen = _record
-    equip_item = _record
     exit_current_building = _record
     move_in_direction = _record
     move_to_character = _record
-    open_context_inventory = _record
-    open_screen = _record
     perform_context_action = _record
     perform_character_order = _record
     produce_resource_output = _record
-    purchase_item = _record
     regroup_with_squad_member = _record
     respond_to_immediate_threat = _record
-    rotate_camera = _record
-    scroll_screen = _record
-    select_squad_member = _record
     transfer_item = _record
     open_trade_window = _record
     select_squad_member_exact = _record
-    sell_item = _record
     shift_into_body = _record
     survey_local_resources = _record
     travel_to_map_destination = _record
-    use_game_binding = _record
 
 
 class MockEnvironment(AgentEnvironment):
@@ -512,9 +468,7 @@ class MockEnvironment(AgentEnvironment):
 
     def _apply_semantic_action(
         self,
-        action: (
-            ApproachDialogueTargetAction | ActivateVisibleControlAction | RecoverCameraViewAction
-        ),
+        action: ApproachDialogueTargetAction,
     ) -> tuple[str, SemanticActionReceipt | None]:
         """Bind a semantic action against mock state and record what it resolved to.
 
@@ -548,65 +502,13 @@ class MockEnvironment(AgentEnvironment):
             )
         binding = bound.binding
         assert not isinstance(binding, BindingFailure)
-        if isinstance(action, RecoverCameraViewAction):
-            assert isinstance(binding, BoundCameraRecovery)
-            score = score_camera_observation(
-                observation,
-                candidate="mock_initial",
-                floor=binding.floor,
-                clear_score_threshold=0.72,
-                anchor_max_distance=30.0,
-            )
-            status = (
-                CameraRecoveryStatus.ALREADY_CLEAR
-                if score.clear
-                else CameraRecoveryStatus.FAILED_AFTER_BOUNDED_ATTEMPTS
-            )
-            semantic = SemanticActionReceipt(
-                action_kind=action.kind,
-                contract_version=definition.version,
-                target_id=binding.target_id,
-                resolved_label=binding.resolved_label,
-                resolved_role=binding.resolved_role,
-                resolved_bounds=binding.resolved_bounds,
-                source_revision=binding.source_revision,
-                revalidation=binding.reason,
-                camera_recovery=CameraRecoveryEvidence(
-                    status=status,
-                    selected_character_id=binding.target_id,
-                    selected_character_name=binding.selected_character_name,
-                    initial_floor=binding.floor,
-                    final_floor=binding.floor,
-                    clear_score_threshold=0.72,
-                    anchor_max_distance=30.0,
-                    paused_for_recovery=False,
-                    primitive_actions=0,
-                    follow_method="already_anchored",
-                    chosen_candidate=score.candidate,
-                    candidates=[score],
-                ),
-            )
-            return (
-                f"Mock camera recovery returned {status.value}: {binding.reason}",
-                semantic,
-            )
         target_id: str | None = None
-        resolved_label: str | None = None
-        resolved_role: str | None = None
-        resolved_bounds: NormalizedPointerBounds | None = None
         if isinstance(binding, BoundActor):
             target_id = binding.target_id
-        elif isinstance(binding, BoundVisibleControl):
-            resolved_label = binding.resolved_label
-            resolved_role = binding.resolved_role
-            resolved_bounds = binding.resolved_bounds
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
             contract_version=definition.version,
             target_id=target_id,
-            resolved_label=resolved_label,
-            resolved_role=resolved_role,
-            resolved_bounds=resolved_bounds,
             source_revision=binding.source_revision,
             revalidation=binding.reason,
         )

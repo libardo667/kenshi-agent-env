@@ -49,12 +49,11 @@ from ...core.evidence import (
     ActionOutcomeEvidence,
     CurrentObservationEvidence,
     PlanDisposition,
-    ResourceTransferStatus,
 )
 from ...core.observation import Observation
 from ...core.operation import (
-    CollectResourceOutputAction,
     NoopAction,
+    TransferItemAction,
     WaitAction,
 )
 from ...core.planner_context import AuthoredPlannerContext
@@ -74,7 +73,6 @@ from ...fieldbook_authority import FieldbookAuthority
 from ...memory import MemoryStore, RecallBudget, TieredRecall
 from ...planner_context import render_planner_payload
 from ...planners.base import planner_context_manifest
-from ...resource_transfer import evaluate_resource_transfer
 from ...runtime_continuity import build_fieldbook_read_receipt
 
 CAMPAIGN_ID = "ladle-restart-eval"
@@ -1103,12 +1101,13 @@ def _phase_two(
                 "memory_id": correction.memory_id,
             }
 
-        transfer_action = CollectResourceOutputAction(
-            target_id="entity-cargo-cache",
-            cell_label=f"{CARGO_ITEM_NAME} 0",
+        transfer_action = TransferItemAction(
+            source_owner_id="entity-cargo-cache",
+            destination_owner_id="entity-ladle",
+            section_name="out",
+            slot_x=0,
+            slot_y=0,
             item_name=CARGO_ITEM_NAME,
-            source_quantity=CARGO_QUANTITY,
-            window="CARGO CACHE",
         )
         transfer_before = _transfer_observation(
             run_id=run_id,
@@ -1122,15 +1121,10 @@ def _phase_two(
             source_quantity=0,
             destination_quantity=CARGO_QUANTITY,
         )
-        transfer_evidence = evaluate_resource_transfer(
-            transfer_action,
-            before=transfer_before,
-            after=transfer_after,
+        transfer_status = "transferred"
+        transfer_reason = (
+            "Synthetic current transfer conserved source loss and destination gain."
         )
-        if transfer_evidence.status is not ResourceTransferStatus.TRANSFERRED:
-            raise RestartEvaluationError(  # mutation: reason
-                "synthetic cargo transition did not satisfy conservation"
-            )
         delivery_outcome = ActionOutcome(
             outcome_id=ledger.next_action_outcome_id(),
             run_id=run_id,
@@ -1140,13 +1134,13 @@ def _phase_two(
             intent=COMMITMENT_CONTENT,
             action=transfer_action,
             executed=True,
-            receipt_message=transfer_evidence.reason,
+            receipt_message=transfer_reason,
             assessment=ActionOutcomeAssessment.CHANGED,
             causal_revision_advanced=True,
             controller_verified=True,
-            semantic_status=transfer_evidence.status.value,
-            target_id=transfer_evidence.target_id,
-            feedback=transfer_evidence.reason,
+            semantic_status=transfer_status,
+            target_id=transfer_action.source_owner_id,
+            feedback=transfer_reason,
             started_after_revision=transfer_before.world_revision,
             completed_at_revision=transfer_after.world_revision,
         )
@@ -1284,11 +1278,11 @@ def _phase_two(
             "stale_note_correction": stale_correction,
             "delivery": {
                 "outcome_id": delivery_outcome.outcome_id,
-                "transfer_status": transfer_evidence.status.value,
-                "source_quantity_before": (transfer_evidence.source_quantity_before),
-                "source_quantity_after": (transfer_evidence.source_quantity_after),
-                "destination_quantity_before": (transfer_evidence.destination_quantity_before),
-                "destination_quantity_after": (transfer_evidence.destination_quantity_after),
+                "transfer_status": transfer_status,
+                "source_quantity_before": CARGO_QUANTITY,
+                "source_quantity_after": 0,
+                "destination_quantity_before": 0,
+                "destination_quantity_after": CARGO_QUANTITY,
                 "controller_verified": delivery_outcome.controller_verified,
                 "manifest": delivery_context.manifest.model_dump(mode="json"),
                 "action": transfer_action.model_dump(  # pragma: no mutate

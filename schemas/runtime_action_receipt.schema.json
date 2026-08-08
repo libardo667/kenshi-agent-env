@@ -1,44 +1,5 @@
 {
   "$defs": {
-    "ActivateVisibleControlAction": {
-      "additionalProperties": false,
-      "description": "Activate exactly one control the interface currently advertises.\n\nThe arguments are an exact current label and role, not coordinates: the\nbounds come from telemetry and are re-resolved inside the input lease. The\naction knows nothing about which screen, which conversation, or which option\nindex it is activating.",
-      "properties": {
-        "kind": {
-          "const": "activate_visible_control",
-          "default": "activate_visible_control",
-          "title": "Kind",
-          "type": "string"
-        },
-        "exact_label": {
-          "maxLength": 500,
-          "minLength": 1,
-          "title": "Exact Label",
-          "type": "string"
-        },
-        "role": {
-          "default": "button",
-          "enum": [
-            "button",
-            "text",
-            "item"
-          ],
-          "title": "Role",
-          "type": "string"
-        },
-        "window": {
-          "default": "",
-          "maxLength": 200,
-          "title": "Window",
-          "type": "string"
-        }
-      },
-      "required": [
-        "exact_label"
-      ],
-      "title": "ActivateVisibleControlAction",
-      "type": "object"
-    },
     "AdvisorAttribution": {
       "additionalProperties": false,
       "properties": {
@@ -558,223 +519,6 @@
       "title": "CalibrationStatus",
       "type": "string"
     },
-    "CameraFrameScore": {
-      "additionalProperties": false,
-      "description": "One retained frame and the deterministic signals used to rank it.",
-      "properties": {
-        "candidate": {
-          "maxLength": 80,
-          "minLength": 1,
-          "title": "Candidate",
-          "type": "string"
-        },
-        "screenshot_path": {
-          "format": "path",
-          "title": "Screenshot Path",
-          "type": "string"
-        },
-        "screenshot_sha256": {
-          "pattern": "^[0-9a-f]{64}$",
-          "title": "Screenshot Sha256",
-          "type": "string"
-        },
-        "telemetry_sequence": {
-          "minimum": 0,
-          "title": "Telemetry Sequence",
-          "type": "integer"
-        },
-        "frame_sequence": {
-          "minimum": 0,
-          "title": "Frame Sequence",
-          "type": "integer"
-        },
-        "floor": {
-          "title": "Floor",
-          "type": "integer"
-        },
-        "score": {
-          "maximum": 1.0,
-          "minimum": 0.0,
-          "title": "Score",
-          "type": "number"
-        },
-        "edge_density": {
-          "maximum": 1.0,
-          "minimum": 0.0,
-          "title": "Edge Density",
-          "type": "number"
-        },
-        "contrast": {
-          "maximum": 1.0,
-          "minimum": 0.0,
-          "title": "Contrast",
-          "type": "number"
-        },
-        "color_diversity": {
-          "maximum": 1.0,
-          "minimum": 0.0,
-          "title": "Color Diversity",
-          "type": "number"
-        },
-        "nonflat_fraction": {
-          "maximum": 1.0,
-          "minimum": 0.0,
-          "title": "Nonflat Fraction",
-          "type": "number"
-        },
-        "inverse_dominant_color": {
-          "maximum": 1.0,
-          "minimum": 0.0,
-          "title": "Inverse Dominant Color",
-          "type": "number"
-        },
-        "selected_world_label_visible": {
-          "title": "Selected World Label Visible",
-          "type": "boolean"
-        },
-        "anchor_distance": {
-          "anyOf": [
-            {
-              "minimum": 0.0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Anchor Distance"
-        },
-        "clear": {
-          "title": "Clear",
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "candidate",
-        "screenshot_path",
-        "screenshot_sha256",
-        "telemetry_sequence",
-        "frame_sequence",
-        "floor",
-        "score",
-        "edge_density",
-        "contrast",
-        "color_diversity",
-        "nonflat_fraction",
-        "inverse_dominant_color",
-        "selected_world_label_visible",
-        "clear"
-      ],
-      "title": "CameraFrameScore",
-      "type": "object"
-    },
-    "CameraRecoveryEvidence": {
-      "additionalProperties": false,
-      "description": "Controller-owned proof for a complete bounded recovery transaction.",
-      "properties": {
-        "status": {
-          "$ref": "#/$defs/CameraRecoveryStatus"
-        },
-        "selected_character_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Selected Character Id",
-          "type": "string"
-        },
-        "selected_character_name": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Selected Character Name",
-          "type": "string"
-        },
-        "initial_floor": {
-          "title": "Initial Floor",
-          "type": "integer"
-        },
-        "final_floor": {
-          "title": "Final Floor",
-          "type": "integer"
-        },
-        "clear_score_threshold": {
-          "maximum": 1.0,
-          "minimum": 0.0,
-          "title": "Clear Score Threshold",
-          "type": "number"
-        },
-        "anchor_max_distance": {
-          "exclusiveMinimum": 0.0,
-          "title": "Anchor Max Distance",
-          "type": "number"
-        },
-        "paused_for_recovery": {
-          "title": "Paused For Recovery",
-          "type": "boolean"
-        },
-        "primitive_actions": {
-          "maximum": 100,
-          "minimum": 0,
-          "title": "Primitive Actions",
-          "type": "integer"
-        },
-        "follow_method": {
-          "enum": [
-            "already_anchored",
-            "portrait_double_click"
-          ],
-          "title": "Follow Method",
-          "type": "string"
-        },
-        "chosen_candidate": {
-          "maxLength": 80,
-          "minLength": 1,
-          "title": "Chosen Candidate",
-          "type": "string"
-        },
-        "candidates": {
-          "items": {
-            "$ref": "#/$defs/CameraFrameScore"
-          },
-          "maxItems": 16,
-          "minItems": 1,
-          "title": "Candidates",
-          "type": "array"
-        }
-      },
-      "required": [
-        "status",
-        "selected_character_id",
-        "selected_character_name",
-        "initial_floor",
-        "final_floor",
-        "clear_score_threshold",
-        "anchor_max_distance",
-        "paused_for_recovery",
-        "primitive_actions",
-        "follow_method",
-        "chosen_candidate",
-        "candidates"
-      ],
-      "title": "CameraRecoveryEvidence",
-      "type": "object"
-    },
-    "CameraRecoveryStatus": {
-      "enum": [
-        "already_clear",
-        "recovered",
-        "failed_after_bounded_attempts"
-      ],
-      "title": "CameraRecoveryStatus",
-      "type": "string"
-    },
-    "CameraRotationDirection": {
-      "enum": [
-        "left",
-        "right"
-      ],
-      "title": "CameraRotationDirection",
-      "type": "string"
-    },
     "CapabilityCondition": {
       "additionalProperties": false,
       "properties": {
@@ -878,93 +622,6 @@
         "y"
       ],
       "title": "ClickAction",
-      "type": "object"
-    },
-    "CollectResourceOutputAction": {
-      "additionalProperties": false,
-      "description": "Transfer one exact resource-output cell into the selected squadmate.\n\nThe exact world-target ID binds the source window to its observed resource.\n`source_quantity` is copied from the cell so the controller can prove that\nsource loss equals destination gain after the right-click.",
-      "properties": {
-        "kind": {
-          "const": "collect_resource_output",
-          "default": "collect_resource_output",
-          "title": "Kind",
-          "type": "string"
-        },
-        "target_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Target Id",
-          "type": "string"
-        },
-        "cell_label": {
-          "maxLength": 80,
-          "minLength": 1,
-          "title": "Cell Label",
-          "type": "string"
-        },
-        "item_name": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Item Name",
-          "type": "string"
-        },
-        "source_quantity": {
-          "exclusiveMinimum": 0,
-          "title": "Source Quantity",
-          "type": "integer"
-        },
-        "window": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Window",
-          "type": "string"
-        },
-        "section": {
-          "const": "out",
-          "default": "out",
-          "title": "Section",
-          "type": "string"
-        }
-      },
-      "required": [
-        "target_id",
-        "cell_label",
-        "item_name",
-        "source_quantity",
-        "window"
-      ],
-      "title": "CollectResourceOutputAction",
-      "type": "object"
-    },
-    "CommandWorldTargetAction": {
-      "additionalProperties": false,
-      "description": "Right-click one exact current world target at telemetry-owned geometry.",
-      "properties": {
-        "kind": {
-          "const": "command_world_target",
-          "default": "command_world_target",
-          "title": "Kind",
-          "type": "string"
-        },
-        "target_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Target Id",
-          "type": "string"
-        },
-        "context_action": {
-          "maxLength": 80,
-          "minLength": 1,
-          "pattern": "^[a-z][a-z0-9_]*$",
-          "title": "Context Action",
-          "type": "string"
-        }
-      },
-      "required": [
-        "target_id",
-        "context_action"
-      ],
-      "title": "CommandWorldTargetAction",
       "type": "object"
     },
     "Condition": {
@@ -1094,81 +751,6 @@
       ],
       "title": "CoordinateSpace",
       "type": "string"
-    },
-    "DismissScreenAction": {
-      "additionalProperties": false,
-      "description": "Close one exact currently open screen toward the world view.\n\nExiting is as much a part of using an interface as entering it. Naming the\nscreen and, where applicable, the owner window makes the action bind to\nobserved state instead of blindly pressing a key and hoping. Named game\nscreens close through their own toggle binding; trade windows close through\ntheir exact close box. It deliberately does not end an active conversation:\ndialogue must choose an exact visible closing reply.",
-      "properties": {
-        "kind": {
-          "const": "dismiss_screen",
-          "default": "dismiss_screen",
-          "title": "Kind",
-          "type": "string"
-        },
-        "expected_screen": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/GameScreen"
-            },
-            {
-              "enum": [
-                "dialogue",
-                "trade"
-              ],
-              "type": "string"
-            }
-          ],
-          "title": "Expected Screen"
-        },
-        "window": {
-          "default": "",
-          "maxLength": 200,
-          "title": "Window",
-          "type": "string"
-        }
-      },
-      "required": [
-        "expected_screen"
-      ],
-      "title": "DismissScreenAction",
-      "type": "object"
-    },
-    "EquipItemAction": {
-      "additionalProperties": false,
-      "description": "Equip one item from an exact currently selected squad-owned window.\n\nKenshi equips on right-click (`rightClickAutoEquipping`) - the *same*\ngesture that sells an item when a trade is open. That collision is the whole\nhazard: an equip attempted with a shop window up is a sale, and the item is\ngone before any postcondition could notice. So this action refuses outright\nunless no trade is active.",
-      "properties": {
-        "kind": {
-          "const": "equip_item",
-          "default": "equip_item",
-          "title": "Kind",
-          "type": "string"
-        },
-        "cell_label": {
-          "maxLength": 80,
-          "minLength": 1,
-          "title": "Cell Label",
-          "type": "string"
-        },
-        "item_name": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Item Name",
-          "type": "string"
-        },
-        "window": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Window",
-          "type": "string"
-        }
-      },
-      "required": [
-        "cell_label",
-        "item_name",
-        "window"
-      ],
-      "title": "EquipItemAction",
-      "type": "object"
     },
     "ExitCurrentBuildingAction": {
       "additionalProperties": false,
@@ -1318,130 +900,6 @@
       ],
       "title": "FieldConditionPath",
       "type": "string"
-    },
-    "GameBinding": {
-      "description": "Kenshi's named control intentions under the shipped default keymap.\n\nThe current physical mapping is a hard-coded copy of the shipped\n`controls.cfg`; it is not read from the user's active keymap. Membership is\nthe adapter-owned subset recorded by the game-binding parity ledger.",
-      "enum": [
-        "toggle_inventory",
-        "toggle_map",
-        "toggle_stats",
-        "toggle_help",
-        "toggle_crafting",
-        "toggle_research",
-        "quicksave",
-        "quickload",
-        "build_apply",
-        "build_move_down",
-        "build_move_up",
-        "build_rotate_left",
-        "build_rotate_right",
-        "build_tilt_decrease",
-        "build_tilt_increase",
-        "build_undo",
-        "toggle_build",
-        "pause",
-        "speed_1",
-        "speed_2",
-        "speed_3",
-        "camera_forward",
-        "camera_back",
-        "camera_left",
-        "camera_right",
-        "camera_rotate_left",
-        "camera_rotate_right",
-        "camera_tilt+",
-        "camera_tilt-",
-        "camera_zoom_in",
-        "camera_zoom_out",
-        "cycle_run_speed",
-        "toggle_fps_camera",
-        "editor_delete",
-        "editor_toggle",
-        "rebuild_navmesh",
-        "reload_biomes",
-        "floor_down",
-        "floor_up",
-        "gizmo_move",
-        "gizmo_rotate",
-        "gizmo_scale",
-        "focus_char",
-        "highlight",
-        "select_all",
-        "change_squad",
-        "character_next",
-        "character_prev",
-        "select_0",
-        "select_1",
-        "select_2",
-        "select_3",
-        "select_4",
-        "select_5",
-        "select_6",
-        "select_7",
-        "select_8",
-        "select_9",
-        "stop_movement",
-        "medic",
-        "rescue",
-        "toggle_hold",
-        "toggle_block",
-        "toggle_bar",
-        "toggle_passive",
-        "toggle_ranged",
-        "toggle_sneak",
-        "toggle_taunt"
-      ],
-      "title": "GameBinding",
-      "type": "string"
-    },
-    "GameScreen": {
-      "description": "A screen the agent wants open, named by what it is rather than a key.",
-      "enum": [
-        "inventory",
-        "stats",
-        "map",
-        "research",
-        "crafting"
-      ],
-      "title": "GameScreen",
-      "type": "string"
-    },
-    "HarvestResourceAction": {
-      "additionalProperties": false,
-      "description": "Harvest a bounded yield from one exact resource into one exact actor.\n\nThe planner chooses the actor, resource, and useful yield once. The\ncontroller owns production, inventory opening, exact conserved transfer,\ncleanup, and terminal proof as one interruptible option.",
-      "properties": {
-        "kind": {
-          "const": "harvest_resource",
-          "default": "harvest_resource",
-          "title": "Kind",
-          "type": "string"
-        },
-        "actor_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Actor Id",
-          "type": "string"
-        },
-        "target_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Target Id",
-          "type": "string"
-        },
-        "quantity": {
-          "maximum": 5,
-          "minimum": 1,
-          "title": "Quantity",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "actor_id",
-        "target_id",
-        "quantity"
-      ],
-      "title": "HarvestResourceAction",
-      "type": "object"
     },
     "HotkeyAction": {
       "additionalProperties": false,
@@ -2018,49 +1476,6 @@
       "title": "NormalizedPointerBounds",
       "type": "object"
     },
-    "OpenContextInventoryAction": {
-      "additionalProperties": false,
-      "description": "Open the ordinary inventory UI for one exact observed world target.",
-      "properties": {
-        "kind": {
-          "const": "open_context_inventory",
-          "default": "open_context_inventory",
-          "title": "Kind",
-          "type": "string"
-        },
-        "target_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Target Id",
-          "type": "string"
-        }
-      },
-      "required": [
-        "target_id"
-      ],
-      "title": "OpenContextInventoryAction",
-      "type": "object"
-    },
-    "OpenScreenAction": {
-      "additionalProperties": false,
-      "description": "Have a named screen open. Prefer this over pressing its key.\n\nIdempotent: succeeds if the screen is already open.",
-      "properties": {
-        "kind": {
-          "const": "open_screen",
-          "default": "open_screen",
-          "title": "Kind",
-          "type": "string"
-        },
-        "screen": {
-          "$ref": "#/$defs/GameScreen"
-        }
-      },
-      "required": [
-        "screen"
-      ],
-      "title": "OpenScreenAction",
-      "type": "object"
-    },
     "OpenTradeWindowAction": {
       "additionalProperties": false,
       "description": "Put two inventories side by side, in Kenshi's own terms.\n\n`showInventory` opens one window - a character's personal gear, the view a\nplayer gets for stealing - so a transfer opened that way has nothing to move\nbetween. `ForgottenGUI::showTradeWindow` takes both sides and a type, and\nthat type enum is the engine stating that trading and looting are one\nmechanism with a flag rather than two problems.",
@@ -2222,186 +1637,6 @@
       "title": "ProduceResourceOutputAction",
       "type": "object"
     },
-    "PurchaseEvidence": {
-      "additionalProperties": false,
-      "description": "Terminal proof against the exact open player-window owner's inventory.",
-      "properties": {
-        "status": {
-          "$ref": "#/$defs/PurchaseStatus"
-        },
-        "seller_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Seller Id",
-          "type": "string"
-        },
-        "selected_character_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Selected Character Id",
-          "type": "string"
-        },
-        "item_name": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Item Name",
-          "type": "string"
-        },
-        "expected_price": {
-          "minimum": 0,
-          "title": "Expected Price",
-          "type": "integer"
-        },
-        "requested_quantity": {
-          "maximum": 5,
-          "minimum": 1,
-          "title": "Requested Quantity",
-          "type": "integer"
-        },
-        "purchased_quantity": {
-          "maximum": 5,
-          "minimum": 0,
-          "title": "Purchased Quantity",
-          "type": "integer"
-        },
-        "money_before": {
-          "minimum": 0,
-          "title": "Money Before",
-          "type": "integer"
-        },
-        "money_after": {
-          "anyOf": [
-            {
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Money After"
-        },
-        "inventory_quantity_before": {
-          "minimum": 0,
-          "title": "Inventory Quantity Before",
-          "type": "integer"
-        },
-        "inventory_quantity_after": {
-          "anyOf": [
-            {
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Inventory Quantity After"
-        },
-        "observed_after_sequence": {
-          "anyOf": [
-            {
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Observed After Sequence"
-        },
-        "reason": {
-          "maxLength": 1000,
-          "minLength": 1,
-          "title": "Reason",
-          "type": "string"
-        }
-      },
-      "required": [
-        "status",
-        "seller_id",
-        "selected_character_id",
-        "item_name",
-        "expected_price",
-        "requested_quantity",
-        "purchased_quantity",
-        "money_before",
-        "inventory_quantity_before",
-        "reason"
-      ],
-      "title": "PurchaseEvidence",
-      "type": "object"
-    },
-    "PurchaseItemAction": {
-      "additionalProperties": false,
-      "description": "Acquire a bounded quantity of one item from exact seller-owned cells.\n\n`expected_price` is the nonnegative per-unit charge reported as buy_price.\nZero is a real free acquisition, not missing price evidence. The controller\nrebinds interchangeable stock after each transfer and proves that carried\ngain exactly matches the quoted charge before attempting the next unit.",
-      "properties": {
-        "kind": {
-          "const": "purchase_item",
-          "default": "purchase_item",
-          "title": "Kind",
-          "type": "string"
-        },
-        "cell_label": {
-          "maxLength": 80,
-          "minLength": 1,
-          "title": "Cell Label",
-          "type": "string"
-        },
-        "item_name": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Item Name",
-          "type": "string"
-        },
-        "expected_price": {
-          "minimum": 0,
-          "title": "Expected Price",
-          "type": "integer"
-        },
-        "quantity": {
-          "default": 1,
-          "maximum": 5,
-          "minimum": 1,
-          "title": "Quantity",
-          "type": "integer"
-        },
-        "window": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Window",
-          "type": "string"
-        },
-        "seller_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Seller Id",
-          "type": "string"
-        }
-      },
-      "required": [
-        "cell_label",
-        "item_name",
-        "expected_price",
-        "window",
-        "seller_id"
-      ],
-      "title": "PurchaseItemAction",
-      "type": "object"
-    },
-    "PurchaseStatus": {
-      "enum": [
-        "purchased",
-        "partially_purchased",
-        "not_purchased",
-        "outcome_unknown"
-      ],
-      "title": "PurchaseStatus",
-      "type": "string"
-    },
     "QuicksaveEvidence": {
       "additionalProperties": false,
       "description": "Controller-owned proof that F5 replaced the exact quicksave tree.",
@@ -2549,20 +1784,6 @@
       "title": "RecallMemoryAction",
       "type": "object"
     },
-    "RecoverCameraViewAction": {
-      "additionalProperties": false,
-      "description": "Ask the controller to restore a usable character-following world view.\n\nThis action intentionally has no camera parameters. The caller identifies\nthe problem; the controller owns the bounded follow, floor, zoom, orbit,\ncapture, and scoring transaction and reports its terminal outcome.",
-      "properties": {
-        "kind": {
-          "const": "recover_camera_view",
-          "default": "recover_camera_view",
-          "title": "Kind",
-          "type": "string"
-        }
-      },
-      "title": "RecoverCameraViewAction",
-      "type": "object"
-    },
     "RegroupWithSquadMemberAction": {
       "additionalProperties": false,
       "description": "Bring the selected actor to one exact current squadmate.",
@@ -2593,242 +1814,6 @@
       "title": "RegroupWithSquadMemberAction",
       "type": "object"
     },
-    "ResourceHarvestEvidence": {
-      "additionalProperties": false,
-      "description": "Terminal proof for one controller-owned production and transfer bundle.",
-      "properties": {
-        "status": {
-          "$ref": "#/$defs/ResourceHarvestStatus"
-        },
-        "target_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Target Id",
-          "type": "string"
-        },
-        "selected_character_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Selected Character Id",
-          "type": "string"
-        },
-        "requested_quantity": {
-          "maximum": 5,
-          "minimum": 1,
-          "title": "Requested Quantity",
-          "type": "integer"
-        },
-        "item_name": {
-          "anyOf": [
-            {
-              "maxLength": 200,
-              "minLength": 1,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Item Name"
-        },
-        "transferred_quantity": {
-          "default": 0,
-          "minimum": 0,
-          "title": "Transferred Quantity",
-          "type": "integer"
-        },
-        "production_command_id": {
-          "anyOf": [
-            {
-              "pattern": "^cmd-[0-9a-f]{32}$",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Production Command Id"
-        },
-        "inventory_command_id": {
-          "anyOf": [
-            {
-              "pattern": "^cmd-[0-9a-f]{32}$",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Inventory Command Id"
-        },
-        "transfer": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ResourceTransferEvidence"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "cleanup_confirmed": {
-          "title": "Cleanup Confirmed",
-          "type": "boolean"
-        },
-        "reason": {
-          "maxLength": 1000,
-          "minLength": 1,
-          "title": "Reason",
-          "type": "string"
-        }
-      },
-      "required": [
-        "status",
-        "target_id",
-        "selected_character_id",
-        "requested_quantity",
-        "cleanup_confirmed",
-        "reason"
-      ],
-      "title": "ResourceHarvestEvidence",
-      "type": "object"
-    },
-    "ResourceHarvestStatus": {
-      "enum": [
-        "harvested",
-        "not_harvested",
-        "cleanup_failed"
-      ],
-      "title": "ResourceHarvestStatus",
-      "type": "string"
-    },
-    "ResourceTransferEvidence": {
-      "additionalProperties": false,
-      "description": "Controller-owned conservation proof for one resource-output transfer.",
-      "properties": {
-        "status": {
-          "$ref": "#/$defs/ResourceTransferStatus"
-        },
-        "target_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Target Id",
-          "type": "string"
-        },
-        "selected_character_id": {
-          "anyOf": [
-            {
-              "maxLength": 200,
-              "minLength": 1,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Selected Character Id"
-        },
-        "item_name": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Item Name",
-          "type": "string"
-        },
-        "source_quantity_before": {
-          "anyOf": [
-            {
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Source Quantity Before"
-        },
-        "source_quantity_after": {
-          "anyOf": [
-            {
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Source Quantity After"
-        },
-        "destination_quantity_before": {
-          "anyOf": [
-            {
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Destination Quantity Before"
-        },
-        "destination_quantity_after": {
-          "anyOf": [
-            {
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Destination Quantity After"
-        },
-        "observed_after_sequence": {
-          "anyOf": [
-            {
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Observed After Sequence"
-        },
-        "reason": {
-          "maxLength": 1000,
-          "minLength": 1,
-          "title": "Reason",
-          "type": "string"
-        }
-      },
-      "required": [
-        "status",
-        "target_id",
-        "item_name",
-        "reason"
-      ],
-      "title": "ResourceTransferEvidence",
-      "type": "object"
-    },
-    "ResourceTransferStatus": {
-      "enum": [
-        "transferred",
-        "not_transferred",
-        "unverified"
-      ],
-      "title": "ResourceTransferStatus",
-      "type": "string"
-    },
     "RespondToImmediateThreatAction": {
       "additionalProperties": false,
       "description": "Choose whether one selected actor engages or withdraws from a threat.\n\nThe runtime owns playback, an observed escape vector for withdrawal,\ncontinuous threat and squad-health observation, timeout, interruption, and\nthe terminal pause. The planner chooses only the actor and gameplay policy.",
@@ -2855,143 +1840,6 @@
       ],
       "title": "RespondToImmediateThreatAction",
       "type": "object"
-    },
-    "RotateCameraAction": {
-      "additionalProperties": false,
-      "description": "Rotate the world camera one bounded horizontal increment.",
-      "properties": {
-        "kind": {
-          "const": "rotate_camera",
-          "default": "rotate_camera",
-          "title": "Kind",
-          "type": "string"
-        },
-        "direction": {
-          "$ref": "#/$defs/CameraRotationDirection"
-        }
-      },
-      "required": [
-        "direction"
-      ],
-      "title": "RotateCameraAction",
-      "type": "object"
-    },
-    "SaleEvidence": {
-      "additionalProperties": false,
-      "description": "Terminal proof against the exact selling-window owner's inventory.",
-      "properties": {
-        "status": {
-          "$ref": "#/$defs/SaleStatus"
-        },
-        "buyer_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Buyer Id",
-          "type": "string"
-        },
-        "selected_character_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Selected Character Id",
-          "type": "string"
-        },
-        "item_name": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Item Name",
-          "type": "string"
-        },
-        "requested_quantity": {
-          "maximum": 5,
-          "minimum": 1,
-          "title": "Requested Quantity",
-          "type": "integer"
-        },
-        "sold_quantity": {
-          "maximum": 5,
-          "minimum": 0,
-          "title": "Sold Quantity",
-          "type": "integer"
-        },
-        "money_before": {
-          "minimum": 0,
-          "title": "Money Before",
-          "type": "integer"
-        },
-        "money_after": {
-          "anyOf": [
-            {
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Money After"
-        },
-        "inventory_quantity_before": {
-          "minimum": 0,
-          "title": "Inventory Quantity Before",
-          "type": "integer"
-        },
-        "inventory_quantity_after": {
-          "anyOf": [
-            {
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Inventory Quantity After"
-        },
-        "observed_after_sequence": {
-          "anyOf": [
-            {
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Observed After Sequence"
-        },
-        "reason": {
-          "maxLength": 1000,
-          "minLength": 1,
-          "title": "Reason",
-          "type": "string"
-        }
-      },
-      "required": [
-        "status",
-        "buyer_id",
-        "selected_character_id",
-        "item_name",
-        "requested_quantity",
-        "sold_quantity",
-        "money_before",
-        "inventory_quantity_before",
-        "reason"
-      ],
-      "title": "SaleEvidence",
-      "type": "object"
-    },
-    "SaleStatus": {
-      "enum": [
-        "sold",
-        "partially_sold",
-        "not_sold",
-        "outcome_unknown"
-      ],
-      "title": "SaleStatus",
-      "type": "string"
     },
     "ScrollAction": {
       "additionalProperties": false,
@@ -3029,59 +1877,6 @@
       "title": "ScrollAction",
       "type": "object"
     },
-    "ScrollScreenAction": {
-      "additionalProperties": false,
-      "description": "Scroll inside one open window so more of its contents become visible.\n\nShops and inventories hold more than fits on screen, and the export only\never describes what is currently rendered. Without this, stock past the\nfirst screenful is not merely hard to reach - it does not exist as far as\nthe agent is concerned, and no amount of replanning reveals it.\n\nNames a window rather than a coordinate: the scroll lands at the centre of\nthat window's own observed bounds, so it follows the window and survives a\nresolution change.",
-      "properties": {
-        "kind": {
-          "const": "scroll_screen",
-          "default": "scroll_screen",
-          "title": "Kind",
-          "type": "string"
-        },
-        "window": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Window",
-          "type": "string"
-        },
-        "notches": {
-          "maximum": 8,
-          "minimum": -8,
-          "title": "Notches",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "window",
-        "notches"
-      ],
-      "title": "ScrollScreenAction",
-      "type": "object"
-    },
-    "SelectSquadMemberAction": {
-      "additionalProperties": false,
-      "description": "Select one exact current squad member through observed world geometry.",
-      "properties": {
-        "kind": {
-          "const": "select_squad_member",
-          "default": "select_squad_member",
-          "title": "Kind",
-          "type": "string"
-        },
-        "target_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Target Id",
-          "type": "string"
-        }
-      },
-      "required": [
-        "target_id"
-      ],
-      "title": "SelectSquadMemberAction",
-      "type": "object"
-    },
     "SelectSquadMemberExactAction": {
       "additionalProperties": false,
       "description": "Select one exact squad member through native stable identity.",
@@ -3103,57 +1898,6 @@
         "target_id"
       ],
       "title": "SelectSquadMemberExactAction",
-      "type": "object"
-    },
-    "SellItemAction": {
-      "additionalProperties": false,
-      "description": "Sell a bounded quantity from an exact squad-owned inventory window.\n\nChecked: the window resolves to one selected owner and its cell holds this\nitem.",
-      "properties": {
-        "kind": {
-          "const": "sell_item",
-          "default": "sell_item",
-          "title": "Kind",
-          "type": "string"
-        },
-        "cell_label": {
-          "maxLength": 80,
-          "minLength": 1,
-          "title": "Cell Label",
-          "type": "string"
-        },
-        "item_name": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Item Name",
-          "type": "string"
-        },
-        "quantity": {
-          "default": 1,
-          "maximum": 5,
-          "minimum": 1,
-          "title": "Quantity",
-          "type": "integer"
-        },
-        "window": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Window",
-          "type": "string"
-        },
-        "buyer_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Buyer Id",
-          "type": "string"
-        }
-      },
-      "required": [
-        "cell_label",
-        "item_name",
-        "window",
-        "buyer_id"
-      ],
-      "title": "SellItemAction",
       "type": "object"
     },
     "SemanticActionReceipt": {
@@ -3252,65 +1996,10 @@
           "title": "Revalidation",
           "type": "string"
         },
-        "camera_recovery": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/CameraRecoveryEvidence"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "purchase": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PurchaseEvidence"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "sale": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/SaleEvidence"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
         "quicksave": {
           "anyOf": [
             {
               "$ref": "#/$defs/QuicksaveEvidence"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "resource_transfer": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ResourceTransferEvidence"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "resource_harvest": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ResourceHarvestEvidence"
             },
             {
               "type": "null"
@@ -3534,33 +2223,6 @@
       "title": "TravelToMapDestinationAction",
       "type": "object"
     },
-    "UseGameBindingAction": {
-      "additionalProperties": false,
-      "description": "Press one named Kenshi control through the shipped-default keymap.\n\nPrefer `open_screen` for reaching a screen; a binding only toggles.",
-      "properties": {
-        "kind": {
-          "const": "use_game_binding",
-          "default": "use_game_binding",
-          "title": "Kind",
-          "type": "string"
-        },
-        "binding": {
-          "$ref": "#/$defs/GameBinding"
-        },
-        "expected_effect": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Expected Effect",
-          "type": "string"
-        }
-      },
-      "required": [
-        "binding",
-        "expected_effect"
-      ],
-      "title": "UseGameBindingAction",
-      "type": "object"
-    },
     "WaitAction": {
       "additionalProperties": false,
       "properties": {
@@ -3633,6 +2295,27 @@
     "action": {
       "anyOf": [
         {
+          "$ref": "#/$defs/KeyAction"
+        },
+        {
+          "$ref": "#/$defs/HotkeyAction"
+        },
+        {
+          "$ref": "#/$defs/MouseButtonAction"
+        },
+        {
+          "$ref": "#/$defs/MouseDragAction"
+        },
+        {
+          "$ref": "#/$defs/MoveCursorAction"
+        },
+        {
+          "$ref": "#/$defs/ClickAction"
+        },
+        {
+          "$ref": "#/$defs/ScrollAction"
+        },
+        {
           "$ref": "#/$defs/NoopAction"
         },
         {
@@ -3657,46 +2340,22 @@
           "$ref": "#/$defs/ReadFieldbookAction"
         },
         {
-          "$ref": "#/$defs/KeyAction"
-        },
-        {
-          "$ref": "#/$defs/HotkeyAction"
-        },
-        {
-          "$ref": "#/$defs/MouseButtonAction"
-        },
-        {
-          "$ref": "#/$defs/MouseDragAction"
-        },
-        {
-          "$ref": "#/$defs/MoveCursorAction"
-        },
-        {
-          "$ref": "#/$defs/ClickAction"
-        },
-        {
-          "$ref": "#/$defs/ScrollAction"
-        },
-        {
-          "$ref": "#/$defs/ApproachDialogueTargetAction"
-        },
-        {
-          "$ref": "#/$defs/CommandWorldTargetAction"
-        },
-        {
-          "$ref": "#/$defs/SelectSquadMemberAction"
-        },
-        {
           "$ref": "#/$defs/SelectSquadMemberExactAction"
-        },
-        {
-          "$ref": "#/$defs/RotateCameraAction"
         },
         {
           "$ref": "#/$defs/ShiftIntoBodyAction"
         },
         {
-          "$ref": "#/$defs/PerformCharacterOrderAction"
+          "$ref": "#/$defs/SurveyLocalResourcesAction"
+        },
+        {
+          "$ref": "#/$defs/OpenTradeWindowAction"
+        },
+        {
+          "$ref": "#/$defs/TransferItemAction"
+        },
+        {
+          "$ref": "#/$defs/ApproachDialogueTargetAction"
         },
         {
           "$ref": "#/$defs/PerformContextAction"
@@ -3705,16 +2364,7 @@
           "$ref": "#/$defs/ProduceResourceOutputAction"
         },
         {
-          "$ref": "#/$defs/OpenContextInventoryAction"
-        },
-        {
-          "$ref": "#/$defs/TransferItemAction"
-        },
-        {
-          "$ref": "#/$defs/OpenTradeWindowAction"
-        },
-        {
-          "$ref": "#/$defs/HarvestResourceAction"
+          "$ref": "#/$defs/PerformCharacterOrderAction"
         },
         {
           "$ref": "#/$defs/RespondToImmediateThreatAction"
@@ -3733,39 +2383,6 @@
         },
         {
           "$ref": "#/$defs/ExitCurrentBuildingAction"
-        },
-        {
-          "$ref": "#/$defs/SurveyLocalResourcesAction"
-        },
-        {
-          "$ref": "#/$defs/ActivateVisibleControlAction"
-        },
-        {
-          "$ref": "#/$defs/DismissScreenAction"
-        },
-        {
-          "$ref": "#/$defs/PurchaseItemAction"
-        },
-        {
-          "$ref": "#/$defs/OpenScreenAction"
-        },
-        {
-          "$ref": "#/$defs/UseGameBindingAction"
-        },
-        {
-          "$ref": "#/$defs/ScrollScreenAction"
-        },
-        {
-          "$ref": "#/$defs/SellItemAction"
-        },
-        {
-          "$ref": "#/$defs/EquipItemAction"
-        },
-        {
-          "$ref": "#/$defs/CollectResourceOutputAction"
-        },
-        {
-          "$ref": "#/$defs/RecoverCameraViewAction"
         }
       ],
       "title": "Action"

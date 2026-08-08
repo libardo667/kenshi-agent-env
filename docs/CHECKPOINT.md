@@ -1,115 +1,98 @@
-# Checkpoint: reproducible state before the next native and lifecycle changes
+# Checkpoint: bounded closure before branch integration
 
-This records exactly what works right now, verified rather than asserted, so the
-next stage starts from a known position instead of an assumed one.
-
-Written after a live run found three defects at once (see the commit history for
-`394b677` and `09e9998`). It is not a documentation exercise: every line below
-was produced by running the thing it describes.
+This is the reproducible boundary after retiring the abandoned pointer/UI stack and
+closing the unified inventory and resource-production proof loop. It records a dirty
+pre-commit worktree intentionally; the integration commit has not been chosen yet.
 
 ## Repository
 
 ```text
-commit                a5f289d0e4f52778412daaef89f4c71395a4e85f
+base commit           a73e06c40a13f9052db6089018e1708c50ff03b6
 branch                interaction-scope-order-lifecycle
-tree state            DIRTY at capture time
+tree state            DIRTY closure candidate at capture time
 python (gate)         Python 3.12.13
+native protocol       1.18.0
 ```
+
+The worktree removes the retired camera, generic-screen, pointer-based inventory and
+trade, legacy-harvest, and non-progress policy layers. The planner-visible gameplay
+surface is now registry-backed and coordinate-independent. Host startup, recovery,
+and narrow safety fallbacks still use synthesized Windows input where their contracts
+require it.
 
 ## Portable gate
 
-Every check below was run in a **fresh tree extracted from this commit** with an
-empty `runs/`, not only in the working directory:
+Run from the repository root:
 
 ```text
-uv run pytest -q                      passed
-uv run ruff check .                   passed
-uv run mypy src                       passed (151 source files)
-uv run python scripts/export_schemas.py   byte-identical to checked-in schemas/
-uv run python scripts/export_docs.py      byte-identical to checked-in docs/generated/
+uv run pytest -q --color=no             passed (six expected strict xfails)
+uv run ruff check .                      passed
+uv run mypy src                          passed (145 source files)
+uv run python scripts/export_schemas.py  checked-in schemas regenerated
+uv run python scripts/export_docs.py     checked-in generated docs regenerated
+git diff --check                         passed
 ```
 
-Generated documentation is reproducible from checked-in inputs. It previously
-was not: the reporting-surface report read whichever bundle under `runs/` was
-newest, and `runs/` is gitignored, so the committed file could only be
-regenerated on the machine that last ran the agent. It now reads a checked-in
-slice of a real live run under `tests/fixtures/run_bundles/`.
+The six strict xfails remain explicit reconstruction targets. They are not treated as
+evidence for behavior that the current architecture has not demonstrated.
 
-## Native artefact
+## Native artifact
 
-The one component the portable gate cannot rebuild or execute. Verified with
-`uv run python scripts/check_native_provenance.py`:
+Built in Release mode, exercised by `NativeCommandProtocolTests.exe`, installed only
+while Kenshi was confirmed stopped, and rechecked with
+`scripts/check_native_provenance.py`:
 
 ```text
-declared protocol     1.15.0
-source sha256         a24f462808a455631f7e74595629efa3a67eb24ad31b312b5a566ef7a0d9092d
-built sha256          c467192f0db8521d3c6ef741d15857049b194bfa42a1ab683351b98a9b737de3
-installed sha256      c467192f0db8521d3c6ef741d15857049b194bfa42a1ab683351b98a9b737de3
+declared protocol     1.18.0
+source sha256         e1be701af23f4002be81b663791c83753b20122eb3127ad9a0fa7763a0758e2f
+built sha256          048f1726c068da362c0fd3601387b6ed8858f65216f1e15c0cbe92d685df73bc
+installed sha256      048f1726c068da362c0fd3601387b6ed8858f65216f1e15c0cbe92d685df73bc
+declared capabilities 43
 chain consistent      YES
-
-CHECKS
-  [ok] installed DLL declares the source's protocol
-       source declares 1.15.0; found in binary
-  [ok] installed DLL carries every advertised capability
-       39 declared; all present
-  [ok] installed DLL is the built DLL
-       hashes match
-  [ok] generated header matches manifest
-       header is current
 ```
 
-Command request schema: 1.
+The native fixture suite reported `Native protocol fixtures and semantics passed.`
+The hash equality proves the installed file is the built file; the embedded protocol
+and capability strings prove that build carried this source contract.
 
-The hash equality proves the installed file is the built file. The version and
-capability strings found inside the binary prove the build carried this source's
-declarations. What this does **not** prove is that the built DLL came from this
-checkout rather than an identical-looking one; the source hash is recorded for a
-human to compare, not silently trusted.
+## Live closure evidence
 
-## Target behaviour still outstanding
+All runs used the supervised disposable Kenshi fixture and ended with a confirmed
+paused world. The run directories are local diagnostic artifacts under `runs/`.
 
-Six `xfail(strict=True)` tests in `tests/test_interaction_scope_targets.py`
-encode Slices 2-4 and are genuinely failing, not silently passing - strict mode
-turns an unexpected pass into a suite failure, and the suite is green. Slice 1's
-three targets have been retired and assert plainly.
+- `closure-loot-20260808`: opened Fish and unconscious Burn as a paired inventory,
+  then moved Burn's equipped `Katana` and `Halfpants (ragged)` into Fish. Both
+  transfers reached the exact `item_transferred` terminal. Zero plan actions were
+  rejected or aborted.
+- `close_trade_window` recovery command
+  `cmd-bec439c9589c4a4fb4fc72a06b561722`: closed the resulting looting window at
+  telemetry sequence 1660 with terminal reason `trade_window_closed`. This is native
+  recovery proof, not a claim that closing arbitrary windows is a planner operation.
+- `closure-harvest-20260808`: exposed the cleanup omission that the surviving
+  `produce_resource_output` operation had no affordance offer and resource owners were
+  absent from trade-window offers. Its task-start acknowledgement is not counted as a
+  completed harvest.
+- `closure-harvest-fixed-20260808`: selected the repaired
+  `produce_resource_output` affordance, adopted the exact already-running two-person
+  resource task without reissuing it, stayed monitored until
+  `resource_output_ready`, paired Fish with the Iron Resource, transferred one
+  `Raw Iron`, verified the move, and stopped voluntarily. Zero plan actions were
+  rejected or aborted.
+- Recovery command `cmd-e5d5b8b05f354f768f4b14866c2c2d79` closed the final resource
+  window with `trade_window_closed`.
 
-## Unresolved live proof, stated plainly
+The durable proof classification is in
+`docs/reconstruction/interaction_proof_status.json`. In particular, one resource run
+does not prove every current-selection or order-lifecycle case.
 
-These are not covered by any gate above and should not be treated as working:
+## Remaining boundary
 
-- **Mining has not been proven live since the fix.** The selection-cardinality
-  fix needed three passes: option preparation, then the native request builder
-  which held its own singleton rule, then order adoption which compared against
-  the current selection rather than the authored one. All are proven by unit
-  tests that fail without them. No live run has issued a successful `operate`
-  on a resource with a two-character party.
-- **The survey has never been exercised live.** It is declared, advertised,
-  compiled into the installed binary, pinned by a wire fixture, and now has a
-  request-builder branch it previously lacked - without it the command fell
-  through to the targeted route and was refused for having no target_id, which
-  is why the native command counter never incremented for it. The complete
-  route is now checked structurally, but no live run has dispatched it.
-- **Two Kenshi crashes remain unexplained.** One GPU device-removal while
-  creating a rasterizer state, one silent termination during asset streaming
-  after a map travel. Both occurred with ~1.7 GiB of free host memory against
-  this project's own 4096 MiB floor. Memory pressure is the better-supported
-  hypothesis and is not proven.
-- **The launch memory floor does not guard attaching.**
-  `min_free_physical_memory_mib` is checked only in
-  `_validate_launch_preconditions`. Both crashed runs attached to an
-  already-loaded game, so headroom was never checked - the exact configuration
-  that crashed twice.
-- **`respond_to_immediate_threat` requires `nearby.visible_entities`**, which no
-  producer advertises. It is correctly withheld from the agent rather than
-  offered and broken.
-
-## Restoring this state
-
-```bash
-git checkout 394b677
-uv sync --extra dev
-uv run pytest -q && uv run ruff check . && uv run mypy src
-uv run python scripts/check_native_provenance.py
-```
-
-The last command needs a Windows Kenshi installation; the first three do not.
+- The generated interface audit deliberately reports the human UI affordances that
+  are not planner-visible. Those gaps are not papered over with the deleted pointer
+  handlers.
+- `close_trade_window` is intentionally recovery-only. A planner-visible general
+  close-window operation would require its own registry contract and evidence.
+- The operation proof ledger still marks several navigation, threat-response, and
+  group-recipient semantics unproven. This closure pass does not broaden those claims.
+- Branch integration and GitHub publication are separate steps: inspect the final
+  diff, commit this bounded slice intentionally, then merge it into `main` and push.

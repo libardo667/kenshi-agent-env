@@ -13,21 +13,21 @@ claim that every widget or world interaction has been enumerated.
 source      controls.cfg v1
 source sha  ec8ac4d40dd56ef1f51bbd7efc89392f39a424eef889c1f03aee2f2a56056fc2
 enumerated   72
-wired        71
+wired        68
 exempt        1
-missing       0
+missing       3
 unclassified  0
 
 witnessed    10  (wired AND has an observable completion terminal)
-unwitnessed  58  (wired but no observation proves it landed)
+unwitnessed  56  (wired but no observation proves it landed)
 
 UNWITNESSED — offered at delivery boundary; gameplay effect unproved
    9  Build mode has no exported state.
       build_apply, build_move_down, build_move_up, build_rotate_left, build_rotate_right, build_tilt_decrease, build_tilt_increase, build_undo, toggle_build
    1  Camera mode is not exported.
       toggle_fps_camera
-   4  Camera orientation is not exported.
-      camera_rotate_left, camera_rotate_right, camera_tilt+, camera_tilt-
+   2  Camera orientation is not exported.
+      camera_tilt+, camera_tilt-
    5  Camera position is not exported as a condition path.
       camera_back, camera_forward, camera_left, camera_right, focus_char
    2  Camera zoom is not exported.
@@ -63,6 +63,11 @@ UNWITNESSED — offered at delivery boundary; gameplay effect unproved
    1  World-data reloads have no observable result.
       reload_biomes
 
+MISSING — implementation queue
+  camera_rotate_left       [Q]  The closure pass retired planner-visible camera rotation; no surviving operation owns this binding.
+  camera_rotate_right      [E]  The closure pass retired planner-visible camera rotation; no surviving operation owns this binding.
+  mouse_rotate             [Left Control, Mouse3]  The closure pass retired planner-visible camera rotation; no surviving operation owns this binding.
+
 EXEMPT — deliberate non-affordances
   screenshot               [superseded]  The observation pipeline captures attributable game frames directly.
 
@@ -79,8 +84,6 @@ WIRED — affordance adapter or runtime-owned routes
   camera_forward           game_bindings(camera_forward)
   camera_left              game_bindings(camera_left)
   camera_right             game_bindings(camera_right)
-  camera_rotate_left       native_and_composite(rotate_camera_left)
-  camera_rotate_right      native_and_composite(rotate_camera_right)
   camera_tilt+             game_bindings(camera_tilt+)
   camera_tilt-             game_bindings(camera_tilt-)
   camera_zoom_in           game_bindings(camera_zoom_in)
@@ -100,7 +103,6 @@ WIRED — affordance adapter or runtime-owned routes
   highlight                game_bindings(highlight)
   medic                    game_bindings(medic)
   mouse_command            context_orders
-  mouse_rotate             native_and_composite(rotate_camera)
   mouse_select             characters(select)
   pause                    runtime(playback_pause)
   quickload                game_bindings(quickload)

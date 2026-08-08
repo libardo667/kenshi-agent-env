@@ -13,8 +13,8 @@ they still bind through this registry but are not planner-visible offers.
 
 ```text
 definitions             23
-adapter operation kinds  22
-adapter routes           22
+adapter operation kinds  23
+adapter routes           23
 adapters                 10
 ownership proof         PASS
 
@@ -29,7 +29,7 @@ DEFINITIONS
   pause                               runtime.pause                                           PauseAction [runtime]
   perform_character_order             movement.perform_character_order                        PerformCharacterOrderAction [character_orders]
   perform_context_action              resources.perform_context_action                        PerformContextAction [context_orders]
-  produce_resource_output             resources.produce_resource_output                       ProduceResourceOutputAction [by-composition]
+  produce_resource_output             resources.produce_resource_output                       ProduceResourceOutputAction [native_and_composite]
   read_fieldbook                      cognition.fieldbook                                     ReadFieldbookAction [runtime]
   recall_memory                       cognition.memory                                        RecallMemoryAction [runtime]
   regroup_with_squad_member           movement.regroup_with_squad_member                      RegroupWithSquadMemberAction [characters]
@@ -49,9 +49,9 @@ SOURCE-SPECIFIC COMPLETENESS BOUNDARIES
   body_shift: Native-assisted stable identity and nearby-character evidence; a body outside the reported radius cannot be offered and a hostile one is deliberately withheld.
   character_orders: Bounded by the native probe budget: the nearest few people are asked what they afford, and the rest report that they were not asked.
   item_transfers: Bounded to the first few moves. Whether one is allowed is Kenshi's answer at dispatch, reported in its own words.
-  trade_windows: Bounded to the nearest few. Whether Kenshi pairs a given two is its answer at dispatch.
+  trade_windows: Squadmates and reviewed resources are prioritized before the nearby-owner cap. Whether Kenshi pairs a given two is its answer at dispatch.
   dialogue_targets: Native-assisted stable identity and dialogue-role evidence.
   characters: Offers require the source-specific selection, identity, geometry, and safety facts.
   map: Only destinations with authoritative current travel applicability.
-  native_and_composite: Only operations with a current binder and declared runtime completion boundary. Scrolling proves exact delivery, not newly revealed content.
+  native_and_composite: Only operations with a current binder and declared runtime completion boundary. Resource production stops at observed output; transferring that output remains a separate inventory operation.
 ```

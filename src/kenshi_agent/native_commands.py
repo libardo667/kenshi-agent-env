@@ -34,9 +34,6 @@ NATIVE_CHARACTER_ORDER_WIRE_COMMAND: Literal["perform_character_order"] = (
 NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND: Literal["produce_resource_output"] = (
     "produce_resource_output"
 )
-NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND: Literal["open_context_inventory"] = (
-    "open_context_inventory"
-)
 NATIVE_TRANSFER_WIRE_COMMAND: Literal["transfer_item"] = "transfer_item"
 NATIVE_TRADE_WINDOW_WIRE_COMMAND: Literal["open_trade_window"] = "open_trade_window"
 NATIVE_RESOURCE_SURVEY_WIRE_COMMAND: Literal["survey_local_resources"] = (

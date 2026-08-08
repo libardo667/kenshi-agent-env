@@ -19,8 +19,8 @@ planning:
   max_actions_per_plan: 8
   max_plan_wall_seconds: 30
   max_plan_game_seconds: 12
-  max_pointer_actions_per_plan: 8
-  max_purchase_actions_per_plan: 1
+  max_pointer_actions_per_plan: 0
+  max_purchase_actions_per_plan: 0
   max_native_assisted_actions_per_plan: 0
   max_consecutive_replans: 3
 
@@ -101,12 +101,6 @@ controls:
     - Load
   startup_save_control_labels:
     - autosave1
-  camera_recovery:
-    candidate_settle_seconds: 0.30
-    clear_score_threshold: 0.72
-    anchor_max_distance: 30.0
-    max_lower_floors: 2
-
 safety:
   live_actions_enabled: false
   emergency_stop_key: f12
@@ -128,11 +122,6 @@ safety:
     - pause
     - set_speed
     - wait
-    - key
-    - hotkey
-    - click
-    - move_cursor
-    - recover_camera_view
     - recall_memory
     - read_fieldbook
 memory:

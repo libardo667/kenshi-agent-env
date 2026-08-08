@@ -2384,7 +2384,7 @@
   "additionalProperties": false,
   "properties": {
     "protocol_version": {
-      "default": "1.16.0",
+      "default": "1.18.0",
       "title": "Protocol Version",
       "type": "string"
     },

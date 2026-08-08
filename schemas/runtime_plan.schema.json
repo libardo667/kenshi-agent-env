@@ -21,45 +21,6 @@
       "title": "ActionOutcomeEvidence",
       "type": "object"
     },
-    "ActivateVisibleControlAction": {
-      "additionalProperties": false,
-      "description": "Activate exactly one control the interface currently advertises.\n\nThe arguments are an exact current label and role, not coordinates: the\nbounds come from telemetry and are re-resolved inside the input lease. The\naction knows nothing about which screen, which conversation, or which option\nindex it is activating.",
-      "properties": {
-        "kind": {
-          "const": "activate_visible_control",
-          "default": "activate_visible_control",
-          "title": "Kind",
-          "type": "string"
-        },
-        "exact_label": {
-          "maxLength": 500,
-          "minLength": 1,
-          "title": "Exact Label",
-          "type": "string"
-        },
-        "role": {
-          "default": "button",
-          "enum": [
-            "button",
-            "text",
-            "item"
-          ],
-          "title": "Role",
-          "type": "string"
-        },
-        "window": {
-          "default": "",
-          "maxLength": 200,
-          "title": "Window",
-          "type": "string"
-        }
-      },
-      "required": [
-        "exact_label"
-      ],
-      "title": "ActivateVisibleControlAction",
-      "type": "object"
-    },
     "AdvisorBriefEvidence": {
       "additionalProperties": false,
       "description": "Advice, not world evidence. Rendered as such wherever it is stored.",
@@ -313,14 +274,6 @@
       "title": "BoundAffordance",
       "type": "object"
     },
-    "CameraRotationDirection": {
-      "enum": [
-        "left",
-        "right"
-      ],
-      "title": "CameraRotationDirection",
-      "type": "string"
-    },
     "CapabilityCondition": {
       "additionalProperties": false,
       "properties": {
@@ -424,93 +377,6 @@
         "y"
       ],
       "title": "ClickAction",
-      "type": "object"
-    },
-    "CollectResourceOutputAction": {
-      "additionalProperties": false,
-      "description": "Transfer one exact resource-output cell into the selected squadmate.\n\nThe exact world-target ID binds the source window to its observed resource.\n`source_quantity` is copied from the cell so the controller can prove that\nsource loss equals destination gain after the right-click.",
-      "properties": {
-        "kind": {
-          "const": "collect_resource_output",
-          "default": "collect_resource_output",
-          "title": "Kind",
-          "type": "string"
-        },
-        "target_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Target Id",
-          "type": "string"
-        },
-        "cell_label": {
-          "maxLength": 80,
-          "minLength": 1,
-          "title": "Cell Label",
-          "type": "string"
-        },
-        "item_name": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Item Name",
-          "type": "string"
-        },
-        "source_quantity": {
-          "exclusiveMinimum": 0,
-          "title": "Source Quantity",
-          "type": "integer"
-        },
-        "window": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Window",
-          "type": "string"
-        },
-        "section": {
-          "const": "out",
-          "default": "out",
-          "title": "Section",
-          "type": "string"
-        }
-      },
-      "required": [
-        "target_id",
-        "cell_label",
-        "item_name",
-        "source_quantity",
-        "window"
-      ],
-      "title": "CollectResourceOutputAction",
-      "type": "object"
-    },
-    "CommandWorldTargetAction": {
-      "additionalProperties": false,
-      "description": "Right-click one exact current world target at telemetry-owned geometry.",
-      "properties": {
-        "kind": {
-          "const": "command_world_target",
-          "default": "command_world_target",
-          "title": "Kind",
-          "type": "string"
-        },
-        "target_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Target Id",
-          "type": "string"
-        },
-        "context_action": {
-          "maxLength": 80,
-          "minLength": 1,
-          "pattern": "^[a-z][a-z0-9_]*$",
-          "title": "Context Action",
-          "type": "string"
-        }
-      },
-      "required": [
-        "target_id",
-        "context_action"
-      ],
-      "title": "CommandWorldTargetAction",
       "type": "object"
     },
     "Condition": {
@@ -630,81 +496,6 @@
         }
       },
       "title": "CurrentObservationEvidence",
-      "type": "object"
-    },
-    "DismissScreenAction": {
-      "additionalProperties": false,
-      "description": "Close one exact currently open screen toward the world view.\n\nExiting is as much a part of using an interface as entering it. Naming the\nscreen and, where applicable, the owner window makes the action bind to\nobserved state instead of blindly pressing a key and hoping. Named game\nscreens close through their own toggle binding; trade windows close through\ntheir exact close box. It deliberately does not end an active conversation:\ndialogue must choose an exact visible closing reply.",
-      "properties": {
-        "kind": {
-          "const": "dismiss_screen",
-          "default": "dismiss_screen",
-          "title": "Kind",
-          "type": "string"
-        },
-        "expected_screen": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/GameScreen"
-            },
-            {
-              "enum": [
-                "dialogue",
-                "trade"
-              ],
-              "type": "string"
-            }
-          ],
-          "title": "Expected Screen"
-        },
-        "window": {
-          "default": "",
-          "maxLength": 200,
-          "title": "Window",
-          "type": "string"
-        }
-      },
-      "required": [
-        "expected_screen"
-      ],
-      "title": "DismissScreenAction",
-      "type": "object"
-    },
-    "EquipItemAction": {
-      "additionalProperties": false,
-      "description": "Equip one item from an exact currently selected squad-owned window.\n\nKenshi equips on right-click (`rightClickAutoEquipping`) - the *same*\ngesture that sells an item when a trade is open. That collision is the whole\nhazard: an equip attempted with a shop window up is a sale, and the item is\ngone before any postcondition could notice. So this action refuses outright\nunless no trade is active.",
-      "properties": {
-        "kind": {
-          "const": "equip_item",
-          "default": "equip_item",
-          "title": "Kind",
-          "type": "string"
-        },
-        "cell_label": {
-          "maxLength": 80,
-          "minLength": 1,
-          "title": "Cell Label",
-          "type": "string"
-        },
-        "item_name": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Item Name",
-          "type": "string"
-        },
-        "window": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Window",
-          "type": "string"
-        }
-      },
-      "required": [
-        "cell_label",
-        "item_name",
-        "window"
-      ],
-      "title": "EquipItemAction",
       "type": "object"
     },
     "ExitCurrentBuildingAction": {
@@ -892,130 +683,6 @@
       ],
       "title": "FieldbookProjectStatus",
       "type": "string"
-    },
-    "GameBinding": {
-      "description": "Kenshi's named control intentions under the shipped default keymap.\n\nThe current physical mapping is a hard-coded copy of the shipped\n`controls.cfg`; it is not read from the user's active keymap. Membership is\nthe adapter-owned subset recorded by the game-binding parity ledger.",
-      "enum": [
-        "toggle_inventory",
-        "toggle_map",
-        "toggle_stats",
-        "toggle_help",
-        "toggle_crafting",
-        "toggle_research",
-        "quicksave",
-        "quickload",
-        "build_apply",
-        "build_move_down",
-        "build_move_up",
-        "build_rotate_left",
-        "build_rotate_right",
-        "build_tilt_decrease",
-        "build_tilt_increase",
-        "build_undo",
-        "toggle_build",
-        "pause",
-        "speed_1",
-        "speed_2",
-        "speed_3",
-        "camera_forward",
-        "camera_back",
-        "camera_left",
-        "camera_right",
-        "camera_rotate_left",
-        "camera_rotate_right",
-        "camera_tilt+",
-        "camera_tilt-",
-        "camera_zoom_in",
-        "camera_zoom_out",
-        "cycle_run_speed",
-        "toggle_fps_camera",
-        "editor_delete",
-        "editor_toggle",
-        "rebuild_navmesh",
-        "reload_biomes",
-        "floor_down",
-        "floor_up",
-        "gizmo_move",
-        "gizmo_rotate",
-        "gizmo_scale",
-        "focus_char",
-        "highlight",
-        "select_all",
-        "change_squad",
-        "character_next",
-        "character_prev",
-        "select_0",
-        "select_1",
-        "select_2",
-        "select_3",
-        "select_4",
-        "select_5",
-        "select_6",
-        "select_7",
-        "select_8",
-        "select_9",
-        "stop_movement",
-        "medic",
-        "rescue",
-        "toggle_hold",
-        "toggle_block",
-        "toggle_bar",
-        "toggle_passive",
-        "toggle_ranged",
-        "toggle_sneak",
-        "toggle_taunt"
-      ],
-      "title": "GameBinding",
-      "type": "string"
-    },
-    "GameScreen": {
-      "description": "A screen the agent wants open, named by what it is rather than a key.",
-      "enum": [
-        "inventory",
-        "stats",
-        "map",
-        "research",
-        "crafting"
-      ],
-      "title": "GameScreen",
-      "type": "string"
-    },
-    "HarvestResourceAction": {
-      "additionalProperties": false,
-      "description": "Harvest a bounded yield from one exact resource into one exact actor.\n\nThe planner chooses the actor, resource, and useful yield once. The\ncontroller owns production, inventory opening, exact conserved transfer,\ncleanup, and terminal proof as one interruptible option.",
-      "properties": {
-        "kind": {
-          "const": "harvest_resource",
-          "default": "harvest_resource",
-          "title": "Kind",
-          "type": "string"
-        },
-        "actor_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Actor Id",
-          "type": "string"
-        },
-        "target_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Target Id",
-          "type": "string"
-        },
-        "quantity": {
-          "maximum": 5,
-          "minimum": 1,
-          "title": "Quantity",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "actor_id",
-        "target_id",
-        "quantity"
-      ],
-      "title": "HarvestResourceAction",
-      "type": "object"
     },
     "HotkeyAction": {
       "additionalProperties": false,
@@ -1402,49 +1069,6 @@
       "title": "ObservationPolicy",
       "type": "string"
     },
-    "OpenContextInventoryAction": {
-      "additionalProperties": false,
-      "description": "Open the ordinary inventory UI for one exact observed world target.",
-      "properties": {
-        "kind": {
-          "const": "open_context_inventory",
-          "default": "open_context_inventory",
-          "title": "Kind",
-          "type": "string"
-        },
-        "target_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Target Id",
-          "type": "string"
-        }
-      },
-      "required": [
-        "target_id"
-      ],
-      "title": "OpenContextInventoryAction",
-      "type": "object"
-    },
-    "OpenScreenAction": {
-      "additionalProperties": false,
-      "description": "Have a named screen open. Prefer this over pressing its key.\n\nIdempotent: succeeds if the screen is already open.",
-      "properties": {
-        "kind": {
-          "const": "open_screen",
-          "default": "open_screen",
-          "title": "Kind",
-          "type": "string"
-        },
-        "screen": {
-          "$ref": "#/$defs/GameScreen"
-        }
-      },
-      "required": [
-        "screen"
-      ],
-      "title": "OpenScreenAction",
-      "type": "object"
-    },
     "OpenTradeWindowAction": {
       "additionalProperties": false,
       "description": "Put two inventories side by side, in Kenshi's own terms.\n\n`showInventory` opens one window - a character's personal gear, the view a\nplayer gets for stealing - so a transfer opened that way has nothing to move\nbetween. `ForgottenGUI::showTradeWindow` takes both sides and a type, and\nthat type enum is the engine stating that trading and looting are one\nmechanism with a flag rather than two problems.",
@@ -1597,6 +1221,27 @@
         "action": {
           "anyOf": [
             {
+              "$ref": "#/$defs/KeyAction"
+            },
+            {
+              "$ref": "#/$defs/HotkeyAction"
+            },
+            {
+              "$ref": "#/$defs/MouseButtonAction"
+            },
+            {
+              "$ref": "#/$defs/MouseDragAction"
+            },
+            {
+              "$ref": "#/$defs/MoveCursorAction"
+            },
+            {
+              "$ref": "#/$defs/ClickAction"
+            },
+            {
+              "$ref": "#/$defs/ScrollAction"
+            },
+            {
               "$ref": "#/$defs/NoopAction"
             },
             {
@@ -1621,46 +1266,22 @@
               "$ref": "#/$defs/ReadFieldbookAction"
             },
             {
-              "$ref": "#/$defs/KeyAction"
-            },
-            {
-              "$ref": "#/$defs/HotkeyAction"
-            },
-            {
-              "$ref": "#/$defs/MouseButtonAction"
-            },
-            {
-              "$ref": "#/$defs/MouseDragAction"
-            },
-            {
-              "$ref": "#/$defs/MoveCursorAction"
-            },
-            {
-              "$ref": "#/$defs/ClickAction"
-            },
-            {
-              "$ref": "#/$defs/ScrollAction"
-            },
-            {
-              "$ref": "#/$defs/ApproachDialogueTargetAction"
-            },
-            {
-              "$ref": "#/$defs/CommandWorldTargetAction"
-            },
-            {
-              "$ref": "#/$defs/SelectSquadMemberAction"
-            },
-            {
               "$ref": "#/$defs/SelectSquadMemberExactAction"
-            },
-            {
-              "$ref": "#/$defs/RotateCameraAction"
             },
             {
               "$ref": "#/$defs/ShiftIntoBodyAction"
             },
             {
-              "$ref": "#/$defs/PerformCharacterOrderAction"
+              "$ref": "#/$defs/SurveyLocalResourcesAction"
+            },
+            {
+              "$ref": "#/$defs/OpenTradeWindowAction"
+            },
+            {
+              "$ref": "#/$defs/TransferItemAction"
+            },
+            {
+              "$ref": "#/$defs/ApproachDialogueTargetAction"
             },
             {
               "$ref": "#/$defs/PerformContextAction"
@@ -1669,16 +1290,7 @@
               "$ref": "#/$defs/ProduceResourceOutputAction"
             },
             {
-              "$ref": "#/$defs/OpenContextInventoryAction"
-            },
-            {
-              "$ref": "#/$defs/TransferItemAction"
-            },
-            {
-              "$ref": "#/$defs/OpenTradeWindowAction"
-            },
-            {
-              "$ref": "#/$defs/HarvestResourceAction"
+              "$ref": "#/$defs/PerformCharacterOrderAction"
             },
             {
               "$ref": "#/$defs/RespondToImmediateThreatAction"
@@ -1697,39 +1309,6 @@
             },
             {
               "$ref": "#/$defs/ExitCurrentBuildingAction"
-            },
-            {
-              "$ref": "#/$defs/SurveyLocalResourcesAction"
-            },
-            {
-              "$ref": "#/$defs/ActivateVisibleControlAction"
-            },
-            {
-              "$ref": "#/$defs/DismissScreenAction"
-            },
-            {
-              "$ref": "#/$defs/PurchaseItemAction"
-            },
-            {
-              "$ref": "#/$defs/OpenScreenAction"
-            },
-            {
-              "$ref": "#/$defs/UseGameBindingAction"
-            },
-            {
-              "$ref": "#/$defs/ScrollScreenAction"
-            },
-            {
-              "$ref": "#/$defs/SellItemAction"
-            },
-            {
-              "$ref": "#/$defs/EquipItemAction"
-            },
-            {
-              "$ref": "#/$defs/CollectResourceOutputAction"
-            },
-            {
-              "$ref": "#/$defs/RecoverCameraViewAction"
             }
           ],
           "title": "Action"
@@ -1861,63 +1440,6 @@
       "title": "ProduceResourceOutputAction",
       "type": "object"
     },
-    "PurchaseItemAction": {
-      "additionalProperties": false,
-      "description": "Acquire a bounded quantity of one item from exact seller-owned cells.\n\n`expected_price` is the nonnegative per-unit charge reported as buy_price.\nZero is a real free acquisition, not missing price evidence. The controller\nrebinds interchangeable stock after each transfer and proves that carried\ngain exactly matches the quoted charge before attempting the next unit.",
-      "properties": {
-        "kind": {
-          "const": "purchase_item",
-          "default": "purchase_item",
-          "title": "Kind",
-          "type": "string"
-        },
-        "cell_label": {
-          "maxLength": 80,
-          "minLength": 1,
-          "title": "Cell Label",
-          "type": "string"
-        },
-        "item_name": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Item Name",
-          "type": "string"
-        },
-        "expected_price": {
-          "minimum": 0,
-          "title": "Expected Price",
-          "type": "integer"
-        },
-        "quantity": {
-          "default": 1,
-          "maximum": 5,
-          "minimum": 1,
-          "title": "Quantity",
-          "type": "integer"
-        },
-        "window": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Window",
-          "type": "string"
-        },
-        "seller_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Seller Id",
-          "type": "string"
-        }
-      },
-      "required": [
-        "cell_label",
-        "item_name",
-        "expected_price",
-        "window",
-        "seller_id"
-      ],
-      "title": "PurchaseItemAction",
-      "type": "object"
-    },
     "ReadFieldbookAction": {
       "additionalProperties": false,
       "description": "Electively inspect bounded private project context without game input.",
@@ -2003,20 +1525,6 @@
         "query"
       ],
       "title": "RecallMemoryAction",
-      "type": "object"
-    },
-    "RecoverCameraViewAction": {
-      "additionalProperties": false,
-      "description": "Ask the controller to restore a usable character-following world view.\n\nThis action intentionally has no camera parameters. The caller identifies\nthe problem; the controller owns the bounded follow, floor, zoom, orbit,\ncapture, and scoring transaction and reports its terminal outcome.",
-      "properties": {
-        "kind": {
-          "const": "recover_camera_view",
-          "default": "recover_camera_view",
-          "title": "Kind",
-          "type": "string"
-        }
-      },
-      "title": "RecoverCameraViewAction",
       "type": "object"
     },
     "RegroupWithSquadMemberAction": {
@@ -2267,26 +1775,6 @@
       "title": "RiskBudget",
       "type": "object"
     },
-    "RotateCameraAction": {
-      "additionalProperties": false,
-      "description": "Rotate the world camera one bounded horizontal increment.",
-      "properties": {
-        "kind": {
-          "const": "rotate_camera",
-          "default": "rotate_camera",
-          "title": "Kind",
-          "type": "string"
-        },
-        "direction": {
-          "$ref": "#/$defs/CameraRotationDirection"
-        }
-      },
-      "required": [
-        "direction"
-      ],
-      "title": "RotateCameraAction",
-      "type": "object"
-    },
     "ScrollAction": {
       "additionalProperties": false,
       "properties": {
@@ -2323,36 +1811,6 @@
       "title": "ScrollAction",
       "type": "object"
     },
-    "ScrollScreenAction": {
-      "additionalProperties": false,
-      "description": "Scroll inside one open window so more of its contents become visible.\n\nShops and inventories hold more than fits on screen, and the export only\never describes what is currently rendered. Without this, stock past the\nfirst screenful is not merely hard to reach - it does not exist as far as\nthe agent is concerned, and no amount of replanning reveals it.\n\nNames a window rather than a coordinate: the scroll lands at the centre of\nthat window's own observed bounds, so it follows the window and survives a\nresolution change.",
-      "properties": {
-        "kind": {
-          "const": "scroll_screen",
-          "default": "scroll_screen",
-          "title": "Kind",
-          "type": "string"
-        },
-        "window": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Window",
-          "type": "string"
-        },
-        "notches": {
-          "maximum": 8,
-          "minimum": -8,
-          "title": "Notches",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "window",
-        "notches"
-      ],
-      "title": "ScrollScreenAction",
-      "type": "object"
-    },
     "SelectFieldbookProjectOperation": {
       "additionalProperties": false,
       "properties": {
@@ -2379,29 +1837,6 @@
       "title": "SelectFieldbookProjectOperation",
       "type": "object"
     },
-    "SelectSquadMemberAction": {
-      "additionalProperties": false,
-      "description": "Select one exact current squad member through observed world geometry.",
-      "properties": {
-        "kind": {
-          "const": "select_squad_member",
-          "default": "select_squad_member",
-          "title": "Kind",
-          "type": "string"
-        },
-        "target_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Target Id",
-          "type": "string"
-        }
-      },
-      "required": [
-        "target_id"
-      ],
-      "title": "SelectSquadMemberAction",
-      "type": "object"
-    },
     "SelectSquadMemberExactAction": {
       "additionalProperties": false,
       "description": "Select one exact squad member through native stable identity.",
@@ -2423,57 +1858,6 @@
         "target_id"
       ],
       "title": "SelectSquadMemberExactAction",
-      "type": "object"
-    },
-    "SellItemAction": {
-      "additionalProperties": false,
-      "description": "Sell a bounded quantity from an exact squad-owned inventory window.\n\nChecked: the window resolves to one selected owner and its cell holds this\nitem.",
-      "properties": {
-        "kind": {
-          "const": "sell_item",
-          "default": "sell_item",
-          "title": "Kind",
-          "type": "string"
-        },
-        "cell_label": {
-          "maxLength": 80,
-          "minLength": 1,
-          "title": "Cell Label",
-          "type": "string"
-        },
-        "item_name": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Item Name",
-          "type": "string"
-        },
-        "quantity": {
-          "default": 1,
-          "maximum": 5,
-          "minimum": 1,
-          "title": "Quantity",
-          "type": "integer"
-        },
-        "window": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Window",
-          "type": "string"
-        },
-        "buyer_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Buyer Id",
-          "type": "string"
-        }
-      },
-      "required": [
-        "cell_label",
-        "item_name",
-        "window",
-        "buyer_id"
-      ],
-      "title": "SellItemAction",
       "type": "object"
     },
     "SetFieldbookProjectStatusOperation": {
@@ -2812,33 +2196,6 @@
         "summary"
       ],
       "title": "UpdateFieldbookSummaryOperation",
-      "type": "object"
-    },
-    "UseGameBindingAction": {
-      "additionalProperties": false,
-      "description": "Press one named Kenshi control through the shipped-default keymap.\n\nPrefer `open_screen` for reaching a screen; a binding only toggles.",
-      "properties": {
-        "kind": {
-          "const": "use_game_binding",
-          "default": "use_game_binding",
-          "title": "Kind",
-          "type": "string"
-        },
-        "binding": {
-          "$ref": "#/$defs/GameBinding"
-        },
-        "expected_effect": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Expected Effect",
-          "type": "string"
-        }
-      },
-      "required": [
-        "binding",
-        "expected_effect"
-      ],
-      "title": "UseGameBindingAction",
       "type": "object"
     },
     "WaitAction": {

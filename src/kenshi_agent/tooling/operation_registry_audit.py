@@ -57,24 +57,11 @@ class OperationRegistryAudit:
         )
 
 
-# Operations an adapter never offers on its own because another operation
-# produces them as part of its own execution. Each entry is a claim that the
-# kind is reachable by composition, not an excuse for one that is not: adding a
-# name here says "some offered operation runs this", and that has to be true.
-REACHED_BY_COMPOSITION: frozenset[str] = frozenset(
-    {
-        # harvest_resource produces the yield and collects it as one
-        # controller-owned action.
-        #
-        # `open_context_inventory` was here and no longer is. Being listed meant
-        # only the harvest composite could invoke it, so the planner could never
-        # choose it: asked to open an inventory it dragged the mouse to the INV
-        # button, in the same run where it identified a barman four hundred
-        # units away from telemetry. An operation that works and cannot be
-        # chosen is not reached by composition, it is unreachable.
-        "produce_resource_output",
-    }
-)
+# Operations an adapter never offers on its own because another offered
+# operation runs them internally. The retired harvest composite used to make
+# `produce_resource_output` such a private step; the unified transaction now
+# offers production directly, so this exception set is intentionally empty.
+REACHED_BY_COMPOSITION: frozenset[str] = frozenset()
 
 
 def audit_operation_registry() -> OperationRegistryAudit:

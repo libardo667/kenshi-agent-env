@@ -12,6 +12,7 @@ Usage: python scripts/render_run_stream.py [RUN_ID] [-o OUT.html]
 from __future__ import annotations
 
 import argparse
+import collections
 import html
 import json
 from dataclasses import dataclass, field
@@ -45,7 +46,7 @@ class Run:
     terminated: bool = False
     turns: list[Turn] = field(default_factory=list)
 
-    fallbacks: "collections.Counter[str]" = field(default_factory=lambda: __import__("collections").Counter())
+    fallbacks: collections.Counter[str] = field(default_factory=collections.Counter)
 
     @property
     def rough(self) -> list[Turn]:

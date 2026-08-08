@@ -27,7 +27,6 @@ _NATIVE_CONTROL_CAPABILITIES = (
     "control.exit_current_building",
     "control.perform_context_action",
     "control.produce_resource_output",
-    "control.open_context_inventory",
 )
 
 # Capability names that mean the same thing. The plug-in still emits the

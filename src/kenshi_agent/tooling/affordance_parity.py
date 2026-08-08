@@ -18,9 +18,7 @@ from ..affordances import AFFORDANCE_ADAPTERS
 from ..core.operation import GameBinding
 from ..core.planning import GAME_BINDING_TERMINALS, UNWITNESSED_BINDINGS
 
-CONTROLS_SNAPSHOT = (
-    Path(__file__).resolve().parents[3] / "game_sources" / "kenshi" / "controls.cfg"
-)
+CONTROLS_SNAPSHOT = Path(__file__).resolve().parents[3] / "game_sources" / "kenshi" / "controls.cfg"
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,8 +139,7 @@ class BindingParityReport:
                     errors.append(f"{name}: wired with an exemption")
                 if decision.route.adapter not in adapter_names:
                     errors.append(
-                        f"{name}: route adapter {decision.route.adapter!r} "
-                        "is not registered"
+                        f"{name}: route adapter {decision.route.adapter!r} is not registered"
                     )
                 if decision.route.adapter == "game_bindings":
                     try:
@@ -150,9 +147,7 @@ class BindingParityReport:
                     except ValueError:
                         errors.append(f"{name}: no matching GameBinding enum member")
                     if decision.route.semantic != name:
-                        errors.append(
-                            f"{name}: game-binding route does not name itself"
-                        )
+                        errors.append(f"{name}: game-binding route does not name itself")
             elif decision.status is BindingStatus.EXEMPT:
                 if decision.route is not None:
                     errors.append(f"{name}: exempt entry has a route")
@@ -171,18 +166,14 @@ class BindingParityReport:
         """Wired bindings a later observation can actually prove landed."""
 
         return tuple(
-            name
-            for name in self.with_status(BindingStatus.WIRED)
-            if name in _witnessed_names()
+            name for name in self.with_status(BindingStatus.WIRED) if name in _witnessed_names()
         )
 
     def unwitnessed(self) -> tuple[str, ...]:
         """Wired bindings whose gameplay effect has no observable terminal."""
 
         return tuple(
-            name
-            for name in self.with_status(BindingStatus.WIRED)
-            if name in _unwitnessed_reasons()
+            name for name in self.with_status(BindingStatus.WIRED) if name in _unwitnessed_reasons()
         )
 
     def as_lines(self) -> list[str]:
@@ -221,16 +212,13 @@ class BindingParityReport:
         for name in missing:
             binding = next(item for item in self.source.bindings if item.name == name)
             lines.append(
-                f"  {name:24s} [{', '.join(binding.inputs)}]  "
-                f"{self.decisions[name].reason}"
+                f"  {name:24s} [{', '.join(binding.inputs)}]  {self.decisions[name].reason}"
             )
         lines.extend(["", "EXEMPT — deliberate non-affordances"])
         for name in exempt:
             decision = self.decisions[name]
             assert decision.exemption is not None
-            lines.append(
-                f"  {name:24s} [{decision.exemption.value}]  {decision.reason}"
-            )
+            lines.append(f"  {name:24s} [{decision.exemption.value}]  {decision.reason}")
         lines.extend(["", "WIRED — affordance adapter or runtime-owned routes"])
         for name in wired:
             route = self.decisions[name].route
@@ -267,8 +255,7 @@ def parse_controls_cfg(text: str) -> ControlSource:
         inputs_by_name.setdefault(name, []).append(input_name)
 
     bindings = tuple(
-        ControlBinding(name=name, inputs=tuple(inputs))
-        for name, inputs in inputs_by_name.items()
+        ControlBinding(name=name, inputs=tuple(inputs)) for name, inputs in inputs_by_name.items()
     )
     return ControlSource(
         version=version,
@@ -389,17 +376,17 @@ def _binding_decisions() -> dict[str, BindingDecision]:
                 route=AffordanceRoute("screens", "open_crafting"),
             ),
             "camera_rotate_left": BindingDecision(
-                status=BindingStatus.WIRED,
-                route=AffordanceRoute(
-                    "native_and_composite",
-                    "rotate_camera_left",
+                status=BindingStatus.MISSING,
+                reason=(
+                    "The closure pass retired planner-visible camera rotation; "
+                    "no surviving operation owns this binding."
                 ),
             ),
             "camera_rotate_right": BindingDecision(
-                status=BindingStatus.WIRED,
-                route=AffordanceRoute(
-                    "native_and_composite",
-                    "rotate_camera_right",
+                status=BindingStatus.MISSING,
+                reason=(
+                    "The closure pass retired planner-visible camera rotation; "
+                    "no surviving operation owns this binding."
                 ),
             ),
             "pause": BindingDecision(
@@ -423,8 +410,11 @@ def _binding_decisions() -> dict[str, BindingDecision]:
                 route=AffordanceRoute("context_orders"),
             ),
             "mouse_rotate": BindingDecision(
-                status=BindingStatus.WIRED,
-                route=AffordanceRoute("native_and_composite", "rotate_camera"),
+                status=BindingStatus.MISSING,
+                reason=(
+                    "The closure pass retired planner-visible camera rotation; "
+                    "no surviving operation owns this binding."
+                ),
             ),
             "mouse_select": BindingDecision(
                 status=BindingStatus.WIRED,

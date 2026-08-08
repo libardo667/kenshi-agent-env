@@ -160,7 +160,6 @@ _TARGET_ONLY_WIRE_COMMANDS: frozenset[str] = frozenset(
     {
         native_commands.NATIVE_SQUAD_SELECTION_WIRE_COMMAND,
         native_commands.NATIVE_SQUAD_REGROUP_WIRE_COMMAND,
-        native_commands.NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND,
     }
 )
 
@@ -189,10 +188,6 @@ def _target_only_command_error(
                 "Native squad-regroup target is absent, not distinct from the "
                 "actor, ambiguous, or not confirmed alive at issue time."
             )
-        return None
-    if wire_command == native_commands.NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND:
-        if not _observes_inventory_owner(telemetry, target_id):
-            return "Native inventory owner is absent from current telemetry."
         return None
     raise RuntimeError(
         f"{wire_command!r} is listed as target-only but has no validation rule."
@@ -517,12 +512,15 @@ class KenshiControlSurface:
         if result.stale:
             raise RuntimeError("Refusing to control playback from stale telemetry.")
         snapshot = result.snapshot
+        identity_session_id = snapshot.identity_session_id
+        if not identity_session_id:
+            raise RuntimeError("Native time control requires an identity session.")
         request = NativeCommandRequest(
             schema_version="1.4",
             command_id=new_command_id(),
             command=wire_command,
             control_mode=ControlMode.NATIVE_ASSISTED,
-            identity_session_id=snapshot.identity_session_id,
+            identity_session_id=identity_session_id,
             based_on_revision=WorldStateRevision(
                 telemetry_sequence=snapshot.sequence,
                 capability_epoch=0,

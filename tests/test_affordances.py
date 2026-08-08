@@ -273,6 +273,63 @@ def test_group_selection_can_issue_broadcast_orders_and_still_narrow() -> None:
     # required to un-pair first.
     assert "select_squad_member_exact" in operation_kinds
     assert "perform_context_action" in operation_kinds
+    assert "produce_resource_output" in operation_kinds
+
+
+def test_resource_output_and_inventory_pair_are_both_offered() -> None:
+    actor = CharacterState(
+        id="entity-bark",
+        name="Bark",
+        selected=True,
+        alive=True,
+        conscious=True,
+        down=False,
+    )
+    resource = WorldTarget(
+        id="resource-copper",
+        name="Copper Resource",
+        kind="natural_resource",
+        position=Vec3(x=10, y=0, z=20),
+        distance=25,
+        context_actions=[ContextActionKind.OPERATE],
+        default_task="operate_machinery",
+    )
+    observation = _observation(
+        capabilities=[
+            "control.open_trade_window",
+            "control.produce_resource_output",
+            "game.pause",
+            "identity.stable_handles",
+            "world.context_targets",
+        ],
+        squad=[actor],
+        nearby=[
+            NearbyEntity(id=f"entity-nearby-{index:02d}", name=f"Nearby {index}")
+            for index in range(12)
+        ],
+        targets=[resource],
+        ui=UIState(
+            active_screen="world",
+            dialogue_open=False,
+            modal_open=False,
+            selected_character_id=actor.id,
+            selected_character_ids=[actor.id],
+        ),
+    )
+
+    offers = offered_affordances(observation)
+    resource_offers = [
+        offer
+        for offer in offers
+        if offer.target is not None and offer.target.target_id == resource.id
+    ]
+
+    assert {
+        (offer.semantic, offer.operation_kind) for offer in resource_offers
+    } == {
+        ("produce_resource_output", "produce_resource_output"),
+        ("open_trade_window", "open_trade_window"),
+    }
 
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .action_budget import ActionBudgetLedger
-from .affordances import OPERATION_BINDING_AUTHORITY, bind_runtime_operation
+from .affordances import bind_runtime_operation
 from .config import PlanningConfig
 from .core.observation import Observation
 from .core.operation import IdempotencyPolicy
@@ -14,7 +14,6 @@ from .core.planning import (
     PlanStep,
 )
 from .env.base import AgentEnvironment
-from .execution.handlers.camera import camera_handlers
 from .execution.handlers.cognition import (
     AdvisorConsultant,
     CognitiveServices,
@@ -23,12 +22,9 @@ from .execution.handlers.cognition import (
     cognition_handlers,
 )
 from .execution.handlers.dialogue import dialogue_handlers
-from .execution.handlers.inventory import inventory_handlers
 from .execution.handlers.movement import movement_handlers
 from .execution.handlers.resources import resource_handlers
 from .execution.handlers.runtime import runtime_handlers
-from .execution.handlers.screens import screen_handlers
-from .execution.handlers.trade import trade_handlers
 from .execution.kernel import (
     ActionStartedReporter,
     ExecutionKernel,
@@ -224,16 +220,10 @@ class OperationExecutionFactory:
     ) -> OperationExecutionService:
         handlers = {
             **runtime_handlers(self.operation_port),
-            **screen_handlers(self.operation_port),
-            **trade_handlers(self.operation_port),
-            **inventory_handlers(self.operation_port),
-            **camera_handlers(self.operation_port),
             **dialogue_handlers(self.operation_port, planning_config),
             **movement_handlers(self.operation_port, planning_config),
             **resource_handlers(
                 self.operation_port,
-                self.authority,
-                OPERATION_BINDING_AUTHORITY,
                 planning_config,
             ),
             **cognition_handlers(

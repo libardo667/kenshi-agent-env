@@ -49,9 +49,6 @@ from ..core.evidence import (
     PlanOutcomeEvidence,
 )
 from ..core.observation import Observation
-from ..core.operation import (
-    PurchaseItemAction,
-)
 from ..core.planning import (
     Condition,
     PlanEnvelope,
@@ -442,9 +439,6 @@ def compile_plan_proposal(
         pointer_risk += risk.pointer_actions
         purchase_risk += risk.purchase_actions
         native_risk += risk.native_assisted_actions
-        if isinstance(action, PurchaseItemAction):
-            max_spend += action.expected_price * action.quantity
-
         step_id = f"step-{index + 1}"
         next_step_id = f"step-{index + 2}" if index + 1 < len(proposals) else None
         steps.append(

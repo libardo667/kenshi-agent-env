@@ -28,14 +28,12 @@ def test_every_operation_appears_exactly_once_in_the_catalog() -> None:
     }
 
 
-def test_internal_only_operations_are_named_rather_than_omitted() -> None:
+def test_catalog_has_no_hidden_internal_only_operations() -> None:
     audit = audit_interaction_catalog()
 
     internal = {row.kind for row in audit.rows if not row.planner_visible}
-    covered = {entry.operation_kind for entry in audit.entries}
 
-    assert internal
-    assert internal <= covered
+    assert not internal
 
 
 def test_every_native_command_route_has_an_owning_operation() -> None:
@@ -78,14 +76,12 @@ def test_proof_status_is_typed_and_claims_carry_evidence() -> None:
 def test_only_operations_with_a_recorded_live_run_claim_live_proof() -> None:
     """Updated deliberately, which is what the characterization asked for.
 
-    This began as `test_no_group_scope_behaviour_is_recorded_as_live_proven`,
-    asserting zero, and said in its own docstring that when a live proof landed
-    the entry would move to `live_proven` and this assertion would have to be
-    changed on purpose. One landed: `perform_character_order` dispatched
-    stealth_knockout, unprovoked_focused_melee_attack, attack_enemies,
-    player_talk_to and loot_target on kae-04-funded-pair, each finishing on
-    `context_task_started` -- Kenshi holding the exact ordered task against the
-    exact ordered person.
+    `perform_character_order` dispatched stealth_knockout,
+    unprovoked_focused_melee_attack, attack_enemies, player_talk_to and
+    loot_target on kae-04-funded-pair. The 2026-08-08 closure runs additionally
+    proved the paired-window and item-transfer route against an unconscious
+    body and a resource output, plus resource production through the exact
+    `resource_output_ready` terminal.
 
     The claim stays narrow on purpose. Goal adoption was observed for the
     ordering character, so what is proven is that the order reached Kenshi and
@@ -105,7 +101,12 @@ def test_only_operations_with_a_recorded_live_run_claim_live_proof() -> None:
         if entry.proof_status == "live_proven"
     }
 
-    assert live_proven == {"perform_character_order"}
+    assert live_proven == {
+        "open_trade_window",
+        "perform_character_order",
+        "produce_resource_output",
+        "transfer_item",
+    }
 
 
 def test_catalog_renders_the_contract_execution_and_native_routes() -> None:

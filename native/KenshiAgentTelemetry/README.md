@@ -104,10 +104,6 @@ deliberately accept a group:
   goal stays inactive through a stability window before
   `resource_output_ready_task_released`; matching work that was already active
   is adopted without taking ownership and retains `resource_output_ready`.
-- `open_context_inventory` re-resolves one exact resource and invokes Kenshi's
-  ordinary building-inventory UI, completing only when that same handle owns
-  the open contextual inventory.
-
 The plugin rechecks all shared and command-specific facts and never substitutes
 a nearer target. `native_control` exposes a bounded ring of keyed
 accepted/rejected/completed/cancelled acknowledgements. Active work cancels if

@@ -220,7 +220,7 @@ class ExecutionKernel:
             )
         bound = authorization.bound_operation
         try:
-            action_reservation = self.action_budget.reserve(bound, observation)
+            action_reservation = self.action_budget.reserve(bound)
         except ActionBudgetError as exc:
             self.logger.write(
                 "action_rejected",

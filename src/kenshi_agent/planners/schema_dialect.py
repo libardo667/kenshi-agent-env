@@ -4,7 +4,7 @@ Providers disagree about which JSON Schema keywords they accept, and they
 disagree by rejecting the whole request:
 
 - Google rejects ``const``, so a pydantic discriminator like
-  ``{"const": "purchase_item"}`` reads to it as an unspecified property.
+  ``{"const": "transfer_item"}`` reads to it as an unspecified property.
 - Anthropic (and its Bedrock and Azure mirrors) reject ``minimum`` and
   ``maximum`` on integers.
 

@@ -7,13 +7,6 @@ from datetime import datetime
 from typing import TextIO, cast
 
 from .control_ownership import ControlOwnershipEvent, ControlOwnershipEventType
-from .core.evidence import (
-    CameraRecoveryStatus,
-    PurchaseStatus,
-    ResourceHarvestStatus,
-    ResourceTransferStatus,
-    SaleStatus,
-)
 from .core.operation import (
     GAME_SPEED_MULTIPLIER_BY_GEAR,
     Action,
@@ -145,8 +138,6 @@ def describe_action(action: Action) -> str:
         return "Using the selected world object."
     if kind == "produce_resource_output":
         return "Waiting for the resource to produce an item."
-    if kind == "harvest_resource":
-        return f"Harvesting {cast(int, values['quantity'])} units of resources."
     if kind == "respond_to_immediate_threat":
         strategy = cast(str, values["strategy"])
         return (
@@ -156,8 +147,6 @@ def describe_action(action: Action) -> str:
         )
     if kind == "regroup_with_squad_member":
         return "Reuniting the selected squad member with their teammate."
-    if kind == "open_context_inventory":
-        return "Opening the resource inventory."
     if kind == "move_in_direction":
         return _spoken_sentence(
             "Moving with this goal: " + cast(str, values["expected_effect"])
@@ -168,40 +157,6 @@ def describe_action(action: Action) -> str:
         return "Leaving the building."
     if kind == "move_to_character":
         return "Walking toward that person."
-    if kind == "purchase_item":
-        quantity = cast(int, values["quantity"])
-        item_name = cast(str, values["item_name"])
-        free = cast(int, values["expected_price"]) == 0
-        verb = "Picking up" if free else "Buying"
-        return _spoken_sentence(
-            f"{verb} {quantity} {item_name}"
-            if quantity > 1
-            else f"{verb} {item_name}"
-        )
-    if kind == "dismiss_screen":
-        return "Closing the current screen."
-    if kind == "activate_visible_control":
-        return _spoken_sentence("Choosing " + cast(str, values["exact_label"]))
-    if kind == "equip_item":
-        return _spoken_sentence("Equipping " + cast(str, values["item_name"]))
-    if kind == "sell_item":
-        quantity = cast(int, values["quantity"])
-        item_name = cast(str, values["item_name"])
-        return _spoken_sentence(
-            f"Selling {quantity} {item_name}"
-            if quantity > 1
-            else f"Selling {item_name}"
-        )
-    if kind == "collect_resource_output":
-        return _spoken_sentence(
-            "Collecting " + cast(str, values["item_name"])
-        )
-    if kind == "scroll_screen":
-        return "Looking through more of the current screen."
-    if kind == "recover_camera_view":
-        return "Fixing the camera view."
-    if kind == "use_game_binding":
-        return _spoken_sentence(cast(str, values["expected_effect"]))
     return _spoken_sentence(kind.replace("_", " "))
 
 
@@ -212,56 +167,6 @@ def describe_receipt(receipt: ActionReceipt) -> str:
         return "That didn't work. I'm reconsidering."
     if not receipt.executed and receipt.dry_run:
         return "I didn't take that action."
-    semantic = receipt.semantic
-    if semantic is not None and semantic.camera_recovery is not None:
-        status = semantic.camera_recovery.status
-        if status is CameraRecoveryStatus.ALREADY_CLEAR:
-            return "The camera view was already clear."
-        if status is CameraRecoveryStatus.RECOVERED:
-            return "The camera view is clear again."
-        return "I couldn't get a clear camera view."
-    if semantic is not None and semantic.purchase is not None:
-        purchase = semantic.purchase
-        free = purchase.expected_price == 0
-        if purchase.status is PurchaseStatus.PURCHASED:
-            return (
-                f"{'Picked up' if free else 'Bought'} {purchase.purchased_quantity} "
-                f"{purchase.item_name}."
-            )
-        if purchase.status is PurchaseStatus.PARTIALLY_PURCHASED:
-            return (
-                f"{'Picked up' if free else 'Bought'} {purchase.purchased_quantity} of "
-                f"{purchase.requested_quantity} {purchase.item_name}."
-            )
-        if purchase.status is PurchaseStatus.NOT_PURCHASED:
-            return "Nothing was acquired."
-        return "I couldn't verify the last acquisition."
-    if semantic is not None and semantic.sale is not None:
-        sale = semantic.sale
-        if sale.status is SaleStatus.SOLD:
-            return f"Sold {sale.sold_quantity} {sale.item_name}."
-        if sale.status is SaleStatus.PARTIALLY_SOLD:
-            return (
-                f"Sold {sale.sold_quantity} of "
-                f"{sale.requested_quantity} {sale.item_name}."
-            )
-        if sale.status is SaleStatus.NOT_SOLD:
-            return "Nothing was sold."
-        return "I couldn't verify the last sale."
-    if semantic is not None and semantic.resource_harvest is not None:
-        harvest = semantic.resource_harvest
-        if harvest.status is ResourceHarvestStatus.HARVESTED:
-            item = f" {harvest.item_name}" if harvest.item_name else ""
-            return (
-                f"Harvested {harvest.transferred_quantity}{item} "
-                "and packed it away."
-            )
-        return "The harvest didn't produce a usable item."
-    if semantic is not None and semantic.resource_transfer is not None:
-        transfer = semantic.resource_transfer
-        if transfer.status is ResourceTransferStatus.TRANSFERRED:
-            return _spoken_sentence("Collected " + transfer.item_name)
-        return "The item wasn't transferred."
     acknowledgement = receipt.native_acknowledgement
     if acknowledgement is not None:
         native_results = {

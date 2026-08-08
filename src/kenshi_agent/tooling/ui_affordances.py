@@ -92,63 +92,57 @@ class Affordance:
 
 
 AFFORDANCES: tuple[Affordance, ...] = (
-    # --- the world screen -------------------------------------------------
     Affordance(
         Interface.WORLD,
         Operation.ENTER,
-        "Return to the world with no window in the way.",
-        Mechanism.CONTROL,
-        "use_game_binding / dismiss_screen",
+        "Return to the world with no modal window in the way.",
+        Mechanism.NONE,
+        "",
         native_entry_point="ForgottenGUI::closeAllWindows @ 0x6E5660",
         gap=(
-            "Screens are closed one at a time by re-pressing their own toggle. "
-            "A single closeAllWindows would still be a better escape hatch."
+            "No registry-backed operation closes arbitrary modal UI. The native "
+            "close_trade_window recovery command covers trade only."
         ),
     ),
     Affordance(
         Interface.WORLD,
         Operation.NAVIGATE,
-        "Pan and zoom the camera to bring somewhere into view.",
-        Mechanism.CONTROL,
-        "use_game_binding",
-        native_entry_point="controls.cfg camera_* / camera_zoom_*",
-    ),
-    Affordance(
-        Interface.WORLD,
-        Operation.INTERACT,
-        "Walk to a person and open dialogue.",
+        "Travel by observed identity, discovered destination, or bounded bearing.",
         Mechanism.NATIVE,
-        "approach_dialogue_target",
-        native_entry_point="native approach_confirmed_vendor",
+        "move_to_character / travel_to_map_destination / move_in_direction",
     ),
     Affordance(
         Interface.WORLD,
         Operation.INTERACT,
-        "Start, stop, or speed up time.",
-        Mechanism.CONTROL,
-        "use_game_binding",
-        native_entry_point="controls.cfg pause=Space, speed_1..3=F2..F4",
+        "Issue an exact task Kenshi advertises on a person or world object.",
+        Mechanism.NATIVE,
+        "perform_character_order / perform_context_action",
     ),
     Affordance(
         Interface.WORLD,
         Operation.INTERACT,
-        "Select which squad member is being commanded.",
-        Mechanism.CONTROL,
-        "use_game_binding",
-        native_entry_point="controls.cfg character_next/prev, select_all, change_squad",
+        "Pause, resume, or select a playback speed.",
+        Mechanism.NATIVE,
+        "pause / set_speed",
+    ),
+    Affordance(
+        Interface.WORLD,
+        Operation.INTERACT,
+        "Select one exact squad member.",
+        Mechanism.NATIVE,
+        "select_squad_member_exact",
     ),
     Affordance(
         Interface.WORLD,
         Operation.EXIT,
-        "The world screen is the base state; there is nothing to exit to.",
+        "The world is the base state; there is nothing to exit to.",
         Mechanism.NATIVE,
         "",
     ),
-    # --- dialogue ---------------------------------------------------------
     Affordance(
         Interface.DIALOGUE,
         Operation.ENTER,
-        "Open a conversation with a specific person.",
+        "Open a conversation with a specific observed person.",
         Mechanism.NATIVE,
         "approach_dialogue_target",
     ),
@@ -157,193 +151,150 @@ AFFORDANCES: tuple[Affordance, ...] = (
         Operation.NAVIGATE,
         "Read the available replies.",
         Mechanism.NATIVE,
-        "",
-        native_entry_point="ui.dialogue.options export",
+        "telemetry.ui.dialogue.options",
     ),
     Affordance(
         Interface.DIALOGUE,
         Operation.INTERACT,
-        "Choose a reply.",
-        Mechanism.CONTROL,
-        "activate_visible_control",
+        "Choose one exact reply.",
+        Mechanism.NONE,
+        "",
+        gap="The retired visible-control click has no native replacement yet.",
     ),
     Affordance(
         Interface.DIALOGUE,
         Operation.EXIT,
         "Leave the conversation.",
-        Mechanism.CONTROL,
-        "activate_visible_control",
-        gap=(
-            "Choose the exact visible closing reply. Escape is deliberately not "
-            "used because it opens the ESC menu without ending dialogue."
-        ),
+        Mechanism.NONE,
+        "",
+        gap="No current operation selects a closing reply or closes dialogue.",
     ),
-    # --- inventory --------------------------------------------------------
     Affordance(
         Interface.INVENTORY,
         Operation.ENTER,
-        "Open the squad member's own inventory.",
-        Mechanism.CONTROL,
-        "use_game_binding",
-        native_entry_point="controls.cfg toggle_inventory=I",
-        gap=(
-            "Use open_inventory_windows as the exact count. active_screen is a "
-            "collapsed label: inventory means no observed shop-owner window, "
-            "while trade means one exact registered shop-owner window is open."
-        ),
+        "Pair two observed owners so their inventories are open together.",
+        Mechanism.NATIVE,
+        "open_trade_window",
+        native_entry_point="ForgottenGUI::showTradeWindow @ 0x7905D0",
     ),
     Affordance(
         Interface.INVENTORY,
         Operation.NAVIGATE,
-        "Reach cells that are scrolled out of view or in another section.",
-        Mechanism.CONTROL,
-        "scroll_screen",
-        native_entry_point="InventorySectionGUI::refreshIcons @ 0x7106B0",
-    ),
-    Affordance(
-        Interface.INVENTORY,
-        Operation.INTERACT,
-        "Read what an item actually is.",
-        # Served by telemetry, not by a gesture: every item cell arrives already
-        # carrying its name, value and quantity. This was a hover that waited on
-        # a tooltip Kenshi never reports as visible, so it could only time out.
+        "Address an item by its exported section and slot.",
         Mechanism.NATIVE,
-        "telemetry.ui.visible_controls[item].item_name",
-        native_entry_point="InventoryItem::getName",
+        "telemetry.ui.open_inventories",
     ),
     Affordance(
         Interface.INVENTORY,
         Operation.INTERACT,
-        "Equip an item from one exact selected squad-owned inventory window.",
-        Mechanism.CONTROL,
-        "equip_item",
-        native_entry_point="InventoryGUI::rightClickAutoEquipping @ 0x7137B0",
-        gap=(
-            "The equip route is contracted and portable-tested from observed live "
-            "semantics; moving between sections and dropping still need drag-and-drop."
-        ),
+        "Transfer an item between the two open inventories.",
+        Mechanism.NATIVE,
+        "transfer_item",
     ),
     Affordance(
         Interface.INVENTORY,
         Operation.EXIT,
-        "Close the inventory window.",
-        Mechanism.CONTROL,
-        "dismiss_screen",
+        "Close the paired inventory windows.",
+        Mechanism.NONE,
+        "",
+        native_entry_point="ForgottenGUI::closeTradeWindow @ 0x790630",
+        gap=(
+            "close_trade_window exists in the native recovery protocol but is not "
+            "a registry-backed runtime operation."
+        ),
     ),
-    # --- trade ------------------------------------------------------------
     Affordance(
         Interface.TRADE,
         Operation.ENTER,
-        "Open a shop's stock for trading.",
-        Mechanism.CONTROL,
-        "activate_visible_control",
-        native_entry_point="ForgottenGUI::showTradeWindow @ 0x7905D0",
+        "Open a money-trading, looting, or automatic transfer window.",
+        Mechanism.NATIVE,
+        "open_trade_window",
     ),
     Affordance(
         Interface.TRADE,
         Operation.NAVIGATE,
-        "Reach stock beyond the first screenful.",
-        Mechanism.CONTROL,
-        "scroll_screen",
+        "Read every exported inventory section and slot.",
+        Mechanism.NATIVE,
+        "telemetry.ui.open_inventories",
     ),
     Affordance(
         Interface.TRADE,
         Operation.INTERACT,
-        "Buy an item.",
-        Mechanism.CONTROL,
-        "purchase_item",
-        native_entry_point="InventoryGUI::RClickAutoTrade @ 0x712AB0",
-    ),
-    Affordance(
-        Interface.TRADE,
-        Operation.INTERACT,
-        "Sell an item.",
-        Mechanism.CONTROL,
-        "sell_item",
+        "Buy, sell, give, loot, or collect through one engine transfer.",
+        Mechanism.NATIVE,
+        "transfer_item",
         native_entry_point="InventoryGUI::RClickAutoTrade @ 0x712AB0",
     ),
     Affordance(
         Interface.TRADE,
         Operation.EXIT,
         "Close the trade window.",
-        Mechanism.CONTROL,
-        "dismiss_screen",
+        Mechanism.NONE,
+        "",
         native_entry_point="ForgottenGUI::closeTradeWindow @ 0x790630",
+        gap=(
+            "The recovery command is live-proven, but it has no registry-backed "
+            "runtime lifecycle and the planner cannot currently select it."
+        ),
     ),
-    # --- character stats --------------------------------------------------
     Affordance(
         Interface.CHARACTER_STATS,
         Operation.ENTER,
-        "Open the stats window to read skills and injuries.",
-        Mechanism.CONTROL,
-        "use_game_binding",
-        native_entry_point="controls.cfg toggle_stats=C",
+        "Open the character stats window.",
+        Mechanism.NONE,
+        "",
+        gap="No current operation opens management UI.",
+    ),
+    Affordance(
+        Interface.CHARACTER_STATS,
+        Operation.INTERACT,
+        "Read exported squad skills, health, and state.",
+        Mechanism.NATIVE,
+        "telemetry.squad",
     ),
     Affordance(
         Interface.CHARACTER_STATS,
         Operation.EXIT,
-        "Close the stats window.",
-        Mechanism.CONTROL,
-        "use_game_binding",
-        native_entry_point="re-press toggle_stats",
-        gap=(
-            "Verified live. Same as the map: active_screen stays 'world', so "
-            "`dismiss_screen` has nothing to bind to."
-        ),
+        "Close the character stats window.",
+        Mechanism.NONE,
+        "",
+        gap="No current operation closes management UI.",
     ),
-    # --- map --------------------------------------------------------------
     Affordance(
         Interface.MAP,
         Operation.ENTER,
-        "Open the world map to decide where to travel.",
-        Mechanism.CONTROL,
-        "use_game_binding",
-        native_entry_point="controls.cfg toggle_map=M",
-        gap=(
-            "Verified live. The map is a ManagementScreen tab and leaves "
-            "active_screen on 'world'; management_screen_open is the signal."
-        ),
+        "Open the world map.",
+        Mechanism.NONE,
+        "",
+        gap="Travel no longer requires opening the map, but the UI itself is unreachable.",
     ),
     Affordance(
         Interface.MAP,
         Operation.NAVIGATE,
-        "Pan and zoom to find a destination.",
-        Mechanism.CONTROL,
-        "use_game_binding",
-        native_entry_point="controls.cfg camera_* while the map is open",
+        "Pan or zoom the open map.",
+        Mechanism.NONE,
+        "",
+        gap="No current operation manipulates map presentation.",
     ),
     Affordance(
         Interface.MAP,
         Operation.INTERACT,
-        "Travel to a discovered settlement, an observed character, or along "
-        "a bounded local bearing.",
+        "Travel to an exact discovered settlement marker.",
         Mechanism.NATIVE,
-        "travel_to_map_destination / move_to_character / move_in_direction",
-        native_entry_point="PlayerInterface::newPlayerTaskSelectedCharacters MOVE_CUS_ORDERED",
-        gap=(
-            "Only player-discovered settlement markers are exported; exact "
-            "world coordinates and undiscovered markers remain unavailable. "
-            "The controller owns long-travel speed, safety monitoring, trailing "
-            "camera, and terminal pause."
-        ),
+        "travel_to_map_destination",
     ),
     Affordance(
         Interface.MAP,
         Operation.EXIT,
         "Close the map.",
-        Mechanism.CONTROL,
-        "use_game_binding",
-        native_entry_point="re-press toggle_map",
-        gap=(
-            "Verified live. `dismiss_screen` cannot close it: it binds on "
-            "active_screen, which the map leaves on 'world'."
-        ),
+        Mechanism.NONE,
+        "",
+        gap="No current operation closes management UI.",
     ),
-    # --- message boxes ----------------------------------------------------
     Affordance(
         Interface.MESSAGE_BOX,
         Operation.ENTER,
-        "Kenshi opens these itself to report a refusal.",
+        "Kenshi opens a refusal message itself.",
         Mechanism.NATIVE,
         "",
         native_entry_point="ForgottenGUI::messageBox @ 0x740F60",
@@ -351,37 +302,33 @@ AFFORDANCES: tuple[Affordance, ...] = (
     Affordance(
         Interface.MESSAGE_BOX,
         Operation.INTERACT,
-        "Read why Kenshi refused an action.",
-        Mechanism.CONTROL,
-        "visible_controls role 'text'",
-        native_entry_point="InventoryGUI::TradeResult::showMessage @ 0x70E570",
+        "Read the refusal text.",
+        Mechanism.NATIVE,
+        "telemetry.ui.visible_controls[text]",
     ),
     Affordance(
         Interface.MESSAGE_BOX,
         Operation.EXIT,
-        "Acknowledge the box so the interface is usable again.",
-        Mechanism.CONTROL,
-        "activate_visible_control",
+        "Acknowledge the message.",
+        Mechanism.NONE,
+        "",
+        gap="The retired visible-control click has no native replacement yet.",
     ),
-    # --- the escape menu --------------------------------------------------
     Affordance(
         Interface.ESC_MENU,
         Operation.ENTER,
-        "Open the game menu (mainly a hazard: Escape lands here by accident).",
-        Mechanism.PIXEL,
+        "Open the game menu.",
+        Mechanism.NONE,
         "",
-        gap="Reached only as a side effect of pressing Escape with nothing else open.",
+        gap="No current runtime operation opens the escape menu.",
     ),
     Affordance(
         Interface.ESC_MENU,
         Operation.EXIT,
-        "Get back out of the menu without quitting.",
-        Mechanism.CONTROL,
-        "activate_visible_control",
-        gap=(
-            "Use the exact current Resume control. The route is catalogued but "
-            "has not yet been measured live."
-        ),
+        "Return from the menu without quitting.",
+        Mechanism.NONE,
+        "",
+        gap="No current runtime operation activates Resume.",
     ),
 )
 

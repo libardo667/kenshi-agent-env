@@ -137,15 +137,15 @@ SURFACES: tuple[AffordanceSurface, ...] = (
         ),
         note=(
             "Larger than every captured surface combined and unexamined. "
-            "`purchase_item` is a finished action with no enumeration of what is "
-            "purchasable; `harvest_resource` works on Iron because a person "
-            "reviewed Iron. Needed as a vocabulary for reasoning about what is "
-            "encountered, NOT as a payload to preload into an observation."
+            "Current operations bind only content the live game exports: open "
+            "inventory slots, context targets, characters, and discovered map "
+            "destinations. Static game data remains useful as a vocabulary for "
+            "reasoning about encounters, not as a preload for observations."
         ),
     ),
     AffordanceSurface(
         key="continuous_control",
-        what_it_enumerates="Where to walk, how much to buy, which bearing, camera angle.",
+        what_it_enumerates="Where to walk, which transfer to make, and which bearing.",
         status=SurfaceStatus.NOT_ENUMERABLE,
         source="No artefact enumerates these; they are chosen, not offered.",
         note="Listed so its absence from coverage is a decision rather than an oversight.",

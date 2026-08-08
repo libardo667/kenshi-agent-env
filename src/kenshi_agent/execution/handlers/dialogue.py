@@ -1,4 +1,4 @@
-"""Dialogue approach and current world-target activation handlers."""
+"""Native dialogue-approach operation."""
 
 from __future__ import annotations
 
@@ -14,9 +14,6 @@ from ...core.evidence import SemanticActionReceipt
 from ...core.operation import (
     Action,
     ApproachDialogueTargetAction,
-    ClickAction,
-    CommandWorldTargetAction,
-    MouseButton,
 )
 from ...core.transport import (
     ActionReceipt,
@@ -33,7 +30,6 @@ from ..types import (
     OperationResult,
     OperationStatus,
 )
-from .input_binding import authorized_input_binding
 from .kenshi_surface import KenshiControlSurface
 from .movement import run_prepared_option
 
@@ -44,11 +40,6 @@ class DialogueMechanicsPort(Protocol):
     async def approach_dialogue_target(
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
     ) -> Transition: ...
-
-    async def command_world_target(
-        self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
-    ) -> Transition: ...
-
 
 @dataclass(frozen=True, slots=True)
 class ApproachHandler:
@@ -87,44 +78,6 @@ class ApproachHandler:
         return _cancelled(active, context)
 
 
-@dataclass(frozen=True, slots=True)
-class WorldTargetHandler:
-    operation: DialogueOperation
-
-    async def execute(
-        self,
-        bound: BoundOperation,
-        context: OperationContext,
-    ) -> OperationResult:
-        transition = await _execute(self.operation, bound.operation, context)
-        accepted = transition.receipt.accepted or transition.receipt.executed
-        return OperationResult(
-            status=(OperationStatus.SUCCEEDED if accepted else OperationStatus.REJECTED),
-            observation=transition.observation,
-            reason=transition.receipt.message,
-            transition=transition,
-            terminated=transition.terminated,
-            success=transition.success,
-        )
-
-    async def cancel(
-        self,
-        active: ActiveOperation,
-        context: OperationContext,
-    ) -> OperationResult:
-        return _cancelled(active, context)
-
-
-async def _execute(
-    operation: DialogueOperation,
-    action: Action,
-    context: OperationContext,
-) -> Transition:
-    if context.command is None:
-        raise RuntimeError("Dialogue operation has no command authority.")
-    return await operation(action, command=context.command, token=context.token)
-
-
 def _cancelled(
     active: ActiveOperation,
     context: OperationContext,
@@ -149,7 +102,7 @@ def dialogue_handlers(
 
 
 class KenshiDialogueMechanics:
-    """Approach and world-target mechanics that reach a dialogue terminal."""
+    """Approach mechanics that reach a dialogue terminal."""
 
     _surface: KenshiControlSurface
 
@@ -163,18 +116,6 @@ class KenshiDialogueMechanics:
             action, command=command, token=token, receipt=self._execute_approach_operation
         )
 
-    async def command_world_target(
-        self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
-    ) -> Transition:
-        return await self._surface.run_exact(
-            action,
-            command=command,
-            token=token,
-            receipt=lambda current, started, dispatch: self._execute_world_target_operation(
-                current, started, dispatch, token
-            ),
-        )
-
     async def _execute_approach_operation(
         self, action: Action, started: datetime, command: CommandDispatchContext | None
     ) -> ActionReceipt:
@@ -182,18 +123,6 @@ class KenshiDialogueMechanics:
             cast(ApproachDialogueTargetAction, action),
             started,
             await self._surface.require_command(command),
-        )
-
-    async def _execute_world_target_operation(
-        self,
-        action: Action,
-        started: datetime,
-        command: CommandDispatchContext | None,
-        token: ExecutionToken | None,
-    ) -> ActionReceipt:
-        del command
-        return await self._execute_world_target_command(
-            cast(CommandWorldTargetAction, action), started, token
         )
 
     async def _execute_semantic_approach(
@@ -232,51 +161,4 @@ class KenshiDialogueMechanics:
             semantic=semantic,
             continue_until_terminal=True,
             paused_dialogue_terminal=True,
-        )
-
-    async def _execute_world_target_command(
-        self,
-        action: CommandWorldTargetAction,
-        started: datetime,
-        token: ExecutionToken | None,
-    ) -> ActionReceipt:
-        """Right-click one exact target at geometry re-read inside the input lease."""
-
-        binding, observation = authorized_input_binding(
-            action,
-            token,
-            operations.BoundPointerTarget,
-        )
-        bounds = binding.resolved_bounds
-        x = (bounds.min_x + bounds.max_x) / 2.0
-        y = (bounds.min_y + bounds.max_y) / 2.0
-        primitive_receipt = await self._surface.controller.execute(
-            ClickAction(
-                x=x,
-                y=y,
-                button=MouseButton.RIGHT,
-            )
-        )
-        semantic = SemanticActionReceipt(
-            action_kind=action.kind,
-            contract_version=operations.COMMAND_WORLD_TARGET_DEFINITION.version,
-            target_id=binding.target_id,
-            resolved_label=binding.resolved_label,
-            resolved_bounds=bounds,
-            source_revision=observation.world_revision,
-            revalidation=(
-                "Re-resolved the exact world target and its current screen position "
-                f"inside the input lease before Mouse2. {binding.reason}"
-            ),
-        )
-        return primitive_receipt.model_copy(
-            update={
-                "action": action,
-                "semantic": semantic,
-                "message": (
-                    f"Commanded current target {binding.target_id!r} with Mouse2 "
-                    f"for {binding.resolved_label!r}. A later observation must "
-                    "confirm the resulting world task."
-                ),
-            }
         )

@@ -2,24 +2,16 @@
 
 from __future__ import annotations
 
-from .camera import KenshiCameraMechanics
 from .dialogue import KenshiDialogueMechanics
-from .inventory import KenshiInventoryMechanics
 from .movement import KenshiMovementMechanics
 from .resources import KenshiResourceMechanics
 from .runtime import KenshiRuntimeMechanics
-from .screens import KenshiScreenMechanics
-from .trade import KenshiTradeMechanics
 
 
 class KenshiOperationMechanics(
     KenshiRuntimeMechanics,
     KenshiMovementMechanics,
     KenshiDialogueMechanics,
-    KenshiTradeMechanics,
-    KenshiInventoryMechanics,
-    KenshiScreenMechanics,
-    KenshiCameraMechanics,
     KenshiResourceMechanics,
 ):
     """The exact operations a live Kenshi adapter can perform.

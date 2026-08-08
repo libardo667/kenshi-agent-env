@@ -20,24 +20,16 @@ from typing import Protocol, get_type_hints
 import pytest
 
 from kenshi_agent.env.mock import MockOperationPort
-from kenshi_agent.execution.handlers.camera import CameraMechanicsPort
 from kenshi_agent.execution.handlers.dialogue import DialogueMechanicsPort
-from kenshi_agent.execution.handlers.inventory import InventoryMechanicsPort
 from kenshi_agent.execution.handlers.movement import MovementMechanicsPort
 from kenshi_agent.execution.handlers.resources import ResourceMechanicsPort
 from kenshi_agent.execution.handlers.runtime import RuntimeMechanicsPort
-from kenshi_agent.execution.handlers.screens import ScreenMechanicsPort
-from kenshi_agent.execution.handlers.trade import TradeMechanicsPort
 
 MECHANICS_PORTS: tuple[type[Protocol], ...] = (  # type: ignore[valid-type]
-    CameraMechanicsPort,
     DialogueMechanicsPort,
-    InventoryMechanicsPort,
     MovementMechanicsPort,
     ResourceMechanicsPort,
     RuntimeMechanicsPort,
-    ScreenMechanicsPort,
-    TradeMechanicsPort,
 )
 
 
@@ -72,25 +64,19 @@ def test_the_handler_dictionary_builds_against_the_mock() -> None:
     """
 
     from kenshi_agent.config import PlanningConfig
-    from kenshi_agent.execution.handlers.camera import camera_handlers
     from kenshi_agent.execution.handlers.dialogue import dialogue_handlers
-    from kenshi_agent.execution.handlers.inventory import inventory_handlers
     from kenshi_agent.execution.handlers.movement import movement_handlers
+    from kenshi_agent.execution.handlers.resources import resource_handlers
     from kenshi_agent.execution.handlers.runtime import runtime_handlers
-    from kenshi_agent.execution.handlers.screens import screen_handlers
-    from kenshi_agent.execution.handlers.trade import trade_handlers
 
     port = MockOperationPort.__new__(MockOperationPort)
     config = PlanningConfig()
 
     handlers = {
         **runtime_handlers(port),
-        **screen_handlers(port),
-        **trade_handlers(port),
-        **inventory_handlers(port),
-        **camera_handlers(port),
         **dialogue_handlers(port, config),
         **movement_handlers(port, config),
+        **resource_handlers(port, config),
     }
 
     assert "movement.survey_local_resources" in handlers

@@ -6,18 +6,11 @@ import pytest
 from operation_test_support import one_step_plan, operation_port
 
 from kenshi_agent.config import SafetyConfig
-from kenshi_agent.core.evidence import (
-    CameraFrameScore,
-    CameraRecoveryEvidence,
-    CameraRecoveryStatus,
-    SemanticActionReceipt,
-)
 from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.operation import (
     Action,
     MoveInDirectionAction,
     PauseAction,
-    RecoverCameraViewAction,
     SelectSquadMemberExactAction,
     StopAction,
 )
@@ -216,53 +209,6 @@ def test_telemetry_changes_report_vendor_route_progress() -> None:
     assert "camera bearing to Barman: -70.0 -> -25.0 degrees" in changes
 
 
-def _camera_recovery_receipt(status: CameraRecoveryStatus) -> ActionReceipt:
-    candidate = CameraFrameScore(
-        candidate="controller_candidate",
-        screenshot_path=Path("candidate.png"),
-        screenshot_sha256="0" * 64,
-        telemetry_sequence=12,
-        frame_sequence=3,
-        floor=0,
-        score=0.9,
-        edge_density=0.9,
-        contrast=0.9,
-        color_diversity=0.9,
-        nonflat_fraction=0.9,
-        inverse_dominant_color=0.9,
-        selected_world_label_visible=True,
-        anchor_distance=0.0,
-        clear=status is not CameraRecoveryStatus.FAILED_AFTER_BOUNDED_ATTEMPTS,
-    )
-    return ActionReceipt(
-        action=RecoverCameraViewAction(),
-        accepted=True,
-        executed=True,
-        dry_run=False,
-        semantic=SemanticActionReceipt(
-            action_kind="recover_camera_view",
-            contract_version="1.0",
-            revalidation="Revalidated for the test.",
-            camera_recovery=CameraRecoveryEvidence(
-                status=status,
-                selected_character_id="char-puhat",
-                selected_character_name="Puhat",
-                initial_floor=0,
-                final_floor=0,
-                clear_score_threshold=0.72,
-                anchor_max_distance=30.0,
-                paused_for_recovery=False,
-                primitive_actions=(0 if status is CameraRecoveryStatus.ALREADY_CLEAR else 4),
-                follow_method=(
-                    "already_anchored"
-                    if status is CameraRecoveryStatus.ALREADY_CLEAR
-                    else "portrait_double_click"
-                ),
-                chosen_candidate=candidate.candidate,
-                candidates=[candidate],
-            ),
-        ),
-    )
 
 
 def test_displacement_without_new_choices_is_not_progress() -> None:
@@ -352,25 +298,6 @@ def test_world_time_transition_alone_is_not_progress() -> None:
     assert "world time" in feedback.lower()
 
 
-def test_camera_recovery_that_found_nothing_to_do_is_not_progress() -> None:
-    already_clear = OutcomeRecorder._assess_outcome(
-        _camera_recovery_receipt(CameraRecoveryStatus.ALREADY_CLEAR),
-        TelemetrySnapshot(),
-        visual_change=0.0,
-        telemetry_changes=[],
-        movement_distance=0.0,
-    )
-    recovered = OutcomeRecorder._assess_outcome(
-        _camera_recovery_receipt(CameraRecoveryStatus.RECOVERED),
-        TelemetrySnapshot(),
-        visual_change=0.0,
-        telemetry_changes=[],
-        movement_distance=0.0,
-    )
-
-    assert already_clear[0] == "no_op"
-    assert "already" in already_clear[1].lower()
-    assert recovered[0] == "changed"
 
 
 def test_telemetry_changes_mark_mechanical_deltas_as_not_decision_relevant() -> None:

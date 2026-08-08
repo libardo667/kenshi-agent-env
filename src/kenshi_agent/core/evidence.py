@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from pathlib import Path
 from typing import Literal, TypeAlias
 
 from pydantic import (
@@ -219,223 +218,30 @@ outcome is not the outcome.
 """
 
 
-class CameraRecoveryStatus(StrEnum):
-    ALREADY_CLEAR = "already_clear"
-    RECOVERED = "recovered"
-    FAILED_AFTER_BOUNDED_ATTEMPTS = "failed_after_bounded_attempts"
 
 
-class CameraFrameScore(StrictModel):
-    """One retained frame and the deterministic signals used to rank it."""
-
-    candidate: str = Field(min_length=1, max_length=80)
-    screenshot_path: Path
-    screenshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    telemetry_sequence: int = Field(ge=0)
-    frame_sequence: int = Field(ge=0)
-    floor: int
-    score: float = Field(ge=0.0, le=1.0)
-    edge_density: float = Field(ge=0.0, le=1.0)
-    contrast: float = Field(ge=0.0, le=1.0)
-    color_diversity: float = Field(ge=0.0, le=1.0)
-    nonflat_fraction: float = Field(ge=0.0, le=1.0)
-    inverse_dominant_color: float = Field(ge=0.0, le=1.0)
-    selected_world_label_visible: bool
-    anchor_distance: float | None = Field(default=None, ge=0.0)
-    clear: bool
 
 
-class CameraRecoveryEvidence(StrictModel):
-    """Controller-owned proof for a complete bounded recovery transaction."""
-
-    status: CameraRecoveryStatus
-    selected_character_id: str = Field(min_length=1, max_length=200)
-    selected_character_name: str = Field(min_length=1, max_length=200)
-    initial_floor: int
-    final_floor: int
-    clear_score_threshold: float = Field(ge=0.0, le=1.0)
-    anchor_max_distance: float = Field(gt=0.0)
-    paused_for_recovery: bool
-    primitive_actions: int = Field(ge=0, le=100)
-    follow_method: Literal["already_anchored", "portrait_double_click"]
-    chosen_candidate: str = Field(min_length=1, max_length=80)
-    candidates: list[CameraFrameScore] = Field(min_length=1, max_length=16)
 
 
-class ResourceTransferStatus(StrEnum):
-    TRANSFERRED = "transferred"
-    NOT_TRANSFERRED = "not_transferred"
-    UNVERIFIED = "unverified"
 
 
-class ResourceTransferEvidence(StrictModel):
-    """Controller-owned conservation proof for one resource-output transfer."""
-
-    status: ResourceTransferStatus
-    target_id: str = Field(min_length=1, max_length=200)
-    selected_character_id: str | None = Field(default=None, min_length=1, max_length=200)
-    item_name: str = Field(min_length=1, max_length=200)
-    source_quantity_before: int | None = Field(default=None, ge=0)
-    source_quantity_after: int | None = Field(default=None, ge=0)
-    destination_quantity_before: int | None = Field(default=None, ge=0)
-    destination_quantity_after: int | None = Field(default=None, ge=0)
-    observed_after_sequence: int | None = Field(default=None, ge=0)
-    reason: str = Field(min_length=1, max_length=1000)
 
 
-class ResourceHarvestStatus(StrEnum):
-    HARVESTED = "harvested"
-    NOT_HARVESTED = "not_harvested"
-    CLEANUP_FAILED = "cleanup_failed"
 
 
-class ResourceHarvestEvidence(StrictModel):
-    """Terminal proof for one controller-owned production and transfer bundle."""
-
-    status: ResourceHarvestStatus
-    target_id: str = Field(min_length=1, max_length=200)
-    selected_character_id: str = Field(min_length=1, max_length=200)
-    requested_quantity: int = Field(ge=1, le=5)
-    item_name: str | None = Field(default=None, min_length=1, max_length=200)
-    transferred_quantity: int = Field(default=0, ge=0)
-    production_command_id: str | None = Field(
-        default=None,
-        pattern=r"^cmd-[0-9a-f]{32}$",
-    )
-    inventory_command_id: str | None = Field(
-        default=None,
-        pattern=r"^cmd-[0-9a-f]{32}$",
-    )
-    transfer: ResourceTransferEvidence | None = None
-    cleanup_confirmed: bool
-    reason: str = Field(min_length=1, max_length=1000)
 
 
-class PurchaseStatus(StrEnum):
-    PURCHASED = "purchased"
-    PARTIALLY_PURCHASED = "partially_purchased"
-    NOT_PURCHASED = "not_purchased"
-    OUTCOME_UNKNOWN = "outcome_unknown"
 
 
-def _validate_purchase_evidence(
-    status: PurchaseStatus,
-    expected_price: int,
-    requested_quantity: int,
-    purchased_quantity: int,
-    money_before: int,
-    money_after: int | None,
-    inventory_quantity_before: int,
-    inventory_quantity_after: int | None,
-) -> None:
-    """Keep a known terminal coupled to exact acquisition conservation."""
-
-    if purchased_quantity > requested_quantity:
-        raise ValueError("purchased_quantity cannot exceed requested_quantity")
-    if status is PurchaseStatus.PURCHASED and purchased_quantity != requested_quantity:
-        raise ValueError("purchased status requires the full requested quantity")
-    if status is PurchaseStatus.PARTIALLY_PURCHASED and not (
-        0 < purchased_quantity < requested_quantity
-    ):
-        raise ValueError("partially_purchased status requires a strict partial quantity")
-    if status is PurchaseStatus.NOT_PURCHASED and purchased_quantity != 0:
-        raise ValueError("not_purchased status requires zero purchased quantity")
-    if status is PurchaseStatus.OUTCOME_UNKNOWN and purchased_quantity >= requested_quantity:
-        raise ValueError("outcome_unknown requires an unresolved remaining quantity")
-    if status is PurchaseStatus.OUTCOME_UNKNOWN:
-        return
-    if money_after is None or inventory_quantity_after is None:
-        raise ValueError("a known purchase terminal requires final money and inventory")
-    charged = money_before - money_after
-    acquired = inventory_quantity_after - inventory_quantity_before
-    if acquired != purchased_quantity:
-        raise ValueError("known purchase quantity must equal selected inventory gain")
-    if charged != expected_price * purchased_quantity:
-        raise ValueError("known purchase charge must equal quoted price times quantity")
 
 
-class PurchaseEvidence(StrictModel):
-    """Terminal proof against the exact open player-window owner's inventory."""
-
-    status: PurchaseStatus
-    seller_id: str = Field(min_length=1, max_length=200)
-    selected_character_id: str = Field(min_length=1, max_length=200)
-    item_name: str = Field(min_length=1, max_length=200)
-    expected_price: int = Field(ge=0)
-    requested_quantity: int = Field(ge=1, le=5)
-    purchased_quantity: int = Field(ge=0, le=5)
-    money_before: int = Field(ge=0)
-    money_after: int | None = Field(default=None, ge=0)
-    inventory_quantity_before: int = Field(ge=0)
-    inventory_quantity_after: int | None = Field(default=None, ge=0)
-    observed_after_sequence: int | None = Field(default=None, ge=0)
-    reason: str = Field(min_length=1, max_length=1000)
-
-    @model_validator(mode="after")
-    def status_matches_conserved_quantity(self) -> PurchaseEvidence:
-        _validate_purchase_evidence(
-            self.status,
-            self.expected_price,
-            self.requested_quantity,
-            self.purchased_quantity,
-            self.money_before,
-            self.money_after,
-            self.inventory_quantity_before,
-            self.inventory_quantity_after,
-        )
-        return self
 
 
-class SaleStatus(StrEnum):
-    SOLD = "sold"
-    PARTIALLY_SOLD = "partially_sold"
-    NOT_SOLD = "not_sold"
-    OUTCOME_UNKNOWN = "outcome_unknown"
 
 
-def _validate_sale_status_quantity(
-    status: SaleStatus,
-    requested_quantity: int,
-    sold_quantity: int,
-) -> None:
-    """Keep terminal status consistent with the controller-proven quantity."""
-
-    if sold_quantity > requested_quantity:
-        raise ValueError("sold_quantity cannot exceed requested_quantity")
-    if status is SaleStatus.SOLD and sold_quantity != requested_quantity:
-        raise ValueError("sold status requires the full requested quantity")
-    if status is SaleStatus.PARTIALLY_SOLD and not (0 < sold_quantity < requested_quantity):
-        raise ValueError("partially_sold status requires a strict partial quantity")
-    if status is SaleStatus.NOT_SOLD and sold_quantity != 0:
-        raise ValueError("not_sold status requires zero sold quantity")
-    if status is SaleStatus.OUTCOME_UNKNOWN and sold_quantity >= requested_quantity:
-        raise ValueError("outcome_unknown requires an unresolved remaining quantity")
 
 
-class SaleEvidence(StrictModel):
-    """Terminal proof against the exact selling-window owner's inventory."""
-
-    status: SaleStatus
-    buyer_id: str = Field(min_length=1, max_length=200)
-    selected_character_id: str = Field(min_length=1, max_length=200)
-    item_name: str = Field(min_length=1, max_length=200)
-    requested_quantity: int = Field(ge=1, le=5)
-    sold_quantity: int = Field(ge=0, le=5)
-    money_before: int = Field(ge=0)
-    money_after: int | None = Field(default=None, ge=0)
-    inventory_quantity_before: int = Field(ge=0)
-    inventory_quantity_after: int | None = Field(default=None, ge=0)
-    observed_after_sequence: int | None = Field(default=None, ge=0)
-    reason: str = Field(min_length=1, max_length=1000)
-
-    @model_validator(mode="after")
-    def status_matches_conserved_quantity(self) -> SaleEvidence:
-        _validate_sale_status_quantity(
-            self.status,
-            self.requested_quantity,
-            self.sold_quantity,
-        )
-        return self
 
 
 class QuicksaveStatus(StrEnum):
@@ -491,9 +297,4 @@ class SemanticActionReceipt(StrictModel):
     source_revision: WorldStateRevision | None = None
     option_id: str | None = Field(default=None, max_length=128)
     revalidation: str = Field(min_length=1, max_length=1000)
-    camera_recovery: CameraRecoveryEvidence | None = None
-    purchase: PurchaseEvidence | None = None
-    sale: SaleEvidence | None = None
     quicksave: QuicksaveEvidence | None = None
-    resource_transfer: ResourceTransferEvidence | None = None
-    resource_harvest: ResourceHarvestEvidence | None = None

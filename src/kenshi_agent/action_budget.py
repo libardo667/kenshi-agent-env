@@ -1,4 +1,4 @@
-"""Mutable run-level rate and transaction accounting, separate from policy."""
+"""Mutable run-level primitive-action accounting, separate from policy."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from dataclasses import dataclass
 
 from .config import SafetyConfig
 from .core.authority import AuthorizationCode
-from .core.observation import Observation
 from .operation_definitions import BoundOperation
 
 
@@ -24,7 +23,6 @@ class ActionBudgetReservation:
 
     bound: BoundOperation
     primitive_actions: int
-    purchase_actions: int
     token: int
 
 
@@ -34,39 +32,23 @@ class ActionBudgetLedger:
     def __init__(self, config: SafetyConfig) -> None:
         self.config = config
         self._action_times: deque[float] = deque()
-        self._purchase_count = 0
         self._pending_primitive_count = 0
-        self._pending_purchase_count = 0
         self._next_reservation_token = 1
         self._reservations: dict[int, ActionBudgetReservation] = {}
 
     def reserve(
         self,
         bound: BoundOperation,
-        observation: Observation,
     ) -> ActionBudgetReservation:
         action = bound.operation
         primitive_actions = bound.definition.primitive_action_bound_for(action)
-        risk = bound.definition.risk_for(action)
-        purchase_actions = risk.purchase_actions if observation.mode == "live" else 0
 
         self._reserve_rate_budget(primitive_actions)
-        if (
-            self.config.max_purchases_per_run is not None
-            and self._purchase_count + self._pending_purchase_count + purchase_actions
-            > self.config.max_purchases_per_run
-        ):
-            self._pending_primitive_count -= primitive_actions
-            raise ActionBudgetError(
-                "Requested transaction exceeds the remaining per-run purchase limit."
-            )
-        self._pending_purchase_count += purchase_actions
         token = self._next_reservation_token
         self._next_reservation_token += 1
         reservation = ActionBudgetReservation(
             bound=bound,
             primitive_actions=primitive_actions,
-            purchase_actions=purchase_actions,
             token=token,
         )
         self._reservations[token] = reservation
@@ -75,8 +57,6 @@ class ActionBudgetLedger:
     def commit(self, reservation: ActionBudgetReservation) -> None:
         self._take_reservation(reservation)
         self._pending_primitive_count -= reservation.primitive_actions
-        self._pending_purchase_count -= reservation.purchase_actions
-        self._purchase_count += reservation.purchase_actions
         now = time.monotonic()
         self._prune_rate_budget(now)
         self._action_times.extend([now] * reservation.primitive_actions)
@@ -84,7 +64,6 @@ class ActionBudgetLedger:
     def release(self, reservation: ActionBudgetReservation) -> None:
         self._take_reservation(reservation)
         self._pending_primitive_count -= reservation.primitive_actions
-        self._pending_purchase_count -= reservation.purchase_actions
 
     def _take_reservation(self, reservation: ActionBudgetReservation) -> None:
         active = self._reservations.pop(reservation.token, None)

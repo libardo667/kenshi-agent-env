@@ -13,7 +13,6 @@ from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.operation import (
     ACTION_ADAPTER,
     ApproachDialogueTargetAction,
-    CollectResourceOutputAction,
     ControlMode,
     ExitCurrentBuildingAction,
     MoveInDirectionAction,
@@ -21,7 +20,6 @@ from kenshi_agent.core.operation import (
     PerformContextAction,
     PointerActionClass,
     ProduceResourceOutputAction,
-    PurchaseItemAction,
     RegroupWithSquadMemberAction,
     SelectSquadMemberExactAction,
     TravelToMapDestinationAction,
@@ -653,84 +651,6 @@ class TestResourceProductionContracts:
 
 
 
-class TestCollectResourceOutput:
-    @staticmethod
-    def _state(
-        *,
-        context_target_id: str = "entity-copper",
-        section: str = "out",
-        active_screen: str = "inventory",
-        source_quantity: int = 2,
-        player_inventory_open: bool = True,
-        active_shop_trader_count: int = 0,
-        selected_inventory_accepts_item: bool | None = True,
-    ) -> Observation:
-        target = natural_resource()
-        visible_controls = [
-            VisibleUIControl(
-                label="Raw Iron",
-                window="COPPER RESOURCE",
-                role="item",
-                item_name="Raw Iron",
-                item_quantity=source_quantity,
-                selected_inventory_accepts_item=selected_inventory_accepts_item,
-                section=section,
-                bounds=_bounds(0.5),
-            )
-        ]
-        if player_inventory_open:
-            visible_controls.append(
-                VisibleUIControl(
-                    label="Wooden Backpack",
-                    window="HEP",
-                    role="item",
-                    item_name="Wooden Backpack",
-                    item_quantity=1,
-                    section="main",
-                    bounds=_bounds(0.7),
-                )
-            )
-        return observation(
-            ui=UIState(
-                active_screen=active_screen,
-                modal_open=True,
-                dialogue_open=False,
-                open_inventory_windows=2 if player_inventory_open else 1,
-                context_inventory_target_id=context_target_id,
-                visible_controls_complete=True,
-                selected_character_id="entity-hep",
-                selected_character_ids=["entity-hep"],
-                visible_controls=visible_controls,
-            ),
-            capabilities=[
-                "ui.visible_controls",
-                "ui.context_inventory_target",
-                "ui.inventory",
-                "squad.inventory",
-                "world.context_targets",
-                "identity.stable_handles",
-            ],
-            active_shop_trader_count=active_shop_trader_count,
-            squad=[
-                CharacterState(
-                    id="entity-hep",
-                    name="Hep",
-                    selected=True,
-                    inventory_complete=True,
-                )
-            ],
-            world_targets=[target],
-        )
-
-    @staticmethod
-    def _action(*, source_quantity: int = 2) -> CollectResourceOutputAction:
-        return CollectResourceOutputAction(
-            target_id="entity-copper",
-            cell_label="Raw Iron",
-            item_name="Raw Iron",
-            source_quantity=source_quantity,
-            window="COPPER RESOURCE",
-        )
 
 
 
@@ -1220,111 +1140,6 @@ class TestItemCellControls:
         assert not any(e["ambiguous"] for e in digest)
 
 
-class TestPurchaseSafety:
-    """The purchase fence, lifted out of the calibrated food policy.
-
-    The legacy version took model-authored x/y and merely checked they landed
-    inside the tooltip's source. Here the cell is the reference and the tooltip
-    must belong to *it*, so "buy what I am looking at" is proven rather than
-    asserted.
-    """
-
-    SELLER = "entity-barman"
-
-    def _state(
-        self,
-        *,
-        tooltip: str | None = "Dried Meat\n[Food]\nValue c.52",
-        tooltip_visible: bool = True,
-        tooltip_over_cell: bool = True,
-        traders: int = 1,
-        shop_owner: bool = True,
-    ) -> Observation:
-        # A real trade screen shows both inventories, and the cell ordinals run
-        # across both, so the window is the only thing saying whose item it is.
-        cell = VisibleUIControl(
-            label="item_3", role="item", window="BARMAN", bounds=_bounds(0.5)
-        )
-        # Ordinals come from one counter spanning every window, so they are
-        # unique across both inventories.
-        # Carries its own facts, so binding reaches the ownership check rather
-        # than stopping at the tooltip.
-        our_cell = VisibleUIControl(
-            label="item_7",
-            role="item",
-            window="HEP",
-            bounds=_bounds(0.2),
-            item_name="Dried Meat",
-            item_base_value=52,
-        )
-        # The tooltip's source is the cell itself unless told otherwise.
-        source = _bounds(0.5) if tooltip_over_cell else _bounds(0.8)
-        seller = NearbyEntity(
-            id=self.SELLER,
-            name="Barman",
-            is_animal=False,
-            has_dialogue=True,
-            has_vendor_list=True,
-            is_squad_leader=True,
-            shop_inventory_owner=shop_owner,
-            disposition=Disposition.NEUTRAL,
-            distance=3.0,
-            conscious=True,
-        )
-        state = observation(
-            entities=[seller],
-            controls=[cell, our_cell],
-            capabilities=[
-                "ui.visible_controls",
-                "ui.tooltip",
-                "ui.inventory",
-                "nearby.shop_owners",
-                "squad.basic",
-                "squad.inventory",
-            ],
-            squad=[
-                CharacterState(
-                    id="entity-hep",
-                    name="Hep",
-                    selected=True,
-                    inventory_complete=True,
-                )
-            ],
-        )
-        telemetry = state.telemetry
-        assert telemetry is not None
-        return state.model_copy(
-            update={
-                "telemetry": telemetry.model_copy(
-                    update={
-                        "active_shop_trader_count": traders,
-                        "ui": telemetry.ui.model_copy(
-                            update={
-                                "active_screen": "trade",
-                                "open_inventory_windows": 2,
-                                "selected_character_id": "entity-hep",
-                                "selected_character_ids": ["entity-hep"],
-                                "tooltip_visible": tooltip_visible,
-                                "tooltip_text": tooltip,
-                                "tooltip_source_bounds": source,
-                            }
-                        ),
-                    }
-                )
-            },
-            deep=True,
-        )
-
-    def _action(self, **overrides: object) -> PurchaseItemAction:
-        fields: dict[str, object] = {
-            "cell_label": "item_3",
-            "item_name": "Dried Meat",
-            "expected_price": 52,
-            "window": "BARMAN",
-            "seller_id": self.SELLER,
-        }
-        fields.update(overrides)
-        return PurchaseItemAction(**fields)  # type: ignore[arg-type]
 
 
 
@@ -1553,4 +1368,3 @@ class TestPurchaseBindingCarriesCellFacts:
             },
             deep=True,
         )
-

@@ -23,10 +23,8 @@ from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.operation import (
     GAME_SPEED_MULTIPLIER_BY_GEAR,
     Action,
-    ActivateVisibleControlAction,
     ApproachDialogueTargetAction,
     ControlMode,
-    GameBinding,
     IdempotencyPolicy,
     InterruptPolicy,
     MoveInDirectionAction,
@@ -37,7 +35,6 @@ from kenshi_agent.core.operation import (
     SetSpeedAction,
     StopAction,
     ThreatResponseStrategy,
-    UseGameBindingAction,
 )
 from kenshi_agent.core.planning import (
     Condition,
@@ -222,11 +219,6 @@ class RevisionEnvironment(AgentEnvironment):
         elif isinstance(action, SetSpeedAction):
             self.paused = False
             self.speed = GAME_SPEED_MULTIPLIER_BY_GEAR[action.speed]
-        elif (
-            isinstance(action, UseGameBindingAction)
-            and action.binding is GameBinding.TOGGLE_INVENTORY
-        ):
-            self.open_inventory_windows = int(not self.open_inventory_windows)
         self.step_index += 1
         if self.change_money_after_first_action and len(self.actions) == 1:
             self.money = 0
@@ -2809,89 +2801,9 @@ SEMANTIC_CAPABILITIES = (
 )
 
 
-def semantic_chain_plan(
-    observation: Observation,
-    *,
-    target_id: str,
-    label: str,
-) -> PlanEnvelope:
-    """Approach any valid target, then activate any advertised control."""
-
-    return PlanEnvelope(
-        schema_version="1.0",
-        plan_id="composable-dialogue",
-        plan_version=1,
-        objective="Open dialogue with a valid current target and activate one control.",
-        control_mode=observation.control_mode,
-        based_on_revision=observation.world_revision,
-        assumptions=[fresh()],
-        steps=[
-            PlanStep(
-                step_id="approach",
-                action=ApproachDialogueTargetAction(target_id=target_id),
-                preconditions=[condition("telemetry.game.paused", True, "game.pause")],
-                success_conditions=[
-                    condition("telemetry.ui.dialogue_target_id", target_id, "ui.dialogue.target")
-                ],
-                failure_conditions=[],
-                timeout_seconds=5.0,
-                retry_budget=0,
-                idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-                on_success="activate",
-            ),
-            PlanStep(
-                step_id="activate",
-                action=ActivateVisibleControlAction(exact_label=label, role="button"),
-                preconditions=[condition("telemetry.ui.dialogue_open", True, "ui.dialogue")],
-                success_conditions=[
-                    condition("telemetry.ui.active_screen", "trade", "ui.dialogue")
-                ],
-                failure_conditions=[],
-                timeout_seconds=5.0,
-                retry_budget=0,
-                idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-            ),
-        ],
-        entry_step_id="approach",
-        max_actions=3,
-        max_wall_seconds=20.0,
-        max_game_seconds=10.0,
-        risk_budget=RiskBudget(
-            max_pointer_actions=1,
-            max_purchase_actions=0,
-            max_native_assisted_actions=1,
-        ),
-    )
 
 
 
-class SemanticChainPlanner(Planner):
-    """One strategic call yields the whole composed chain; the rest just stops."""
-
-    def __init__(
-        self,
-        *,
-        target_id: str,
-        label: str,
-    ) -> None:
-        self.target_id = target_id
-        self.label = label
-        self.calls = 0
-
-    async def decide(self, current: Observation) -> PlannerOutput:
-        self.calls += 1
-        if self.calls == 1:
-            return semantic_chain_plan(
-                current,
-                target_id=self.target_id,
-                label=self.label,
-            )
-        return PlannerDecision(
-            intent="stop",
-            rationale="The composed chain finished.",
-            action=StopAction(reason="semantic chain complete"),
-            confidence=1.0,
-        )
 
 
 

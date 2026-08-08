@@ -40,10 +40,10 @@ world_context_action  [source_identified]  enumerated: —
 game_content  [unexamined]  enumerated: —
     The things acted upon: items, buildings, research, factions, dialogue, towns.
     source: data/gamedata.base (4.4 MB), data/Dialogue.mod (11.3 MB), data/Newwworld.mod (1.9 MB); reachable through FCS_extended, or as live game objects through KenshiLib.
-    note: Larger than every captured surface combined and unexamined. `purchase_item` is a finished action with no enumeration of what is purchasable; `harvest_resource` works on Iron because a person reviewed Iron. Needed as a vocabulary for reasoning about what is encountered, NOT as a payload to preload into an observation.
+    note: Larger than every captured surface combined and unexamined. Current operations bind only content the live game exports: open inventory slots, context targets, characters, and discovered map destinations. Static game data remains useful as a vocabulary for reasoning about encounters, not as a preload for observations.
 
 continuous_control  [not_enumerable]  enumerated: —
-    Where to walk, how much to buy, which bearing, camera angle.
+    Where to walk, which transfer to make, and which bearing.
     source: No artefact enumerates these; they are chosen, not offered.
     note: Listed so its absence from coverage is a decision rather than an oversight.
 

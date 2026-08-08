@@ -48,7 +48,6 @@ from kenshi_agent.native_commands import (
     NATIVE_EXIT_BUILDING_WIRE_COMMAND,
     NATIVE_MAP_TRAVEL_WIRE_COMMAND,
     NATIVE_MOVE_WIRE_COMMAND,
-    NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND,
     NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND,
     NATIVE_RESOURCE_SURVEY_WIRE_COMMAND,
     NATIVE_SHIFT_BODY_WIRE_COMMAND,
@@ -65,7 +64,6 @@ from kenshi_agent.operation_definitions import (
     NATIVE_EXIT_BUILDING_CAPABILITY,
     NATIVE_MAP_TRAVEL_CAPABILITY,
     NATIVE_MOVE_CAPABILITY,
-    NATIVE_OPEN_CONTEXT_INVENTORY_CAPABILITY,
     NATIVE_PRODUCE_RESOURCE_CAPABILITY,
     NATIVE_RESOURCE_SURVEY_CAPABILITY,
     NATIVE_SHIFT_BODY_CAPABILITY,
@@ -106,9 +104,6 @@ NATIVE_WIRE_COMMANDS: dict[str, str] = {
     NATIVE_CONTEXT_ACTION_CAPABILITY: NATIVE_CONTEXT_ACTION_WIRE_COMMAND,
     NATIVE_CHARACTER_ORDER_CAPABILITY: NATIVE_CHARACTER_ORDER_WIRE_COMMAND,
     NATIVE_PRODUCE_RESOURCE_CAPABILITY: NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND,
-    NATIVE_OPEN_CONTEXT_INVENTORY_CAPABILITY: (
-        NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND
-    ),
     NATIVE_TRANSFER_CAPABILITY: NATIVE_TRANSFER_WIRE_COMMAND,
     NATIVE_TRADE_WINDOW_CAPABILITY: NATIVE_TRADE_WINDOW_WIRE_COMMAND,
     NATIVE_SQUAD_REGROUP_CAPABILITY: NATIVE_SQUAD_REGROUP_WIRE_COMMAND,
@@ -122,11 +117,7 @@ NATIVE_WIRE_COMMANDS: dict[str, str] = {
 # will always be refused for missing capabilities. Shrink this; never grow it.
 # Closing an entry means giving the mock the state the capability names, which is
 # a behaviour change and belongs in its own slice.
-MOCK_UNEXERCISABLE: dict[str, str] = {
-    "equip_item": "the mock world has no inventory model",
-    "purchase_item": "the mock world has no shop, tooltip, or stable identity",
-    "sell_item": "the mock world has no shop or inventory model",
-}
+MOCK_UNEXERCISABLE: dict[str, str] = {}
 
 
 def _mock_capabilities() -> frozenset[str]:

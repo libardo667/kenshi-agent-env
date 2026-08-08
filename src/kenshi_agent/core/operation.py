@@ -62,11 +62,6 @@ class MouseButton(StrEnum):
     X2 = "x2"
 
 
-class CameraRotationDirection(StrEnum):
-    LEFT = "left"
-    RIGHT = "right"
-
-
 class CoordinateSpace(StrEnum):
     NORMALIZED = "normalized"
     CLIENT = "client"
@@ -280,21 +275,6 @@ class PerformContextAction(StrictModel):
     context_action: ContextActionKind
 
 
-class CommandWorldTargetAction(StrictModel):
-    """Right-click one exact current world target at telemetry-owned geometry."""
-
-    kind: Literal["command_world_target"] = "command_world_target"
-    target_id: str = Field(min_length=1, max_length=200)
-    context_action: ContextActionKind
-
-
-class SelectSquadMemberAction(StrictModel):
-    """Select one exact current squad member through observed world geometry."""
-
-    kind: Literal["select_squad_member"] = "select_squad_member"
-    target_id: str = Field(min_length=1, max_length=200)
-
-
 class SelectSquadMemberExactAction(StrictModel):
     """Select one exact squad member through native stable identity."""
 
@@ -335,14 +315,6 @@ MANAGEMENT_TAB_CLOSED = -1
 # binding when the screen is already up closes it, so an agent that wanted the
 # inventory and pressed I twice ends with no inventory and a receipt saying
 # something changed both times.
-class OpenScreenAction(StrictModel):
-    """Have a named screen open. Prefer this over pressing its key.
-
-    Idempotent: succeeds if the screen is already open.
-    """
-
-    kind: Literal["open_screen"] = "open_screen"
-    screen: GameScreen
 
 
 class ProduceResourceOutputAction(StrictModel):
@@ -351,20 +323,6 @@ class ProduceResourceOutputAction(StrictModel):
     kind: Literal["produce_resource_output"] = "produce_resource_output"
     target_id: str = Field(min_length=1, max_length=200)
     minimum_output_quantity: int = Field(default=1, ge=1, le=5)
-
-
-class HarvestResourceAction(StrictModel):
-    """Harvest a bounded yield from one exact resource into one exact actor.
-
-    The planner chooses the actor, resource, and useful yield once. The
-    controller owns production, inventory opening, exact conserved transfer,
-    cleanup, and terminal proof as one interruptible option.
-    """
-
-    kind: Literal["harvest_resource"] = "harvest_resource"
-    actor_id: str = Field(min_length=1, max_length=200)
-    target_id: str = Field(min_length=1, max_length=200)
-    quantity: int = Field(ge=1, le=5)
 
 
 class ThreatResponseStrategy(StrEnum):
@@ -390,13 +348,6 @@ class RegroupWithSquadMemberAction(StrictModel):
 
     kind: Literal["regroup_with_squad_member"] = "regroup_with_squad_member"
     actor_id: str = Field(min_length=1, max_length=200)
-    target_id: str = Field(min_length=1, max_length=200)
-
-
-class OpenContextInventoryAction(StrictModel):
-    """Open the ordinary inventory UI for one exact observed world target."""
-
-    kind: Literal["open_context_inventory"] = "open_context_inventory"
     target_id: str = Field(min_length=1, max_length=200)
 
 
@@ -563,191 +514,6 @@ class MoveToCharacterAction(StrictModel):
 
     kind: Literal["move_to_character"] = "move_to_character"
     target_id: str = Field(min_length=1, max_length=200)
-
-
-# A model docstring becomes the schema's `description`, so every word here is
-# static prompt text on a hard budget. Rationale that only a maintainer needs
-# goes in comments like this one, which never reach the planner.
-#
-# `expected_price` is checked against the cell's `item_base_value` before any
-# input is sent, rather than discovered from the debit afterwards. It used to be
-# compared against the sell value - what the trader pays out - which made every
-# spending gate advisory: one run declared 300 for Bread, was charged 549, and
-# tripped nothing.
-class PurchaseItemAction(StrictModel):
-    """Acquire a bounded quantity of one item from exact seller-owned cells.
-
-    `expected_price` is the nonnegative per-unit charge reported as buy_price.
-    Zero is a real free acquisition, not missing price evidence. The controller
-    rebinds interchangeable stock after each transfer and proves that carried
-    gain exactly matches the quoted charge before attempting the next unit.
-    """
-
-    kind: Literal["purchase_item"] = "purchase_item"
-    cell_label: str = Field(min_length=1, max_length=80)
-    item_name: str = Field(min_length=1, max_length=200)
-    expected_price: int = Field(ge=0)
-    quantity: int = Field(default=1, ge=1, le=5)
-    # Caption of the seller's own inventory window. A trade screen shows two
-    # inventories whose cell ordinals run across both, so this is what says the
-    # item being bought is the shop's rather than ours.
-    window: str = Field(min_length=1, max_length=200)
-    seller_id: str = Field(min_length=1, max_length=200)
-
-
-class DismissScreenAction(StrictModel):
-    """Close one exact currently open screen toward the world view.
-
-    Exiting is as much a part of using an interface as entering it. Naming the
-    screen and, where applicable, the owner window makes the action bind to
-    observed state instead of blindly pressing a key and hoping. Named game
-    screens close through their own toggle binding; trade windows close through
-    their exact close box. It deliberately does not end an active conversation:
-    dialogue must choose an exact visible closing reply.
-    """
-
-    kind: Literal["dismiss_screen"] = "dismiss_screen"
-    expected_screen: GameScreen | Literal["dialogue", "trade"]
-    # Caption of the window to close. Inventory and trade windows are closed by
-    # their own close box, whose position is derived from the window's observed
-    # rect rather than a calibrated screen coordinate. An empty named screen
-    # uses its own exact toggle binding; an active dialogue target makes any
-    # generic dismissal route fail closed.
-    window: str = Field(default="", max_length=200)
-
-
-class ActivateVisibleControlAction(StrictModel):
-    """Activate exactly one control the interface currently advertises.
-
-    The arguments are an exact current label and role, not coordinates: the
-    bounds come from telemetry and are re-resolved inside the input lease. The
-    action knows nothing about which screen, which conversation, or which option
-    index it is activating.
-    """
-
-    kind: Literal["activate_visible_control"] = "activate_visible_control"
-    exact_label: str = Field(min_length=1, max_length=500)
-    role: Literal["button", "text", "item"] = "button"
-    # Optional narrowing when several windows advertise the same label.
-    window: str = Field(default="", max_length=200)
-
-
-class EquipItemAction(StrictModel):
-    """Equip one item from an exact currently selected squad-owned window.
-
-    Kenshi equips on right-click (`rightClickAutoEquipping`) - the *same*
-    gesture that sells an item when a trade is open. That collision is the whole
-    hazard: an equip attempted with a shop window up is a sale, and the item is
-    gone before any postcondition could notice. So this action refuses outright
-    unless no trade is active.
-    """
-
-    kind: Literal["equip_item"] = "equip_item"
-    cell_label: str = Field(min_length=1, max_length=80)
-    item_name: str = Field(min_length=1, max_length=200)
-    # Must be the selected character's own inventory window.
-    window: str = Field(min_length=1, max_length=200)
-
-
-# The mirror of `purchase_item`: with only a purchase action the agent could
-# spend its starting money and never earn any.
-#
-# It carries no expected price. That was originally because a shop's offer "is
-# not exported" - no longer true, since cells now carry `item_sell_value`, the
-# same number the in-game tooltip labels "Sell value". Adding a checked price
-# here is real work, not a rename: nothing has yet confirmed that the proceeds
-# of a sale equal that field the way a purchase's debit was confirmed to equal
-# `item_base_value`. Until a live sale demonstrates it, asserting a price here
-# would assert something unverified.
-class SellItemAction(StrictModel):
-    """Sell a bounded quantity from an exact squad-owned inventory window.
-
-    Checked: the window resolves to one selected owner and its cell holds this
-    item.
-    """
-
-    kind: Literal["sell_item"] = "sell_item"
-    cell_label: str = Field(min_length=1, max_length=80)
-    item_name: str = Field(min_length=1, max_length=200)
-    quantity: int = Field(default=1, ge=1, le=5)
-    # Caption of the inventory window the cell sits in; must be the selected
-    # character's own window, never the trader's.
-    window: str = Field(min_length=1, max_length=200)
-    buyer_id: str = Field(min_length=1, max_length=200)
-
-
-class CollectResourceOutputAction(StrictModel):
-    """Transfer one exact resource-output cell into the selected squadmate.
-
-    The exact world-target ID binds the source window to its observed resource.
-    `source_quantity` is copied from the cell so the controller can prove that
-    source loss equals destination gain after the right-click.
-    """
-
-    kind: Literal["collect_resource_output"] = "collect_resource_output"
-    target_id: str = Field(min_length=1, max_length=200)
-    cell_label: str = Field(min_length=1, max_length=80)
-    item_name: str = Field(min_length=1, max_length=200)
-    source_quantity: int = Field(gt=0)
-    window: str = Field(min_length=1, max_length=200)
-    section: Literal["out"] = "out"
-
-
-class ScrollScreenAction(StrictModel):
-    """Scroll inside one open window so more of its contents become visible.
-
-    Shops and inventories hold more than fits on screen, and the export only
-    ever describes what is currently rendered. Without this, stock past the
-    first screenful is not merely hard to reach - it does not exist as far as
-    the agent is concerned, and no amount of replanning reveals it.
-
-    Names a window rather than a coordinate: the scroll lands at the centre of
-    that window's own observed bounds, so it follows the window and survives a
-    resolution change.
-    """
-
-    kind: Literal["scroll_screen"] = "scroll_screen"
-    # Caption of the window to scroll, exactly as `visible_controls` reports it.
-    window: str = Field(min_length=1, max_length=200)
-    # Negative scrolls down (further into the list), positive scrolls up.
-    notches: int = Field(ge=-8, le=8)
-
-    @field_validator("notches")
-    @classmethod
-    def notches_must_move(cls, value: int) -> int:
-        if value == 0:
-            raise ValueError("notches must not be zero")
-        return value
-
-
-class RecoverCameraViewAction(StrictModel):
-    """Ask the controller to restore a usable character-following world view.
-
-    This action intentionally has no camera parameters. The caller identifies
-    the problem; the controller owns the bounded follow, floor, zoom, orbit,
-    capture, and scoring transaction and reports its terminal outcome.
-    """
-
-    kind: Literal["recover_camera_view"] = "recover_camera_view"
-
-
-class RotateCameraAction(StrictModel):
-    """Rotate the world camera one bounded horizontal increment."""
-
-    kind: Literal["rotate_camera"] = "rotate_camera"
-    direction: CameraRotationDirection
-
-
-def camera_rotation_primitive(action: RotateCameraAction) -> MouseDragAction:
-    """Map one semantic yaw increment to Kenshi's held-Mouse3 rotation mode."""
-
-    delta_x = 96 if action.direction is CameraRotationDirection.LEFT else -96
-    return MouseDragAction(
-        button=MouseButton.MIDDLE,
-        delta_x=delta_x,
-        delta_y=0,
-        steps=8,
-    )
 
 
 QUICKSAVE_COMPLETION_CAPABILITY = "host.quicksave_completion"
@@ -971,27 +737,6 @@ TIME_GAME_BINDINGS: frozenset[GameBinding] = frozenset(
 """Low-level time keys reserved for runtime-owned option mechanics."""
 
 
-# The agent kept trying to reach screens by hunting for a widget to click -
-# clicking the time-speed buttons to unpause, clicking around the world hoping
-# an inventory would appear - because nothing in the catalog could simply open a
-# screen. Kenshi already binds all of it. Naming the *binding* rather than the
-# key keeps the intention readable and the default mapping in one place;
-# customized keymaps are not yet read. The enum is a semantic vocabulary, not an
-# escape hatch to arbitrary keys. Time keys stay controller details behind
-# monitored semantic options.
-class UseGameBindingAction(StrictModel):
-    """Press one named Kenshi control through the shipped-default keymap.
-
-    Prefer `open_screen` for reaching a screen; a binding only toggles.
-    """
-
-    kind: Literal["use_game_binding"] = "use_game_binding"
-    binding: GameBinding
-    # Runtime-authored audit label. The playing model selects the offered
-    # binding and never writes this private operation field.
-    expected_effect: str = Field(min_length=1, max_length=200)
-
-
 ControllerPrimitive: TypeAlias = (
     KeyAction
     | HotkeyAction
@@ -1021,50 +766,33 @@ RuntimeControlAction: TypeAlias = (
 """Runtime intentions that touch no game object and bind to no reference."""
 
 AtomicRuntimeOperation: TypeAlias = (
-    ApproachDialogueTargetAction
-    | CommandWorldTargetAction
-    | SelectSquadMemberAction
-    | SelectSquadMemberExactAction
-    | RotateCameraAction
-    | MoveToCharacterAction
+    SelectSquadMemberExactAction
     | ShiftIntoBodyAction
-    | PerformCharacterOrderAction
-    | MoveInDirectionAction
-    | TravelToMapDestinationAction
-    | ExitCurrentBuildingAction
     | SurveyLocalResourcesAction
-    | ActivateVisibleControlAction
-    | DismissScreenAction
-    | PurchaseItemAction
-    | OpenScreenAction
-    | UseGameBindingAction
-    | ScrollScreenAction
-    | SellItemAction
-    | EquipItemAction
-    | RecoverCameraViewAction
+    | OpenTradeWindowAction
+    | TransferItemAction
 )
 """Reusable atomic game/UI operations materialized from affordances."""
 
 CompositeRuntimeOperation: TypeAlias = (
-    HarvestResourceAction | RespondToImmediateThreatAction | RegroupWithSquadMemberAction
+    ApproachDialogueTargetAction
+    | PerformContextAction
+    | ProduceResourceOutputAction
+    | PerformCharacterOrderAction
+    | RespondToImmediateThreatAction
+    | RegroupWithSquadMemberAction
+    | MoveToCharacterAction
+    | MoveInDirectionAction
+    | TravelToMapDestinationAction
+    | ExitCurrentBuildingAction
 )
 """Executor-owned options that require continuous plan supervision."""
 
 RuntimeSemanticOperation: TypeAlias = AtomicRuntimeOperation | CompositeRuntimeOperation
 """Every game/UI operation materialized from a continuous affordance."""
 
-InternalRuntimeOperation: TypeAlias = (
-    PerformContextAction
-    | ProduceResourceOutputAction
-    | OpenContextInventoryAction
-    | TransferItemAction
-    | OpenTradeWindowAction
-    | CollectResourceOutputAction
-)
-"""Controller-owned phases used only inside larger semantic options."""
-
-SemanticAction: TypeAlias = RuntimeSemanticOperation | InternalRuntimeOperation
-"""Every typed game/UI intention, including controller-owned phases."""
+SemanticAction: TypeAlias = RuntimeSemanticOperation
+"""Every typed game/UI intention in the operation registry."""
 
 RuntimeAction: TypeAlias = RuntimeControlAction | RuntimeSemanticOperation
 """Executor operations that can appear in a continuously supervised plan."""
@@ -1072,82 +800,26 @@ RuntimeAction: TypeAlias = RuntimeControlAction | RuntimeSemanticOperation
 UnmonitoredRuntimeAction: TypeAlias = RuntimeControlAction | AtomicRuntimeOperation
 """Executor operations that do not require continuous option ownership."""
 
-Action: TypeAlias = (
-    NoopAction
-    | StopAction
-    | PauseAction
-    | SetSpeedAction
-    | WaitAction
-    | ConsultAdvisorAction
-    | RecallMemoryAction
-    | ReadFieldbookAction
-    | KeyAction
-    | HotkeyAction
-    | MouseButtonAction
-    | MouseDragAction
-    | MoveCursorAction
-    | ClickAction
-    | ScrollAction
-    | ApproachDialogueTargetAction
-    | CommandWorldTargetAction
-    | SelectSquadMemberAction
-    | SelectSquadMemberExactAction
-    | RotateCameraAction
-    | ShiftIntoBodyAction
-    | PerformCharacterOrderAction
-    | PerformContextAction
-    | ProduceResourceOutputAction
-    | OpenContextInventoryAction
-    | TransferItemAction
-    | OpenTradeWindowAction
-    | HarvestResourceAction
-    | RespondToImmediateThreatAction
-    | RegroupWithSquadMemberAction
-    | MoveToCharacterAction
-    | MoveInDirectionAction
-    | TravelToMapDestinationAction
-    | ExitCurrentBuildingAction
-    | SurveyLocalResourcesAction
-    | ActivateVisibleControlAction
-    | DismissScreenAction
-    | PurchaseItemAction
-    | OpenScreenAction
-    | UseGameBindingAction
-    | ScrollScreenAction
-    | SellItemAction
-    | EquipItemAction
-    | CollectResourceOutputAction
-    | RecoverCameraViewAction
-)
+Action: TypeAlias = ControllerPrimitive | RuntimeAction
 ACTION_ADAPTER: TypeAdapter[Action] = TypeAdapter(Action)
 
 SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
     {
         "approach_dialogue_target",
-        "command_world_target",
-        "select_squad_member",
         "select_squad_member_exact",
-        "rotate_camera",
         "perform_character_order",
         "perform_context_action",
         "produce_resource_output",
-        "open_context_inventory",
-        "harvest_resource",
+        "open_trade_window",
+        "transfer_item",
         "respond_to_immediate_threat",
         "regroup_with_squad_member",
         "move_to_character",
         "move_in_direction",
         "travel_to_map_destination",
         "exit_current_building",
-        "activate_visible_control",
-        "dismiss_screen",
-        "purchase_item",
-        "use_game_binding",
-        "scroll_screen",
-        "sell_item",
-        "equip_item",
-        "collect_resource_output",
-        "recover_camera_view",
+        "survey_local_resources",
+        "shift_into_body",
     }
 )
 CONTROLLER_PRIMITIVE_KINDS: frozenset[str] = frozenset(

@@ -9,24 +9,16 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from .handlers.camera import CameraMechanicsPort
 from .handlers.dialogue import DialogueMechanicsPort
-from .handlers.inventory import InventoryMechanicsPort
 from .handlers.movement import MovementMechanicsPort
 from .handlers.resources import ResourceMechanicsPort
 from .handlers.runtime import RuntimeMechanicsPort
-from .handlers.screens import ScreenMechanicsPort
-from .handlers.trade import TradeMechanicsPort
 
 
 class OperationMechanicsPort(
     RuntimeMechanicsPort,
     MovementMechanicsPort,
     DialogueMechanicsPort,
-    TradeMechanicsPort,
-    InventoryMechanicsPort,
-    ScreenMechanicsPort,
-    CameraMechanicsPort,
     ResourceMechanicsPort,
     Protocol,
 ):

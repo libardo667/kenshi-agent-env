@@ -10,11 +10,12 @@ from __future__ import annotations
 from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.operation import (
     Action,
-    ActivateVisibleControlAction,
     ApproachDialogueTargetAction,
     ClickAction,
     ControlMode,
     IdempotencyPolicy,
+    OpenTradeWindowAction,
+    SurveyLocalResourcesAction,
 )
 from kenshi_agent.core.planning import (
     Condition,
@@ -282,10 +283,16 @@ def chain_plan() -> PlanEnvelope:
             ),
             step(
                 "activate",
-                ActivateVisibleControlAction(exact_label="Show me your goods.", role="button"),
+                OpenTradeWindowAction(
+                    first_owner_id=VENDOR_ID,
+                    second_owner_id="entity-player",
+                    window_type="money_trading",
+                ),
                 success=[screen_is("trade")],
             ),
-        ]
+        ],
+        pointer=0,
+        native=2,
     )
 
 
@@ -474,8 +481,6 @@ class TestFutureStepsMayReferenceFutureState:
     """
 
     def _approach_then_reply(self) -> PlanEnvelope:
-        from kenshi_agent.core.operation import ActivateVisibleControlAction
-
         return plan(
             [
                 step(
@@ -486,14 +491,16 @@ class TestFutureStepsMayReferenceFutureState:
                 step(
                     "leave",
                     # Nothing is open yet; this refers to what the approach creates.
-                    ActivateVisibleControlAction(
-                        exact_label="Goodbye.",
-                        role="button",
+                    OpenTradeWindowAction(
+                        first_owner_id=VENDOR_ID,
+                        second_owner_id="entity-player",
+                        window_type="money_trading",
                     ),
                     success=[screen_is("world")],
                 ),
             ],
-            pointer=2,
+            pointer=0,
+            native=2,
         )
 
     def test_a_plan_whose_later_step_needs_future_state_is_accepted(self) -> None:
@@ -526,20 +533,18 @@ class TestIdempotencyClaims:
     """Plan policy judges the step's retry declaration, not operation policy."""
 
     def _plan_with(self, idem: IdempotencyPolicy, retries: int = 0) -> PlanEnvelope:
-        from kenshi_agent.core.operation import ScrollScreenAction
-
         return plan(
             [
                 step(
-                    "scroll",
-                    ScrollScreenAction(window="BARMAN", notches=-3),
+                    "survey",
+                    SurveyLocalResourcesAction(),
                     success=[screen_is("trade")],
                     idempotency=idem,
                     retry_budget=retries,
                 )
             ],
             pointer=0,
-            native=0,
+            native=1,
         )
 
     def test_declaring_at_most_once_for_a_retryable_action_is_accepted(self) -> None:
@@ -566,57 +571,6 @@ class TestIdempotencyClaims:
         assert live_plan_policy_errors(composed) == []
 
 
-class TestDerivedRiskBudget:
-    """The plan's steps are its declaration of what it will spend."""
-
-    def _buying_plan(self, declared: int) -> PlanEnvelope:
-        from kenshi_agent.core.operation import PurchaseItemAction
-        from kenshi_agent.core.planning import RiskBudget
-
-        composed = plan(
-            [
-                step(
-                    "buy",
-                    PurchaseItemAction(
-                        cell_label="Greenfruit",
-                        item_name="Greenfruit",
-                        expected_price=22,
-                        window="BARMAN",
-                        seller_id=VENDOR_ID,
-                    ),
-                    success=[screen_is("trade")],
-                )
-            ],
-            pointer=1,
-            native=0,
-        )
-        return composed.model_copy(
-            update={
-                "risk_budget": RiskBudget(
-                    max_pointer_actions=1,
-                    max_purchase_actions=declared,
-                    max_native_assisted_actions=0,
-                )
-            }
-        )
-
-
-    def test_headroom_the_planner_asked_for_is_left_alone(self) -> None:
-        """A higher budget states intent across the patches that may follow."""
-        from kenshi_agent.live_plan_policy import with_covering_risk_budget
-
-        covered = with_covering_risk_budget(self._buying_plan(declared=5))
-        assert covered.risk_budget.max_purchase_actions == 5
-
-    def test_deriving_the_budget_does_not_reintroduce_binding_policy(self) -> None:
-        from kenshi_agent.live_plan_policy import with_covering_risk_budget
-
-        covered = with_covering_risk_budget(self._buying_plan(declared=0))
-        errors = live_plan_policy_errors(covered)
-        assert not any("purchase budget" in error for error in errors)
-        assert errors == []
-
-
 def test_capability_presence_can_never_count_as_causal_effect_proof() -> None:
     """A capability says a fact is observable, not that the intended effect occurred."""
     from kenshi_agent.core.planning import (
@@ -637,5 +591,4 @@ def test_capability_presence_can_never_count_as_causal_effect_proof() -> None:
     assert not _is_causal_condition(condition.kind, condition.path)
     # Run bookkeeping still is not evidence the world moved.
     assert not _is_causal_condition(ConditionKind.FIELD, "control_mode")
-
 

@@ -1,0 +1,1 @@
+{"intent":"Survey the resource field around the selected character.","rationale":"The native survey is coordinate-independent, issues no world order, and returns a bounded local grid for the next decision.","action":{"kind":"survey_local_resources"},"confidence":1.0,"continuity_operations":[],"fieldbook_operations":[]}

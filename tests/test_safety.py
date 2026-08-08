@@ -13,7 +13,6 @@ from kenshi_agent.core.operation import (
     CoordinateSpace,
     MoveCursorAction,
     PauseAction,
-    PurchaseItemAction,
     ScrollAction,
     SelectSquadMemberExactAction,
     SetSpeedAction,
@@ -504,90 +503,16 @@ def generic_purchase_observation() -> Observation:
     )
 
 
-def generic_purchase_action() -> PurchaseItemAction:
-    return PurchaseItemAction(
-        cell_label="item_3",
-        item_name="Dried Meat",
-        expected_price=38,
-        window="BARMAN",
-        seller_id="seller:1",
-    )
-
-
-def generic_purchase_config() -> SafetyConfig:
-    return safety_config().model_copy(
-        update={
-            "allow_action_kinds": [
-                *safety_config().allow_action_kinds,
-                "purchase_item",
-            ],
-            "max_purchase_price": 38,
-            "min_money_after_purchase": 962,
-            "max_purchases_per_run": 2,
-            "required_purchase_tooltip_markers": ["[Food]"],
-        }
-    )
 
 
 
 
 
 
-def test_generic_purchase_marker_requires_real_tooltip_text() -> None:
-    observation = generic_purchase_observation()
-    telemetry = observation.telemetry
-    assert telemetry is not None
-    no_tooltip_text = observation.model_copy(
-        update={
-            "telemetry": telemetry.model_copy(
-                update={"ui": telemetry.ui.model_copy(update={"tooltip_text": None})}
-            )
-        }
-    )
-    config = generic_purchase_config().model_copy(
-        update={"required_purchase_tooltip_markers": ["XXXX"]}
-    )
-    with pytest.raises(SafetyViolation):
-        OperationPolicy(config).validate(
-            generic_purchase_action(),
-            no_tooltip_text,
-        )
 
 
-@pytest.mark.parametrize(
-    "failed_fact",
-    ["stale", "missing_telemetry", "missing_capability"],
-)
-def test_contracted_purchase_requires_fresh_capable_live_state(
-    failed_fact: str,
-) -> None:
-    observation = generic_purchase_observation()
-    telemetry = observation.telemetry
-    assert telemetry is not None
-    if failed_fact == "stale":
-        observation = observation.model_copy(update={"telemetry_stale": True})
-    elif failed_fact == "missing_telemetry":
-        observation = observation.model_copy(update={"telemetry": None})
-    else:
-        observation = observation.model_copy(
-            update={
-                "telemetry": telemetry.model_copy(
-                    update={
-                        "capabilities": [
-                            capability
-                            for capability in telemetry.capabilities
-                            if capability != "ui.tooltip"
-                        ]
-                    }
-                )
-            }
-        )
 
-    with pytest.raises(SafetyViolation):
-        OperationPolicy(generic_purchase_config()).validate(
-            generic_purchase_action(),
-            observation,
-        )
+
 
 
 
@@ -633,6 +558,5 @@ def trade_in_progress_observation() -> Observation:
             )
         }
     )
-
 
 

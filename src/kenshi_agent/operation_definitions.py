@@ -8,12 +8,11 @@ directly; no second contract language reconstructs an operation's meaning.
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Callable
 from dataclasses import dataclass, field, fields
 from enum import Enum, StrEnum
 from hashlib import sha256
-from typing import Literal, TypeAlias, TypeVar
+from typing import Literal, TypeAlias, TypeVar, cast
 
 from pydantic import BaseModel
 
@@ -33,47 +32,27 @@ from .core.interaction import (
 )
 from .core.observation import Observation
 from .core.operation import (
-    GAME_BINDING_KEYS,
-    GAME_BINDING_MOUSE_BUTTONS,
     GAME_SPEED_MULTIPLIER_BY_GEAR,
-    QUICKSAVE_COMPLETION_CAPABILITY,
-    TIME_GAME_BINDINGS,
     Action,
-    ActivateVisibleControlAction,
     ApproachDialogueTargetAction,
-    CollectResourceOutputAction,
-    CommandWorldTargetAction,
     ConsultAdvisorAction,
     ControlMode,
-    DismissScreenAction,
-    EquipItemAction,
     ExitCurrentBuildingAction,
-    GameBinding,
-    GameScreen,
-    HarvestResourceAction,
     IdempotencyPolicy,
     MoveInDirectionAction,
     MoveToCharacterAction,
     NoopAction,
-    OpenContextInventoryAction,
-    OpenScreenAction,
     OpenTradeWindowAction,
     PauseAction,
     PerformCharacterOrderAction,
     PerformContextAction,
     PointerActionClass,
     ProduceResourceOutputAction,
-    PurchaseItemAction,
     ReadFieldbookAction,
     RecallMemoryAction,
-    RecoverCameraViewAction,
     RegroupWithSquadMemberAction,
     RespondToImmediateThreatAction,
-    RotateCameraAction,
-    ScrollScreenAction,
-    SelectSquadMemberAction,
     SelectSquadMemberExactAction,
-    SellItemAction,
     SetSpeedAction,
     ShiftIntoBodyAction,
     StopAction,
@@ -81,36 +60,24 @@ from .core.operation import (
     ThreatResponseStrategy,
     TransferItemAction,
     TravelToMapDestinationAction,
-    UseGameBindingAction,
     WaitAction,
 )
 from .core.planning import (
-    GAME_BINDING_TERMINALS,
-    SCREEN_BINDINGS,
     Condition,
     ConditionKind,
     ConditionOperator,
     ConditionPath,
-    close_screen_success_condition,
-    game_binding_success_condition,
-    open_screen_success_condition,
-    screen_is_open,
 )
 from .core.telemetry import (
-    CharacterState,
     ContextActionKind,
     Disposition,
     NearbyEntity,
-    NormalizedPointerBounds,
     WorldTarget,
     dialogue_targets,
-    is_runtime_owned_visible_control,
     map_destination_already_reached,
     map_destination_travel_available,
-    normalize_control_label,
 )
 from .core.world import WorldStateRevision
-from .resource_transfer import resource_transfer_layout_error
 from .threat_response import threat_response_authority_error
 
 # The installed plug-in still names this capability and wire command after the
@@ -140,9 +107,7 @@ NATIVE_SHIFT_BODY_CAPABILITY = "control.shift_into_body"
 NATIVE_RESOURCE_SURVEY_CAPABILITY = "control.survey_local_resources"
 
 NATIVE_CONTEXT_TARGETS_CAPABILITY = "world.context_targets"
-WORLD_CONTEXT_TARGET_SCREEN_POSITIONS_CAPABILITY = "world.context_target_screen_positions"
 NATIVE_PRODUCE_RESOURCE_CAPABILITY = "control.produce_resource_output"
-NATIVE_OPEN_CONTEXT_INVENTORY_CAPABILITY = "control.open_context_inventory"
 NATIVE_TRANSFER_CAPABILITY = "control.transfer_item"
 NATIVE_TRADE_WINDOW_CAPABILITY = "control.open_trade_window"
 
@@ -169,9 +134,10 @@ def _wire_target(field_name: str = "target_id") -> WireFieldFactory:
 
 
 def _wire_direction(action: Action) -> WireFields:
+    direction = cast(MoveInDirectionAction, action)
     return {
-        "bearing_degrees": action.bearing_degrees,
-        "distance_units": action.distance_units,
+        "bearing_degrees": direction.bearing_degrees,
+        "distance_units": direction.distance_units,
     }
 
 
@@ -181,9 +147,10 @@ def _wire_nothing(action: Action) -> WireFields:
 
 
 def _wire_context_action(action: Action) -> WireFields:
+    context = cast(PerformContextAction, action)
     return {
-        "target_id": action.target_id,
-        "context_action": str(action.context_action),
+        "target_id": context.target_id,
+        "context_action": str(context.context_action),
     }
 
 
@@ -191,31 +158,35 @@ def _wire_character_order(action: Action) -> WireFields:
     # The order is part of the identity, not decoration. One person can afford
     # several orders at once, so a match on target alone would let either
     # satisfy a wait for the other.
-    return {"target_id": action.target_id, "context_action": action.order}
+    order = cast(PerformCharacterOrderAction, action)
+    return {"target_id": order.target_id, "context_action": order.order}
 
 
 def _wire_resource_output(action: Action) -> WireFields:
+    output = cast(ProduceResourceOutputAction, action)
     return {
-        "target_id": action.target_id,
-        "minimum_output_quantity": action.minimum_output_quantity,
+        "target_id": output.target_id,
+        "minimum_output_quantity": output.minimum_output_quantity,
     }
 
 
 def _wire_trade_window(action: Action) -> WireFields:
+    window = cast(OpenTradeWindowAction, action)
     return {
-        "target_id": action.first_owner_id,
-        "destination_id": action.second_owner_id,
-        "context_action": action.window_type,
+        "target_id": window.first_owner_id,
+        "destination_id": window.second_owner_id,
+        "context_action": window.window_type,
     }
 
 
 def _wire_transfer(action: Action) -> WireFields:
+    transfer = cast(TransferItemAction, action)
     return {
-        "target_id": action.source_owner_id,
-        "destination_id": action.destination_owner_id,
-        "section_name": action.section_name,
-        "slot_x": action.slot_x,
-        "slot_y": action.slot_y,
+        "target_id": transfer.source_owner_id,
+        "destination_id": transfer.destination_owner_id,
+        "section_name": transfer.section_name,
+        "slot_x": transfer.slot_x,
+        "slot_y": transfer.slot_y,
     }
 
 
@@ -271,10 +242,7 @@ def native_wire_command_for(definition: OperationDefinition) -> str | None:
     """
 
     return definition.wire_command or None
-CONTEXT_INVENTORY_TARGET_CAPABILITY = "ui.context_inventory_target"
 
-VISIBLE_CONTROLS_CAPABILITY = "ui.visible_controls"
-CAMERA_RECOVERY_CAPABILITY = "camera.recovery"
 SQUAD_REGROUP_ARRIVAL_DISTANCE = 12.0
 
 
@@ -371,101 +339,18 @@ class BoundNamedTarget(BoundActor):
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class BoundPointerTarget(BoundNamedTarget):
-    resolved_bounds: NormalizedPointerBounds
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
 class BoundNamedOperation:
     reason: str
     resolved_label: str
     source_revision: WorldStateRevision
     bound: Literal[True] = field(default=True, init=False)
 
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class BoundVisibleControl:
-    reason: str
-    resolved_label: str
-    resolved_role: str
-    resolved_bounds: NormalizedPointerBounds
-    source_revision: WorldStateRevision
-    bound: Literal[True] = field(default=True, init=False)
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class BoundVisibleTarget(BoundVisibleControl):
-    target_id: str
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class BoundItemCell(BoundVisibleControl):
-    item_name: str | None
-    item_base_value: int | None = None
-    item_sell_value: int | None = None
-    item_quantity: int | None
-    section: str | None
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class BoundPurchaseCell(BoundItemCell):
-    target_id: str
-    inventory_owner_id: str
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class BoundSaleCell(BoundVisibleControl):
-    target_id: str
-    inventory_owner_id: str
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class BoundEquipmentCell(BoundVisibleControl):
-    inventory_owner_id: str
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class BoundResourceOutputCell(BoundVisibleControl):
-    target_id: str
-    item_name: str
-    item_quantity: int
-    section: str
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class BoundScreenDismissal:
-    reason: str
-    resolved_label: str
-    resolved_bounds: NormalizedPointerBounds | None
-    source_revision: WorldStateRevision
-    bound: Literal[True] = field(default=True, init=False)
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class BoundCameraRecovery(BoundVisibleControl):
-    target_id: str
-    selected_character_name: str
-    floor: int
-    floor_up_bounds: NormalizedPointerBounds | None = None
-    floor_down_bounds: NormalizedPointerBounds | None = None
-
-
 OperationBinding: TypeAlias = (
     BindingFailure
     | EmptyBinding
     | BoundActor
     | BoundNamedTarget
-    | BoundPointerTarget
     | BoundNamedOperation
-    | BoundVisibleControl
-    | BoundVisibleTarget
-    | BoundItemCell
-    | BoundPurchaseCell
-    | BoundSaleCell
-    | BoundEquipmentCell
-    | BoundResourceOutputCell
-    | BoundScreenDismissal
-    | BoundCameraRecovery
 )
 
 
@@ -546,68 +431,10 @@ def runtime_control_terminal(
     return None
 
 
-def unadapted_terminal(
-    action: Action,
-    *,
-    selected_affordance: bool = False,
-) -> OperationTerminal:
-    """Resolve only run controls and legacy mechanics outside the registry."""
-
-    return runtime_control_terminal(action) or unresolved_terminal(
-        selected_affordance=selected_affordance
-    )
 
 
-def _selected_player_window_owner(
-    observation: Observation,
-    window: str,
-) -> tuple[CharacterState | None, str | None]:
-    """Resolve one player window to its exact currently selected squad owner."""
-
-    telemetry = observation.telemetry
-    if telemetry is None:
-        return None, "No telemetry is available to establish window ownership."
-    owner = observation.window_owners().get(normalize_control_label(window), {})
-    if owner.get("belongs_to") != "you" or not owner.get("owner_id"):
-        return (
-            None,
-            f"Window {window!r} does not resolve to one exact squad inventory owner.",
-        )
-    owner_id = str(owner["owner_id"])
-    character = next(
-        (candidate for candidate in telemetry.squad if candidate.id == owner_id),
-        None,
-    )
-    if (
-        character is None
-        or character.selected is not True
-        or owner_id not in telemetry.ui.selected_character_ids
-    ):
-        return (
-            None,
-            f"The exact owner of window {window!r} is not in the current selection.",
-        )
-    return character, None
 
 
-def _single_selected_player_inventory_owner(
-    observation: Observation,
-) -> tuple[CharacterState | None, str | None]:
-    """Resolve the one player-owned inventory paired with an open trade."""
-
-    owners = observation.window_owners()
-    player_windows = [
-        caption
-        for caption in observation.open_window_captions()
-        if owners.get(normalize_control_label(caption), {}).get("belongs_to") == "you"
-    ]
-    if len(player_windows) != 1:
-        return (
-            None,
-            "Trade delivery requires one exact player-owned inventory window; "
-            f"observed {len(player_windows)}.",
-        )
-    return _selected_player_window_owner(observation, player_windows[0])
 
 
 def _world_interface_error(observation: Observation) -> str | None:
@@ -626,14 +453,6 @@ def _world_interface_error(observation: Observation) -> str | None:
     return None
 
 
-def _capability_condition(path: ConditionPath, *, max_age_seconds: float) -> Condition:
-    return Condition(
-        kind=ConditionKind.CAPABILITY,
-        path=path,
-        operator=ConditionOperator.EQUALS,
-        expected=True,
-        max_age_seconds=max_age_seconds,
-    )
 
 
 def bind_approach_dialogue_target(
@@ -1027,169 +846,12 @@ def context_action_is_currently_authorable(observation: Observation) -> bool:
     )
 
 
-def bind_command_world_target(
-    action: Action,
-    observation: Observation,
-) -> BoundPointerTarget | BindingFailure:
-    """Bind a right-click to one exact reviewed target and current screen point."""
-
-    if not isinstance(action, CommandWorldTargetAction):
-        return _unbound("Action is not a command_world_target action.")
-    telemetry = observation.telemetry
-    if telemetry is None:
-        return _unbound("No telemetry is available to bind the world target.")
-    if observation.telemetry_stale:
-        return _unbound("Telemetry is stale, so the world target cannot be bound.")
-    if (
-        telemetry.ui.active_screen != "world"
-        or telemetry.ui.dialogue_open is not False
-        or telemetry.ui.modal_open is not False
-    ):
-        return _unbound(
-            "The modal and dialogue state is not confirmed clear, so a world "
-            "target command cannot bind; finish or close the interface first."
-        )
-    matches = [target for target in telemetry.world_targets if target.id == action.target_id]
-    if not matches:
-        return _unbound(f"Target {action.target_id!r} is not a current actionable world target.")
-    if len(matches) > 1:
-        return _unbound(
-            f"Target {action.target_id!r} matches {len(matches)} world targets; "
-            "an ambiguous reference fails closed."
-        )
-    target = matches[0]
-    if action.context_action not in target.context_actions:
-        return _unbound(
-            f"Target {target.name!r} does not currently advertise context action "
-            f"{action.context_action.value!r}."
-        )
-    point = target.screen_position
-    if point is None:
-        return _unbound(f"Target {target.name!r} has no current on-screen command geometry.")
-    if not (0.0 <= point.x <= 1.0 and 0.0 <= point.y <= 1.0):
-        return _unbound(f"Target {target.name!r} has out-of-range command geometry.")
-    bounds = NormalizedPointerBounds(
-        min_x=point.x,
-        max_x=point.x,
-        min_y=point.y,
-        max_y=point.y,
-    )
-    return BoundPointerTarget(
-        reason=(
-            f"Bound {action.context_action.value!r} to current {target.kind} "
-            f"{target.name!r} ({target.id}) at its observed screen position."
-        ),
-        target_id=target.id,
-        resolved_label=action.context_action.value,
-        resolved_bounds=bounds,
-        source_revision=observation.world_revision,
-    )
 
 
-def world_target_command_is_currently_authorable(observation: Observation) -> bool:
-    """Whether an exact reviewed target currently has click geometry."""
-
-    telemetry = observation.telemetry
-    return bool(
-        telemetry is not None
-        and not observation.telemetry_stale
-        and telemetry.ui.active_screen == "world"
-        and telemetry.ui.modal_open is False
-        and telemetry.ui.dialogue_open is False
-        and any(
-            target.context_actions and target.screen_position is not None
-            for target in telemetry.world_targets
-        )
-    )
 
 
-def bind_select_squad_member(
-    action: Action,
-    observation: Observation,
-) -> BoundVisibleTarget | BindingFailure:
-    """Bind Mouse1 to one exact squad member's current lower-HUD portrait."""
-
-    if not isinstance(action, SelectSquadMemberAction):
-        return _unbound("Action is not a select_squad_member action.")
-    telemetry = observation.telemetry
-    if telemetry is None:
-        return _unbound("No telemetry is available to bind the squad member.")
-    if observation.telemetry_stale:
-        return _unbound("Telemetry is stale, so the squad member cannot be bound.")
-    if (
-        telemetry.ui.active_screen != "world"
-        or telemetry.ui.dialogue_open is not False
-        or telemetry.ui.modal_open is not False
-    ):
-        return _unbound(
-            "The modal and dialogue state is not confirmed clear, so a squad "
-            "member selection cannot bind; finish or close the interface first."
-        )
-    matches = [character for character in telemetry.squad if character.id == action.target_id]
-    if not matches:
-        return _unbound(f"Target {action.target_id!r} is not a current squad member.")
-    if len(matches) > 1:
-        return _unbound(
-            f"Target {action.target_id!r} matches {len(matches)} squad members; "
-            "an ambiguous reference fails closed."
-        )
-    target = matches[0]
-    same_name = [
-        character
-        for character in telemetry.squad
-        if normalize_control_label(character.name) == normalize_control_label(target.name)
-    ]
-    if len(same_name) != 1:
-        return _unbound(
-            f"Squad member name {target.name!r} identifies {len(same_name)} "
-            "current members; portrait identity is ambiguous."
-        )
-    portrait_matches = [
-        control
-        for control in (telemetry.ui.visible_controls or [])
-        if control.role == "text"
-        and normalize_control_label(control.label) == normalize_control_label(target.name)
-        and control.bounds.min_y >= 0.75
-    ]
-    if len(portrait_matches) != 1:
-        return _unbound(
-            f"Squad member {target.name!r} has {len(portrait_matches)} "
-            "unambiguous lower-HUD portrait labels; exactly one is required."
-        )
-    portrait = portrait_matches[0]
-    return BoundVisibleTarget(
-        reason=(
-            f"Bound Mouse1 selection to current squad member {target.name!r} "
-            f"({target.id}) through its exact current lower-HUD portrait."
-        ),
-        target_id=target.id,
-        resolved_label=portrait.label,
-        resolved_role=portrait.role,
-        resolved_bounds=portrait.bounds.model_copy(deep=True),
-        source_revision=observation.world_revision,
-    )
 
 
-def squad_member_selection_is_currently_authorable(
-    observation: Observation,
-) -> bool:
-    """Whether any exact current squad member has one unambiguous portrait."""
-
-    telemetry = observation.telemetry
-    return bool(
-        telemetry is not None
-        and not observation.telemetry_stale
-        and telemetry.ui.active_screen == "world"
-        and telemetry.ui.modal_open is False
-        and telemetry.ui.dialogue_open is False
-        and any(
-            bind_select_squad_member(
-                SelectSquadMemberAction(target_id=character.id),
-                observation,
-            ).bound
-            for character in telemetry.squad
-        )
-    )
 
 
 def bind_select_squad_member_exact(
@@ -1258,50 +920,8 @@ def exact_squad_member_selection_is_currently_authorable(
     )
 
 
-def bind_rotate_camera(
-    action: Action,
-    observation: Observation,
-) -> BoundNamedOperation | BindingFailure:
-    """Bind one bounded camera yaw only while the unobstructed world is current."""
-
-    if not isinstance(action, RotateCameraAction):
-        return _unbound("Action is not a rotate_camera action.")
-    telemetry = observation.telemetry
-    if telemetry is None:
-        return _unbound("No telemetry is available to bind camera rotation.")
-    if observation.telemetry_stale:
-        return _unbound("Telemetry is stale, so camera rotation cannot be bound.")
-    if telemetry.game.loaded is not True:
-        return _unbound("Kenshi has no loaded world to rotate.")
-    if (
-        telemetry.ui.active_screen != "world"
-        or telemetry.ui.dialogue_open is not False
-        or telemetry.ui.modal_open is not False
-    ):
-        return _unbound(
-            "The unobstructed world screen is not confirmed current, so camera "
-            "rotation cannot bind."
-        )
-    return BoundNamedOperation(
-        reason=(
-            f"Bound one bounded camera rotation {action.direction.value!r} "
-            "against the current world screen."
-        ),
-        resolved_label=action.direction.value,
-        source_revision=observation.world_revision,
-    )
 
 
-def camera_rotation_is_currently_authorable(observation: Observation) -> bool:
-    telemetry = observation.telemetry
-    return bool(
-        telemetry is not None
-        and not observation.telemetry_stale
-        and telemetry.game.loaded is True
-        and telemetry.ui.active_screen == "world"
-        and telemetry.ui.modal_open is False
-        and telemetry.ui.dialogue_open is False
-    )
 
 
 def _bind_exact_natural_resource(
@@ -1383,103 +1003,8 @@ def resource_production_is_currently_authorable(observation: Observation) -> boo
     )
 
 
-def bind_harvest_resource(
-    action: Action,
-    observation: Observation,
-) -> BoundNamedTarget | BindingFailure:
-    """Bind one bounded production/transfer option to an exact actor and source."""
-
-    if not isinstance(action, HarvestResourceAction):
-        return _unbound("Action is not a harvest_resource action.")
-    telemetry = observation.telemetry
-    target, failure = _bind_exact_natural_resource(action.target_id, observation)
-    if failure is not None:
-        return failure
-    assert telemetry is not None and target is not None
-    if (
-        telemetry.ui.active_screen != "world"
-        or telemetry.ui.modal_open is not False
-        or telemetry.ui.dialogue_open is not False
-    ):
-        return _unbound(
-            "The world interface is not confirmed clear, so a harvest option cannot begin."
-        )
-    selected = [
-        character
-        for character in telemetry.squad
-        if character.selected and character.id == action.actor_id
-    ]
-    # The actor must be Kenshi's exported primary, because the collection phase
-    # opens that character's own inventory and the goods have to land somewhere
-    # unambiguous. It need not be the *only* selection: requiring that made an
-    # ordinary two-character party unable to harvest at all, which left
-    # `perform_context_action('operate')` as the only mining affordance on offer
-    # - the one that fills the resource's output box and nobody's pack.
-    #
-    # `down` is not a fence either. Only unconsciousness stops a character in
-    # Kenshi; legs past the knockout point crawl until bandaged.
-    if (
-        len(selected) != 1
-        or telemetry.ui.selected_character_id != action.actor_id
-        or action.actor_id not in telemetry.ui.selected_character_ids
-        or selected[0].alive is not True
-        or selected[0].conscious is not True
-        or selected[0].in_combat is not False
-        or selected[0].inventory_complete is not True
-    ):
-        return _unbound(
-            "Harvesting requires its actor to be the current primary, selected, "
-            "alive, conscious, out of combat, and backed by a complete inventory "
-            "export."
-        )
-    return BoundNamedTarget(
-        reason=(
-            f"Bound a yield of {action.quantity} from {target.name!r} ({target.id}) "
-            f"into exact selected actor {selected[0].name!r} ({action.actor_id})."
-        ),
-        target_id=target.id,
-        resolved_label=target.name,
-        source_revision=observation.world_revision,
-    )
 
 
-def harvest_resource_is_currently_authorable(observation: Observation) -> bool:
-    telemetry = observation.telemetry
-    if telemetry is None or observation.telemetry_stale:
-        return False
-    # `down is False` was here and was wrong: in Kenshi only unconsciousness
-    # stops a character acting. Legs damaged past the knockout point make one
-    # crawl until bandaged, which is slow rather than incapable, so a crawling
-    # miner was refused the only operation that ends with ore in their pack.
-    selected = [
-        character
-        for character in telemetry.squad
-        if character.selected
-        and character.alive is True
-        and character.conscious is True
-        and character.in_combat is False
-        and character.inventory_complete is True
-    ]
-    # A singleton fence stood here too, and it is why every mining run reached
-    # for `perform_context_action('operate')`: an ordinary two-character party
-    # made the complete harvest unauthorable, leaving only the operation that
-    # starts a job and fills nobody's inventory. The actor is named by the
-    # action, so party size was never the harvest's business.
-    primary = telemetry.ui.selected_character_id
-    return bool(
-        telemetry.ui.active_screen == "world"
-        and telemetry.ui.modal_open is False
-        and telemetry.ui.dialogue_open is False
-        and selected
-        and primary
-        and any(character.id == primary for character in selected)
-        and any(
-            target.kind == "natural_resource"
-            and ContextActionKind.OPERATE in target.context_actions
-            and target.default_task == "operate_machinery"
-            for target in telemetry.world_targets
-        )
-    )
 
 
 def _observed_inventory_owner(
@@ -1513,63 +1038,6 @@ def _observed_inventory_owner(
     return None
 
 
-def bind_open_context_inventory(
-    action: Action,
-    observation: Observation,
-) -> BoundNamedTarget | BindingFailure:
-    """Bind inventory opening to one exact observed owner, of any kind.
-
-    No fence on what may own an inventory, and no refusal for other open
-    windows. Both were mining artefacts: the old binding demanded a
-    `natural_resource` world target, and refused whenever anything else was
-    open. A transfer needs two inventories open at once, so "one window is the
-    whole interaction" is the assumption that made looting, buying and giving
-    look like three separate problems.
-    """
-
-    if not isinstance(action, OpenContextInventoryAction):
-        return _unbound("Action is not an open_context_inventory action.")
-    telemetry = observation.telemetry
-    if telemetry is None:
-        return _unbound("No telemetry is available to bind the inventory owner.")
-    if observation.telemetry_stale:
-        return _unbound("Telemetry is stale, so the inventory owner cannot be bound.")
-    owner = _observed_inventory_owner(action.target_id, observation)
-    if owner is None:
-        return _unbound(
-            f"{action.target_id!r} is not a currently observed character, world "
-            "target, or discovered object, so its inventory cannot be opened."
-        )
-    label, kind = owner
-    already_open = any(
-        held.owner_id == action.target_id for held in telemetry.ui.open_inventories
-    )
-    if telemetry.ui.dialogue_open is not False:
-        return _unbound("A dialogue is open; close it before opening an inventory.")
-    # `modal_open` is `dialogue_open or inventory_open`, so it cannot by itself
-    # tell a blocking message box from an inventory that is simply already
-    # showing. `open_inventories` can: a modal with no dialogue and no open
-    # inventory behind it is something else, and that is what must be refused.
-    # The old fence refused on `modal_open` alone, which meant a second window
-    # could never be opened - and two windows is what a transfer is.
-    if (
-        telemetry.ui.modal_open is True
-        and not telemetry.ui.open_inventories
-        and telemetry.ui.open_inventories_complete
-    ):
-        return _unbound(
-            "A modal that is neither a dialogue nor an inventory is open; close "
-            "it before opening an inventory."
-        )
-    return BoundNamedTarget(
-        reason=(
-            f"Bound the inventory of {kind} {label!r} ({action.target_id})"
-            + ("; it is already open." if already_open else ".")
-        ),
-        target_id=action.target_id,
-        resolved_label=label,
-        source_revision=observation.world_revision,
-    )
 
 
 def bind_open_trade_window(
@@ -1721,20 +1189,6 @@ def transfer_item_is_currently_authorable(observation: Observation) -> bool:
     return any(section.items for inventory in inventories for section in inventory.sections)
 
 
-def context_inventory_is_currently_authorable(observation: Observation) -> bool:
-    """Whether anything observed could have its inventory opened at all."""
-
-    telemetry = observation.telemetry
-    if telemetry is None or observation.telemetry_stale:
-        return False
-    if telemetry.ui.dialogue_open is not False:
-        return False
-    return bool(
-        telemetry.squad
-        or telemetry.nearby_entities
-        or telemetry.world_targets
-        or telemetry.discovered_objects
-    )
 
 
 def bind_move_in_direction(
@@ -2001,67 +1455,6 @@ def bind_exit_current_building(
     )
 
 
-def bind_visible_control(
-    action: Action,
-    observation: Observation,
-) -> BoundVisibleControl | BindingFailure:
-    """Bind a control activation to exactly one currently advertised control.
-
-    Bounds are read from telemetry, never authored. Any duplicate of the same
-    label and role fails closed rather than picking the first, because "the
-    button that says X" is not a reference when two of them say X.
-    """
-
-    if not isinstance(action, ActivateVisibleControlAction):
-        return _unbound("Action is not an activate_visible_control action.")
-    telemetry = observation.telemetry
-    if telemetry is None:
-        return _unbound("No telemetry is available to bind the visible control.")
-    if observation.telemetry_stale:
-        return _unbound("Telemetry is stale, so the control cannot be bound.")
-    if VISIBLE_CONTROLS_CAPABILITY not in telemetry.capabilities:
-        return _unbound(
-            f"Capability {VISIBLE_CONTROLS_CAPABILITY!r} is unavailable, so visible "
-            "controls are unknown rather than absent."
-        )
-    controls = telemetry.ui.visible_controls
-    if controls is None:
-        return _unbound("The interface reports no current visible-control set.")
-    wanted = normalize_control_label(action.exact_label)
-    matches = [
-        control
-        for control in controls
-        if normalize_control_label(control.label) == wanted
-        and control.role == action.role
-        # An empty `window` means "do not narrow"; naming one disambiguates a
-        # label that several open windows share, such as a close button.
-        and (not action.window or control.window == action.window)
-    ]
-    if any(is_runtime_owned_visible_control(control) for control in matches):
-        return _unbound(
-            "The matching control is a runtime-owned time widget; author a "
-            "semantic gameplay intent and let its monitored option own playback."
-        )
-    if not matches:
-        return _unbound(f"No current {action.role} control matches label {action.exact_label!r}.")
-    if len(matches) > 1:
-        windows = sorted({control.window or "<no window>" for control in matches})
-        return _unbound(
-            f"{len(matches)} current {action.role} controls match label "
-            f"{action.exact_label!r} (in {windows}); an ambiguous reference fails "
-            "closed. Name the window to narrow it."
-        )
-    control = matches[0]
-    return BoundVisibleControl(
-        reason=(
-            f"Bound to exactly one current {control.role} control "
-            f"{control.label!r} at its observed bounds."
-        ),
-        resolved_label=control.label,
-        resolved_role=control.role,
-        resolved_bounds=control.bounds.model_copy(deep=True),
-        source_revision=observation.world_revision,
-    )
 
 
 def bind_respond_to_immediate_threat(
@@ -2096,789 +1489,28 @@ def threat_response_is_currently_authorable(observation: Observation) -> bool:
     return threat_response_authority_error(probe, observation) is None
 
 
-ITEM_ROLE = "item"
 
 
-def _window_belongs_to(window: str, owner_name: str | None) -> bool:
-    """Whether an inventory window caption names this character.
-
-    Kenshi captions inventory windows in upper case ("HEP") while the character
-    is named "Hep", so this has to be case-insensitive; comparing exactly would
-    reject every real window.
-    """
-
-    if not owner_name:
-        return False
-    return normalize_control_label(window) == normalize_control_label(owner_name)
 
 
-def _bind_item_cell(
-    cell_label: str,
-    observation: Observation,
-    *,
-    window: str | None = None,
-    item_base_value: int | None = None,
-    item_name: str | None = None,
-    item_quantity: int | None = None,
-    section: str | None = None,
-    require_selected_inventory_accepts_item: bool = False,
-) -> BoundItemCell | BindingFailure:
-    """Resolve one exact inventory or shop cell from current telemetry.
-
-    `window` narrows the search to one open inventory. A trade screen shows two
-    side by side and the cell ordinals run across both, so on that screen the
-    label alone is not a reference to anything in particular.
-
-    `item_base_value` narrows further, because a label is not unique either: the
-    live Barman stocks five cells all labelled "Tooth Pick", two priced 809 and
-    three priced 390 - different weapon grades wearing the same name. The price
-    separates them.
-    """
-
-    telemetry = observation.telemetry
-    if telemetry is None:
-        return _unbound("No telemetry is available to bind the item cell.")
-    if observation.telemetry_stale:
-        return _unbound("Telemetry is stale, so the item cell cannot be bound.")
-    if VISIBLE_CONTROLS_CAPABILITY not in telemetry.capabilities:
-        return _unbound(
-            f"Capability {VISIBLE_CONTROLS_CAPABILITY!r} is unavailable, so item "
-            "cells are unknown rather than absent."
-        )
-    wanted = normalize_control_label(cell_label)
-    matches = [
-        control
-        for control in (telemetry.ui.visible_controls or [])
-        if control.role == ITEM_ROLE
-        and normalize_control_label(control.label) == wanted
-        and (window is None or control.window == window)
-        and (item_name is None or control.item_name == item_name)
-        and (item_quantity is None or control.item_quantity == item_quantity)
-        and (section is None or control.section == section)
-    ]
-    if not matches:
-        where = f" in window {window!r}" if window is not None else ""
-        return _unbound(f"No current item cell matches {cell_label!r}{where}.")
-
-    if require_selected_inventory_accepts_item and any(
-        control.selected_inventory_accepts_item is not True for control in matches
-    ):
-        return _unbound(
-            f"The open player inventory does not explicitly accept "
-            f"{item_name or cell_label!r}; the transfer cannot be authorized."
-        )
-
-    if len(matches) > 1 and item_base_value is not None:
-        # A tie-breaker between cells that share a name - the Barman stocks five
-        # "Tooth Pick" at two grades. Narrowing stays permissive here even
-        # though the price is now exact, because the caller already rejects a
-        # mismatched price with the real one named; refusing here as well would
-        # report the cell as missing rather than mispriced, which is the less
-        # actionable of the two failures.
-        narrowed = [control for control in matches if control.item_base_value == item_base_value]
-        if narrowed:
-            matches = narrowed
-
-    if len(matches) > 1:
-        # Ambiguity only matters when the candidates differ in a way that could
-        # change the outcome. A shop holding five identical Tooth Picks at the
-        # same base value in the same window offers five interchangeable cells, and
-        # refusing all of them makes stacked stock unbuyable - which is what the
-        # live Barman's shelf actually did. Distinguishable duplicates still
-        # fail closed.
-        distinct = {
-            (control.window, control.item_name, control.item_base_value) for control in matches
-        }
-        if len(distinct) > 1 or matches[0].item_name is None:
-            return _unbound(
-                f"{len(matches)} current item cells match {cell_label!r} and they "
-                "are not interchangeable; an ambiguous reference fails closed."
-            )
-    cell = matches[0]
-    return BoundItemCell(
-        reason=f"Bound to current item cell {cell.label!r} at its observed bounds.",
-        resolved_label=cell.label,
-        resolved_role=cell.role,
-        resolved_bounds=cell.bounds.model_copy(deep=True),
-        source_revision=observation.world_revision,
-        item_name=cell.item_name,
-        item_base_value=cell.item_base_value,
-        item_sell_value=cell.item_sell_value,
-        item_quantity=cell.item_quantity,
-        section=cell.section,
-    )
 
 
-def bind_purchase_item(
-    action: Action,
-    observation: Observation,
-) -> BoundPurchaseCell | BindingFailure:
-    """Bind a purchase to one exact named seller-owned cell.
-
-    Current producers export the cell's item facts directly. Older producers
-    fall back to a tooltip bound to the same cell. `item_base_value` is the
-    charge itself, so the declared price is checked against it before any input
-    is sent. Deliberately says nothing about
-    *what kind* of item is worth buying: that is task intent, not purchase
-    safety.
-    """
-
-    if not isinstance(action, PurchaseItemAction):
-        return _unbound("Action is not a purchase_item action.")
-    cell = _bind_item_cell(
-        action.cell_label,
-        observation,
-        window=action.window,
-        item_base_value=action.expected_price,
-    )
-    if isinstance(cell, BindingFailure):
-        return cell
-    telemetry = observation.telemetry
-    assert telemetry is not None
-
-    # The cell itself now carries the game's own name and base value, which is
-    # stronger evidence than text scraped from a tooltip - and requiring a
-    # tooltip forced a hover, a replan, and a second model call before every
-    # purchase. Prefer the cell's facts; fall back to the tooltip only when a
-    # plug-in too old to export them is installed.
-    cell_name = cell.item_name
-    cell_price = cell.item_base_value
-    if cell_name is not None and cell_price is not None:
-        if action.item_name != cell_name:
-            return _unbound(f"The cell holds {cell_name!r}, not {action.item_name!r}.")
-        # This check used to be skipped, on the grounds that the asking price
-        # "is never exported" and so a disagreeing `expected_price` proved
-        # nothing. That was true of the old export, which shipped the sell
-        # value - what the trader pays *out* - under a neutral name. The cell
-        # now carries the charge itself: live-confirmed 2026-07-30, a cell
-        # priced 33 debited exactly 33. So the price is checkable, and a
-        # declared price that disagrees is a plan reasoning about money the
-        # game never quoted it.
-        #
-        # The rejection names the accepted value, because a plan told only that
-        # it is wrong can do nothing but guess again.
-        if action.expected_price != cell_price:
-            return _unbound(
-                f"{cell_name!r} costs {cell_price}, not {action.expected_price}; "
-                f"declare expected_price {cell_price}."
-            )
-    else:
-        tooltip_text = telemetry.ui.tooltip_text
-        tooltip_bounds = telemetry.ui.tooltip_source_bounds
-        if telemetry.ui.tooltip_visible is not True or not tooltip_text or tooltip_bounds is None:
-            return _unbound(
-                "This plug-in does not name item cells, so a purchase needs a "
-                "visible tooltip; hover the cell first."
-            )
-        assert cell.resolved_bounds is not None
-        centre_x = (cell.resolved_bounds.min_x + cell.resolved_bounds.max_x) / 2.0
-        centre_y = (cell.resolved_bounds.min_y + cell.resolved_bounds.max_y) / 2.0
-        if not tooltip_bounds.contains(centre_x, centre_y):
-            return _unbound(
-                f"The visible tooltip does not belong to cell {action.cell_label!r}; "
-                "it describes a different widget."
-            )
-        if action.item_name not in tooltip_text:
-            return _unbound(
-                f"The tooltip does not name {action.item_name!r}, so the item being "
-                "bought is not the item described."
-            )
-        price_pattern = rf"(?<![A-Za-z0-9])c\.{action.expected_price}(?![0-9])"
-        if re.search(price_pattern, tooltip_text) is None:
-            return _unbound(
-                f"The tooltip does not show price c.{action.expected_price}; the "
-                "expected price disagrees with the interface."
-            )
-
-    seller = next(
-        (entity for entity in telemetry.nearby_entities if entity.id == action.seller_id),
-        None,
-    )
-    if (
-        seller is None
-        or seller.shop_inventory_owner is not True
-        or seller.disposition not in (Disposition.NEUTRAL, Disposition.FRIENDLY)
-    ):
-        return _unbound("The seller is not a verified non-hostile shop owner.")
-    # Ownership is proved by the cell sitting in the seller's own inventory
-    # window, not by a count of shop traders in the world. `active_shop_trader_count`
-    # is that registry - it read 5 in a bar with no trade open at all - so gating
-    # on it being exactly 1 made this action unbindable everywhere.
-    if not _window_belongs_to(action.window, seller.name):
-        return _unbound(
-            f"Window {action.window!r} is not the seller's own inventory "
-            f"({seller.name!r}); the cell is not the shop's stock."
-        )
-    recipient, recipient_error = _single_selected_player_inventory_owner(observation)
-    if recipient is None:
-        assert recipient_error is not None
-        return _unbound(recipient_error)
-
-    return BoundPurchaseCell(
-        reason=(
-            f"Bound {action.item_name!r} to seller-owned cell "
-            f"{cell.resolved_label!r} for seller {action.seller_id} at a "
-            f"checked price of c.{action.expected_price}, delivered to the "
-            f"exact open inventory owned by {recipient.name!r}."
-        ),
-        target_id=action.seller_id,
-        inventory_owner_id=recipient.id,
-        resolved_label=cell.resolved_label,
-        resolved_role=cell.resolved_role,
-        resolved_bounds=cell.resolved_bounds,
-        source_revision=observation.world_revision,
-        # Carry the cell's own facts through. Rebuilding the binding from
-        # label, role and bounds alone dropped them, so the executor knew where
-        # to click and nothing about what it was clicking - which is why an
-        # unaffordable purchase could only be discovered by attempting it and
-        # watching for a delta that never came.
-        item_name=cell.item_name,
-        item_base_value=cell.item_base_value,
-        item_sell_value=cell.item_sell_value,
-        item_quantity=cell.item_quantity,
-        section=cell.section,
-    )
 
 
-def bind_sell_item(
-    action: Action,
-    observation: Observation,
-) -> BoundSaleCell | BindingFailure:
-    """Bind a sale to a cell in one exact selected squad-owned inventory.
-
-    The one thing that must not be got wrong here is whose item is being sold.
-    A trade screen shows two inventories side by side, and the cell ordinals run
-    across both, so "cell 12" alone is not a reference. The window caption owns
-    actor identity; primary selection and squad ordering cannot replace it.
-    """
-
-    if not isinstance(action, SellItemAction):
-        return _unbound("Action is not a sell_item action.")
-    telemetry = observation.telemetry
-    if telemetry is None:
-        return _unbound("No telemetry is available to bind the sale.")
-    if observation.telemetry_stale:
-        return _unbound("Telemetry is stale, so the sale cannot be bound.")
-
-    owner, owner_error = _selected_player_window_owner(observation, action.window)
-    if owner is None:
-        assert owner_error is not None
-        return _unbound(owner_error)
-
-    cell = _bind_item_cell(action.cell_label, observation, window=action.window)
-    if isinstance(cell, BindingFailure):
-        return cell
-    if cell.item_name is not None and action.item_name != cell.item_name:
-        return _unbound(f"The cell holds {cell.item_name!r}, not {action.item_name!r}.")
-
-    buyer = next(
-        (entity for entity in telemetry.nearby_entities if entity.id == action.buyer_id),
-        None,
-    )
-    if (
-        buyer is None
-        or buyer.shop_inventory_owner is not True
-        or buyer.disposition not in (Disposition.NEUTRAL, Disposition.FRIENDLY)
-    ):
-        return _unbound("The buyer is not a verified non-hostile shop owner.")
-    # A trade is open with this buyer exactly when their own inventory is on
-    # screen beside ours. Counting shop traders in the world says nothing about
-    # that - the same misreading that made `purchase_item` unbindable.
-    if not any(
-        control.role == ITEM_ROLE and _window_belongs_to(control.window, buyer.name)
-        for control in (telemetry.ui.visible_controls or [])
-    ):
-        return _unbound(
-            f"No inventory window belonging to {buyer.name!r} is open, so there is "
-            "no trade to sell into."
-        )
-
-    return BoundSaleCell(
-        reason=(
-            f"Bound to cell {cell.resolved_label!r} in {owner.name!r}'s own "
-            f"inventory, holding {action.item_name!r}, sold to {action.buyer_id}."
-        ),
-        target_id=action.buyer_id,
-        inventory_owner_id=owner.id,
-        resolved_label=cell.resolved_label,
-        resolved_role=cell.resolved_role,
-        resolved_bounds=cell.resolved_bounds,
-        source_revision=observation.world_revision,
-    )
 
 
-def bind_equip_item(
-    action: Action,
-    observation: Observation,
-) -> BoundEquipmentCell | BindingFailure:
-    """Bind an equip to our own cell, and only while no trade is open.
-
-    Right-click means "equip this" in an inventory and "sell this" in a trade,
-    and Kenshi decides which by whether a trade partner is registered - not by
-    anything in the gesture. An equip issued with a shop window up is therefore
-    a sale that no postcondition can undo. Refusing whenever a trader is active
-    is the only safe reading of an ambiguous gesture.
-    """
-
-    if not isinstance(action, EquipItemAction):
-        return _unbound("Action is not an equip_item action.")
-    telemetry = observation.telemetry
-    if telemetry is None:
-        return _unbound("No telemetry is available to bind the equip.")
-    if observation.telemetry_stale:
-        return _unbound("Telemetry is stale, so the equip cannot be bound.")
-
-    # `active_shop_trader_count` counts shop traders loaded in the world - it
-    # reads 5 in a bar with nothing open - so it says nothing about whether a
-    # trade is in progress. What does: a trade shows the shop's inventory
-    # alongside ours, so exactly one open inventory window means the only one
-    # open is our own, and this right-click equips rather than sells.
-    if telemetry.ui.open_inventory_windows != 1:
-        return _unbound(
-            f"{telemetry.ui.open_inventory_windows} inventory windows are open; "
-            "equipping requires exactly one, our own. With a shop's inventory "
-            "also open this same right-click sells the item instead."
-        )
-
-    owner, owner_error = _selected_player_window_owner(observation, action.window)
-    if owner is None:
-        assert owner_error is not None
-        return _unbound(owner_error)
-
-    cell = _bind_item_cell(action.cell_label, observation, window=action.window)
-    if isinstance(cell, BindingFailure):
-        return cell
-    if cell.item_name is not None and action.item_name != cell.item_name:
-        return _unbound(f"The cell holds {cell.item_name!r}, not {action.item_name!r}.")
-
-    return BoundEquipmentCell(
-        reason=(
-            f"Bound to cell {cell.resolved_label!r} holding {action.item_name!r} in "
-            f"{owner.name!r}'s own inventory, with no trade open."
-        ),
-        inventory_owner_id=owner.id,
-        resolved_label=cell.resolved_label,
-        resolved_role=cell.resolved_role,
-        resolved_bounds=cell.resolved_bounds,
-        source_revision=observation.world_revision,
-    )
 
 
-def bind_collect_resource_output(
-    action: Action,
-    observation: Observation,
-) -> BoundResourceOutputCell | BindingFailure:
-    """Bind one exact output cell to the exact open resource inventory."""
-
-    if not isinstance(action, CollectResourceOutputAction):
-        return _unbound("Action is not a collect_resource_output action.")
-    telemetry = observation.telemetry
-    target, failure = _bind_exact_natural_resource(action.target_id, observation)
-    if failure is not None:
-        return failure
-    assert telemetry is not None and target is not None
-    layout_error = resource_transfer_layout_error(action, observation)
-    if layout_error is not None:
-        return _unbound(layout_error)
-    if telemetry.ui.context_inventory_target_id != action.target_id:
-        return _unbound(
-            "The open contextual inventory does not belong to the exact requested resource target."
-        )
-    if telemetry.ui.visible_controls_complete is not True:
-        return _unbound(
-            "The visible-control export is incomplete, so source absence or "
-            "quantity cannot be proved."
-        )
-    if not _window_belongs_to(action.window, target.name):
-        return _unbound(f"Window {action.window!r} does not name target {target.name!r}.")
-    selected = [character for character in telemetry.squad if character.selected]
-    if (
-        len(selected) != 1
-        or telemetry.ui.selected_character_ids != [selected[0].id]
-        or telemetry.ui.selected_character_id != selected[0].id
-        or selected[0].inventory_complete is not True
-    ):
-        return _unbound(
-            "One exact selected character with a complete destination inventory is required."
-        )
-    cell = _bind_item_cell(
-        action.cell_label,
-        observation,
-        window=action.window,
-        item_name=action.item_name,
-        item_quantity=action.source_quantity,
-        section=action.section,
-        require_selected_inventory_accepts_item=True,
-    )
-    if isinstance(cell, BindingFailure):
-        return cell
-    return BoundResourceOutputCell(
-        reason=(
-            f"Bound {action.source_quantity} {action.item_name!r} in exact "
-            f"{action.section!r} output cell {cell.resolved_label!r} for "
-            f"{target.id}; destination is selected character {selected[0].id}."
-        ),
-        target_id=target.id,
-        resolved_label=cell.resolved_label,
-        resolved_role=cell.resolved_role,
-        resolved_bounds=cell.resolved_bounds,
-        source_revision=observation.world_revision,
-        item_name=action.item_name,
-        item_quantity=action.source_quantity,
-        section=action.section,
-    )
 
 
-def resource_output_is_currently_authorable(observation: Observation) -> bool:
-    telemetry = observation.telemetry
-    if telemetry is None or observation.telemetry_stale:
-        return False
-    target_id = telemetry.ui.context_inventory_target_id
-    targets = [
-        target
-        for target in telemetry.world_targets
-        if target.id == target_id
-        and target.kind == "natural_resource"
-        and ContextActionKind.OPERATE in target.context_actions
-        and target.default_task == "operate_machinery"
-    ]
-    selected = [character for character in telemetry.squad if character.selected]
-    output_controls = [
-        control
-        for control in (telemetry.ui.visible_controls or [])
-        if control.role == ITEM_ROLE
-        and control.section == "out"
-        and control.item_name is not None
-        and control.item_quantity is not None
-        and control.item_quantity > 0
-        and len(targets) == 1
-        and _window_belongs_to(control.window, targets[0].name)
-    ]
-    return bool(
-        len(targets) == 1
-        and len(selected) == 1
-        and telemetry.ui.selected_character_ids == [selected[0].id]
-        and telemetry.ui.selected_character_id == selected[0].id
-        and selected[0].inventory_complete is True
-        and len(output_controls) >= 1
-        and resource_transfer_layout_error(
-            CollectResourceOutputAction(
-                target_id=targets[0].id,
-                cell_label=output_controls[0].label,
-                item_name=output_controls[0].item_name or "",
-                source_quantity=output_controls[0].item_quantity or 0,
-                window=output_controls[0].window,
-                section="out",
-            ),
-            observation,
-        )
-        is None
-    )
 
 
-def bind_dismiss_screen(
-    action: Action,
-    observation: Observation,
-) -> BoundScreenDismissal | BindingFailure:
-    """Bind a dismissal to the screen that is actually open right now.
-
-    The reference is the current screen. Refusing when the planner's belief
-    disagrees with observation is what stops a stray Escape from closing
-    something the planner never looked at.
-    """
-
-    if not isinstance(action, DismissScreenAction):
-        return _unbound("Action is not a dismiss_screen action.")
-    telemetry = observation.telemetry
-    if telemetry is None:
-        return _unbound("No telemetry is available to bind the current screen.")
-    if observation.telemetry_stale:
-        return _unbound("Telemetry is stale, so the current screen cannot be bound.")
-    named_screen = (
-        action.expected_screen if isinstance(action.expected_screen, GameScreen) else None
-    )
-    if named_screen is not None:
-        open_state = screen_is_open(named_screen, telemetry)
-        if open_state is None:
-            return _unbound(f"Nothing observable reports whether {named_screen.value} is open.")
-        if not open_state:
-            return _unbound(
-                f"The {named_screen.value} screen is already closed, so no "
-                "dismissal input may be sent."
-            )
-        if not action.window:
-            binding = SCREEN_BINDINGS[named_screen]
-            return BoundScreenDismissal(
-                reason=(
-                    f"Bound the currently open {named_screen.value!r} screen to "
-                    f"its exact closing toggle {binding.value!r}."
-                ),
-                resolved_label=named_screen.value,
-                resolved_bounds=None,
-                source_revision=observation.world_revision,
-            )
-
-    current = telemetry.ui.active_screen
-    if current is None:
-        return _unbound("The current screen is unknown, so nothing may be dismissed.")
-    if current != action.expected_screen:
-        return _unbound(
-            f"Expected screen {action.expected_screen!r} but the interface reports "
-            f"{current!r}; dismissing the wrong screen is not permitted."
-        )
-    if not action.window:
-        if telemetry.ui.dialogue_target_id is not None:
-            # Escape does not back out of a Kenshi conversation. With a dialogue
-            # open it opens the ESC menu, which costs a step to undo and leaves
-            # the conversation exactly where it was. A conversation ends by
-            # choosing the option that ends it.
-            return _unbound(
-                "A Kenshi conversation is not dismissed with a key: Escape opens "
-                "the ESC menu and leaves the dialogue open. End it by choosing the "
-                "closing dialogue option with activate_visible_control."
-            )
-        # A keyed screen with no window of its own is dismissed with the key.
-        return BoundScreenDismissal(
-            reason=f"Bound to the currently open {current!r} screen.",
-            resolved_label=current,
-            resolved_bounds=None,
-            source_revision=observation.world_revision,
-        )
-
-    # A named window is closed by its own close box, positioned from the rect
-    # the window itself reports.
-    owned = [
-        control
-        for control in (telemetry.ui.visible_controls or [])
-        if control.window == action.window
-    ]
-    if not owned:
-        return _unbound(
-            f"No window captioned {action.window!r} is currently open, so it cannot be closed."
-        )
-    rect = max(
-        (control.bounds for control in owned),
-        key=lambda b: (b.max_x - b.min_x) * (b.max_y - b.min_y),
-    )
-    return BoundScreenDismissal(
-        reason=(
-            f"Bound to the {action.window!r} window on the {current!r} screen; its "
-            "close box follows the window's own observed rect."
-        ),
-        resolved_label=action.window,
-        resolved_bounds=rect.model_copy(deep=True),
-        source_revision=observation.world_revision,
-    )
 
 
-def bind_use_game_binding(
-    action: Action,
-    observation: Observation,
-) -> BoundNamedOperation | BindingFailure:
-    """Bind a keypress to the game actually being in a state to receive it.
-
-    There is no widget to resolve here - the reference is the game itself. What
-    still has to be proved is that Kenshi is loaded and listening, because a
-    keystroke sent at a loading screen or a dead telemetry stream vanishes with
-    no evidence either way, which is exactly the silent failure this action
-    exists to replace.
-    """
-
-    if not isinstance(action, UseGameBindingAction):
-        return _unbound("Action is not a use_game_binding action.")
-    telemetry = observation.telemetry
-    if telemetry is None:
-        return _unbound("No telemetry is available, so the game cannot be bound.")
-    if observation.telemetry_stale:
-        return _unbound("Telemetry is stale, so the game cannot be bound.")
-    if telemetry.game.loaded is not True:
-        return _unbound("Kenshi has no loaded game to receive a binding.")
-    if (
-        action.binding is GameBinding.QUICKSAVE
-        and QUICKSAVE_COMPLETION_CAPABILITY not in telemetry.capabilities
-    ):
-        return _unbound(
-            "Quicksave requires controller-owned completion evidence for the exact quicksave slot."
-        )
-    if action.binding is GameBinding.QUICKLOAD and (
-        telemetry.identity_session_id is None
-        or "identity.stable_handles" not in telemetry.capabilities
-    ):
-        return _unbound(
-            "Quickload requires a current stable identity session so completion "
-            "can be attributed to a new loaded session."
-        )
-    if action.binding in TIME_GAME_BINDINGS:
-        return _unbound(
-            "Raw time bindings are runtime-owned mechanics; author a semantic "
-            "gameplay intent whose monitored option owns playback."
-        )
-    mapped_input = GAME_BINDING_KEYS.get(action.binding)
-    if mapped_input is None:
-        mapped_input = GAME_BINDING_MOUSE_BUTTONS.get(action.binding)
-    if mapped_input is None:
-        return _unbound(f"No input is mapped for binding {action.binding.value!r}.")
-    return BoundNamedOperation(
-        reason=(
-            f"Bound {action.binding.value!r} to the current hard-coded default "
-            f"Kenshi input {mapped_input!r} on a loaded game."
-        ),
-        resolved_label=action.binding.value,
-        source_revision=observation.world_revision,
-    )
 
 
-def bind_recover_camera_view(
-    action: Action,
-    observation: Observation,
-) -> BoundCameraRecovery | BindingFailure:
-    """Bind recovery to one selected character and the current world HUD.
-
-    The model names no coordinates. The controller resolves the selected
-    character's portrait, current floor, and both floor arrows from fresh
-    visible-control telemetry. Any ambiguity fails closed before input.
-    """
-
-    if not isinstance(action, RecoverCameraViewAction):
-        return _unbound("Action is not a recover_camera_view action.")
-    telemetry = observation.telemetry
-    if telemetry is None:
-        return _unbound("No telemetry is available to bind camera recovery.")
-    if observation.telemetry_stale:
-        return _unbound("Telemetry is stale, so camera recovery cannot be bound.")
-    if telemetry.game.loaded is not True:
-        return _unbound("Kenshi has no loaded game whose camera can be recovered.")
-    if telemetry.ui.active_screen != "world":
-        return _unbound(
-            "Camera recovery is allowed only on the world screen; current screen is "
-            f"{telemetry.ui.active_screen!r}."
-        )
-    if telemetry.ui.modal_open is not False:
-        return _unbound("Camera recovery requires a confirmed closed modal.")
-    if telemetry.ui.dialogue_open is not False:
-        return _unbound("Camera recovery requires dialogue to be closed.")
-    if VISIBLE_CONTROLS_CAPABILITY not in telemetry.capabilities:
-        return _unbound("Visible-control telemetry is unavailable.")
-    if CAMERA_RECOVERY_CAPABILITY not in telemetry.capabilities:
-        return _unbound("Window capture/scoring is unavailable.")
-
-    selected = [character for character in telemetry.squad if character.selected]
-    if len(selected) != 1:
-        return _unbound(
-            f"{len(selected)} characters are selected; camera recovery requires "
-            "exactly one unambiguous follow target."
-        )
-    character = selected[0]
-    controls = telemetry.ui.visible_controls or []
-    portrait_matches = [
-        control
-        for control in controls
-        if control.role == "text"
-        and normalize_control_label(control.label) == normalize_control_label(character.name)
-        and control.bounds.min_y >= 0.75
-    ]
-    if len(portrait_matches) != 1:
-        return _unbound(
-            f"Selected character {character.name!r} has {len(portrait_matches)} "
-            "unambiguous lower-HUD portrait labels; exactly one is required."
-        )
-
-    floor_matches: list[tuple[int, NormalizedPointerBounds]] = []
-    for control in controls:
-        if control.role != "text":
-            continue
-        match = re.fullmatch(r"\s*Floor\s+(-?\d+)\s*", control.label, re.IGNORECASE)
-        if match is not None:
-            floor_matches.append((int(match.group(1)), control.bounds))
-    if len(floor_matches) != 1:
-        return _unbound(
-            f"The HUD exposes {len(floor_matches)} current floor labels; exactly one is required."
-        )
-
-    up_matches = [
-        control
-        for control in controls
-        if control.role == "button" and control.label.casefold().endswith("_floorarrowup")
-    ]
-    down_matches = [
-        control
-        for control in controls
-        if control.role == "button" and control.label.casefold().endswith("_floorarrowdown")
-    ]
-    if len(up_matches) != 1 or len(down_matches) != 1:
-        return _unbound(
-            "The HUD must expose exactly one floor-up and one floor-down button; "
-            f"found {len(up_matches)} up and {len(down_matches)} down."
-        )
-
-    portrait = portrait_matches[0]
-    floor = floor_matches[0][0]
-    return BoundCameraRecovery(
-        reason=(
-            f"Bound camera recovery to selected character {character.name!r} "
-            f"({character.id}), portrait {portrait.label!r}, and floor {floor}."
-        ),
-        target_id=character.id,
-        resolved_label=portrait.label,
-        resolved_role=portrait.role,
-        resolved_bounds=portrait.bounds.model_copy(deep=True),
-        source_revision=observation.world_revision,
-        selected_character_name=character.name,
-        floor=floor,
-        floor_up_bounds=up_matches[0].bounds.model_copy(deep=True),
-        floor_down_bounds=down_matches[0].bounds.model_copy(deep=True),
-    )
 
 
-def bind_scroll_screen(
-    action: Action,
-    observation: Observation,
-) -> BoundVisibleControl | BindingFailure:
-    """Bind a scroll to the observed bounds of one currently open window.
-
-    The reference is the window, not a coordinate: the scroll lands at the
-    centre of the rectangle its own controls occupy. A window with nothing
-    exported in it fails closed rather than scrolling the world behind it,
-    which is what a bare coordinate would have done.
-    """
-
-    if not isinstance(action, ScrollScreenAction):
-        return _unbound("Action is not a scroll_screen action.")
-    telemetry = observation.telemetry
-    if telemetry is None:
-        return _unbound("No telemetry is available to bind the window.")
-    if observation.telemetry_stale:
-        return _unbound("Telemetry is stale, so the window cannot be bound.")
-    if VISIBLE_CONTROLS_CAPABILITY not in telemetry.capabilities:
-        return _unbound(
-            f"Capability {VISIBLE_CONTROLS_CAPABILITY!r} is unavailable, so open "
-            "windows are unknown rather than absent."
-        )
-    controls = telemetry.ui.visible_controls
-    if not controls:
-        return _unbound("The interface reports no current visible-control set.")
-    members = [control for control in controls if control.window == action.window]
-    if not members:
-        return _unbound(
-            f"No control currently belongs to a window named {action.window!r}, "
-            "so there is nothing to scroll."
-        )
-    bounds = NormalizedPointerBounds(
-        min_x=min(control.bounds.min_x for control in members),
-        min_y=min(control.bounds.min_y for control in members),
-        max_x=max(control.bounds.max_x for control in members),
-        max_y=max(control.bounds.max_y for control in members),
-    )
-    return BoundVisibleControl(
-        reason=(
-            f"Bound to window {action.window!r}, whose {len(members)} exported "
-            "controls span the region to scroll."
-        ),
-        resolved_label=action.window,
-        resolved_role="window",
-        resolved_bounds=bounds,
-        source_revision=observation.world_revision,
-    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -3348,83 +1980,23 @@ def operation_identity(
     )
 
 
-def _bounded_trade_quantity(action: Action) -> int:
-    if not isinstance(action, (PurchaseItemAction, SellItemAction)):
-        raise TypeError("bounded trade cost requires a purchase or sale action")
-    return action.quantity
 
 
-def _bounded_trade_risk(action: Action) -> OperationRisk:
-    quantity = _bounded_trade_quantity(action)
-    return OperationRisk(
-        pointer_actions=quantity,
-        purchase_actions=quantity,
-    )
 
 
-def _bounded_trade_primitive_action_bound(action: Action) -> int:
-    quantity = _bounded_trade_quantity(action)
-    # One current-cell cursor move and one right-click per requested unit.
-    return quantity * 2
 
 
-def _dismissed_screen_closed(
-    action: Action,
-    observation: Observation,
-) -> tuple[Condition, ...] | None:
-    if not isinstance(action, DismissScreenAction):
-        return None
-    telemetry = observation.telemetry
-    if action.window:
-        if telemetry is None or telemetry.ui.open_inventory_windows is None:
-            return ()
-        return (
-            Condition(
-                kind=ConditionKind.FIELD,
-                path=ConditionPath.TELEMETRY_UI_OPEN_INVENTORY_WINDOWS,
-                operator=ConditionOperator.LESS_THAN,
-                expected=telemetry.ui.open_inventory_windows,
-                max_age_seconds=3.0,
-            ),
-        )
-    if not isinstance(action.expected_screen, GameScreen):
-        return None
-    condition = close_screen_success_condition(action.expected_screen, telemetry)
-    return (condition,) if condition is not None else ()
 
 
-def _binding_transition(
-    action: Action,
-    observation: Observation,
-) -> tuple[Condition, ...] | None:
-    if not isinstance(action, UseGameBindingAction):
-        return ()
-    # A second literal copy of this set lived here and silently shadowed the
-    # terminal table: map gained a condition while research and crafting, whose
-    # table entries were identical, were still rejected at plan validation.
-    # There is one source of which bindings are witnessed.
-    if action.binding not in GAME_BINDING_TERMINALS:
-        return None
-    condition = game_binding_success_condition(action.binding, observation.telemetry)
-    return (condition,) if condition is not None else ()
 
 
-def _game_binding_terminal(
-    action: Action,
-    observation: Observation,
-    selected_affordance: bool,
-) -> OperationTerminal | None:
-    del observation, selected_affordance
-    if isinstance(action, UseGameBindingAction) and action.binding is GameBinding.QUICKSAVE:
-        return OperationTerminal(owner=TerminalOwner.CONTROLLER_TERMINAL)
-    return None
 
 
 def _selected_squad_member(
     action: Action,
     observation: Observation,
 ) -> tuple[Condition, ...] | None:
-    if not isinstance(action, (SelectSquadMemberAction, SelectSquadMemberExactAction)):
+    if not isinstance(action, SelectSquadMemberExactAction):
         return ()
     return (
         Condition(
@@ -4369,52 +2941,8 @@ MOVE_TO_CHARACTER_DEFINITION = OperationDefinition(
 
 
 
-def bind_open_screen(
-    action: Action,
-    observation: Observation,
-) -> EmptyBinding | BindingFailure:
-    """Resolve the screen to its binding and to whether it is already up.
-
-    Already-satisfied aware on purpose. The underlying controls are toggles, so
-    pressing to "open" a screen that is open closes it; this action promises the
-    screen IS open, which is the whole reason it exists rather than
-    `use_game_binding`.
-    """
-
-    if not isinstance(action, OpenScreenAction):
-        return _unbound("Action is not an open_screen action.")
-    telemetry = observation.telemetry
-    if telemetry is None or observation.telemetry_stale:
-        return _unbound("No fresh telemetry, so the screen state cannot be read.")
-    already = screen_is_open(action.screen, telemetry)
-    if already is None:
-        return _unbound(
-            f"Nothing observable reports whether {action.screen.value} is open, "
-            "so opening it could not be proven."
-        )
-    binding = SCREEN_BINDINGS[action.screen]
-    if already:
-        return EmptyBinding(
-            reason=(
-                f"The {action.screen.value} screen is already open; pressing "
-                f"{binding.value} would close it, so no input is sent."
-            ),
-            source_revision=observation.world_revision,
-        )
-    return EmptyBinding(
-        reason=(f"The {action.screen.value} screen is closed and {binding.value} opens it."),
-        source_revision=observation.world_revision,
-    )
 
 
-def _open_screen_terminal(
-    action: Action,
-    observation: Observation,
-) -> tuple[Condition, ...] | None:
-    if not isinstance(action, OpenScreenAction):
-        return ()
-    condition = open_screen_success_condition(action.screen, observation.telemetry)
-    return (condition,) if condition is not None else ()
 
 
 

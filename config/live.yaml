@@ -30,10 +30,10 @@ planning:
   # wall time. This ceiling covers the longest audited eight-second pulse
   # plus one wall-second at the conservative 60x conversion.
   max_plan_game_seconds: 3600
-  max_pointer_actions_per_plan: 16
-  # One strategic purchase may ask the controller to conserve up to five
-  # identical units without another planner call.
-  max_purchase_actions_per_plan: 5
+  # The planner-visible surface is now coordinate-independent and transfers
+  # items through Kenshi's own inventory API.
+  max_pointer_actions_per_plan: 0
+  max_purchase_actions_per_plan: 0
   max_native_assisted_actions_per_plan: 4
   max_consecutive_replans: 20
   # The world runs while the agent thinks, so per-plan game-time budgets
@@ -186,16 +186,6 @@ controls:
   native_movement_pulse_seconds: 2.0
   # The world runs; the character just walks.
   require_paused_between_actions: false
-  # One model request owns no gestures. The controller follows the selected
-  # portrait, searches at most two lower floors, applies its fixed zoom/orbit/tilt
-  # sequence, scores retained frames, and leaves a running world paused if it
-  # had to intervene.
-  camera_recovery:
-    candidate_settle_seconds: 0.30
-    clear_score_threshold: 0.72
-    anchor_max_distance: 30.0
-    max_lower_floors: 2
-
 safety:
   # The canonical live policy permits only the audited surface below. The CLI must still
   # receive --execute-live-actions plus the native-assisted and continuous-live

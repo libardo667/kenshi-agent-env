@@ -1,8 +1,9 @@
 # Kenshi Agent Environment
 
 A bounded agent runtime that plays Kenshi through current telemetry, screenshots,
-runtime-generated affordances, ordinary Windows input, and a small reviewed native
-command bridge.
+runtime-generated affordances and a small reviewed native command bridge. Synthesized
+Windows input remains only in host startup, recovery, and the controller's narrow
+safety fallbacks; planner-visible gameplay operations are coordinate-independent.
 
 The playing model does not write key sequences, click coordinates, native calls, or
 retry loops. It chooses one exact affordance offered from the current observation;
@@ -10,10 +11,13 @@ the runtime rebinds that choice, authorizes it against fresh evidence, performs 
 through one operation handler, and records one causal outcome.
 
 This is experimental, supervised software—not a claim of broad Kenshi competence.
-The proven live surface includes squad selection and movement, dialogue, trade,
-bounded resource harvesting, inventory ownership, human handoff, emergency stop,
-and telemetry-confirmed final pause. Navigation and strategic play remain limited
-by what the game currently exposes and what has been accepted live.
+The proven live surface includes squad selection and movement, dialogue approach,
+trade-window opening, purchases, equipped-item looting, squadmate and resource-output
+transfers through the unified inventory route, bounded resource production, native
+playback control, human handoff, emergency stop, and a telemetry-confirmed final
+pause. The native recovery protocol can also close a trade window that this surface
+opens; that inverse remains recovery tooling rather than a planner-visible gameplay
+operation.
 
 ## Current architecture
 
@@ -124,14 +128,12 @@ Begin with planning only:
 The control choices are literal:
 
 - `plan-only` sends no gameplay actions.
-- `polite-live` may act, then restores the prior foreground window and cursor.
-- `exclusive-live` retains desktop input ownership for a deliberately handed-off
-  session.
+- `live` performs the reviewed native-assisted operation surface after the explicit
+  live-control acknowledgements and desktop handoff.
 
-For an executing run, use a disposable save and choose `polite-live` or
-`exclusive-live` explicitly. F12 is the emergency stop. Human input causes a visible
-handoff; the independent supervisor can also preempt a run. If a run or terminal is
-interrupted, use:
+For an executing run, use a disposable save and choose `live` explicitly. F12 is the
+emergency stop. Human input causes a visible handoff; the independent supervisor can
+also preempt a run. If a run or terminal is interrupted, use:
 
 ```bash
 ./dev recover

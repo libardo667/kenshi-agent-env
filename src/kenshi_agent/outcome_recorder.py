@@ -22,19 +22,9 @@ from .continuity import ContinuityLedger
 from .core.evidence import (
     ActionOutcome,
     ActionOutcomeAssessment,
-    CameraRecoveryStatus,
     PlanDisposition,
-    PurchaseStatus,
-    ResourceHarvestStatus,
-    SaleStatus,
 )
 from .core.observation import Observation
-from .core.operation import (
-    HarvestResourceAction,
-    PurchaseItemAction,
-    RecoverCameraViewAction,
-    SellItemAction,
-)
 from .core.planning import (
     PlanEnvelope,
     PlannerDecision,
@@ -50,7 +40,6 @@ from .core.transport import (
     Transition,
 )
 from .core.world import WorldStateRevision
-from .non_progress import retry_state_fingerprint
 from .nutrition import nutrition_reserve_change
 from .operation_definitions import definition_for
 from .planner_service import bounded_text
@@ -156,119 +145,6 @@ class OutcomeRecorder:
                 "Do not treat raw or pre-command state as progress.",
             )
 
-        if isinstance(receipt.action, PurchaseItemAction):
-            purchase = receipt.semantic.purchase if receipt.semantic is not None else None
-            if purchase is None:
-                return (
-                    ActionOutcomeAssessment.UNKNOWN,
-                    "Purchase returned no typed controller evidence.",
-                )
-            if purchase.status is PurchaseStatus.PURCHASED:
-                return (
-                    ActionOutcomeAssessment.CHANGED,
-                    f"The controller conserved all {purchase.purchased_quantity} "
-                    f"requested {purchase.item_name!r} purchases through matching "
-                    "quoted charge and exact window-owner inventory gain.",
-                )
-            if purchase.status is PurchaseStatus.PARTIALLY_PURCHASED:
-                return (
-                    ActionOutcomeAssessment.CHANGED,
-                    f"The controller conserved {purchase.purchased_quantity}/"
-                    f"{purchase.requested_quantity} {purchase.item_name!r} "
-                    f"purchases before stopping: {purchase.reason}",
-                )
-            if purchase.status is PurchaseStatus.NOT_PURCHASED:
-                return (
-                    ActionOutcomeAssessment.NO_OP,
-                    f"Purchase made no verified transfer: {purchase.reason}",
-                )
-            return (
-                ActionOutcomeAssessment.UNKNOWN,
-                f"Purchase delivery is ambiguous and must not be retried as a "
-                f"whole: {purchase.reason}",
-            )
-
-        if isinstance(receipt.action, SellItemAction):
-            sale = receipt.semantic.sale if receipt.semantic is not None else None
-            if sale is None:
-                return (
-                    ActionOutcomeAssessment.UNKNOWN,
-                    "Sale returned no typed controller evidence.",
-                )
-            if sale.status is SaleStatus.SOLD:
-                return (
-                    ActionOutcomeAssessment.CHANGED,
-                    f"The controller conserved all {sale.sold_quantity} requested "
-                    f"{sale.item_name!r} sales through matching purse gain and "
-                    "exact window-owner inventory loss.",
-                )
-            if sale.status is SaleStatus.PARTIALLY_SOLD:
-                return (
-                    ActionOutcomeAssessment.CHANGED,
-                    f"The controller conserved {sale.sold_quantity}/"
-                    f"{sale.requested_quantity} {sale.item_name!r} sales before "
-                    f"stopping: {sale.reason}",
-                )
-            if sale.status is SaleStatus.NOT_SOLD:
-                return (
-                    ActionOutcomeAssessment.NO_OP,
-                    f"Sale made no verified transfer: {sale.reason}",
-                )
-            return (
-                ActionOutcomeAssessment.UNKNOWN,
-                f"Sale delivery is ambiguous and must not be retried as a whole: {sale.reason}",
-            )
-
-        if isinstance(receipt.action, HarvestResourceAction):
-            harvest = receipt.semantic.resource_harvest if receipt.semantic is not None else None
-            if harvest is None:
-                return (
-                    ActionOutcomeAssessment.UNKNOWN,
-                    "Resource harvest returned no typed controller evidence.",
-                )
-            if harvest.status is ResourceHarvestStatus.HARVESTED:
-                return (
-                    ActionOutcomeAssessment.CHANGED,
-                    f"The controller conserved {harvest.transferred_quantity} "
-                    f"{harvest.item_name!r} into the exact actor and closed its "
-                    "owned inventory windows.",
-                )
-            return (
-                ActionOutcomeAssessment.NO_OP,
-                f"Resource harvest ended as {harvest.status.value!r}: {harvest.reason}",
-            )
-
-        if isinstance(receipt.action, RecoverCameraViewAction):
-            recovery = receipt.semantic.camera_recovery if receipt.semantic is not None else None
-            if recovery is None:
-                return (
-                    ActionOutcomeAssessment.UNKNOWN,
-                    "Camera recovery returned no typed controller evidence. Do not "
-                    "assume the view is usable.",
-                )
-            if recovery.status is CameraRecoveryStatus.ALREADY_CLEAR:
-                # The controller looked and found nothing to do. The view is
-                # usable, but this action did not make it so, and asking again
-                # on the same evidence will keep returning already_clear.
-                return (
-                    ActionOutcomeAssessment.NO_OP,
-                    "The view was already a usable selected-character-following "
-                    f"view on floor {recovery.final_floor}, so recovery changed "
-                    "nothing. Do not repeat it without evidence the view broke.",
-                )
-            if recovery.status is CameraRecoveryStatus.RECOVERED:
-                return (
-                    ActionOutcomeAssessment.CHANGED,
-                    "The controller restored a usable selected-character-following "
-                    f"view on floor {recovery.final_floor}; camera recovery does "
-                    "not need model-authored follow-up gestures.",
-                )
-            return (
-                ActionOutcomeAssessment.NO_OP,
-                "The fixed camera transaction exhausted its bounded candidates "
-                "without a clear anchored frame. Do not finagle camera primitives "
-                "or repeat recovery on the same evidence.",
-            )
 
         if mechanical_only:
             # The screenshot cannot outvote this: walking repaints the frame
@@ -338,16 +214,6 @@ class OutcomeRecorder:
         target_id: str | None = None
         if receipt.semantic is not None:
             target_id = receipt.semantic.target_id
-            if receipt.semantic.purchase is not None:
-                semantic_status = receipt.semantic.purchase.status.value
-            elif receipt.semantic.sale is not None:
-                semantic_status = receipt.semantic.sale.status.value
-            elif receipt.semantic.resource_harvest is not None:
-                semantic_status = receipt.semantic.resource_harvest.status.value
-            elif receipt.semantic.resource_transfer is not None:
-                semantic_status = receipt.semantic.resource_transfer.status.value
-            elif receipt.semantic.camera_recovery is not None:
-                semantic_status = receipt.semantic.camera_recovery.status.value
         if receipt.native_acknowledgement is not None:
             target_id = receipt.native_acknowledgement.target_id or target_id
             semantic_status = receipt.native_acknowledgement.status.value
@@ -388,10 +254,7 @@ class OutcomeRecorder:
             identity_session_id=(
                 after.telemetry.identity_session_id if after.telemetry is not None else None
             ),
-            retry_state_fingerprint=retry_state_fingerprint(
-                receipt.action,
-                after,
-            ),
+            retry_state_fingerprint=None,
         )
         self._ledger.record_action_outcome(outcome)
         self._logger.write("action_outcome", step_index=before.step_index, payload=outcome)

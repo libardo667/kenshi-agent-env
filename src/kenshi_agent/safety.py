@@ -14,7 +14,6 @@ from .core.operation import (
     MoveCursorAction,
     PauseAction,
     PointerActionClass,
-    PurchaseItemAction,
     ReadFieldbookAction,
     ScrollAction,
     SetSpeedAction,
@@ -107,8 +106,6 @@ class OperationPolicy:
             observation,
             primitive_actions=primitive_actions,
         )
-        if isinstance(action, PurchaseItemAction) and observation.mode == "live":
-            self._validate_generic_purchase(action, observation)
         return action
 
     def pointer_class_for(self, bound: BoundOperation) -> PointerActionClass:
@@ -174,73 +171,6 @@ class OperationPolicy:
                 "current selection cannot supply.",
                 code=AuthorizationCode.SELECTION_INVALID,
             )
-
-    def _validate_generic_purchase(
-        self,
-        action: PurchaseItemAction,
-        observation: Observation,
-    ) -> None:
-        """Spending limits for the generic purchase.
-
-        The contract already proved the cell, its tooltip, the item name, the
-        price and the seller. What is left is what no amount of evidence can
-        settle - how much of the operator's money this run may spend, and how
-        often - so those stay configuration, enforced here.
-        """
-
-        assert observation.telemetry is not None
-        telemetry = observation.telemetry
-        if self.config.require_paused_between_actions and telemetry.game.paused is not True:
-            # Only when the profile actually asks for it. A stream agent has to
-            # unpause to walk anywhere, so an unconditional check here refuses
-            # every purchase it could ever reach a shop to make. What protects
-            # the purchase is the cell binding, the verified seller, the exact
-            # player-window owner and the open trade screen - all already
-            # enforced by the contract, independent of whether the world is
-            # moving.
-            raise SafetyViolation(  # mutation: reason
-                "Purchase requires a confirmed paused game "  # mutation: reason
-                "because the live configuration sets "  # mutation: reason
-                "require_paused_between_actions."  # mutation: reason
-            )
-        if not observation.trade_screen_open():
-            raise SafetyViolation(  # mutation: reason
-                "Purchase blocked because no trade is open: a shop's own "  # mutation: reason
-                "inventory window must be open beside ours."  # mutation: reason
-            )
-        # Price and remaining-money constraints are pure policy. The mutable
-        # per-run purchase count is owned by ActionBudgetLedger.
-        if (
-            self.config.max_purchase_price is not None
-            and action.expected_price > self.config.max_purchase_price
-        ):
-            raise SafetyViolation(  # mutation: reason
-                f"Expected price {action.expected_price} exceeds "  # mutation: reason
-                f"maximum {self.config.max_purchase_price}."  # mutation: reason
-            )
-        money = telemetry.game.money
-        if money is None:
-            raise SafetyViolation(  # mutation: reason
-                "Purchase blocked because current money is unknown."  # mutation: reason
-            )
-        if (
-            self.config.min_money_after_purchase is not None
-            and money - action.expected_price * action.quantity
-            < self.config.min_money_after_purchase
-        ):
-            estimated_total = action.expected_price * action.quantity
-            raise SafetyViolation(  # mutation: reason
-                "Expected bounded purchase would leave "  # mutation: reason
-                f"{money - estimated_total} cats; "  # mutation: reason
-                f"minimum is {self.config.min_money_after_purchase}."  # mutation: reason
-            )
-        tooltip_text = telemetry.ui.tooltip_text
-        for marker in self.config.required_purchase_tooltip_markers:
-            if tooltip_text is None or marker not in tooltip_text:
-                raise SafetyViolation(  # mutation: reason
-                    "Purchase blocked because the tooltip lacks "  # mutation: reason
-                    f"the required marker {marker!r}."  # mutation: reason
-                )
 
     def validate_safety_pause(
         self,

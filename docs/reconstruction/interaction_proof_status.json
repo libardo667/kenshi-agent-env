@@ -3,7 +3,7 @@
   "stage": "interaction-scope-and-order-lifecycle",
   "slice": 1,
   "authority": "docs/KENSHI_INTERACTION_SCOPE_ORDER_LIFECYCLE_PLAN.md",
-  "captured_at_utc": "2026-08-04T00:00:00Z",
+  "captured_at_utc": "2026-08-08T19:53:55Z",
   "note": [
     "Hand-authored. Not an authority over gameplay semantics, and no longer a",
     "home for the interaction contract: Slice 1 moved that into",
@@ -13,10 +13,12 @@
     "unit_proven = a deterministic test pins it; live_proven = a named run",
     "bundle shows it; unproven = declared, no proof yet; withheld = should not",
     "be offered until proven.",
-    "No group-scope behaviour is live_proven anywhere in this repository. Every",
-    "context-menu witness in game_sources/kenshi/context_menu_witnesses.json",
-    "was captured with exactly one character selected, so multi-recipient",
-    "semantics remain declared rather than demonstrated."
+    "The two-person resource-production proof named below demonstrates only that",
+    "specific current-selection path. Every context-menu witness in",
+    "game_sources/kenshi/context_menu_witnesses.json was captured with exactly",
+    "one character selected, so other multi-recipient semantics remain declared",
+    "rather than demonstrated. close_trade_window is separately live-proven as a",
+    "native recovery command, not a registry-backed gameplay operation."
   ],
   "entries": [
     {
@@ -61,13 +63,14 @@
     },
     {
       "operation_kind": "open_trade_window",
-      "proof_status": "source_proven",
+      "proof_status": "live_proven",
       "evidence": [
         "KenshiAgentTelemetry.cpp open_trade_window: resolves both parties to handles and calls ForgottenGUI::showTradeWindow(a, b, TradeWindowType), then requires getNumOpenInventoryWindows() >= 2 as terminal evidence",
         "TradeWindowType is Kenshi's own enum - TW_OFF, TW_MONEY_TRADING, TW_LOOTING, TW_AUTO - so trading and looting arrive as one mechanism with a flag rather than as two operations invented here",
-        "The single-window opener beside it calls showInventory, which shows a character's personal gear: measured live against the Barman it reported his armour and legs sections and exactly one window, which is the stealing view and cannot host a transfer"
+        "closure-loot-20260808 command cmd-ad044f547c894764b0506d8459545a81 paired Fish with unconscious Burn and completed as trade_window_open",
+        "closure-harvest-fixed-20260808 command cmd-1c78e8d12e4a403f83bfc3df8f3bee46 paired Fish with the Iron Resource and completed as trade_window_open"
       ],
-      "note": "Not yet dispatched live. This is the state transfer_item requires and could not previously reach."
+      "note": "One mechanism now has live witnesses for both looting a body and collecting a resource output. Whether Kenshi treats other owner kinds as valid remains its dispatch-time answer."
     },
     {
       "operation_kind": "pause",
@@ -104,9 +107,12 @@
     },
     {
       "operation_kind": "produce_resource_output",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "Holds an ordinary order until output exists. Its release path calls removeJob/clearOrders/halt on a claimed-owned queue; that ownership claim is unproven and is the section 13.6 obligation."
+      "proof_status": "live_proven",
+      "evidence": [
+        "closure-harvest-fixed-20260808 command cmd-9f5f58ce387f40398e780a21f5b76d75 adopted the exact already-running two-character resource task without reissuing it, remained monitored while its acknowledgement was accepted, and reached resource_output_ready at telemetry sequence 2718",
+        "The same run then exposed Raw Iron in the resource output inventory and transferred it to Fish, separating production proof from inventory-transfer proof"
+      ],
+      "note": "Live-proven for adoption of matching existing work through actual output. The monitor observed the native terminal and no order remained running; this does not generalize the ownership claim to every interruption or mismatched-queue case."
     },
     {
       "operation_kind": "read_fieldbook",
@@ -180,15 +186,17 @@
     },
     {
       "operation_kind": "transfer_item",
-      "proof_status": "source_proven",
+      "proof_status": "live_proven",
       "evidence": [
         "KenshiAgentTelemetry.cpp transfer_item: resolves both owners to handles, requires both inventory windows open, and calls InventoryGUI::RClickAutoTrade(section, x, y, destination, thieveryChecks, first) -- the engine's own right-click transfer, which the five operations it replaces each simulated with a mouse",
         "The verdict is Kenshi's and is reported verbatim rather than collapsed into success or failure: ok, no_room, cant_afford, shopkeeper_cant_afford, cant_wear_item, incompatible_item, locked, thief_detected, selling_stolen_item_detected, thats_mine, target_conscious, smuggling_only, illegal_goods, uniforms, container_not_empty. Inventing a coarser vocabulary on top of a finer one is how selection_mismatch came to mean six conditions",
         "Conservation is measured across the call rather than inferred from the verdict: a permitted transfer that moved nothing terminates as permitted_without_moving rather than as success, because an engine answering OK has said the transfer was allowed, not that an item moved",
         "The slot is the address. RClickAutoTrade takes a section name and an x/y, and UIState.open_inventories exports exactly that per item, so no cell label is scraped from a MyGUI widget and no pointer is used at all",
-        "pointer_actions is 0. The operations this subsumes spend 23 pointer actions between them, 12 of those in harvest_resource alone"
+        "pointer_actions is 0. The operations this subsumes spend 23 pointer actions between them, 12 of those in harvest_resource alone",
+        "closure-loot-20260808 transferred Burn's equipped Katana and Halfpants (ragged) into Fish with item_transferred terminals cmd-460ee0bb31814fd98e7d7057747348f6 and cmd-2538e63cec614d87a06511aa925f4256",
+        "closure-harvest-fixed-20260808 transferred Raw Iron from the Iron Resource output slot into Fish with item_transferred terminal cmd-90f4f3ab3ea449539a64040290c7f1e3"
       ],
-      "note": "Not yet dispatched live. Requires two inventories open at once, which is why opening one no longer refuses because another already is. Binding proves both inventories open, the section present, and the named item still in its slot, since position alone is not identity."
+      "note": "Live-proven for equipped-body loot and resource-output collection, in addition to the earlier squadmate and purchase paths. Binding still proves both inventories open, the section present, and the named item still in its slot, since position alone is not identity."
     },
     {
       "operation_kind": "travel_to_map_destination",

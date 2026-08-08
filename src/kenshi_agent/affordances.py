@@ -48,9 +48,9 @@ from .core.telemetry import (
     WorldTarget,
     map_destination_travel_available,
 )
-from .non_progress import unchanged_definitive_no_op_reason
 from .operation_definitions import (
     NATIVE_CHARACTER_ORDER_CAPABILITY,
+    NATIVE_PRODUCE_RESOURCE_CAPABILITY,
     NATIVE_SHIFT_BODY_CAPABILITY,
     NATIVE_TRADE_WINDOW_CAPABILITY,
     NATIVE_TRANSFER_CAPABILITY,
@@ -489,8 +489,9 @@ def _context_order_description(
         return (
             f"Station the selection at {target.name!r} to mine it indefinitely, as a "
             "standing job. Output collects inside the resource and reaches nobody's "
-            "inventory; this order never finishes on its own. To end up holding ore, "
-            "use harvest_resource instead."
+            "inventory; this order never finishes on its own. To collect ore, use "
+            "produce_resource_output, pair the resource with an inventory, and "
+            "transfer the output slot."
         )
     return f"Issue {order.value!r} to {target.name!r}."
 
@@ -685,7 +686,7 @@ def _trade_window_offers(observation: Observation) -> Iterable[AffordanceOffer]:
         return
     held = {inventory.owner_id for inventory in telemetry.ui.open_inventories}
 
-    # Squad first, then nearby by stable id.
+    # Squad and reviewed resources first, then nearby owners by stable id.
     #
     # This listed nearby entities first and truncated at the cap, so with a
     # crowd around the squad pairings fell off the end - and *which* nearby ones
@@ -698,6 +699,12 @@ def _trade_window_offers(observation: Observation) -> Iterable[AffordanceOffer]:
         (member.id, member.name, "squad_character")
         for member in sorted(telemetry.squad, key=lambda member: member.id)
         if member.id != actor
+    ] + [
+        (target.id, target.name, target.kind)
+        for target in sorted(telemetry.world_targets, key=lambda target: target.id)
+        if target.kind == "natural_resource"
+        and ContextActionKind.OPERATE in target.context_actions
+        and target.default_task == "operate_machinery"
     ] + [
         (entity.id, entity.name, entity.kind)
         for entity in sorted(telemetry.nearby_entities, key=lambda entity: entity.id)
@@ -1085,6 +1092,32 @@ def _native_and_composite_offers(
                 arguments={},
             )
 
+    if NATIVE_PRODUCE_RESOURCE_CAPABILITY in set(telemetry.capabilities):
+        for target in telemetry.world_targets:
+            if not (
+                target.kind == "natural_resource"
+                and ContextActionKind.OPERATE in target.context_actions
+                and target.default_task == "operate_machinery"
+            ):
+                continue
+            yield _offer(
+                observation,
+                source=AffordanceSource.NATIVE_OPERATION,
+                semantic="produce_resource_output",
+                description=(
+                    f"Work {target.name!r} only until its output inventory contains "
+                    "stock, then release controller-owned work. This produces the "
+                    "resource output but does not move it into a squad inventory."
+                ),
+                operation_kind="produce_resource_output",
+                target=AffordanceTarget(
+                    target_id=target.id,
+                    label=target.name,
+                    kind=target.kind,
+                ),
+                arguments={"target_id": target.id},
+            )
+
     yield _offer(
         observation,
         source=AffordanceSource.NATIVE_OPERATION,
@@ -1142,7 +1175,7 @@ class AffordanceAdapter:
         Enumeration used to answer "what could be offered" while
         `OperationDefinition.is_currently_authorable` answered "what could be
         run", and nothing reconciled them. A live two-character start offered
-        `harvest_resource` on an iron deposit that could not be harvested,
+        a resource operation on an iron deposit that could not bind,
         because the adapter never asked. Filtering here makes the two agree by
         construction rather than by coincidence, so a future adapter cannot
         quietly reintroduce the disagreement.
@@ -1251,12 +1284,13 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
         sources=frozenset({AffordanceSource.INVENTORY}),
         operation_kinds=frozenset({"open_trade_window"}),
         denominator=(
-            "Every nearby person and squadmate whose inventory could be paired "
-            "with the selected character's."
+            "Every squadmate and reviewed natural resource, followed by a bounded "
+            "stable subset of nearby people whose inventory could be paired with "
+            "the selected character's."
         ),
         completeness_boundary=(
-            "Bounded to the nearest few. Whether Kenshi pairs a given two is its "
-            "answer at dispatch."
+            "Squadmates and reviewed resources are prioritized before the nearby-owner "
+            "cap. Whether Kenshi pairs a given two is its answer at dispatch."
         ),
         enumerate=_trade_window_offers,
     ),
@@ -1311,14 +1345,16 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
         operation_kinds=frozenset(
             {
                 "survey_local_resources",
+                "produce_resource_output",
                 "move_in_direction",
                 "exit_current_building",
             }
         ),
-        denominator="Current state for native movement, camera, scrolling, and harvesting.",
+        denominator="Current state for native movement and bounded resource production.",
         completeness_boundary=(
             "Only operations with a current binder and declared runtime completion "
-            "boundary. Scrolling proves exact delivery, not newly revealed content."
+            "boundary. Resource production stops at observed output; transferring "
+            "that output remains a separate inventory operation."
         ),
         enumerate=_native_and_composite_offers,
     ),
@@ -1361,8 +1397,6 @@ def _operation_for(
 
 def _offer_binds_now(offer: AffordanceOffer, observation: Observation) -> bool:
     operation = _operation_for(offer, _sample_parameters(offer))
-    if unchanged_definitive_no_op_reason(operation, observation) is not None:
-        return False
     definition = definition_for(operation)
     if definition is None:
         raise RuntimeError(f"adapter emitted {operation.kind!r} without an operation definition")
@@ -1627,10 +1661,8 @@ def bind_affordance(
     # Deduplicate before counting. An id is derived from what a choice *is*, so
     # a repeated identical offer is the same choice seen twice, not ambiguity: a
     # trade window holding ten identically-labelled cells emits ten identical
-    # `activate_visible_control` offers, because a visible control is keyed on
-    # window, role and label. `offered_affordances` already collapses them, so
-    # the planner sees one and picks it correctly - and this raw walk then found
-    # ten and refused, reporting the choice as absent when it was over-present.
+    # identical offers. `offered_affordances` already collapses them, so the
+    # planner sees one and picks it correctly; this raw walk must agree.
     matches = {
         adapter.name: adapter
         for adapter in AFFORDANCE_ADAPTERS
@@ -1749,12 +1781,6 @@ class OperationBindingAuthority:
 
         if affordance is not None:
             return _rebind_affordance_operation(operation, affordance, observation)
-        non_progress_reason = unchanged_definitive_no_op_reason(operation, observation)
-        if non_progress_reason is not None:
-            raise OperationBindingError(
-                f"Runtime operation is not currently eligible: {non_progress_reason}.",
-                code=AuthorizationCode.POLICY_DISALLOWED,
-            )
         definition = definition_for(operation)
         if definition is None:
             raise OperationBindingError(

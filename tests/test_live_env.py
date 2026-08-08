@@ -602,7 +602,6 @@ class NativePulseTelemetry(PulseTelemetry):
             "world.context_target_screen_positions",
             "control.perform_context_action",
             "control.produce_resource_output",
-            "control.open_context_inventory",
         ]
         self.target_distance: float | None = None
         self.target_screen_position: Vec2 | None = None

@@ -9,67 +9,69 @@ mechanism is declared, not that its effect is proven live.
 Regenerate with `python scripts/export_docs.py`.
 
 ```text
-modeled rows   31
-implemented    31
-unimplemented   0
-stranding   0  (missing exits)
-on pixels   1  (covered, but fragile)
+modeled rows   30
+implemented    17
+unimplemented  13
+stranding   7  (missing exits)
+on pixels   0  (covered, but fragile)
 
 WORLD
-  ok  enter     Return to the world with no window in the way.  [control: use_game_binding / dismiss_screen]
-        -> Screens are closed one at a time by re-pressing their own toggle. A single closeAllWindows would still be a better escape hatch.
-  ok  navigate  Pan and zoom the camera to bring somewhere into view.  [control: use_game_binding]
-  ok  interact  Walk to a person and open dialogue.  [native: approach_dialogue_target]
-  ok  interact  Start, stop, or speed up time.  [control: use_game_binding]
-  ok  interact  Select which squad member is being commanded.  [control: use_game_binding]
-  ok  exit      The world screen is the base state; there is nothing to exit to.  [native: -]
+  GAP enter     Return to the world with no modal window in the way.  [none: ForgottenGUI::closeAllWindows @ 0x6E5660]
+        -> No registry-backed operation closes arbitrary modal UI. The native close_trade_window recovery command covers trade only.
+  ok  navigate  Travel by observed identity, discovered destination, or bounded bearing.  [native: move_to_character / travel_to_map_destination / move_in_direction]
+  ok  interact  Issue an exact task Kenshi advertises on a person or world object.  [native: perform_character_order / perform_context_action]
+  ok  interact  Pause, resume, or select a playback speed.  [native: pause / set_speed]
+  ok  interact  Select one exact squad member.  [native: select_squad_member_exact]
+  ok  exit      The world is the base state; there is nothing to exit to.  [native: -]
 
 DIALOGUE
-  ok  enter     Open a conversation with a specific person.  [native: approach_dialogue_target]
-  ok  navigate  Read the available replies.  [native: ui.dialogue.options export]
-  ok  interact  Choose a reply.  [control: activate_visible_control]
-  ok  exit      Leave the conversation.  [control: activate_visible_control]
-        -> Choose the exact visible closing reply. Escape is deliberately not used because it opens the ESC menu without ending dialogue.
+  ok  enter     Open a conversation with a specific observed person.  [native: approach_dialogue_target]
+  ok  navigate  Read the available replies.  [native: telemetry.ui.dialogue.options]
+  GAP interact  Choose one exact reply.  [none: -]
+        -> The retired visible-control click has no native replacement yet.
+  GAP exit      Leave the conversation.  [none: -]
+        -> No current operation selects a closing reply or closes dialogue.
 
 INVENTORY
-  ok  enter     Open the squad member's own inventory.  [control: use_game_binding]
-        -> Use open_inventory_windows as the exact count. active_screen is a collapsed label: inventory means no observed shop-owner window, while trade means one exact registered shop-owner window is open.
-  ok  navigate  Reach cells that are scrolled out of view or in another section.  [control: scroll_screen]
-  ok  interact  Read what an item actually is.  [native: telemetry.ui.visible_controls[item].item_name]
-  ok  interact  Equip an item from one exact selected squad-owned inventory window.  [control: equip_item]
-        -> The equip route is contracted and portable-tested from observed live semantics; moving between sections and dropping still need drag-and-drop.
-  ok  exit      Close the inventory window.  [control: dismiss_screen]
+  ok  enter     Pair two observed owners so their inventories are open together.  [native: open_trade_window]
+  ok  navigate  Address an item by its exported section and slot.  [native: telemetry.ui.open_inventories]
+  ok  interact  Transfer an item between the two open inventories.  [native: transfer_item]
+  GAP exit      Close the paired inventory windows.  [none: ForgottenGUI::closeTradeWindow @ 0x790630]
+        -> close_trade_window exists in the native recovery protocol but is not a registry-backed runtime operation.
 
 TRADE
-  ok  enter     Open a shop's stock for trading.  [control: activate_visible_control]
-  ok  navigate  Reach stock beyond the first screenful.  [control: scroll_screen]
-  ok  interact  Buy an item.  [control: purchase_item]
-  ok  interact  Sell an item.  [control: sell_item]
-  ok  exit      Close the trade window.  [control: dismiss_screen]
+  ok  enter     Open a money-trading, looting, or automatic transfer window.  [native: open_trade_window]
+  ok  navigate  Read every exported inventory section and slot.  [native: telemetry.ui.open_inventories]
+  ok  interact  Buy, sell, give, loot, or collect through one engine transfer.  [native: transfer_item]
+  GAP exit      Close the trade window.  [none: ForgottenGUI::closeTradeWindow @ 0x790630]
+        -> The recovery command is live-proven, but it has no registry-backed runtime lifecycle and the planner cannot currently select it.
 
 CHARACTER_STATS
-  ok  enter     Open the stats window to read skills and injuries.  [control: use_game_binding]
-  ok  exit      Close the stats window.  [control: use_game_binding]
-        -> Verified live. Same as the map: active_screen stays 'world', so `dismiss_screen` has nothing to bind to.
+  GAP enter     Open the character stats window.  [none: -]
+        -> No current operation opens management UI.
+  ok  interact  Read exported squad skills, health, and state.  [native: telemetry.squad]
+  GAP exit      Close the character stats window.  [none: -]
+        -> No current operation closes management UI.
 
 MAP
-  ok  enter     Open the world map to decide where to travel.  [control: use_game_binding]
-        -> Verified live. The map is a ManagementScreen tab and leaves active_screen on 'world'; management_screen_open is the signal.
-  ok  navigate  Pan and zoom to find a destination.  [control: use_game_binding]
-  ok  interact  Travel to a discovered settlement, an observed character, or along a bounded local bearing.  [native: travel_to_map_destination / move_to_character / move_in_direction]
-        -> Only player-discovered settlement markers are exported; exact world coordinates and undiscovered markers remain unavailable. The controller owns long-travel speed, safety monitoring, trailing camera, and terminal pause.
-  ok  exit      Close the map.  [control: use_game_binding]
-        -> Verified live. `dismiss_screen` cannot close it: it binds on active_screen, which the map leaves on 'world'.
+  GAP enter     Open the world map.  [none: -]
+        -> Travel no longer requires opening the map, but the UI itself is unreachable.
+  GAP navigate  Pan or zoom the open map.  [none: -]
+        -> No current operation manipulates map presentation.
+  ok  interact  Travel to an exact discovered settlement marker.  [native: travel_to_map_destination]
+  GAP exit      Close the map.  [none: -]
+        -> No current operation closes management UI.
 
 MESSAGE_BOX
-  ok  enter     Kenshi opens these itself to report a refusal.  [native: ForgottenGUI::messageBox @ 0x740F60]
-  ok  interact  Read why Kenshi refused an action.  [control: visible_controls role 'text']
-  ok  exit      Acknowledge the box so the interface is usable again.  [control: activate_visible_control]
+  ok  enter     Kenshi opens a refusal message itself.  [native: ForgottenGUI::messageBox @ 0x740F60]
+  ok  interact  Read the refusal text.  [native: telemetry.ui.visible_controls[text]]
+  GAP exit      Acknowledge the message.  [none: -]
+        -> The retired visible-control click has no native replacement yet.
 
 ESC_MENU
-  ok  enter     Open the game menu (mainly a hazard: Escape lands here by accident).  [pixel: -]
-        -> Reached only as a side effect of pressing Escape with nothing else open.
-  ok  exit      Get back out of the menu without quitting.  [control: activate_visible_control]
-        -> Use the exact current Resume control. The route is catalogued but has not yet been measured live.
+  GAP enter     Open the game menu.  [none: -]
+        -> No current runtime operation opens the escape menu.
+  GAP exit      Return from the menu without quitting.  [none: -]
+        -> No current runtime operation activates Resume.
 
 ```

@@ -725,10 +725,9 @@ def group_controls_by_window(
     grouped = []
     for window, controls in groups.items():
         group: dict[str, Any] = {"window": window}
-        # Say whose window it is rather than leaving the planner to match the
-        # caption against a trader's name. For a vendor this also carries the
-        # id `purchase_item` needs as its `seller_id`, so nothing about the
-        # trade has to be inferred from a string.
+        # Say whose window it is rather than leaving the planner to infer
+        # inventory ownership from a caption string. Item transfers bind owner
+        # identity directly.
         group.update(resolved.get(normalize_control_label(window), {}))
         group["controls"] = controls
         grouped.append(group)
@@ -1174,9 +1173,7 @@ class NativeCommandStatus(StrEnum):
 # is never inferred from a command name here.
 NATIVE_COMMANDS_CARRYING_DIRECTION: frozenset[str] = frozenset({"move_in_direction"})
 
-NATIVE_COMMANDS_NAMING_THEIR_OWN_RECIPIENT: frozenset[str] = frozenset(
-    {"shift_into_body"}
-)
+NATIVE_COMMANDS_NAMING_THEIR_OWN_RECIPIENT: frozenset[str] = frozenset({"shift_into_body"})
 """Commands whose recipient is the target they name, not the current selection.
 
 Everything else broadcasts to whoever is selected, so an empty selection means
@@ -1250,9 +1247,7 @@ def require_consistent_wire_shape(
     """Reject a native request or acknowledgement whose fields contradict it."""
 
     if command not in NATIVE_COMMANDS_NAMING_THEIR_OWN_RECIPIENT and not selected_character_ids:
-        raise ValueError(
-            f"a {command} {subject} must name at least one selected recipient"
-        )
+        raise ValueError(f"a {command} {subject} must name at least one selected recipient")
     if command in NATIVE_COMMANDS_CARRYING_DIRECTION:
         if target_id:
             raise ValueError(f"a directional {subject} must not name a target")
@@ -1281,15 +1276,11 @@ def require_consistent_wire_shape(
         if not destination_id:
             raise ValueError(f"a {command} {subject} requires a destination")
         if destination_id == target_id:
-            raise ValueError(
-                f"a {command} {subject} must name two different inventories"
-            )
+            raise ValueError(f"a {command} {subject} must name two different inventories")
         if command == NATIVE_TRANSFER_WIRE_COMMAND and not section_name:
             raise ValueError(f"a {command} {subject} requires a source section")
     elif destination_id or section_name:
-        raise ValueError(
-            f"only a transfer {subject} may name a destination or a section"
-        )
+        raise ValueError(f"only a transfer {subject} may name a destination or a section")
     if command != "produce_resource_output" and minimum_output_quantity != 1:
         raise ValueError("only resource production may request a larger output quantity")
 
@@ -1470,7 +1461,7 @@ class NativeControlState(StrictModel):
 
 
 class TelemetrySnapshot(StrictModel):
-    protocol_version: str = "1.16.0"
+    protocol_version: str = "1.18.0"
     sequence: int = Field(default=0, ge=0)
     captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = "unknown"

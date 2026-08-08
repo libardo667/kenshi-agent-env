@@ -19,17 +19,17 @@ character selected.
 
 ```text
 operations               23
-planner-visible          22
-internal-only             1
+planner-visible          23
+internal-only             0
 native commands          16
 manifest entries         24
 coverage proof          PASS
 
 PROOF STATUS
-  source_proven     13
+  source_proven     11
   unit_proven        0
-  live_proven        1
-  unproven          10
+  live_proven        4
+  unproven           9
   withheld           0
 
 INTERACTION CONTRACT (resolved from the sole operation registry)
@@ -40,11 +40,11 @@ INTERACTION CONTRACT (resolved from the sole operation registry)
   move_in_direction                   ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
   move_to_character                   ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
   noop                                runtime_only       none                none             input_delivered         source_proven
-  open_trade_window                   global_ui          none                none             world_outcome_observed  source_proven
+  open_trade_window                   global_ui          none                none             world_outcome_observed  live_proven
   pause                               global_ui          none                none             world_outcome_observed  source_proven
   perform_character_order             ordinary_order     current_selection   dispatch_only    order_accepted          live_proven
   perform_context_action *            varies             current_selection   varies           varies                  unproven
-  produce_resource_output             ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
+  produce_resource_output             ordinary_order     current_selection   dispatch_only    world_outcome_observed  live_proven
   read_fieldbook                      runtime_only       none                none             input_delivered         source_proven
   recall_memory                       runtime_only       none                none             input_delivered         source_proven
   regroup_with_squad_member           ordinary_order     explicit_recipients dispatch_only    world_outcome_observed  unproven
@@ -54,7 +54,7 @@ INTERACTION CONTRACT (resolved from the sole operation registry)
   shift_into_body                     ordinary_order     named_body          dispatch_only    world_outcome_observed  source_proven
   stop                                runtime_only       none                none             input_delivered         source_proven
   survey_local_resources              global_ui          none                none             world_outcome_observed  source_proven
-  transfer_item                       global_ui          none                none             world_outcome_observed  source_proven
+  transfer_item                       global_ui          none                none             world_outcome_observed  live_proven
   travel_to_map_destination           ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
   wait                                runtime_only       none                none             input_delivered         source_proven
 
@@ -73,7 +73,7 @@ EXECUTION AND ROUTING
   pause                               atomic_handler     any                      pause                      runtime
   perform_character_order             monitored_option   running_for_progress     perform_character_order    character_orders
   perform_context_action              monitored_option   varies                   perform_context_action     context_orders
-  produce_resource_output             monitored_option   running_for_progress     produce_resource_output    internal-only
+  produce_resource_output             monitored_option   running_for_progress     produce_resource_output    native_and_composite
   read_fieldbook                      atomic_handler     any                      -                          runtime
   recall_memory                       atomic_handler     any                      -                          runtime
   regroup_with_squad_member           monitored_option   running_for_progress     regroup_with_squad_member  characters
