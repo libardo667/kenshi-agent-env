@@ -7,18 +7,19 @@ the native artifact currently installed, and the behavior that remains unproven.
 ## Repository
 
 ```text
-parent commit          965a4952b0ad204ee8daf2abbce5101f2853bb95
+parent commit          ac9202c77ee141269e056053b2e9ea3b5659647e
 integration branch     main
-remote state           main was one commit ahead of origin/main
+remote state           matched origin/main
 tree state             clean before this slice
 supported Python       CPython 3.11, 3.12, 3.13, and 3.14
 package constraint     >=3.11,<3.15
 native protocol        1.18.0
 ```
 
-Commit `965a495` made this checkpoint a tested part of every future goal. This
-follow-on gives the hosted playing model one current-affordance output contract and
-separates that policy from the multi-step ceiling for runtime-authored envelopes.
+Commit `ac9202c` gave the hosted playing model one current-affordance output contract
+and separated that policy from the multi-step ceiling for runtime-authored envelopes.
+This follow-on repairs the hosted portable gate by pinning `setup-uv` to the exact
+published v9.0.0 commit instead of the nonexistent floating `v9` tag.
 
 The checkpoint revision is the commit containing this file. Its literal hash cannot
 be embedded without changing itself, so the repository block records its parent.
@@ -46,7 +47,8 @@ Python version: 3.11, 3.12, 3.13, and 3.14. `pyproject.toml`, `uv.lock`, the Win
 bootstrap guards, the README, the local command, and the workflow all state the same
 closed version set. CI checks out the source commit rather than GitHub's synthetic PR
 merge commit and fetches full history so the checkpoint ratchet has authoritative
-commit ancestry.
+commit ancestry. The workflow pins `setup-uv` v9.0.0 to its immutable full commit
+SHA while continuing to install the locked uv 0.11.28 tool version.
 
 ## Native artifact
 
@@ -89,6 +91,9 @@ source contract. They do not prove that any command changed live game state.
   including `DEV_CLI.md`; `scripts/export_schemas.py` is the sole schema writer.
 - The workflow matrix and local command share the same gate implementation rather
   than restating its commands in YAML.
+- The `setup-uv` publisher provides v9.0.0 at commit
+  `c771a70e6277c0a99b617c7a806ffedaca235ff9` but no floating `v9` ref; the workflow
+  now uses that exact immutable commit.
 - `tests/test_checkpoint_freshness.py` makes a checkpoint edit mandatory in every
   dirty goal candidate and every clean completed goal commit.
 - Native source still declares protocol 1.18.0 and the generated capability header
@@ -101,7 +106,8 @@ source contract. They do not prove that any command changed live game state.
   also proves that configuration cannot select another cardinality.
 - Hosted-adapter tests prove an active-plan response cannot reserve a future
   affordance, while a broad objective remains valid beside the current selection.
-- The full portable gate passes independently under every declared Python version.
+- The full portable gate passes locally under CPython 3.12 after this checkpoint
+  refresh. The hosted four-version matrix remains pending the next push.
 - The test suite renders schemas and generated documents into temporary directories,
   compares their exact file sets and bytes with the checkout, and checks the generated
   `./dev` reference through the same documentation exporter.
@@ -140,9 +146,11 @@ request returning or an acknowledgement alone.
   playing model to select more than the current affordance.
 - Python 3.15 and later are unsupported until added to both the package range and the
   passing portable matrix. Python 3.10 and earlier remain unsupported.
-- GitHub-hosted runs prove the portable Linux surface. They do not prove Windows live
-  transport, native compilation, native fixture execution, DLL installation, or live
-  Kenshi behavior on every supported Python version.
+- The two current GitHub-hosted runs stopped while resolving the nonexistent
+  `setup-uv@v9` ref, before checkout or project code. The next push must prove the
+  repaired four-version Linux matrix. Even a green matrix would not prove Windows
+  live transport, native compilation, native fixture execution, DLL installation,
+  or live Kenshi behavior on every supported Python version.
 - `close_trade_window` remains a recovery-only native command, not a planner-visible
   general close-window operation.
 - The proof ledger still withholds several navigation, threat-response,
