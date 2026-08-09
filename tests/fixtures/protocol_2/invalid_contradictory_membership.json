@@ -1,0 +1,26 @@
+{
+  "protocol_version": "2.0.0",
+  "sequence": 1,
+  "identity_session_id": "session-invalid-membership",
+  "roster": {
+    "items": [{"id": "character-a", "name": "A", "platoon_id": "platoon-alpha", "work": null}],
+    "completeness": "complete",
+    "known_total": 1
+  },
+  "platoons": {
+    "items": [
+      {"id": "platoon-alpha", "name": "Alpha", "member_ids": {"items": ["character-a"], "completeness": "complete", "known_total": 1}},
+      {"id": "platoon-beta", "name": "Beta", "member_ids": {"items": ["character-a"], "completeness": "complete", "known_total": 1}}
+    ],
+    "completeness": "complete",
+    "known_total": 2
+  },
+  "active_platoon_id": "platoon-alpha",
+  "primary_character_id": "character-a",
+  "selected_character_ids": {"items": ["character-a"], "completeness": "complete", "known_total": 1},
+  "controller_commands": {
+    "retained_commands": {"items": [], "completeness": "complete", "known_total": 0},
+    "recent_terminal_commands": {"items": [], "completeness": "complete", "known_total": 0}
+  },
+  "observed_unowned_kenshi_work": {"items": [], "completeness": "complete", "known_total": 0}
+}

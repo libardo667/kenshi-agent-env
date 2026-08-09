@@ -2,7 +2,7 @@
   "schema_version": 1,
   "stage": "interaction-scope-and-order-lifecycle",
   "slice": 0,
-  "authority": "docs/KENSHI_INTERACTION_SCOPE_ORDER_LIFECYCLE_PLAN.md",
+  "authority": "docs/archive/KENSHI_INTERACTION_SCOPE_ORDER_LIFECYCLE_PLAN.md",
   "captured_at_utc": "2026-08-04T00:00:00Z",
   "source": {
     "baseline_commit": "3b472bbb153dcc4bfec6810a2391a6cfe1406479",

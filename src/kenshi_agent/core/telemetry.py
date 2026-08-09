@@ -1299,7 +1299,7 @@ NativeWireCommand = Literal[
     "move_to_character",
     "select_squad_member",
     # Diagnostic probe only; no operation definition maps to it. See
-    # docs/KENSHI_BODY_SHIFT_PLAN.md.
+    # game_sources/research/body_shift/.
     "shift_body_platoon",
     "shift_into_body",
     "regroup_with_squad_member",

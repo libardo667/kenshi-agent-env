@@ -2,7 +2,7 @@
   "schema_version": 1,
   "stage": "interaction-scope-and-order-lifecycle",
   "slice": 1,
-  "authority": "docs/KENSHI_INTERACTION_SCOPE_ORDER_LIFECYCLE_PLAN.md",
+  "authority": "docs/PROTOCOL_2_WORLD_MODEL_DECISION.md",
   "captured_at_utc": "2026-08-09T13:25:55Z",
   "note": [
     "Hand-authored. Not an authority over gameplay semantics, and no longer a",
@@ -31,6 +31,17 @@
     ],
     "live_evidence": [],
     "note": "Source and portable-test proven only. No Kenshi behavior, native command dispatch, or live game-state change is claimed by this planner contract."
+  },
+  "protocol_2_world_model": {
+    "proof_status": "unit_proven",
+    "evidence": [
+      "Protocol2WorldModel is a strict standalone 2.0 schema authority with no 1.x inheritance or aliases",
+      "valid fixtures express two platoons, disjoint selections, two simultaneous retained controller commands, all four Kenshi task channels, unowned work, and truncation",
+      "invalid fixtures reject old squad and active_command_id topology, contradictory memberships, and contradictory completeness",
+      "the Release x64 native conformance executable parses the shared full and old-shape fixtures and pins their breaking topology"
+    ],
+    "live_evidence": [],
+    "note": "Specification and portable-test proven only. The current native producer remains 1.x, and no simultaneous-command or multi-platoon live behavior is claimed."
   },
   "entries": [
     {

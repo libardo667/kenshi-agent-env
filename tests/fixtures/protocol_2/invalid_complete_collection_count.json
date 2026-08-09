@@ -1,0 +1,15 @@
+{
+  "protocol_version": "2.0.0",
+  "sequence": 1,
+  "identity_session_id": "session-invalid-completeness",
+  "roster": {"items": [], "completeness": "complete", "known_total": 2},
+  "platoons": {"items": [], "completeness": "complete", "known_total": 0},
+  "active_platoon_id": null,
+  "primary_character_id": null,
+  "selected_character_ids": {"items": [], "completeness": "complete", "known_total": 0},
+  "controller_commands": {
+    "retained_commands": {"items": [], "completeness": "complete", "known_total": 0},
+    "recent_terminal_commands": {"items": [], "completeness": "complete", "known_total": 0}
+  },
+  "observed_unowned_kenshi_work": {"items": [], "completeness": "complete", "known_total": 0}
+}

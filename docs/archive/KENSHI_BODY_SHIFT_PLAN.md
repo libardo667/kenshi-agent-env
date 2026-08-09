@@ -1,4 +1,8 @@
-# Body shift: implementation and open-proof record
+# Archived body shift implementation and open-proof record
+
+Historical record. Current body-shift proof status lives in
+`docs/reconstruction/interaction_proof_status.json` and
+`game_sources/research/body_shift/`.
 
 Status: **implemented and planner-visible; full live proof remains open.**
 
@@ -36,7 +40,7 @@ The current operation has one exact target and no pointer path:
   sequence, and waits for its terminal selection check. Exact Kenshi
   declarations, call sites, addresses, signature confidence, and observations
   belong to the canonical
-  [body-shift research object](../game_sources/research/body_shift/conclusion.md).
+  [body-shift research object](../../game_sources/research/body_shift/conclusion.md).
 - The terminal acknowledgement reasons are
   `shift_body_recruited`, `shift_body_recruited_forced`, or
   `shift_body_already_held`.

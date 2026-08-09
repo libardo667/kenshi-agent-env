@@ -1,0 +1,178 @@
+{
+  "protocol_version": "2.0.0",
+  "sequence": 120,
+  "identity_session_id": "session-world-model",
+  "roster": {
+    "items": [
+      {
+        "id": "character-a",
+        "name": "A",
+        "platoon_id": "platoon-alpha",
+        "work": {
+          "has_player_orders": true,
+          "ordinary_orders": {
+            "items": [{"task_value": 29, "task_name": "MOVE_CUS_ORDERED", "subject_id": "target-town", "description": "Travel"}],
+            "completeness": "complete",
+            "known_total": 1
+          },
+          "jobs_enabled": true,
+          "jobs": {"items": [], "completeness": "complete", "known_total": 0},
+          "permanent_jobs": {"items": [], "completeness": "complete", "known_total": 0},
+          "current_activity": {"task_value": 29, "task_name": "MOVE_CUS_ORDERED", "subject_id": "target-town", "description": null}
+        }
+      },
+      {
+        "id": "character-b",
+        "name": "B",
+        "platoon_id": "platoon-alpha",
+        "work": {
+          "has_player_orders": true,
+          "ordinary_orders": {
+            "items": [{"task_value": 29, "task_name": "MOVE_CUS_ORDERED", "subject_id": "target-town", "description": "Travel"}],
+            "completeness": "complete",
+            "known_total": 1
+          },
+          "jobs_enabled": false,
+          "jobs": {"items": [], "completeness": "complete", "known_total": 0},
+          "permanent_jobs": {"items": [], "completeness": "complete", "known_total": 0},
+          "current_activity": {"task_value": 29, "task_name": "MOVE_CUS_ORDERED", "subject_id": "target-town", "description": null}
+        }
+      },
+      {
+        "id": "character-c",
+        "name": "C",
+        "platoon_id": "platoon-beta",
+        "work": {
+          "has_player_orders": false,
+          "ordinary_orders": {"items": [], "completeness": "complete", "known_total": 0},
+          "jobs_enabled": true,
+          "jobs": {
+            "items": [{"task_value": 87, "task_name": "OPERATE_MACHINERY", "subject_id": "resource-iron", "description": "Operate"}],
+            "completeness": "complete",
+            "known_total": 1
+          },
+          "permanent_jobs": {"items": [], "completeness": "complete", "known_total": 0},
+          "current_activity": {"task_value": 87, "task_name": "OPERATE_MACHINERY", "subject_id": "resource-iron", "description": null}
+        }
+      },
+      {
+        "id": "character-d",
+        "name": "D",
+        "platoon_id": "platoon-beta",
+        "work": {
+          "has_player_orders": false,
+          "ordinary_orders": {"items": [], "completeness": "complete", "known_total": 0},
+          "jobs_enabled": false,
+          "jobs": {"items": [], "completeness": "complete", "known_total": 0},
+          "permanent_jobs": {
+            "items": [{"task_value": 59, "task_name": "JOB_MEDIC", "subject_id": null, "description": "Medic"}],
+            "completeness": "complete",
+            "known_total": 1
+          },
+          "current_activity": null
+        }
+      }
+    ],
+    "completeness": "complete",
+    "known_total": 4
+  },
+  "platoons": {
+    "items": [
+      {
+        "id": "platoon-alpha",
+        "name": "Alpha",
+        "member_ids": {"items": ["character-a", "character-b"], "completeness": "complete", "known_total": 2}
+      },
+      {
+        "id": "platoon-beta",
+        "name": "Beta",
+        "member_ids": {"items": ["character-c", "character-d"], "completeness": "complete", "known_total": 2}
+      }
+    ],
+    "completeness": "complete",
+    "known_total": 2
+  },
+  "active_platoon_id": "platoon-alpha",
+  "primary_character_id": "character-a",
+  "selected_character_ids": {
+    "items": ["character-a", "character-b"],
+    "completeness": "complete",
+    "known_total": 2
+  },
+  "controller_commands": {
+    "retained_commands": {
+      "items": [
+        {
+          "command_id": "cmd-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "identity_session_id": "session-world-model",
+          "control_ownership_generation": 7,
+          "command": "travel_to_map_destination",
+          "target_id": "target-town",
+          "dispatch_basis": {
+            "primary_character_id": "character-a",
+            "selected_character_ids": ["character-a", "character-b"],
+            "active_platoon_id": "platoon-alpha",
+            "recipient_ids": ["character-a", "character-b"]
+          },
+          "delivery_status": "accepted",
+          "accepted_at_sequence": 111,
+          "highest_milestone": "activity_running",
+          "recipient_states": {
+            "items": [
+              {"recipient_id": "character-a", "accepted": true, "activity_observed": true, "outcome_observed": false, "current_activity": {"task_value": 29, "task_name": "MOVE_CUS_ORDERED", "subject_id": "target-town", "description": null}, "disposition": "retained", "disposition_reason": "movement still observed", "superseded_by_command_id": null, "last_observed_sequence": 120},
+              {"recipient_id": "character-b", "accepted": true, "activity_observed": true, "outcome_observed": false, "current_activity": {"task_value": 29, "task_name": "MOVE_CUS_ORDERED", "subject_id": "target-town", "description": null}, "disposition": "retained", "disposition_reason": "movement still observed", "superseded_by_command_id": null, "last_observed_sequence": 120}
+            ],
+            "completeness": "complete",
+            "known_total": 2
+          },
+          "supersedes_command_ids": [],
+          "monitor_disposition": null,
+          "terminal_at_sequence": null
+        },
+        {
+          "command_id": "cmd-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "identity_session_id": "session-world-model",
+          "control_ownership_generation": 7,
+          "command": "perform_context_action",
+          "target_id": "resource-iron",
+          "dispatch_basis": {
+            "primary_character_id": "character-c",
+            "selected_character_ids": ["character-c"],
+            "active_platoon_id": "platoon-beta",
+            "recipient_ids": ["character-c"]
+          },
+          "delivery_status": "accepted",
+          "accepted_at_sequence": 115,
+          "highest_milestone": "activity_running",
+          "recipient_states": {
+            "items": [
+              {"recipient_id": "character-c", "accepted": true, "activity_observed": true, "outcome_observed": false, "current_activity": {"task_value": 87, "task_name": "OPERATE_MACHINERY", "subject_id": "resource-iron", "description": null}, "disposition": "retained", "disposition_reason": "resource activity still observed", "superseded_by_command_id": null, "last_observed_sequence": 120}
+            ],
+            "completeness": "complete",
+            "known_total": 1
+          },
+          "supersedes_command_ids": [],
+          "monitor_disposition": "detached_for_replan",
+          "terminal_at_sequence": null
+        }
+      ],
+      "completeness": "complete",
+      "known_total": 2
+    },
+    "recent_terminal_commands": {"items": [], "completeness": "complete", "known_total": 0}
+  },
+  "observed_unowned_kenshi_work": {
+    "items": [
+      {
+        "ownership": "observed_unowned",
+        "character_id": "character-d",
+        "channel": "permanent_job",
+        "task": {"task_value": 59, "task_name": "JOB_MEDIC", "subject_id": null, "description": "Medic"},
+        "reason": "preexisting",
+        "observed_at_sequence": 120
+      }
+    ],
+    "completeness": "complete",
+    "known_total": 1
+  }
+}

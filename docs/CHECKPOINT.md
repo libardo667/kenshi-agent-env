@@ -1,194 +1,178 @@
-# Checkpoint: reverse-engineering evidence is a repository object
+# Checkpoint: Protocol 2.0 world model is specified before production
 
-This checkpoint is the durable boundary for the reverse-engineering evidence
-authority made from current `main`. It separates source-proven, test-proven,
-live-proven, and withheld conclusions and records the native fixture build
-without claiming that a compiled call changed Kenshi.
+This checkpoint is the current boundary for the first Protocol 2.0 milestone.
+It separates the accepted wire decision from the still-1.x native producer and
+records source-proven, test-proven, live-proven, and withheld conclusions.
 
 ## Repository
 
 ```text
-parent commit          04855dc7fd18fb8caf9a738482ff4c11698d75fc
+parent commit          70f6a657b0403b13f2ef424f455178c130c80478
 integration branch     main
-remote state           origin/main was one commit behind before this slice
-tree state             clean before this slice
-native protocol        1.18.0
-request schema         1.4
-loaded-world caps      43
+starting remote        origin/main matched parent commit
+starting tree          clean
+current protocol       native producer remains 1.18.0
+specified protocol     world model 2.0.0
+request schema         remains 1.4
 ```
 
-Recent `main` authority was inspected before editing: `04855dc` is the current
-truth audit, `20cbb77` pins the portable setup action, `ac9202c` owns the hosted
-planner output contract, `965a495` requires this checkpoint to move with every
-goal, `2686719` owns the complete portable gate, and `59e5e0b` closes the
-reconstructed operation surface.
+Recent `main` authority was inspected before editing. `70f6a65` makes
+reverse-engineering evidence first-class; `04855dc` is the prior truth audit;
+`20cbb77` pins the portable setup action; `ac9202c` owns the planner output
+contract; `965a495` requires this checkpoint to move with every goal;
+`2686719` owns the complete portable gate; and `59e5e0b` closes the reconstructed
+operation surface.
 
-Before this slice, reverse-engineering conclusions were embedded in
-`docs/reconstruction/interaction_proof_status.json`, the native README, native
-source comments, commit messages, and local run directories. The proof ledger
-was the operation-proof authority but had no exact executable/library identity,
-typed call sites, signature confidence, crash record, or consistent withheld
-boundary. It also classified character orders as live-proven while naming an
-authored start rather than an exact retained run bundle.
+## Surviving authority
 
-## Coherent slice
+The accepted decision is `docs/PROTOCOL_2_WORLD_MODEL_DECISION.md`. Exact wire
+shape is owned by `Protocol2WorldModel` in
+`src/kenshi_agent/core/protocol_2.py`; the checked-in JSON Schema and generated
+reference derive from it.
 
-`game_sources/research/<subsystem>/` is now the canonical reverse-engineering
-object. Every package has exactly the reviewed six-file boundary:
+The former body-shift and interaction-scope plans moved to `docs/archive/`.
+They preserve dated reasoning and follow-on context but are no longer current
+authority. Current operation contracts still come only from
+`OperationDefinition`; operation proof remains separately recorded in
+`docs/reconstruction/interaction_proof_status.json`.
+
+## Coherent specification slice
+
+Protocol 2.0 now has strict models for:
+
+- a bounded player `roster` with explicit `platoon_id` membership;
+- plural `platoons`, exact membership lists, and `active_platoon_id`;
+- separate `primary_character_id` and `selected_character_ids`;
+- ordinary orders, Jobs, permanent Jobs, Jobs-enabled state, and current
+  activity without cross-channel inference;
+- plural retained and recent-terminal controller command records with immutable
+  dispatch bases and recipient-level evidence;
+- observed but unowned Kenshi work with no fabricated command correlation;
+- complete and truncated collections, including sources whose exact total is
+  unknown.
+
+All 2.0 objects forbid extra fields. The protocol version is the literal
+`2.0.0`. Neither `squad` nor `active_command_id` exists in the model or generated
+schema. The invalid old-shape fixture pins their rejection.
+
+This is intentionally a specification boundary. `TelemetrySnapshot` and the
+native JSON writer still implement 1.18.0 and were not adapted or given a
+fallback. The producer migration is named follow-on work, not a half-landed
+dual reader.
+
+## Fixtures, schemas, and generated documentation
+
+`tests/fixtures/protocol_2/valid_multiple_platoons_and_commands.json` is the
+canonical full fixture. It contains two platoons and two simultaneous retained
+commands over disjoint captured recipients even though the current UI selection
+shows only one group. It also demonstrates all four task channels and one
+pre-existing permanent Job represented as observed unowned work.
+
+`valid_truncated_world_model.json` distinguishes exact known totals from null
+unknown totals. Invalid fixtures cover old 1.x topology, contradictory
+membership, and impossible completeness counts.
+
+Generated outputs are:
 
 ```text
-question.md
-static_evidence.md
-call_sites.json
-dynamic_observations.json
-abi_notes.md
-conclusion.md
+schemas/protocol_2_world_model.schema.json
+docs/generated/PROTOCOL_2_WORLD_MODEL.md
 ```
 
-The typed loader requires exact Kenshi version, Steam build, executable SHA-256,
-KenshiLib version/commit/artifact/header fingerprints, symbol or RVA, declared
-signature, inferred-signature confidence, referenced tests and observations,
-remaining uncertainty, and a conclusion with separate source, test, live, and
-withheld sections. Live observations retain pre-state, request,
-acknowledgement, later engine evidence, final disposition, run bundle, binary
-hashes when captured, and explicit uncertainty when historical evidence omitted
-them. A `live_proven` conclusion cannot validate without at least one exact run
-bundle.
+The existing schema/document freshness tests include both artifacts through the
+central exporters.
 
-Four legacy conclusion families were migrated:
+## Verification
 
-- `context_menu_orders` records the muted-menu path, three contradictory
-  predicates, two reported world-load crashes, exact symbols/RVAs, and the
-  missing durable character-order bundle. The ledger classification is now
-  `source_proven`, not `live_proven`.
-- `inventory_transfer` records paired-window and inventory-model calls, the
-  rejected GUI ABI, three reported crashes, partial-add contradiction,
-  simplified project-owned pricing, and the two exact movement bundles.
-- `body_shift` records recruit/squad/faction/selection ABI and the incomplete
-  Molly observation without upgrading it to durable live proof.
-- `prospecting_window` records the deleted direct resource sampler, crash,
-  scalar-zero contradiction, and current verbatim window-caption path.
-
-The proof ledger now classifies operations and links canonical research
-packages. A ratchet rejects missing package references and reverse-engineering
-claims pasted back into ledger prose. The native README links the packages
-instead of retaining duplicate ABI conclusions. No old/new fallback remains.
-
-The template under `game_sources/research/_template/` gives a future agent the
-same six-file route. The required GitHub issue form asks the exact six intake
-questions: engine question, KenshiLib/ForgottenGUI declaration, binary evidence,
-live state, deleted framework authority, and what remains withheld. The root
-README points to both routes.
-
-## Generated and portable authority
-
-Three new generated JSON schemas describe call sites, dynamic observations, and
-conclusion metadata. `docs/generated/RESEARCH_EVIDENCE_INDEX.md` is generated
-from every validated package. `scripts/check_research_evidence.py` is an
-explicit stage in `./dev verify-portable`, before schema and documentation
-freshness checks. Portable tests cover required files, identity fields,
-cross-file references, exact proof headings, live-proof bundle requirements,
-ledger links, issue-form questions, native-fixture wiring, and generated bytes.
-
-The complete portable gate ran at `2026-08-09T14:13:41Z` using:
+The complete portable gate ran over this candidate at `2026-08-09T14:45:01Z`
+using:
 
 ```bash
-./dev verify-portable
+UV_CACHE_DIR=/tmp/kae-uv-cache ./dev verify-portable
 ```
 
-It passed the locked-environment sync, Ruff, strict mypy across 147 source
-files, research-package validation, schema generation, documentation
-generation, the complete pytest suite, and `git diff --check`. Generated bytes
-were current. The checkpoint was then updated with this result and the same
-complete gate was rerun over the final tree.
+It passed locked dependency sync, Ruff, strict mypy across 149 source files,
+research-package validation, schema generation, documentation generation, the
+complete pytest suite, and `git diff --check`. Generated bytes were current.
+The checkpoint was then updated with that result; the same complete gate was
+rerun over the final tree.
 
-## Native fixture build and installed artifact
+## Native and live disposition
 
-No native gameplay implementation, protocol, capability, or command fixture
-changed. The compiled conformance executable now reads the canonical
-`call_sites.json` files and pins one reviewed symbol/RVA from each migrated
-subsystem. The exact build command was:
+The native producer was not migrated. Its Release x64 project was rebuilt
+because the conformance executable now reads the shared Protocol 2.0 fixtures.
+The exact build command was:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/build_native.ps1
 ```
 
-The Release x64 build completed and reported `Native protocol fixtures and
-semantics passed.` It rebuilt the DLL as a side effect but did not install it.
+The native prerequisites passed, MSBuild completed, and the executable reported
+`Native protocol fixtures and semantics passed.` The build was not installed.
 
 ```text
-declared protocol     1.18.0
-source sha256         b923c3d392e98bdaed9cea600d0b67fada9baf808af73931a451c29ba76bbe9f
-built sha256          4a4ec865a6ce04b0f91be07b59770ae4d6213223a2ef30fef63ba4557283ed9d
-installed sha256      262dcc137b8f1c3a0ce2bc63ae74d362cfb209889aefa01e69427912fef37537
-fixture exe sha256    b7aae3a9ea12652abb56fe7cfb94aca1cc9329d6fe05ff4112268aceb4780aa9
-declared capabilities 43
-chain consistent      NO: rebuilt DLL was not installed
+declared producer protocol  1.18.0
+built DLL sha256            8409a28ed3f89c0d279f2d17527a95ff76002e532f2d82c8cb10be5a261df0ca
+built DLL size              384000 bytes
+installed DLL sha256        262dcc137b8f1c3a0ce2bc63ae74d362cfb209889aefa01e69427912fef37537
+installed DLL size          384000 bytes
+fixture executable sha256   c623148612a2b20c19b5f7dfd150cab884555be041c29461d5a44db50e72ffa9
+built equals installed      NO
 ```
 
-This native work had no run bundle, gameplay pre-dispatch state, native gameplay
-request, acknowledgement, or later engine evidence because it dispatched
-nothing and never started Kenshi. Final disposition: canonical research
-fixtures compiled and passed; gameplay DLL installation and live verification
-were intentionally not performed. Built/installed mismatch is recorded rather
-than hidden and does not weaken the compiled fixture result.
+No gameplay request or live run was performed. There is no run bundle,
+pre-dispatch state, acknowledgement, later engine evidence, or game-state
+disposition to record. The producer is explicitly still 1.18.0.
+
+Final native/live disposition: **fixtures compiled and passed; rebuilt DLL not
+installed; gameplay not attempted; no gameplay claim made**. A source
+declaration, fixture parse, generated schema, returned call, or
+acknowledgement would not by itself prove that Kenshi changed.
 
 ## Evidence classification
 
 ### Source-proven
 
-- Every research package validates against one typed cross-file contract and
-  contains the six required files.
-- Exact installed Kenshi and local KenshiLib identities were read from the
-  executable, Steam manifest, dependency checkout, library, and header tree.
-- KenshiLib declarations and current native call sites were inspected for each
-  migrated symbol; executable bytes were inspected at the recorded RVAs.
-- The proof ledger and native README no longer own duplicate reverse-engineering
-  conclusions.
-- The GitHub issue form and repository template give future work an obvious
-  evidence-first entry route.
+- KenshiLib 0.4.0 `PlayerInterface.h` exposes distinct roster, primary,
+  selection, and current-platoon structures.
+- KenshiLib 0.4.0 `Platoon.h` exposes active platoons and character membership.
+- KenshiLib 0.4.0 `AITaskSystem.h` exposes separate ordinary orders, Jobs,
+  permajobs, Jobs-enabled state, and current goal.
+- Current native source reads the task channels independently but serializes
+  the player collection as `squad` and controller state through singular
+  `active_command_id`; it does not implement the specified 2.0 shape.
+- The strict model, not a generated document or archived plan, owns the target
+  schema.
 
 ### Test-proven
 
-- Focused research, ledger, documentation-hygiene, and portable-gate tests pass.
-- Ruff passes for the changed Python and strict mypy passes across 147 source
-  files.
-- The compiled Windows conformance target loaded the four canonical call-site
-  fixtures and passed the complete native protocol/semantics suite.
-- The full portable gate passed, including generated schema and documentation
-  freshness and the complete pytest suite.
+- The full valid fixture parses and preserves two platoons and two simultaneous
+  retained commands.
+- The truncation fixture preserves complete, truncated-known-total, and
+  truncated-unknown-total states.
+- Invalid fixtures reject the old shape and cross-field contradictions.
+- Generated JSON Schema contains `roster`, plural controller collections, and
+  no `squad` or `active_command_id` property.
+- The compiled native conformance target reads the same valid and old-shape
+  boundary fixtures and passed; this proves fixture wiring, not Kenshi behavior.
 
 ### Live-proven
 
-This slice performed no live gameplay request and adds no new live proof.
-`inventory_transfer` preserves two existing exact bundles with later engine
-inventory evidence:
-
-- `closure-loot-20260808` moved Burn's Katana and Halfpants to Fish under exact
-  command ids and later showed source loss plus destination gain.
-- `closure-harvest-fixed-20260808` moved Raw Iron from resource output to Fish
-  and later showed source loss plus destination gain.
-
-Those bundles prove only the recorded inventory-model movements. Their missing
-built/installed DLL hashes are explicit limitations.
+This slice adds no live proof. Existing live proofs remain bounded to the
+operation entries and research packages that already name their run bundles.
 
 ### Withheld and named follow-on work
 
-- **Character-order durable live proof:** repeat the exact-task sequence in one
-  named bundle with binary hashes, command ids, acknowledgement and later goal
-  sequences, group-recipient evidence, and post-adoption outcome.
-- **Body-shift durable live proof:** repeat elective and total-loss cases with a
-  complete bundle, provenance, later faction/platoon/selection evidence, an
-  ordinary action by the entered body, and final disposition.
-- **Inventory breadth:** shop economics, richer Kenshi adjudication, additional
-  owner/stack/equipment cases, and rollback behavior remain narrow or withheld.
-- **Prospecting meaning:** scalar units, area, aggregation, and relationship to
-  discrete deposits remain unknown; preserve captions rather than inventing a
-  model.
-- **ABI confidence:** executable bytes at an RVA do not independently recover a
-  C++ signature. Current inferred signatures remain medium confidence.
-- **Native installation:** the rebuilt DLL differs from the installed DLL and
-  was not installed or loaded. No live claim is made from its build.
-
-A returned call, acknowledgement, passing fixture, matching address, or matching
-DLL hash is never by itself proof that Kenshi changed the world or save.
+- **Protocol 2.0 producer migration:** atomically replace producer, Python
+  consumers, mocks, replays, scenarios, capabilities, and native protocol
+  fixtures; delete 1.x names without aliases.
+- **Native plural command registry:** replace the global singleton and prove
+  simultaneous disjoint commands, stable captured recipients, supersession,
+  idempotency, and registry bounds.
+- **Platoon identity proof:** verify membership and stable identity across UI
+  tab changes and save/load.
+- **Task ownership correlation:** prove exact causal links or report observed
+  work as unowned; never clear work merely because it was observed.
+- **Live Protocol 2.0 bundle:** record built and installed DLL hashes, exact run
+  bundle, pre-dispatch state, requests, acknowledgements, later engine evidence,
+  and final dispositions before upgrading any behavior claim.

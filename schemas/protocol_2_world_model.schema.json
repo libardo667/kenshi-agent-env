@@ -1,0 +1,891 @@
+{
+  "$defs": {
+    "BoundedCollection_ControllerCommandRecord_": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/ControllerCommandRecord"
+          },
+          "maxItems": 256,
+          "title": "Items",
+          "type": "array"
+        },
+        "completeness": {
+          "$ref": "#/$defs/CollectionCompleteness"
+        },
+        "known_total": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Known Total"
+        }
+      },
+      "required": [
+        "items",
+        "completeness",
+        "known_total"
+      ],
+      "title": "BoundedCollection[ControllerCommandRecord]",
+      "type": "object"
+    },
+    "BoundedCollection_ObservedUnownedKenshiWork_": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/ObservedUnownedKenshiWork"
+          },
+          "maxItems": 256,
+          "title": "Items",
+          "type": "array"
+        },
+        "completeness": {
+          "$ref": "#/$defs/CollectionCompleteness"
+        },
+        "known_total": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Known Total"
+        }
+      },
+      "required": [
+        "items",
+        "completeness",
+        "known_total"
+      ],
+      "title": "BoundedCollection[ObservedUnownedKenshiWork]",
+      "type": "object"
+    },
+    "BoundedCollection_PlatoonState_": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/PlatoonState"
+          },
+          "maxItems": 256,
+          "title": "Items",
+          "type": "array"
+        },
+        "completeness": {
+          "$ref": "#/$defs/CollectionCompleteness"
+        },
+        "known_total": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Known Total"
+        }
+      },
+      "required": [
+        "items",
+        "completeness",
+        "known_total"
+      ],
+      "title": "BoundedCollection[PlatoonState]",
+      "type": "object"
+    },
+    "BoundedCollection_PlayerCharacterState_": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/PlayerCharacterState"
+          },
+          "maxItems": 256,
+          "title": "Items",
+          "type": "array"
+        },
+        "completeness": {
+          "$ref": "#/$defs/CollectionCompleteness"
+        },
+        "known_total": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Known Total"
+        }
+      },
+      "required": [
+        "items",
+        "completeness",
+        "known_total"
+      ],
+      "title": "BoundedCollection[PlayerCharacterState]",
+      "type": "object"
+    },
+    "BoundedCollection_RecipientCommandState_": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/RecipientCommandState"
+          },
+          "maxItems": 256,
+          "title": "Items",
+          "type": "array"
+        },
+        "completeness": {
+          "$ref": "#/$defs/CollectionCompleteness"
+        },
+        "known_total": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Known Total"
+        }
+      },
+      "required": [
+        "items",
+        "completeness",
+        "known_total"
+      ],
+      "title": "BoundedCollection[RecipientCommandState]",
+      "type": "object"
+    },
+    "BoundedCollection_TaskEvidence_": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/TaskEvidence"
+          },
+          "maxItems": 256,
+          "title": "Items",
+          "type": "array"
+        },
+        "completeness": {
+          "$ref": "#/$defs/CollectionCompleteness"
+        },
+        "known_total": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Known Total"
+        }
+      },
+      "required": [
+        "items",
+        "completeness",
+        "known_total"
+      ],
+      "title": "BoundedCollection[TaskEvidence]",
+      "type": "object"
+    },
+    "CharacterWorkState": {
+      "additionalProperties": false,
+      "description": "Kenshi work channels kept separate rather than inferred.",
+      "properties": {
+        "has_player_orders": {
+          "title": "Has Player Orders",
+          "type": "boolean"
+        },
+        "ordinary_orders": {
+          "$ref": "#/$defs/BoundedCollection_TaskEvidence_"
+        },
+        "jobs_enabled": {
+          "title": "Jobs Enabled",
+          "type": "boolean"
+        },
+        "jobs": {
+          "$ref": "#/$defs/BoundedCollection_TaskEvidence_"
+        },
+        "permanent_jobs": {
+          "$ref": "#/$defs/BoundedCollection_TaskEvidence_"
+        },
+        "current_activity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TaskEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "has_player_orders",
+        "ordinary_orders",
+        "jobs_enabled",
+        "jobs",
+        "permanent_jobs",
+        "current_activity"
+      ],
+      "title": "CharacterWorkState",
+      "type": "object"
+    },
+    "CollectionCompleteness": {
+      "description": "Whether absence from a bounded collection is meaningful.",
+      "enum": [
+        "complete",
+        "truncated"
+      ],
+      "title": "CollectionCompleteness",
+      "type": "string"
+    },
+    "CommandDeliveryStatus": {
+      "enum": [
+        "unknown",
+        "rejected",
+        "accepted"
+      ],
+      "title": "CommandDeliveryStatus",
+      "type": "string"
+    },
+    "ControllerCommandRecord": {
+      "additionalProperties": false,
+      "description": "One command issued by this controller, never all Kenshi work.",
+      "properties": {
+        "command_id": {
+          "pattern": "^cmd-[0-9a-f]{32}$",
+          "title": "Command Id",
+          "type": "string"
+        },
+        "identity_session_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Identity Session Id",
+          "type": "string"
+        },
+        "control_ownership_generation": {
+          "minimum": 0,
+          "title": "Control Ownership Generation",
+          "type": "integer"
+        },
+        "command": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Command",
+          "type": "string"
+        },
+        "target_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Target Id"
+        },
+        "dispatch_basis": {
+          "$ref": "#/$defs/DispatchBasis"
+        },
+        "delivery_status": {
+          "$ref": "#/$defs/CommandDeliveryStatus"
+        },
+        "accepted_at_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Accepted At Sequence"
+        },
+        "highest_milestone": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Highest Milestone"
+        },
+        "recipient_states": {
+          "$ref": "#/$defs/BoundedCollection_RecipientCommandState_"
+        },
+        "supersedes_command_ids": {
+          "items": {
+            "pattern": "^cmd-[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Supersedes Command Ids",
+          "type": "array"
+        },
+        "monitor_disposition": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MonitorDisposition"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "terminal_at_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Terminal At Sequence"
+        }
+      },
+      "required": [
+        "command_id",
+        "identity_session_id",
+        "control_ownership_generation",
+        "command",
+        "target_id",
+        "dispatch_basis",
+        "delivery_status",
+        "accepted_at_sequence",
+        "highest_milestone",
+        "recipient_states",
+        "supersedes_command_ids",
+        "monitor_disposition",
+        "terminal_at_sequence"
+      ],
+      "title": "ControllerCommandRecord",
+      "type": "object"
+    },
+    "ControllerCommandRegistry": {
+      "additionalProperties": false,
+      "description": "Plural controller causality, partitioned to prevent active eviction.",
+      "properties": {
+        "retained_commands": {
+          "$ref": "#/$defs/BoundedCollection_ControllerCommandRecord_"
+        },
+        "recent_terminal_commands": {
+          "$ref": "#/$defs/BoundedCollection_ControllerCommandRecord_"
+        }
+      },
+      "required": [
+        "retained_commands",
+        "recent_terminal_commands"
+      ],
+      "title": "ControllerCommandRegistry",
+      "type": "object"
+    },
+    "DispatchBasis": {
+      "additionalProperties": false,
+      "description": "The immutable identities against which one command was dispatched.",
+      "properties": {
+        "primary_character_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Primary Character Id"
+        },
+        "selected_character_ids": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Selected Character Ids",
+          "type": "array"
+        },
+        "active_platoon_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Active Platoon Id"
+        },
+        "recipient_ids": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "title": "Recipient Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "primary_character_id",
+        "selected_character_ids",
+        "active_platoon_id",
+        "recipient_ids"
+      ],
+      "title": "DispatchBasis",
+      "type": "object"
+    },
+    "EntityIdSet": {
+      "additionalProperties": false,
+      "description": "A set serialized in deterministic ID order.",
+      "properties": {
+        "items": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 256,
+          "title": "Items",
+          "type": "array"
+        },
+        "completeness": {
+          "$ref": "#/$defs/CollectionCompleteness"
+        },
+        "known_total": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Known Total"
+        }
+      },
+      "required": [
+        "items",
+        "completeness",
+        "known_total"
+      ],
+      "title": "EntityIdSet",
+      "type": "object"
+    },
+    "MonitorDisposition": {
+      "description": "What became of Python's foreground interest in the operation.",
+      "enum": [
+        "observed_terminal",
+        "detached_after_timeout",
+        "detached_for_replan",
+        "detached_for_human_handoff",
+        "detached_at_run_end",
+        "detached_at_shutdown",
+        "detached_on_telemetry_loss",
+        "detached_by_supervisor"
+      ],
+      "title": "MonitorDisposition",
+      "type": "string"
+    },
+    "ObservedUnownedKenshiWork": {
+      "additionalProperties": false,
+      "description": "World work observed without inventing controller ownership.",
+      "properties": {
+        "ownership": {
+          "const": "observed_unowned",
+          "title": "Ownership",
+          "type": "string"
+        },
+        "character_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Character Id",
+          "type": "string"
+        },
+        "channel": {
+          "$ref": "#/$defs/UnownedWorkChannel"
+        },
+        "task": {
+          "$ref": "#/$defs/TaskEvidence"
+        },
+        "reason": {
+          "$ref": "#/$defs/UnownedWorkReason"
+        },
+        "observed_at_sequence": {
+          "minimum": 0,
+          "title": "Observed At Sequence",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ownership",
+        "character_id",
+        "channel",
+        "task",
+        "reason",
+        "observed_at_sequence"
+      ],
+      "title": "ObservedUnownedKenshiWork",
+      "type": "object"
+    },
+    "PlatoonState": {
+      "additionalProperties": false,
+      "description": "One player platoon and its observed membership.",
+      "properties": {
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Name"
+        },
+        "member_ids": {
+          "$ref": "#/$defs/EntityIdSet"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "member_ids"
+      ],
+      "title": "PlatoonState",
+      "type": "object"
+    },
+    "PlayerCharacterState": {
+      "additionalProperties": false,
+      "description": "One member of the player roster, independent of UI selection.",
+      "properties": {
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "platoon_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Platoon Id"
+        },
+        "work": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CharacterWorkState"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "platoon_id",
+        "work"
+      ],
+      "title": "PlayerCharacterState",
+      "type": "object"
+    },
+    "RecipientCommandState": {
+      "additionalProperties": false,
+      "description": "Command evidence for one captured recipient.",
+      "properties": {
+        "recipient_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Recipient Id",
+          "type": "string"
+        },
+        "accepted": {
+          "title": "Accepted",
+          "type": "boolean"
+        },
+        "activity_observed": {
+          "title": "Activity Observed",
+          "type": "boolean"
+        },
+        "outcome_observed": {
+          "title": "Outcome Observed",
+          "type": "boolean"
+        },
+        "current_activity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TaskEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "disposition": {
+          "$ref": "#/$defs/RecipientOrderDisposition"
+        },
+        "disposition_reason": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Disposition Reason",
+          "type": "string"
+        },
+        "superseded_by_command_id": {
+          "anyOf": [
+            {
+              "pattern": "^cmd-[0-9a-f]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Superseded By Command Id"
+        },
+        "last_observed_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Last Observed Sequence"
+        }
+      },
+      "required": [
+        "recipient_id",
+        "accepted",
+        "activity_observed",
+        "outcome_observed",
+        "current_activity",
+        "disposition",
+        "disposition_reason",
+        "superseded_by_command_id",
+        "last_observed_sequence"
+      ],
+      "title": "RecipientCommandState",
+      "type": "object"
+    },
+    "RecipientOrderDisposition": {
+      "enum": [
+        "retained",
+        "naturally_ended",
+        "replaced",
+        "explicitly_cleared",
+        "recipient_unavailable",
+        "unknown",
+        "unknown_after_session_reset"
+      ],
+      "title": "RecipientOrderDisposition",
+      "type": "string"
+    },
+    "TaskEvidence": {
+      "additionalProperties": false,
+      "description": "One task read from one exact Kenshi task channel.",
+      "properties": {
+        "task_value": {
+          "title": "Task Value",
+          "type": "integer"
+        },
+        "task_name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Task Name",
+          "type": "string"
+        },
+        "subject_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Subject Id"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Description"
+        }
+      },
+      "required": [
+        "task_value",
+        "task_name",
+        "subject_id",
+        "description"
+      ],
+      "title": "TaskEvidence",
+      "type": "object"
+    },
+    "UnownedWorkChannel": {
+      "enum": [
+        "ordinary_order",
+        "job",
+        "permanent_job",
+        "current_activity"
+      ],
+      "title": "UnownedWorkChannel",
+      "type": "string"
+    },
+    "UnownedWorkReason": {
+      "enum": [
+        "preexisting",
+        "human_issued",
+        "ai_issued",
+        "unattributed",
+        "ownership_lost_after_session_reset"
+      ],
+      "title": "UnownedWorkReason",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The complete Protocol 2.0 world-model decision boundary.",
+  "properties": {
+    "protocol_version": {
+      "const": "2.0.0",
+      "title": "Protocol Version",
+      "type": "string"
+    },
+    "sequence": {
+      "minimum": 0,
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "identity_session_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Identity Session Id",
+      "type": "string"
+    },
+    "roster": {
+      "$ref": "#/$defs/BoundedCollection_PlayerCharacterState_"
+    },
+    "platoons": {
+      "$ref": "#/$defs/BoundedCollection_PlatoonState_"
+    },
+    "active_platoon_id": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Active Platoon Id"
+    },
+    "primary_character_id": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Primary Character Id"
+    },
+    "selected_character_ids": {
+      "$ref": "#/$defs/EntityIdSet"
+    },
+    "controller_commands": {
+      "$ref": "#/$defs/ControllerCommandRegistry"
+    },
+    "observed_unowned_kenshi_work": {
+      "$ref": "#/$defs/BoundedCollection_ObservedUnownedKenshiWork_"
+    }
+  },
+  "required": [
+    "protocol_version",
+    "sequence",
+    "identity_session_id",
+    "roster",
+    "platoons",
+    "active_platoon_id",
+    "primary_character_id",
+    "selected_character_ids",
+    "controller_commands",
+    "observed_unowned_kenshi_work"
+  ],
+  "title": "Protocol2WorldModel",
+  "type": "object"
+}

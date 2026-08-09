@@ -54,8 +54,8 @@ There are still important limits:
 - A native recovery command can close a trade window, but general window closing is
   not a planner action.
 
-The active work to fix the group-order model is described in the
-[interaction scope and order lifecycle plan](docs/KENSHI_INTERACTION_SCOPE_ORDER_LIFECYCLE_PLAN.md).
+The accepted shape for the next breaking boundary is in the
+[Protocol 2.0 world-model decision](docs/PROTOCOL_2_WORLD_MODEL_DECISION.md).
 
 ## How a run works
 
@@ -223,12 +223,13 @@ Useful current references:
 - [interaction catalog](docs/generated/INTERACTION_CATALOG.md)
 - [proof ledger](docs/reconstruction/interaction_proof_status.json)
 - [native mod and protocol](native/KenshiAgentTelemetry/README.md)
-- [current reconstruction plan](docs/KENSHI_INTERACTION_SCOPE_ORDER_LIFECYCLE_PLAN.md)
+- [Protocol 2.0 world-model decision](docs/PROTOCOL_2_WORLD_MODEL_DECISION.md)
 
-The older [architecture reconstruction plan](docs/ARCHITECTURE_RECONSTRUCTION.md) and
-[Stage 8 acceptance report](docs/reconstruction/stage_8_acceptance.md) explain how the
-previous internal architecture was replaced. They are historical records, not the
-current work plan.
+The older [architecture reconstruction plan](docs/ARCHITECTURE_RECONSTRUCTION.md),
+[interaction-scope plan](docs/archive/KENSHI_INTERACTION_SCOPE_ORDER_LIFECYCLE_PLAN.md),
+[body-shift plan](docs/archive/KENSHI_BODY_SHIFT_PLAN.md), and
+[Stage 8 acceptance report](docs/reconstruction/stage_8_acceptance.md) are historical
+records, not current authority.
 
 ## Repository layout
 

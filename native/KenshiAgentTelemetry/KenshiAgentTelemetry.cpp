@@ -4491,7 +4491,7 @@ namespace
 
         if (isBodyShiftProbe)
         {
-            // Diagnostic probe for docs/KENSHI_BODY_SHIFT_PLAN.md. Kenshi moves
+            // Diagnostic probe for game_sources/research/body_shift/. Kenshi moves
             // a dead player character out of the active roster by rewriting its
             // (faction, platoon) coordinate - same faction, the dead squad - so
             // the corpse stays inspectable while leaving the squad. This asks

@@ -24,6 +24,7 @@ from .operation_registry_audit import (
     audit_operation_registry,
     render_operation_registry_report,
 )
+from .protocol_2_world_model import render_protocol_2_world_model
 from .reporting_surface import assess_reporting_surface, render_reporting_surface
 from .research_evidence import render_research_index
 from .ui_affordances import audit
@@ -323,6 +324,7 @@ def export_docs(output_dir: Path) -> list[Path]:
         "INTERACTION_CATALOG.md": _interaction_catalog(),
         "OPERATION_DEFINITIONS.md": _operation_definitions(),
         "PLANNER_OUTPUT_CONTRACT.md": _planner_output_contract(),
+        "PROTOCOL_2_WORLD_MODEL.md": render_protocol_2_world_model(),
         "MODELED_INTERFACE_AUDIT.md": _modeled_interface_audit(),
     }
     paths: list[Path] = []

@@ -1,7 +1,7 @@
 # Kenshi Agent Environment: Staged Architectural Reconstruction
 
 **Status:** Complete and closed. Historical context only.
-**Superseded by:** `docs/KENSHI_INTERACTION_SCOPE_ORDER_LIFECYCLE_PLAN.md`, which is
+**Historically succeeded by:** `docs/archive/KENSHI_INTERACTION_SCOPE_ORDER_LIFECYCLE_PLAN.md`, which is
 the active authority. All eight stages here are accepted at tag
 `reconstruction-stage-8-accepted`; §20.4 forbids reopening them. Read this
 document to understand why the current architecture exists, not to decide what

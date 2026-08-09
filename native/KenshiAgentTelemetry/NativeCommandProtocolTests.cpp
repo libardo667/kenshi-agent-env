@@ -244,6 +244,66 @@ namespace
             "0x48E260");
     }
 
+    int TestProtocol2WorldModelFixtures(const std::string& fixtureRoot)
+    {
+        const std::string validPath =
+            fixtureRoot + "/valid_multiple_platoons_and_commands.json";
+        const std::string validPayload = ReadFile(validPath);
+        if (validPayload.empty())
+            return Fail("could not read Protocol 2.0 valid fixture");
+
+        try
+        {
+            std::istringstream input(validPayload);
+            boost::property_tree::ptree world;
+            boost::property_tree::read_json(input, world);
+            if (world.get<std::string>("protocol_version") != "2.0.0" ||
+                world.count("squad") != 0U ||
+                world.count("native_control") != 0U ||
+                world.get_child("platoons.items").size() != 2U ||
+                world.get_child(
+                    "controller_commands.retained_commands.items").size() != 2U)
+            {
+                return Fail(
+                    "Protocol 2.0 valid fixture lost its breaking topology");
+            }
+        }
+        catch (const std::exception& error)
+        {
+            return Fail(
+                "could not parse Protocol 2.0 valid fixture: " +
+                std::string(error.what()));
+        }
+
+        const std::string oldPath =
+            fixtureRoot + "/invalid_old_1_x_shape.json";
+        const std::string oldPayload = ReadFile(oldPath);
+        if (oldPayload.empty())
+            return Fail("could not read Protocol 2.0 old-shape fixture");
+        try
+        {
+            std::istringstream input(oldPayload);
+            boost::property_tree::ptree oldWorld;
+            boost::property_tree::read_json(input, oldWorld);
+            if (oldWorld.get<std::string>("protocol_version") == "2.0.0" ||
+                oldWorld.count("squad") != 1U ||
+                oldWorld.get<std::string>("native_control.active_command_id").empty() ||
+                oldWorld.count("roster") != 0U ||
+                oldWorld.count("controller_commands") != 0U)
+            {
+                return Fail(
+                    "Protocol 2.0 old-shape fixture no longer pins the rejected names");
+            }
+        }
+        catch (const std::exception& error)
+        {
+            return Fail(
+                "could not parse Protocol 2.0 old-shape fixture: " +
+                std::string(error.what()));
+        }
+        return 0;
+    }
+
     int TestInventoryScreenSemantics()
     {
         using KenshiAgentTelemetry::IsRegisteredShopInventoryOpen;
@@ -1085,11 +1145,14 @@ namespace
 
 int main(int argc, char** argv)
 {
-    if (argc != 3)
+    if (argc != 4)
     {
         return Fail(
-            "expected native fixture and canonical research directories");
+            "expected native-command, research, and Protocol 2.0 fixture directories");
     }
+    const int protocol2Result = TestProtocol2WorldModelFixtures(argv[3]);
+    if (protocol2Result != 0)
+        return protocol2Result;
     const int researchResult = TestResearchEvidence(argv[2]);
     if (researchResult != 0)
         return researchResult;

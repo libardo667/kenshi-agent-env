@@ -66,7 +66,8 @@ if (-not (Test-Path -LiteralPath $protocolTests -PathType Leaf)) {
 }
 $fixtures = Join-Path $repo "tests\fixtures\native_commands"
 $research = Join-Path $repo "game_sources\research"
-& $protocolTests $fixtures $research
+$protocol2Fixtures = Join-Path $repo "tests\fixtures\protocol_2"
+& $protocolTests $fixtures $research $protocol2Fixtures
 if ($LASTEXITCODE -ne 0) {
     throw "Native command protocol conformance failed with exit code $LASTEXITCODE."
 }

@@ -1,4 +1,8 @@
-# Kenshi Interaction Scope and Order Lifecycle: implementation record and open plan
+# Archived interaction-scope and order-lifecycle plan
+
+Historical planning record. The accepted Protocol 2.0 world-model boundary is
+`docs/PROTOCOL_2_WORLD_MODEL_DECISION.md`; current implementation truth remains
+in source, generated documents, the proof ledger, and `docs/CHECKPOINT.md`.
 
 **Status:** In progress. Slice 0, Slice 1, and Slice 1b are complete on current `main`; the protocol/plural-command and broader live-proof work remains open.
 **Working name:** Interaction Scope and Order Lifecycle Reconstruction  

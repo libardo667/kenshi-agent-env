@@ -12,6 +12,7 @@ from ..core.planning import (
     PlannerDecision,
     PlanPatch,
 )
+from ..core.protocol_2 import Protocol2WorldModel
 from ..core.telemetry import TelemetrySnapshot
 from ..core.transport import (
     ActionReceipt,
@@ -32,6 +33,7 @@ def export_schemas(output_dir: Path) -> list[Path]:
         "plan_proposal.schema.json": PlanProposal.model_json_schema(),
         "affordance_receipt.schema.json": AffordanceReceipt.model_json_schema(),
         "telemetry.schema.json": TelemetrySnapshot.model_json_schema(),
+        "protocol_2_world_model.schema.json": Protocol2WorldModel.model_json_schema(),
         "observation.schema.json": Observation.model_json_schema(),
         "runtime_operation.schema.json": ACTION_ADAPTER.json_schema(),
         "runtime_decision.schema.json": PlannerDecision.model_json_schema(),

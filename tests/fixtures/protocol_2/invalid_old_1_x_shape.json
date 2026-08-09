@@ -1,0 +1,11 @@
+{
+  "protocol_version": "1.18.0",
+  "sequence": 120,
+  "identity_session_id": "session-old-shape",
+  "squad": [],
+  "platoons": {"items": [], "completeness": "complete", "known_total": 0},
+  "active_platoon_id": null,
+  "ui": {"selected_character_id": null, "selected_character_ids": []},
+  "native_control": {"active_command_id": "cmd-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+  "observed_unowned_kenshi_work": {"items": [], "completeness": "complete", "known_total": 0}
+}

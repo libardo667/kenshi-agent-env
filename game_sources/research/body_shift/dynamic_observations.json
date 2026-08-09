@@ -15,7 +15,7 @@
       "acknowledgement": "The plugin reported shift_body_recruited, but the exact acknowledgement payload and sequence were not preserved.",
       "later_engine_evidence": "Selected character ids reduced to Molly, primary selection resolved to her, and she disappeared from nearby non-player entities after becoming a player character.",
       "final_disposition": "Historical live observation retained but durable live proof withheld because no named run bundle or binary provenance captures the complete chain.",
-      "evidence_source": "Former interaction proof ledger and docs/KENSHI_BODY_SHIFT_PLAN.md.",
+      "evidence_source": "Former interaction proof ledger and docs/archive/KENSHI_BODY_SHIFT_PLAN.md.",
       "remaining_uncertainty": ["Exact run bundle, command id, sequences, built DLL hash, installed DLL hash, and final saved-world disposition are missing.", "Repeat behavior and every eligibility boundary remain unproven live."]
     },
     {

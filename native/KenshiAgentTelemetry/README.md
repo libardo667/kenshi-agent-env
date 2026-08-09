@@ -19,11 +19,13 @@ telemetry version, `NativeCommandRequest` in
 `src/kenshi_agent/core/transport.py` owns the strict Python request schema, and
 `GameplayCapabilities.json` owns the loaded-world capability vocabulary. The
 portable consistency tests and the native conformance executable compare the
-shared JSON fixtures with both protocol implementations.
+shared native-command JSON fixtures with both request implementations. The
+conformance target also pins the accepted Protocol 2.0 world-model fixtures
+without claiming that the current producer emits them.
 
-Protocol 1.18.0 is additive over the earlier 1.x telemetry family. The proposed
-2.0 roster/platoon/plural-command redesign in the interaction-scope plan has not
-landed. Current telemetry still serializes player characters under `squad`, and
+Protocol 1.18.0 is additive over the earlier 1.x telemetry family. The accepted
+2.0 roster/platoon/plural-command design is specified but has not landed in the
+producer. Current telemetry still serializes player characters under `squad`, and
 `native_control.active_command_id` plus one native active-command record still
 limit the controller to one monitored command at a time.
 
@@ -111,7 +113,7 @@ The native bridge still holds one active command. Selection is captured in the
 request but several native monitors still depend on the current selection, and
 separate retained commands for disjoint recipient groups are not implemented.
 Those open limits are tracked in the
-[interaction scope and lifecycle record](../../docs/KENSHI_INTERACTION_SCOPE_ORDER_LIFECYCLE_PLAN.md).
+[Protocol 2.0 world-model decision](../../docs/PROTOCOL_2_WORLD_MODEL_DECISION.md).
 
 ## Reverse-engineered subsystem authority
 
@@ -138,7 +140,8 @@ maintained KenshiLib headers/libraries.
 2. Set `BOOST_INCLUDE_PATH` to Boost 1.60 containing `boost` and `stage\lib`.
 3. Run `scripts\native_doctor.ps1` and resolve every failed check.
 4. Run `scripts\build_native.ps1`. The Release x64 build also runs
-   `NativeCommandProtocolTests.exe` against `tests\fixtures\native_commands`.
+   `NativeCommandProtocolTests.exe` against `tests\fixtures\native_commands`,
+   canonical research fixtures, and `tests\fixtures\protocol_2`.
 5. Run `scripts\stage_native.ps1 -BuiltDll <path-to-built-dll>`.
 6. After review, copy the staged `KenshiAgentTelemetry` folder into Kenshi's
    `mods` directory and enable it in the launcher.
@@ -179,7 +182,8 @@ folder component.
   shared command vocabulary, generated schemas, capability manifest/header
   parity, and golden fixture set.
 - A Windows native build runs the production C++ parser/serializer against the
-  same golden request fixtures.
+  same golden request fixtures and checks the 2.0 specification fixtures keep
+  their breaking roster/platoon/plural-command topology.
 - `scripts/check_native_provenance.py` compares protocol and capability strings
   in the installed binary and records built/installed hashes. See the current
   [checkpoint](../../docs/CHECKPOINT.md) for the measured result.
