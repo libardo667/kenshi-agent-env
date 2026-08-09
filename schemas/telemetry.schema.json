@@ -1659,6 +1659,34 @@
       "title": "ProspectSurvey",
       "type": "object"
     },
+    "ResourceOutputItem": {
+      "additionalProperties": false,
+      "description": "One exact item stack in a natural resource's engine-owned output slot.",
+      "properties": {
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "quantity": {
+          "minimum": 0,
+          "title": "Quantity",
+          "type": "integer"
+        },
+        "item_type": {
+          "title": "Item Type",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "quantity",
+        "item_type"
+      ],
+      "title": "ResourceOutputItem",
+      "type": "object"
+    },
     "RuntimeContextMenu": {
       "additionalProperties": false,
       "description": "Exact game-owned menu orders, distinct from reviewed action authority.\n\n``task_type_values`` deliberately retains numeric values that the pinned\nTaskType vocabulary does not yet name. Observing a menu item must never\nmake it executable; only ``WorldTarget.context_actions`` carries that\nseparately reviewed authority.",
@@ -2395,6 +2423,45 @@
           "default": null,
           "title": "Mining Resource Level"
         },
+        "operator_capacity": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Operator Capacity"
+        },
+        "current_operator_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Current Operator Ids",
+          "type": "array"
+        },
+        "current_operators_complete": {
+          "default": false,
+          "title": "Current Operators Complete",
+          "type": "boolean"
+        },
+        "output_inventory": {
+          "items": {
+            "$ref": "#/$defs/ResourceOutputItem"
+          },
+          "maxItems": 128,
+          "title": "Output Inventory",
+          "type": "array"
+        },
+        "output_inventory_complete": {
+          "default": false,
+          "title": "Output Inventory Complete",
+          "type": "boolean"
+        },
         "screen_position": {
           "anyOf": [
             {
@@ -2435,7 +2502,7 @@
   "additionalProperties": false,
   "properties": {
     "protocol_version": {
-      "default": "1.20.0",
+      "default": "1.21.0",
       "title": "Protocol Version",
       "type": "string"
     },

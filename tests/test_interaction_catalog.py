@@ -105,8 +105,10 @@ def test_only_operations_with_a_recorded_live_run_claim_live_proof() -> None:
     sequences, or binary hashes survive. Its canonical research package
     therefore downgrades the durable classification to source-proven. The
     2026-08-08 closure runs prove the paired-window and item-transfer route
-    against an unconscious body and a resource output, plus resource production
-    through the exact `resource_output_ready` terminal.
+    against an unconscious body and a resource output. The 2026-08-09 resource
+    operator run proves exact native admission independently from selection and
+    queued work. Production is deliberately only unit-proven now: its older
+    retained run predates the current exact-operator monitor contract.
 
     So the assertion is now an allowlist rather than a zero. Any other
     operation claiming live proof has to be added here by someone who has the
@@ -123,7 +125,7 @@ def test_only_operations_with_a_recorded_live_run_claim_live_proof() -> None:
 
     assert live_proven == {
         "open_trade_window",
-        "produce_resource_output",
+        "perform_context_action",
         "transfer_item",
     }
 

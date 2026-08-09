@@ -84,6 +84,22 @@ namespace KenshiAgentTelemetry
         double screenY;
         bool advertisedTasksProbed;
         std::vector<AdvertisedTask> advertisedTasks;
+        bool operatorCapacityKnown;
+        int operatorCapacity;
+        bool currentOperatorsComplete;
+        std::vector<std::string> currentOperatorIds;
+        bool outputInventoryComplete;
+
+        struct OutputItem
+        {
+            OutputItem();
+
+            std::string name;
+            int quantity;
+            int itemType;
+        };
+
+        std::vector<OutputItem> outputInventory;
     };
 
     // Serialize the discovered vocabulary for one target, including whether it

@@ -49,6 +49,7 @@ namespace KenshiAgentTelemetry
             "control.exit_current_building",
             "world.known_map_destinations",
             "world.context_targets",
+            "world.resource_operators",
             "world.context_target_screen_positions",
             "control.perform_context_action",
             "control.survey_local_resources",

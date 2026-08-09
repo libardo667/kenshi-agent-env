@@ -156,7 +156,17 @@ namespace KenshiAgentTelemetry
           hasScreenPosition(false),
           screenX(0.0),
           screenY(0.0),
-          advertisedTasksProbed(false)
+          advertisedTasksProbed(false),
+          operatorCapacityKnown(false),
+          operatorCapacity(0),
+          currentOperatorsComplete(false),
+          outputInventoryComplete(false)
+    {
+    }
+
+    NaturalResourceTargetSnapshot::OutputItem::OutputItem()
+        : quantity(0),
+          itemType(0)
     {
     }
 
@@ -233,6 +243,37 @@ namespace KenshiAgentTelemetry
             target.advertisedTasks);
         json << ",\"mining_resource_level\":"
              << target.miningResourceLevel;
+        json << ",\"operator_capacity\":";
+        if (target.operatorCapacityKnown)
+            json << target.operatorCapacity;
+        else
+            json << "null";
+        json << ",\"current_operator_ids\":[";
+        for (std::vector<std::string>::const_iterator it =
+                 target.currentOperatorIds.begin();
+             it != target.currentOperatorIds.end();
+             ++it)
+        {
+            if (it != target.currentOperatorIds.begin())
+                json << ",";
+            json << "\"" << WorldTargetJsonEscape(*it) << "\"";
+        }
+        json << "],\"current_operators_complete\":"
+             << (target.currentOperatorsComplete ? "true" : "false");
+        json << ",\"output_inventory\":[";
+        for (std::vector<NaturalResourceTargetSnapshot::OutputItem>::
+                 const_iterator it = target.outputInventory.begin();
+             it != target.outputInventory.end();
+             ++it)
+        {
+            if (it != target.outputInventory.begin())
+                json << ",";
+            json << "{\"name\":\"" << WorldTargetJsonEscape(it->name)
+                 << "\",\"quantity\":" << it->quantity
+                 << ",\"item_type\":" << it->itemType << "}";
+        }
+        json << "],\"output_inventory_complete\":"
+             << (target.outputInventoryComplete ? "true" : "false");
         if (target.hasScreenPosition)
         {
             json << ",\"screen_position\":{";

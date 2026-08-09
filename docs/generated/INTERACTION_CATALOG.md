@@ -24,9 +24,9 @@ coverage proof          PASS
 
 PROOF STATUS
   source_proven     12
-  unit_proven        0
+  unit_proven        1
   live_proven        3
-  unproven           9
+  unproven           8
   withheld           0
 
 INTERACTION CONTRACT (resolved from the sole operation registry)
@@ -41,7 +41,7 @@ INTERACTION CONTRACT (resolved from the sole operation registry)
   pause                               global_ui          none                none             world_outcome_observed  source_proven
   perform_character_order             ordinary_order     current_selection   dispatch_only    order_accepted          source_proven
   perform_context_action *            varies             current_selection   varies           varies                  unproven
-  produce_resource_output             ordinary_order     current_selection   dispatch_only    world_outcome_observed  live_proven
+  produce_resource_output             ordinary_order     current_selection   dispatch_only    world_outcome_observed  unit_proven
   read_fieldbook                      runtime_only       none                none             input_delivered         source_proven
   recall_memory                       runtime_only       none                none             input_delivered         source_proven
   regroup_with_squad_member           ordinary_order     explicit_recipients dispatch_only    world_outcome_observed  unproven
@@ -103,5 +103,5 @@ NATIVE COMMAND ROUTES
   travel_to_map_destination    -> travel_to_map_destination
 
 SEMANTIC SUBCASES
-  perform_context_action:operate                unproven
+  perform_context_action:operate                live_proven
 ```

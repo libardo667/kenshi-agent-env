@@ -811,6 +811,11 @@ def test_log_digest_conserves_the_complete_bounded_logging_contract() -> None:
                 "distance": 10.0,
                 "context_actions": ["operate"],
                 "mining_resource_level": 0.75,
+                "operator_capacity": None,
+                "current_operator_ids": [],
+                "current_operators_complete": False,
+                "output_inventory": [],
+                "output_inventory_complete": False,
             }
         ],
     }

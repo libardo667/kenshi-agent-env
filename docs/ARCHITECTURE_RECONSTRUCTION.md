@@ -1440,6 +1440,16 @@ Worth revisiting afterward: scope such gates to the phase that needs them.
 Requiring at bind time what only one late phase depends on removes an operation
 from the menu for situations it would have handled correctly.
 
+Updated 2026-08-09: Protocol 1.21 now exports the resource's exact engine-owned
+operator capacity and complete current accepted-operator identities. The
+resource action may address a multi-character selection, but its planner text
+and native terminal explicitly keep selected recipients and queued work
+separate from accepted operators. In live bundle
+`resource-operators-20260809T201826Z`, two selected characters both received
+the exact order while a capacity-one deposit accepted only Ribs. Output stacks
+are exact; work progress remains withheld because no native progress-like field
+has a proven natural-resource semantic and range.
+
 ### 19.5 Current topology authority supersedes the historical field names above
 
 Updated 2026-08-09. Sections 19.3 and 19.4 preserve the exact 2026-08-03

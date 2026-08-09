@@ -1,6 +1,6 @@
 # Protocol 2.0 world model
 
-Status: **accepted specification; 1.20 topology and bounded-work vocabulary landed, plural command migration not started**
+Status: **accepted specification; 1.21 topology, bounded-work, and resource-operator vocabulary landed, plural command migration not started**
 
 Protocol: `2.0.0`
 
@@ -12,11 +12,11 @@ Generated schema: `schemas/protocol_2_world_model.schema.json`
 
 Protocol 2.0 remains a breaking transition for plural controller causality. Its
 topology and bounded-work vocabulary have landed as clean breaks in the current
-1.20 producer: the player collection is `roster`, never `squad`; platoons,
+1.21 producer: the player collection is `roster`, never `squad`; platoons,
 active, primary, and selection are distinct; and ordinary orders, Jobs,
 permanent Jobs, and activity have separate owners. Controller causality is still
 the future `controller_commands`, partitioned into plural `retained_commands`
-and `recent_terminal_commands`; current 1.20 still has the singular
+and `recent_terminal_commands`; current 1.21 still has the singular
 `native_control.active_command_id` and does not claim 2.0 compatibility.
 
 The root world-model shape is:
@@ -51,7 +51,7 @@ order, and a current activity does not prove either.
 
 Task evidence carries nullable `task_value`, `task_name`, `subject_id`,
 `description`, and `position`. Unknown subjects and positions remain null. In
-the current 1.20 producer, KenshiLib's ordinary `ActionDeque` exposes first,
+the current 1.21 producer, KenshiLib's ordinary `ActionDeque` exposes first,
 second, and last accessors but no size, so a multi-entry queue has unknown total
 and its sampled tail has unknown numeric position. Enumerable Jobs and permanent
 Jobs retain exact totals within the shared bound.
@@ -84,7 +84,7 @@ not by an empty collection.
 
 All 2.0 objects reject extra fields. Protocol `1.x`, `squad`, `native_control`,
 and `active_command_id` therefore fail 2.0 validation rather than entering an
-alias or dual-read path. Independently, the 1.20 model also rejects the removed
+alias or dual-read path. Independently, the 1.21 model also rejects the removed
 `squad`, per-character `selected`, UI-owned selection, and `task_state` fields.
 
 ## Evidence boundary
@@ -99,7 +99,7 @@ alias or dual-read path. Independently, the 1.20 model also rejects the removed
   active-platoon and character-platoon APIs.
 - KenshiLib 0.4.0 `AITaskSystem.h` separately declares `orders`, `jobs`,
   `permajobs`, `isJobsEnabled()`, and `getCurrentGoal()`.
-- Current native source now emits 1.20 `roster`, platoons, active, primary,
+- Current native source now emits 1.21 `roster`, platoons, active, primary,
   complete selection, and the four independent work channels from those
   distinct structures. It still emits singular
   `native_control.active_command_id`; plural controller records remain the 2.0
@@ -121,7 +121,7 @@ alias or dual-read path. Independently, the 1.20 model also rejects the removed
   and the old 1.x `squad` / `active_command_id` shape.
 - The Release x64 native conformance executable parses the same full and old
   fixtures and pins their two-platoon/two-command versus 1.x topology.
-- The current 1.20 shared native fixture separately pins roster/platoon
+- The current 1.21 shared native fixture separately pins roster/platoon
   membership, active, primary-not-roster-order, complete selection, one retained
   ordinary order beside current activity with empty Jobs, and removal of the
   superseded authorities.
@@ -132,7 +132,8 @@ alias or dual-read path. Independently, the 1.20 model also rejects the removed
 ### Live-proven
 
 The full Protocol 2.0 plural-command specification has not had a live producer
-run. Its already-landed 1.20 topology and bounded-work vocabulary have.
+run. Its already-landed 1.21 topology, bounded-work vocabulary, and exact
+resource-operator state have.
 `player-topology-20260809T161112Z`, using matching built and installed DLL
 SHA-256 `2dfee3ca27a3a2494b31386cff06e9db2ad02e38e7d3d6079fec0fb2234436bc`,
 proves two authored nonempty platoons and linkage, active-tab changes, primary
@@ -150,6 +151,15 @@ Later engine sequence 329 shows a retained ordinary `OPERATE_MACHINERY` order
 beside separate current activity while Jobs and permanent Jobs remain complete
 and empty. That result does not establish a general command-ownership link.
 
+Resource acceptance is separately live-proven by
+`resource-operators-20260809T201826Z` with matching built and installed 1.21
+DLL SHA-256
+`91526b828e44035b0cb6de5a22b7cc5ad0c2e392b66a7b8adcbf9ae9403d8db8`.
+Two identities were selected and both had the exact ordinary resource order,
+while a capacity-one target's complete accepted set contained only Ribs. This
+prevents the current singular command model from laundering selection or
+queued work into accepted operation.
+
 ### Withheld and named follow-on work
 
 - **Native plural command registry:** populate more than one retained record,
@@ -162,6 +172,8 @@ and empty. That result does not establish a general command-ownership link.
 - **Task ownership correlation:** link an ordinary order to a controller command
   only from causal evidence; otherwise retain it as observed unattributed work.
   Jobs, permanent Jobs, and activity must not be adopted as controller-owned.
+- **Resource progress semantics:** no progress-like native float is public until
+  its natural-resource meaning, range, and rollover behavior are proven.
 - **Exact live bundle:** record built and installed DLL hashes, pre-dispatch
   state, requests, acknowledgements, later engine evidence, and final
   dispositions for simultaneous commands. A returning call is not proof that

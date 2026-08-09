@@ -586,6 +586,11 @@ def natural_resource(
             [ContextActionKind.OPERATE] if actions is None else actions
         ),
         default_task="operate_machinery",
+        operator_capacity=2,
+        current_operator_ids=[],
+        current_operators_complete=True,
+        output_inventory=[],
+        output_inventory_complete=True,
         screen_position=screen_position,
     )
 
@@ -602,6 +607,7 @@ class TestResourceProductionContracts:
             capabilities=[
                 "control.produce_resource_output",
                 "world.context_targets",
+                "world.resource_operators",
                 "game.pause",
                 "identity.stable_handles",
             ],
@@ -615,6 +621,64 @@ class TestResourceProductionContracts:
 
         assert binding.bound
         assert binding.target_id == target.id
+        assert "engine capacity 2" in binding.reason
+        assert "queued work are not operator acceptance" in binding.reason
+
+    def test_production_withholds_without_operator_or_output_fidelity(self) -> None:
+        action = ProduceResourceOutputAction(target_id="entity-copper")
+        clear_ui = UIState(
+            active_screen="world",
+            modal_open=False,
+            dialogue_open=False,
+        )
+        without_capability = observation(
+            ui=clear_ui,
+            capabilities=[
+                "control.produce_resource_output",
+                "world.context_targets",
+                "game.pause",
+                "identity.stable_handles",
+            ],
+            world_targets=[natural_resource()],
+        )
+        incomplete_operators = natural_resource().model_copy(
+            update={"current_operators_complete": False}
+        )
+        without_complete_operators = observation(
+            ui=clear_ui,
+            capabilities=[
+                "control.produce_resource_output",
+                "world.context_targets",
+                "world.resource_operators",
+                "game.pause",
+                "identity.stable_handles",
+            ],
+            world_targets=[incomplete_operators],
+        )
+        incomplete_output = natural_resource().model_copy(
+            update={"output_inventory_complete": False}
+        )
+        without_complete_output = observation(
+            ui=clear_ui,
+            capabilities=[
+                "control.produce_resource_output",
+                "world.context_targets",
+                "world.resource_operators",
+                "game.pause",
+                "identity.stable_handles",
+            ],
+            world_targets=[incomplete_output],
+        )
+
+        assert not PRODUCE_RESOURCE_OUTPUT_DEFINITION.bind(
+            action, without_capability
+        ).bound
+        assert not PRODUCE_RESOURCE_OUTPUT_DEFINITION.bind(
+            action, without_complete_operators
+        ).bound
+        assert not PRODUCE_RESOURCE_OUTPUT_DEFINITION.bind(
+            action, without_complete_output
+        ).bound
 
     def test_production_rejects_absent_unadvertised_and_ambiguous_targets(self) -> None:
         action = ProduceResourceOutputAction(target_id="entity-copper")
@@ -636,6 +700,7 @@ class TestResourceProductionContracts:
             capabilities=[
                 "control.produce_resource_output",
                 "world.context_targets",
+                "world.resource_operators",
                 "game.pause",
             ],
             world_targets=[natural_resource(), natural_resource()],

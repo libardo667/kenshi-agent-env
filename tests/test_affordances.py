@@ -244,6 +244,10 @@ def test_group_selection_can_issue_broadcast_orders_and_still_narrow() -> None:
         distance=25,
         context_actions=[ContextActionKind.OPERATE],
         default_task="operate_machinery",
+        operator_capacity=1,
+        current_operator_ids=[bark.id],
+        current_operators_complete=True,
+        output_inventory_complete=True,
     )
     observation = _observation(
         capabilities=[
@@ -254,6 +258,7 @@ def test_group_selection_can_issue_broadcast_orders_and_still_narrow() -> None:
             "identity.stable_handles",
             "roster.basic",
             "world.context_targets",
+            "world.resource_operators",
         ],
         roster=[bark, plant],
         targets=[resource],
@@ -266,17 +271,64 @@ def test_group_selection_can_issue_broadcast_orders_and_still_narrow() -> None:
         ),
     )
 
-    operation_kinds = {
-        offer.operation_kind for offer in offered_affordances(observation)
-    }
+    offers = offered_affordances(observation)
+    operation_kinds = {offer.operation_kind for offer in offers}
 
     # Narrowing the selection stays available; it is no longer the only thing a
-    # group can do. A selection-broadcast order addresses whoever is selected,
-    # so a pair standing at a resource can work it together rather than being
-    # required to un-pair first.
+    # group can do. The offer keeps the broadcast recipient set distinct from
+    # Kenshi's accepted set: two are selected, capacity is one, and only Bark
+    # is an operator. The planner may ask the group but may not report both as
+    # working the resource.
     assert "select_squad_member_exact" in operation_kinds
     assert "perform_context_action" in operation_kinds
     assert "produce_resource_output" in operation_kinds
+    resource_descriptions = "\n".join(
+        offer.description
+        for offer in offers
+        if offer.operation_kind
+        in {"perform_context_action", "produce_resource_output"}
+    )
+    assert "1 operator slots" in resource_descriptions
+    assert bark.id in resource_descriptions
+    assert plant.id not in resource_descriptions
+    assert "not proof of operator acceptance" in resource_descriptions
+
+
+def test_resource_operations_are_withheld_without_complete_engine_state() -> None:
+    actor = CharacterState(id="entity-bark", name="Bark")
+    incomplete = WorldTarget(
+        id="resource-copper",
+        name="Copper Resource",
+        kind="natural_resource",
+        position=Vec3(x=10, y=0, z=20),
+        distance=25,
+        context_actions=[ContextActionKind.OPERATE],
+        default_task="operate_machinery",
+        operator_capacity=1,
+        current_operator_ids=[actor.id],
+        current_operators_complete=False,
+        output_inventory_complete=False,
+    )
+    observation = _observation(
+        capabilities=[
+            "control.perform_context_action",
+            "control.produce_resource_output",
+            "game.pause",
+            "identity.stable_handles",
+            "world.context_targets",
+            "world.resource_operators",
+        ],
+        roster=[actor],
+        targets=[incomplete],
+        primary_character_id=actor.id,
+        selected_character_ids=[actor.id],
+    )
+
+    operation_kinds = {
+        offer.operation_kind for offer in offered_affordances(observation)
+    }
+    assert "perform_context_action" not in operation_kinds
+    assert "produce_resource_output" not in operation_kinds
 
 
 def test_resource_output_and_inventory_pair_are_both_offered() -> None:
@@ -295,6 +347,10 @@ def test_resource_output_and_inventory_pair_are_both_offered() -> None:
         distance=25,
         context_actions=[ContextActionKind.OPERATE],
         default_task="operate_machinery",
+        operator_capacity=1,
+        current_operator_ids=[],
+        current_operators_complete=True,
+        output_inventory_complete=True,
     )
     observation = _observation(
         capabilities=[
@@ -303,6 +359,7 @@ def test_resource_output_and_inventory_pair_are_both_offered() -> None:
             "game.pause",
             "identity.stable_handles",
             "world.context_targets",
+            "world.resource_operators",
         ],
         roster=[actor],
         nearby=[

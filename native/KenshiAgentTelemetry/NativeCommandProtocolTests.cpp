@@ -325,7 +325,7 @@ namespace
                 rosterIt->second.get_child("work");
             const boost::property_tree::ptree& ordinaryOrders =
                 work.get_child("ordinary_orders");
-            if (topology.get<std::string>("protocol_version") != "1.20.0" ||
+            if (topology.get<std::string>("protocol_version") != "1.21.0" ||
                 topology.count("squad") != 0U ||
                 roster.size() != 3U ||
                 rosterIt->second.count("selected") != 0U ||
@@ -1669,6 +1669,16 @@ int main(int argc, char** argv)
     naturalResource.positionZ = 20.0;
     naturalResource.distance = 30.0;
     naturalResource.miningResourceLevel = 0.8;
+    naturalResource.operatorCapacityKnown = true;
+    naturalResource.operatorCapacity = 2;
+    naturalResource.currentOperatorsComplete = true;
+    naturalResource.currentOperatorIds.push_back("character-paste");
+    naturalResource.outputInventoryComplete = true;
+    KenshiAgentTelemetry::NaturalResourceTargetSnapshot::OutputItem outputItem;
+    outputItem.name = "Raw Copper";
+    outputItem.quantity = 1;
+    outputItem.itemType = 23;
+    naturalResource.outputInventory.push_back(outputItem);
     const std::string naturalResourceSerialized =
         KenshiAgentTelemetry::SerializeNaturalResourceTarget(
             naturalResource);

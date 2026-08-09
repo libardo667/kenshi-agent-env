@@ -28,7 +28,7 @@
       "inferred_signature_confidence": "medium",
       "declaration_source": "KenshiLib 0.4.0 Include/kenshi/PlayerInterface.h:117",
       "evidence": ["KenshiLib declaration and RVA", "current native call site"],
-      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 4555, "contains": "recruit"}]
+      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 4715, "contains": "recruit"}]
     },
     {
       "id": "create_squad",
@@ -39,7 +39,7 @@
       "inferred_signature_confidence": "medium",
       "declaration_source": "KenshiLib 0.4.0 Include/kenshi/PlayerInterface.h:118",
       "evidence": ["KenshiLib declaration and RVA", "current native call site"],
-      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 4571, "contains": "createSquad"}]
+      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 4731, "contains": "createSquad"}]
     },
     {
       "id": "change_character_faction",
@@ -50,7 +50,7 @@
       "inferred_signature_confidence": "medium",
       "declaration_source": "KenshiLib 0.4.0 Include/kenshi/Character.h:519",
       "evidence": ["KenshiLib declaration and RVA", "current native call site"],
-      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 4581, "contains": "setFaction"}]
+      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 4741, "contains": "setFaction"}]
     },
     {
       "id": "repair_selection_handle",
@@ -61,7 +61,7 @@
       "inferred_signature_confidence": "medium",
       "declaration_source": "KenshiLib 0.4.0 Include/kenshi/PlayerInterface.h:154",
       "evidence": ["KenshiLib declaration and RVA", "current native call site"],
-      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 4582, "contains": "updatePlayerSelection"}]
+      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 4742, "contains": "updatePlayerSelection"}]
     },
     {
       "id": "select_entered_body",
@@ -72,7 +72,7 @@
       "inferred_signature_confidence": "medium",
       "declaration_source": "KenshiLib 0.4.0 Include/kenshi/PlayerInterface.h:134",
       "evidence": ["KenshiLib declaration and RVA", "current native call site"],
-      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 4590, "contains": "_selectPlayerCharacter"}]
+      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 4750, "contains": "_selectPlayerCharacter"}]
     }
   ]
 }

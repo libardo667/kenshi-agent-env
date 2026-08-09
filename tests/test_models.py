@@ -419,6 +419,10 @@ def test_reviewed_world_target_is_an_exact_attemptable_affordance() -> None:
         context_actions=[ContextActionKind.OPERATE],
         default_task="operate_machinery",
         mining_resource_level=0.8,
+        operator_capacity=1,
+        current_operator_ids=[actor.id],
+        current_operators_complete=True,
+        output_inventory_complete=True,
     )
     observation = Observation(
         run_id="resource-perception",
@@ -430,6 +434,7 @@ def test_reviewed_world_target_is_an_exact_attemptable_affordance() -> None:
             identity_session_id="resource-affordance-test",
             capabilities=[
                 "world.context_targets",
+                "world.resource_operators",
                 "control.perform_context_action",
                 "game.pause",
                 "identity.stable_handles",
@@ -464,6 +469,39 @@ def test_reviewed_world_target_is_an_exact_attemptable_affordance() -> None:
         "label": target.name,
         "kind": target.kind,
     }
+
+
+def test_resource_operator_state_rejects_inexact_identity_claims() -> None:
+    common = {
+        "id": "resource-copper",
+        "name": "Copper Resource",
+        "kind": "natural_resource",
+        "position": Vec3(x=10.0, y=0.0, z=20.0),
+        "distance": 30.0,
+        "default_task": "operate_machinery",
+    }
+
+    with pytest.raises(ValidationError, match="duplicate identities"):
+        WorldTarget(
+            **common,
+            operator_capacity=2,
+            current_operator_ids=["character-bark", "character-bark"],
+            current_operators_complete=True,
+        )
+    with pytest.raises(ValidationError, match="exact operator capacity"):
+        WorldTarget(**common, current_operators_complete=True)
+    with pytest.raises(ValidationError, match="exceed"):
+        WorldTarget(
+            **common,
+            operator_capacity=1,
+            current_operator_ids=["character-bark", "character-plant"],
+            current_operators_complete=True,
+        )
+    with pytest.raises(ValidationError, match="only to natural resources"):
+        WorldTarget(
+            **{**common, "kind": "building"},
+            operator_capacity=1,
+        )
 
 
 def test_schema_export_separates_affordance_contract_from_runtime_internals(

@@ -362,7 +362,8 @@ def test_native_resource_production_releases_only_command_owned_work() -> None:
     assert "resourceTaskIssuedByCommand" in plugin
     assert "resourceTaskReleaseRequested" in plugin
     assert "EvaluateResourceTaskRelease" in plugin
-    assert "walker->removeJob(" in plugin
+    assert "resourceRecipients.begin()" in plugin
+    assert "recipient->removeJob(" in plugin
     assert "resourceTasks->clearOrders()" in plugin
     assert "resourceTasks->hasPlayerOrders()" in plugin
     assert "resourceMovement->halt()" in plugin

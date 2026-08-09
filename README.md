@@ -27,14 +27,15 @@ The current action set covers:
 - opening trade, looting, squadmate, and resource inventories;
 - buying, selling, looting, collecting resource output, and moving items between
   open inventories through Kenshi's own inventory code;
-- starting or adopting resource work and waiting for output;
+- reading exact resource operator capacity and accepted identities, starting or
+  adopting resource work, and waiting for exact output inventory;
 - reading a local resource survey;
 - pausing, changing game speed, waiting, and stopping a run;
 - electively shifting into an eligible nearby body, including after losing the
   current party; and
 - using campaign memory, the fieldbook, and the read-only strategy advisor.
 
-The current 1.20 telemetry contract separately exports the complete player
+The current 1.21 telemetry contract separately exports the complete player
 `roster`, named `platoons` and exact membership, `active_platoon_id`,
 `primary_character_id`, and the complete `selected_character_ids` set. The
 primary is never inferred from roster order. The former `squad`, per-character
@@ -52,6 +53,15 @@ targets, queue positions, and unenumerable ordinary-queue totals remain null.
 The named `task-channels-20260809T172100Z` bundle proves one retained ordinary
 order beside separate current activity while Jobs and permanent Jobs remain
 empty; it does not infer general controller ownership from that similarity.
+
+Natural resources now separately report the engine's exact operator capacity,
+complete current accepted-operator identity set, and exact output stacks. A
+selected recipient or queued `OPERATE_MACHINERY` order is not an operator. In
+the named `resource-operators-20260809T201826Z` live bundle, Ribs and Hand were
+both selected and both received the exact resource order, but a capacity-one
+deposit accepted only Ribs. No work-progress percentage is exported because
+the available progress-like native fields do not have a proven
+natural-resource meaning, range, or rollover contract.
 
 Live acceptance runs have covered representative movement, trade-window opening,
 purchases, equipped-item looting, squadmate and resource-output transfers, resource

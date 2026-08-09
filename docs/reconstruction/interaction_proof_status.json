@@ -13,11 +13,10 @@
     "unit_proven = a deterministic test pins it; live_proven = a named run",
     "bundle shows it; unproven = declared, no proof yet; withheld = should not",
     "be offered until proven.",
-    "The two-person resource-production proof named below demonstrates only that",
-    "specific current-selection path. Every context-menu witness in",
-    "game_sources/kenshi/context_menu_witnesses.json was captured with exactly",
-    "one character selected, so other multi-recipient semantics remain declared",
-    "rather than demonstrated. close_trade_window is separately live-proven as a",
+    "The resource-operator bundle named below proves exact capacity and accepted",
+    "identity semantics for a two-character selection against a capacity-one",
+    "target. It does not generalize unrelated multi-recipient semantics.",
+    "close_trade_window is separately live-proven as a",
     "native recovery command, not a registry-backed gameplay operation.",
     "Reverse-engineering conclusions live only under game_sources/research;",
     "entries here link to those packages instead of restating their argument."
@@ -41,7 +40,7 @@
       "the Release x64 native conformance executable parses the shared full and old-shape fixtures and pins their breaking topology"
     ],
     "live_evidence": [],
-    "note": "Specification and portable-test proven only. The current 1.20 producer has landed the topology and independent bounded-work vocabulary but not plural controller commands; no simultaneous-command behavior is claimed."
+    "note": "Specification and portable-test proven only. The current 1.21 producer has landed topology, independent bounded-work vocabulary, and exact resource-operator state but not plural controller commands; no simultaneous-command behavior is claimed."
   },
   "player_topology": {
     "proof_status": "live_proven",
@@ -49,7 +48,7 @@
       "game_sources/research/player_topology records the inspected KenshiLib, ForgottenGUI, and current native call sites",
       "tests/fixtures/native_telemetry/valid_player_topology.json is shared by the strict Python model and compiled C++ conformance target",
       "tests/test_player_topology.py distinguishes roster, membership, active, primary, and complete selection; primary is deliberately not roster order",
-      "the current 1.20 model rejects squad, per-character selected, UI-owned selection, unresolved IDs, and contradictory membership",
+      "the current 1.21 model rejects squad, per-character selected, UI-owned selection, unresolved IDs, and contradictory membership",
       "the player-only identity registry preserves one ID across a live Character object's platoon-handle changes, rejects pointer reuse by validKey, and clears on GameWorld reset"
     ],
     "live_evidence": [
@@ -163,18 +162,25 @@
     {
       "operation_kind": "perform_context_action",
       "subcase": "operate",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "The only witnessed context action. All four operate witnesses in context_menu_witnesses.json had exactly one character selected, so group operate behavior and resource operator capacity are unobserved."
+      "proof_status": "live_proven",
+      "evidence": [
+        "runs/resource-operators-20260809T201826Z/manifest.json records matching 1.21 built and installed DLL hashes, exact request, pre-state, later engine state, and final disposition",
+        "sequence 831 selected Ribs and Hand and retained the exact ordinary order for both, while the capacity-one target's complete current_operator_ids contained only Ribs",
+        "cmd-06957502b99144479744d93740f998fd completed as resource_operator_accepted only after the accepted set transition"
+      ],
+      "research": [
+        "game_sources/research/resource_operators"
+      ],
+      "note": "Live-proven for exact capacity and accepted identities. Selection and queued work are not operator acceptance. Resource-specific assignment is unknown when task subjects are unresolved, and work progress remains withheld."
     },
     {
       "operation_kind": "produce_resource_output",
-      "proof_status": "live_proven",
+      "proof_status": "unit_proven",
       "evidence": [
         "closure-harvest-fixed-20260808 command cmd-9f5f58ce387f40398e780a21f5b76d75 adopted the exact already-running two-character resource task without reissuing it, remained monitored while its acknowledgement was accepted, and reached resource_output_ready at telemetry sequence 2718",
         "The same run then exposed Raw Iron in the resource output inventory and transferred it to Fish, separating production proof from inventory-transfer proof"
       ],
-      "note": "Live-proven for adoption of matching existing work through actual output. The monitor observed the native terminal and no order remained running; this does not generalize the ownership claim to every interruption or mismatched-queue case."
+      "note": "The historical bundle live-proves actual output and inventory transfer under the prior task-adoption terminal. Current 1.21 source and tests now require exact accepted-operator and output-inventory state, but the revised production monitor has no fresh output-ready live bundle, so its current contract is classified only as unit-proven."
     },
     {
       "operation_kind": "read_fieldbook",

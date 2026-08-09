@@ -1,5 +1,5 @@
 {
-  "protocol_version": "1.20.0",
+  "protocol_version": "1.21.0",
   "sequence": 1,
   "captured_at": "2026-08-09T12:00:00Z",
   "source": "sample",
@@ -14,7 +14,8 @@
     "platoons.active",
     "selection.complete",
     "primary.character",
-    "roster.work_channels"
+    "roster.work_channels",
+    "world.resource_operators"
   ],
   "game": {
     "loaded": true,

@@ -262,6 +262,24 @@ class Observation(StrictModel):
                 "context_actions": [action.value for action in target.context_actions],
                 "mining_resource_level": target.mining_resource_level,
                 **(
+                    {
+                        "operator_capacity": target.operator_capacity,
+                        "current_operator_ids": target.current_operator_ids,
+                        "current_operators_complete": (
+                            target.current_operators_complete
+                        ),
+                        "output_inventory": [
+                            item.model_dump(mode="json")
+                            for item in target.output_inventory
+                        ],
+                        "output_inventory_complete": (
+                            target.output_inventory_complete
+                        ),
+                    }
+                    if target.kind == "natural_resource"
+                    else {}
+                ),
+                **(
                     {"screen_position": target.screen_position.model_dump(mode="json")}
                     if target.screen_position is not None
                     else {}

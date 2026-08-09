@@ -161,11 +161,16 @@ def test_context_order_compiles_through_generic_target_adapter() -> None:
         distance=25,
         context_actions=[ContextActionKind.OPERATE],
         default_task="operate",
+        operator_capacity=1,
+        current_operator_ids=[],
+        current_operators_complete=True,
+        output_inventory_complete=True,
     )
     observation = _observation(
         capabilities=[
             "control.perform_context_action",
             "world.context_targets",
+            "world.resource_operators",
             "game.pause",
             "identity.stable_handles",
         ],

@@ -174,6 +174,9 @@ def describe_receipt(receipt: ActionReceipt) -> str:
             "walk_destination_reached": "I reached the walking destination.",
             "dialogue_started": "The conversation has started.",
             "context_task_started": "The task has started.",
+            "resource_operator_accepted": (
+                "Kenshi accepted a selected character as an operator."
+            ),
         }
         if acknowledgement.reason in native_results:
             return native_results[acknowledgement.reason]

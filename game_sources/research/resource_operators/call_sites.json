@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "subsystem": "resource_operators",
+  "executable": {
+    "product": "Kenshi",
+    "version": "1.0.65",
+    "architecture": "x64",
+    "steam_build_id": "13871665",
+    "sha256": "a596ab4e407c67b58599c54ffb32dc1bf2b64510cdebd3fa9359ef05a576aeb1"
+  },
+  "libraries": [
+    {
+      "name": "KenshiLib",
+      "version": "0.4.0",
+      "repository_commit": "b566d74bf3d74629cc2fb632a97595b8202993f1",
+      "artifact_sha256": "d407bf18c807cd3390643227ca4dc3ee4628fedc520870eee250201c04db311d",
+      "headers_sha256": "fbfa33a283ed840e70f6f5f6675c2544df89bc18f8901b81eaa7095b466ec4c8",
+      "working_tree_state": "KenshiLib 0.4.0 checkout with locally modified library binaries; exact artifact and header hashes are authoritative"
+    }
+  ],
+  "sites": [
+    {
+      "id": "resource_operator_storage",
+      "component": "KenshiLib",
+      "symbol": "UseableStuff::numOperatorsMax/currentOperators",
+      "rva": null,
+      "declared_signature": "int numOperatorsMax at +0x3AC; std::set<hand, ..., Ogre::STLAllocator<...>> currentOperators at +0x3D0",
+      "inferred_signature_confidence": "medium",
+      "declaration_source": "KenshiLib 0.4.0 Include/kenshi/Building/UseableStuff.h:114,167",
+      "evidence": ["KenshiLib member declarations", "admission disassembly", "GUI-worker disassembly", "current native exact-state read"],
+      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 2505, "contains": "PopulateNaturalResourceState"}]
+    },
+    {
+      "id": "resource_slot_admission",
+      "component": "Kenshi",
+      "symbol": "UseableStuff::isFreeSlot/tryOperate",
+      "rva": "0xF8030",
+      "declared_signature": "bool isFreeSlot(const hand&) const; bool tryOperate(const hand&)",
+      "inferred_signature_confidence": "medium",
+      "declaration_source": "KenshiLib 0.4.0 Include/kenshi/Building/UseableStuff.h:100-108",
+      "evidence": ["KenshiLib declarations at generated-header RVAs 0xF7BB0 and 0xF7FF0", "current executable isFreeSlot body around RVA 0xF7BF0", "current executable tryOperate body at RVA 0xF8030 compares +0x3E0 set size with +0x3AC capacity and inserts into +0x3D0"],
+      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 2584, "contains": "HasSelectedResourceOperator"}]
+    },
+    {
+      "id": "resource_workers_ui",
+      "component": "Kenshi",
+      "symbol": "UseableStuff::getGUIWorkers",
+      "rva": "0x3075B0",
+      "declared_signature": "void getGUIWorkers(DatapanelGUI*, int)",
+      "inferred_signature_confidence": "medium",
+      "declaration_source": "KenshiLib 0.4.0 Include/kenshi/Building/UseableStuff.h:75-76",
+      "evidence": ["KenshiLib declaration at generated-header RVA 0x307100", "current executable body at RVA 0x3075B0 reads +0x3E0 set size, +0x3AC capacity, and set members"],
+      "project_call_sites": []
+    },
+    {
+      "id": "resource_output_inventory",
+      "component": "Kenshi",
+      "symbol": "Inventory::getSection/InventorySection::getItems/Item quantity",
+      "rva": "0x7469A0",
+      "declared_signature": "InventorySection* getSection(const std::string&) const; const Ogre::vector<SectionItem>::type& getItems() const; int Item::quantity",
+      "inferred_signature_confidence": "medium",
+      "declaration_source": "KenshiLib 0.4.0 Include/kenshi/Inventory.h:19-27,104,140",
+      "evidence": ["KenshiLib getSection RVA 0x7469A0 and getItems RVA 0x2966C0", "current native full output-section walk", "current bounded-production quantity read"],
+      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 2470, "contains": "TryGetInventorySectionQuantity"}, {"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 2553, "contains": "getSection(\"out\")"}]
+    },
+    {
+      "id": "assigned_work_channels",
+      "component": "KenshiLib",
+      "symbol": "OrdersReceiver work channels and Tasker::subject",
+      "rva": null,
+      "declared_signature": "ActionDeque orders; lektor<Tasker*> jobs; lektor<Tasker*> permajobs; TaskMatch currentGoal; hand Tasker::subject",
+      "inferred_signature_confidence": "medium",
+      "declaration_source": "KenshiLib 0.4.0 Include/kenshi/AI/AITaskSystem.h:167-179 and Include/kenshi/Tasker.h:142-151",
+      "evidence": ["separate character-owned channel declarations", "task subject may be unresolved", "existing exact channel export"],
+      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 1931, "contains": "AppendCharacterWorkState"}]
+    },
+    {
+      "id": "ambiguous_work_progress",
+      "component": "KenshiLib",
+      "symbol": "UseableStuff::progressBarLevel/ProductionBuilding::getOutput",
+      "rva": "0x546630",
+      "declared_signature": "bool hasProgressBarWhenUsed; float progressBarLevel; float getOutput() const",
+      "inferred_signature_confidence": "low",
+      "declaration_source": "KenshiLib 0.4.0 Include/kenshi/Building/UseableStuff.h:65-66 and Include/kenshi/Building/ProductionBuilding.h:127,132-150",
+      "evidence": ["member and method declarations only", "no proven natural-resource semantic/range/rollover contract"],
+      "project_call_sites": []
+    }
+  ]
+}

@@ -8,9 +8,9 @@ run evidence, not in a second current protocol narrative.
 ## Current protocol
 
 ```text
-telemetry protocol       1.20.0
+telemetry protocol       1.21.0
 native request schema    1.4
-loaded-world capabilities 48
+loaded-world capabilities 49
 active native commands  at most one
 ```
 
@@ -20,13 +20,13 @@ telemetry version, `NativeCommandRequest` in
 `GameplayCapabilities.json` owns the loaded-world capability vocabulary. The
 portable consistency tests and the native conformance executable compare the
 shared native-command JSON fixtures with both request implementations. The
-conformance target also reads the current 1.20 player-topology/work fixture and the
+conformance target also reads the current 1.21 player-topology/work fixture and the
 accepted Protocol 2.0 world-model fixtures. The former is current producer
 shape; the latter remains a specification for plural command records that the
 producer does not yet emit.
 
-Protocol 1.20.0 retains the clean player-topology break introduced by 1.19.
-Player characters are
+Protocol 1.21.0 retains the clean player-topology break introduced by 1.19 and
+the independent work channels introduced by 1.20. Player characters are
 serialized under `roster`; `platoons`, `active_platoon_id`,
 `primary_character_id`, and the complete root `selected_character_ids` set have
 separate owners. The old `squad`, per-character `selected`, and UI-owned
@@ -70,6 +70,15 @@ Jobs and permanent Jobs use their separately enumerable containers. Task
 subjects, positions, and totals are nullable wherever the inspected source
 cannot establish them. Current activity is observational and does not imply a
 retained ordinary order or configured Job.
+
+Every natural-resource target separately exports nullable exact
+`operator_capacity`, the complete `current_operator_ids` set, and exact output
+inventory stacks with explicit completeness flags. Admission monitoring reads
+Kenshi's accepted-operator set; it never substitutes the selected recipients,
+ordinary orders, Jobs, current activity, or animation. Progress-like native
+floats remain unexported because their natural-resource semantic and range are
+not proven. The exact source and live boundary is recorded in the
+[resource-operator research object](../../game_sources/research/resource_operators/conclusion.md).
 
 Bounded collections expose completeness or warning evidence where the model
 supports it. An empty bounded result must not be generalized beyond that stated
@@ -145,7 +154,8 @@ confidence, probes, crashes, contradictions, and withheld claims:
 - [body shift](../../game_sources/research/body_shift/conclusion.md);
 - [prospecting window](../../game_sources/research/prospecting_window/conclusion.md); and
 - [player topology](../../game_sources/research/player_topology/conclusion.md); and
-- [task channels](../../game_sources/research/task_channels/conclusion.md).
+- [task channels](../../game_sources/research/task_channels/conclusion.md); and
+- [resource operators](../../game_sources/research/resource_operators/conclusion.md).
 
 Current source implements those reviewed conclusions. The packages, not this
 overview, own the reverse-engineering argument. Acceptance of any native call
@@ -193,7 +203,7 @@ folder component.
 - The hook, protocol, command, inventory-model, simplified-pricing, and body
   shift paths above are present in the current source and in the configured
   KenshiLib declarations they call.
-- Protocol 1.20.0 and the 48-entry loaded-world capability manifest are embedded
+- Protocol 1.21.0 and the 49-entry loaded-world capability manifest are embedded
   into the native build inputs.
 - The file-change watcher and the optional hotkey both dispatch through the same
   request parser and command handler.
@@ -232,6 +242,14 @@ later engine sequence 329. That later frame shows Paste retaining one ordinary
 null position while Jobs and permanent Jobs remain complete and empty. Final
 sequence 383 is loaded, paused, modal-free, and has no active native command.
 
+`resource-operators-20260809T201826Z`, using matching built and installed 1.21
+DLL SHA-256
+`91526b828e44035b0cb6de5a22b7cc5ad0c2e392b66a7b8adcbf9ae9403d8db8`,
+proves the new loaded layout and causal acceptance terminal. Two exact
+characters were selected and both received an ordinary order against a
+capacity-one target, but complete `current_operator_ids` contained only Ribs.
+Final sequence 878 is loaded, paused, modal-free, and has no active command.
+
 Other named live evidence remains operation-specific. Reverse-engineering
 conclusions and their exact limitations belong under `game_sources/research/`;
 the interaction proof ledger links those conclusions to operations. Every live
@@ -248,6 +266,10 @@ request delivery or an acknowledgement.
 - No live multi-entry ordinary queue or invalid task subject was observed, so
   unknown totals, sampled tail positions, and null subjects remain source- and
   test-proven only.
+- Resource-specific assigned-worker identities remain unknown when a character
+  task subject is unresolved. Work progress remains withheld because no
+  progress-like native scalar has a proven natural-resource semantic, range,
+  and rollover contract.
 - Character identity is session-scoped. The topology bundle does not claim the
   same character ID survives GameWorld reset, that an empty management row is
   a player platoon, or that one bounded run proves arbitrary roster churn.

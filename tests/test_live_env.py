@@ -597,6 +597,7 @@ class NativePulseTelemetry(PulseTelemetry):
             "nearby.roles",
             "ui.visible_controls",
             "world.context_targets",
+            "world.resource_operators",
             "world.context_target_screen_positions",
             "control.perform_context_action",
             "control.produce_resource_output",
@@ -700,6 +701,10 @@ class NativePulseTelemetry(PulseTelemetry):
                         context_actions=[ContextActionKind.OPERATE],
                         default_task="operate_machinery",
                         mining_resource_level=0.8,
+                        operator_capacity=1,
+                        current_operator_ids=[],
+                        current_operators_complete=True,
+                        output_inventory_complete=True,
                         screen_position=self.world_target_screen_position,
                     ),
                     *(

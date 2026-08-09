@@ -107,6 +107,7 @@ NATIVE_SHIFT_BODY_CAPABILITY = "control.shift_into_body"
 NATIVE_RESOURCE_SURVEY_CAPABILITY = "control.survey_local_resources"
 
 NATIVE_CONTEXT_TARGETS_CAPABILITY = "world.context_targets"
+NATIVE_RESOURCE_OPERATOR_STATE_CAPABILITY = "world.resource_operators"
 NATIVE_PRODUCE_RESOURCE_CAPABILITY = "control.produce_resource_output"
 NATIVE_TRANSFER_CAPABILITY = "control.transfer_item"
 NATIVE_TRADE_WINDOW_CAPABILITY = "control.open_trade_window"
@@ -933,6 +934,10 @@ def _bind_exact_natural_resource(
         return None, _unbound("No telemetry is available to bind the resource.")
     if observation.telemetry_stale:
         return None, _unbound("Telemetry is stale, so the resource cannot be bound.")
+    if NATIVE_RESOURCE_OPERATOR_STATE_CAPABILITY not in telemetry.capabilities:
+        return None, _unbound(
+            "Exact resource capacity and accepted operators are not available."
+        )
     matches = [target for target in telemetry.world_targets if target.id == target_id]
     if not matches:
         return None, _unbound(f"Target {target_id!r} is not a current natural-resource target.")
@@ -951,6 +956,15 @@ def _bind_exact_natural_resource(
             f"Target {target.name!r} does not currently advertise the reviewed "
             "natural-resource operation."
         )
+    if (
+        target.operator_capacity is None
+        or target.operator_capacity < 1
+        or not target.current_operators_complete
+    ):
+        return None, _unbound(
+            f"Target {target.name!r} does not expose complete engine operator "
+            "capacity and identity state."
+        )
     return target, None
 
 
@@ -967,6 +981,10 @@ def bind_produce_resource_output(
     if failure is not None:
         return failure
     assert telemetry is not None and target is not None
+    if not target.output_inventory_complete:
+        return _unbound(
+            f"Target {target.name!r} does not expose a complete output inventory."
+        )
     if (
         telemetry.ui.active_screen != "world"
         or telemetry.ui.modal_open is not False
@@ -977,8 +995,10 @@ def bind_produce_resource_output(
         )
     return BoundNamedTarget(
         reason=(
-            f"Bound retained production to {target.name!r} ({target.id}); task "
-            "acceptance is progress and output inventory is terminal proof."
+            f"Bound retained production to {target.name!r} ({target.id}) with "
+            f"engine capacity {target.operator_capacity} and accepted operators "
+            f"{target.current_operator_ids!r}; selected recipients and queued work "
+            "are not operator acceptance, and output inventory is terminal proof."
         ),
         target_id=target.id,
         resolved_label="produce_output",
@@ -994,10 +1014,15 @@ def resource_production_is_currently_authorable(observation: Observation) -> boo
         and telemetry.ui.active_screen == "world"
         and telemetry.ui.modal_open is False
         and telemetry.ui.dialogue_open is False
+        and NATIVE_RESOURCE_OPERATOR_STATE_CAPABILITY in telemetry.capabilities
         and any(
             target.kind == "natural_resource"
             and ContextActionKind.OPERATE in target.context_actions
             and target.default_task == "operate_machinery"
+            and target.operator_capacity is not None
+            and target.operator_capacity > 0
+            and target.current_operators_complete
+            and target.output_inventory_complete
             for target in telemetry.world_targets
         )
     )
@@ -2296,8 +2321,9 @@ PERFORM_CONTEXT_ACTION_DEFINITION = OperationDefinition(
     summary=(
         "Attempt one exact contextual action advertised by a current world object. "
         "The native controller rechecks the target and reviewed semantic task, then "
-        "owns execution until the selected character's AI reports that exact task "
-        "and subject."
+        "owns execution until Kenshi reports acceptance at the target. For a natural "
+        "resource, acceptance means an exact selected identity entered the engine's "
+        "current-operator set; selection or queued work alone never completes it."
     ),
     argument_source=(
         "target_id and context_action must be copied as an exact pair from the "
@@ -2308,7 +2334,9 @@ PERFORM_CONTEXT_ACTION_DEFINITION = OperationDefinition(
     # first observed AI goal.
     # Kenshi reports this the moment the character adopts the goal, which is why
     # it is a started reason rather than a success one.
-    native_task_started_reasons=frozenset({"context_task_started"}),
+    native_task_started_reasons=frozenset(
+        {"context_task_started", "resource_operator_accepted"}
+    ),
     allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(
         {
@@ -2345,9 +2373,10 @@ PRODUCE_RESOURCE_OUTPUT_DEFINITION = OperationDefinition(
     operation_type=ProduceResourceOutputAction,
     summary=(
         "Keep one exact natural-resource order under option ownership until the "
-        "resource output inventory contains stock. An Operating machine goal is "
-        "progress, not success. Work issued by this option is fully cleared before its "
-        "terminal; unchanged active work is adopted and left player-owned."
+        "resource output inventory contains stock. Current operators come only from "
+        "Kenshi's accepted-operator set; selection and queued work are not acceptance. "
+        "Work issued by this option is fully cleared before its terminal; an already "
+        "accepted selected operator is adopted and left player-owned."
     ),
     argument_source=(
         "target_id must be copied from one natural_resource entry in "
@@ -2358,6 +2387,7 @@ PRODUCE_RESOURCE_OUTPUT_DEFINITION = OperationDefinition(
         {
             NATIVE_PRODUCE_RESOURCE_CAPABILITY,
             NATIVE_CONTEXT_TARGETS_CAPABILITY,
+            NATIVE_RESOURCE_OPERATOR_STATE_CAPABILITY,
             "game.pause",
             "identity.stable_handles",
         }

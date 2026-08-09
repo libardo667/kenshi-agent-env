@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "subsystem": "resource_operators",
+  "observations": [
+    {
+      "id": "resource_operator_portable_contract",
+      "kind": "portable_test",
+      "observed_on": "2026-08-09",
+      "kenshi_version": "No live executable loaded",
+      "executable_sha256_at_probe": null,
+      "installed_dll_sha256_at_probe": null,
+      "run_bundle": null,
+      "pre_dispatch_state": "A synthetic resource has capacity one, two selected recipients, exactly one current operator identity, and a complete output inventory.",
+      "request": "Render planner affordances, bind resource production, validate strict telemetry, and serialize the native fixture.",
+      "acknowledgement": "The contract preserves the one accepted identity and refuses duplicate, over-capacity, missing-capacity, incomplete-operator, and incomplete-output claims.",
+      "later_engine_evidence": "None; portable and compiled fixtures do not load Kenshi.",
+      "final_disposition": "Test-proves the repository contract only. Live layout and causal admission proof remain required.",
+      "evidence_source": "tests/test_models.py, tests/test_affordances.py, tests/test_operation_definitions.py, tests/fixtures/native_commands/valid_natural_resource.json, and native/KenshiAgentTelemetry/NativeCommandProtocolTests.cpp.",
+      "remaining_uncertainty": ["Fixtures cannot prove the installed game publishes the declared set layout or changes it after an order."]
+    },
+    {
+      "id": "selected_worker_conflation",
+      "kind": "contradiction",
+      "observed_on": "2026-08-09",
+      "kenshi_version": "Source inspection",
+      "executable_sha256_at_probe": "a596ab4e407c67b58599c54ffb32dc1bf2b64510cdebd3fa9359ef05a576aeb1",
+      "installed_dll_sha256_at_probe": null,
+      "run_bundle": null,
+      "pre_dispatch_state": "The existing controller recorded selected recipients and accepted an OPERATE_MACHINERY goal as completion.",
+      "request": "Determine which selected characters Kenshi actually admitted to the resource.",
+      "acknowledgement": "Selection and goal adoption supplied no capacity check or accepted-operator identities.",
+      "later_engine_evidence": "The admission and GUI-worker routines instead use numOperatorsMax and currentOperators as the capacity and membership boundary.",
+      "final_disposition": "Goal adoption and selection were deleted as resource-acceptance terminals. Only an exact selected identity in currentOperators can report resource_operator_accepted.",
+      "evidence_source": "Kenshi executable admission/UI-worker disassembly and native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp.",
+      "remaining_uncertainty": ["This contradiction record is source-only; the separate resource_operator_capacity_one_live observation supplies the causal live proof."]
+    },
+    {
+      "id": "resource_operator_capacity_one_live",
+      "kind": "live_probe",
+      "observed_on": "2026-08-09",
+      "kenshi_version": "1.0.65 x64 Steam build 13871665",
+      "executable_sha256_at_probe": "a596ab4e407c67b58599c54ffb32dc1bf2b64510cdebd3fa9359ef05a576aeb1",
+      "installed_dll_sha256_at_probe": "91526b828e44035b0cb6de5a22b7cc5ad0c2e392b66a7b8adcbf9ae9403d8db8",
+      "run_bundle": "runs/resource-operators-20260809T201826Z/manifest.json",
+      "pre_dispatch_state": "Fresh paused Protocol 1.21 snapshot sequence 649 selected exact Ribs and Hand. The exact Small Iron Resource reported operator_capacity 1, complete empty current_operator_ids, and complete empty output inventory. Both characters still had queued/current work for a different resource, which did not place either identity in this target's accepted set.",
+      "request": "cmd-06957502b99144479744d93740f998fd perform_context_action operate, authored from fresh sequence 749 for exact selected Ribs and Hand and the exact capacity-one Small Iron Resource.",
+      "acknowledgement": "Accepted/issued at sequence 750, then completed/resource_operator_accepted at sequence 803 only after an exact selected identity appeared in the engine set.",
+      "later_engine_evidence": "Raw sequence 831 kept both Ribs and Hand selected and showed an exact ordinary OPERATE_MACHINERY order targeting this resource for both. operator_capacity remained 1; current_operator_ids was complete and contained only Ribs. Ribs had matching current activity while Hand had null activity.",
+      "final_disposition": "After bounded recovery, raw sequence 878 was loaded, paused, modal-free, and had no active native command. Two selected and two queued identities remained distinct from the one accepted operator.",
+      "evidence_source": "Matching built and installed DLL sha256 91526b828e44035b0cb6de5a22b7cc5ad0c2e392b66a7b8adcbf9ae9403d8db8; exact request and raw snapshot paths indexed by the named bundle.",
+      "remaining_uncertainty": [
+        "The run does not establish cross-load continuity for session-scoped operator IDs.",
+        "The output inventory remained empty, so exact nonempty output-stack export remains source- and fixture-proven in this slice.",
+        "No work-progress scalar was validated."
+      ]
+    }
+  ]
+}

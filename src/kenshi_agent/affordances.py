@@ -51,6 +51,7 @@ from .core.telemetry import (
 from .operation_definitions import (
     NATIVE_CHARACTER_ORDER_CAPABILITY,
     NATIVE_PRODUCE_RESOURCE_CAPABILITY,
+    NATIVE_RESOURCE_OPERATOR_STATE_CAPABILITY,
     NATIVE_SHIFT_BODY_CAPABILITY,
     NATIVE_TRADE_WINDOW_CAPABILITY,
     NATIVE_TRANSFER_CAPABILITY,
@@ -487,11 +488,12 @@ def _context_order_description(
 
     if order == ContextActionKind.OPERATE and target.kind == "natural_resource":
         return (
-            f"Station the selection at {target.name!r} to mine it indefinitely, as a "
-            "standing job. Output collects inside the resource and reaches nobody's "
-            "inventory; this order never finishes on its own. To collect ore, use "
-            "produce_resource_output, pair the resource with an inventory, and "
-            "transfer the output slot."
+            f"Ask the selection to operate {target.name!r} indefinitely. Kenshi has "
+            f"{target.operator_capacity} operator slots and currently accepts only "
+            f"{target.current_operator_ids!r}; selection and queued work are not proof "
+            "of operator acceptance. Output collects inside the resource and reaches "
+            "nobody's inventory. To collect ore, use produce_resource_output, pair "
+            "the resource with an inventory, and transfer the output slot."
         )
     return f"Issue {order.value!r} to {target.name!r}."
 
@@ -510,8 +512,15 @@ def _context_order_offers(observation: Observation) -> Iterable[AffordanceOffer]
             if not (
                 native
                 and (
-                    order == ContextActionKind.OPERATE
-                    and target.kind == "natural_resource"
+                    (
+                        order == ContextActionKind.OPERATE
+                        and target.kind == "natural_resource"
+                        and NATIVE_RESOURCE_OPERATOR_STATE_CAPABILITY
+                        in telemetry.capabilities
+                        and target.operator_capacity is not None
+                        and target.operator_capacity > 0
+                        and target.current_operators_complete
+                    )
                     or order == ContextActionKind("first_aid")
                     and target.kind == "squad_character"
                 )
@@ -1086,12 +1095,19 @@ def _native_and_composite_offers(
                 arguments={},
             )
 
-    if NATIVE_PRODUCE_RESOURCE_CAPABILITY in set(telemetry.capabilities):
+    if {
+        NATIVE_PRODUCE_RESOURCE_CAPABILITY,
+        NATIVE_RESOURCE_OPERATOR_STATE_CAPABILITY,
+    }.issubset(telemetry.capabilities):
         for target in telemetry.world_targets:
             if not (
                 target.kind == "natural_resource"
                 and ContextActionKind.OPERATE in target.context_actions
                 and target.default_task == "operate_machinery"
+                and target.operator_capacity is not None
+                and target.operator_capacity > 0
+                and target.current_operators_complete
+                and target.output_inventory_complete
             ):
                 continue
             yield _offer(
@@ -1099,9 +1115,12 @@ def _native_and_composite_offers(
                 source=AffordanceSource.NATIVE_OPERATION,
                 semantic="produce_resource_output",
                 description=(
-                    f"Work {target.name!r} only until its output inventory contains "
-                    "stock, then release controller-owned work. This produces the "
-                    "resource output but does not move it into a squad inventory."
+                    f"Ask the selection to work {target.name!r} only until its output "
+                    f"inventory contains stock, then release controller-owned work. "
+                    f"Kenshi has {target.operator_capacity} operator slots and currently "
+                    f"accepts {target.current_operator_ids!r}; selected or queued "
+                    "characters are not reported as operators. This produces output "
+                    "but does not move it into a squad inventory."
                 ),
                 operation_kind="produce_resource_output",
                 target=AffordanceTarget(

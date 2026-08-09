@@ -201,9 +201,10 @@ namespace
     const unsigned int MAX_OPEN_INVENTORIES = 8;
     const unsigned int MAX_INVENTORY_SECTIONS = 16;
     const unsigned int MAX_INVENTORY_ITEMS_PER_SECTION = 128;
+    const unsigned int MAX_RESOURCE_OUTPUT_ITEMS = 128;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "1.20.0";
+    const char* PROTOCOL_VERSION = "1.21.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -2216,6 +2217,10 @@ namespace
             categoryCount;
     }
 
+    void PopulateNaturalResourceState(
+        Building* target,
+        NaturalResourceTargetSnapshot& snapshot);
+
     void AppendNaturalResourceCandidates(
         PlayerInterface* player,
         lektor<RootObject*>& buildings,
@@ -2248,6 +2253,7 @@ namespace
                 Distance(targetPosition, selectedPosition);
             snapshot.miningResourceLevel =
                 target->getMiningResourceLevel();
+            PopulateNaturalResourceState(target, snapshot);
             float screenX = 0.0f;
             float screenY = 0.0f;
             snapshot.hasScreenPosition =
@@ -2485,6 +2491,126 @@ namespace
             quantity += item->quantity;
         }
         return true;
+    }
+
+    // Populate the engine-owned resource state that distinguishes an order
+    // recipient from an accepted operator.
+    //
+    // `newPlayerTaskSelectedCharacters` only places work on the selected
+    // characters. Kenshi accepts a character into a machine separately:
+    // `UseableStuff::tryOperate` inserts its handle into `currentOperators`
+    // only while that set is below `numOperatorsMax`. These fields are the
+    // acceptance boundary. Selection size, task queues, current activity, and
+    // animation are deliberately absent from this read.
+    void PopulateNaturalResourceState(
+        Building* target,
+        NaturalResourceTargetSnapshot& snapshot)
+    {
+        snapshot.operatorCapacityKnown = false;
+        snapshot.currentOperatorsComplete = false;
+        snapshot.currentOperatorIds.clear();
+        snapshot.outputInventoryComplete = false;
+        snapshot.outputInventory.clear();
+        if (target == NULL || !target->isValid())
+            return;
+
+        UseableStuff* useable = target->getUseableStuff();
+        if (useable != NULL && useable->numOperatorsMax >= 0)
+        {
+            snapshot.operatorCapacityKnown = true;
+            snapshot.operatorCapacity = useable->numOperatorsMax;
+            snapshot.currentOperatorsComplete = true;
+            std::set<std::string> seenOperatorIds;
+            typedef std::set<hand, std::less<hand>,
+                Ogre::STLAllocator<hand, Ogre::GeneralAllocPolicy > >
+                OperatorSet;
+            for (OperatorSet::const_iterator it =
+                     useable->currentOperators.begin();
+                 it != useable->currentOperators.end();
+                 ++it)
+            {
+                Character* current = it->getCharacter();
+                const std::string operatorId = StableEntityId(current);
+                if (operatorId.empty() ||
+                    !seenOperatorIds.insert(operatorId).second)
+                {
+                    snapshot.currentOperatorsComplete = false;
+                    continue;
+                }
+                snapshot.currentOperatorIds.push_back(operatorId);
+            }
+            std::sort(
+                snapshot.currentOperatorIds.begin(),
+                snapshot.currentOperatorIds.end());
+            if (snapshot.currentOperatorIds.size() >
+                static_cast<unsigned int>(snapshot.operatorCapacity))
+            {
+                snapshot.currentOperatorsComplete = false;
+            }
+        }
+
+        Inventory* inventory = target->getInventory();
+        InventorySection* output =
+            inventory != NULL ? inventory->getSection("out") : NULL;
+        if (output == NULL)
+            return;
+        snapshot.outputInventoryComplete = true;
+        const Ogre::vector<InventorySection::SectionItem>::type& items =
+            output->getItems();
+        for (size_t index = 0; index < items.size(); ++index)
+        {
+            if (snapshot.outputInventory.size() >= MAX_RESOURCE_OUTPUT_ITEMS)
+            {
+                snapshot.outputInventoryComplete = false;
+                break;
+            }
+            Item* item = items[index].item;
+            if (item == NULL || !item->isValid())
+            {
+                snapshot.outputInventoryComplete = false;
+                continue;
+            }
+            NaturalResourceTargetSnapshot::OutputItem outputItem;
+            outputItem.name = item->getName();
+            outputItem.quantity = item->quantity;
+            outputItem.itemType = static_cast<int>(item->getItemType());
+            snapshot.outputInventory.push_back(outputItem);
+        }
+    }
+
+    // True only when Kenshi's accepted-operator set intersects the exact
+    // command recipients. A queued order or a selected character is not an
+    // operator and is intentionally unable to make this true.
+    bool HasSelectedResourceOperator(
+        Building* target,
+        const std::vector<std::string>& selectedCharacterIds)
+    {
+        if (target == NULL || !target->isValid() ||
+            selectedCharacterIds.empty())
+        {
+            return false;
+        }
+        UseableStuff* useable = target->getUseableStuff();
+        if (useable == NULL)
+            return false;
+        typedef std::set<hand, std::less<hand>,
+            Ogre::STLAllocator<hand, Ogre::GeneralAllocPolicy > > OperatorSet;
+        for (OperatorSet::const_iterator it =
+                 useable->currentOperators.begin();
+             it != useable->currentOperators.end();
+             ++it)
+        {
+            const std::string operatorId = StableEntityId(it->getCharacter());
+            if (!operatorId.empty() &&
+                std::find(
+                    selectedCharacterIds.begin(),
+                    selectedCharacterIds.end(),
+                    operatorId) != selectedCharacterIds.end())
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     bool IsExactDialogueTargetOpen(const hand& targetHandle)
@@ -3763,7 +3889,9 @@ namespace
                             contextTarget,
                             "out",
                             outputQuantity);
-                    resourceTaskActive = HasExactContextGoal(walker);
+                    resourceTaskActive = HasSelectedResourceOperator(
+                        contextTarget,
+                        g_activeNativeCommand.selectedCharacterIds);
                     const KenshiAgentTelemetry::ResourceProductionState state =
                         KenshiAgentTelemetry::EvaluateResourceProduction(
                             outputKnown,
@@ -3783,17 +3911,38 @@ namespace
                     if (state == KenshiAgentTelemetry::
                             RESOURCE_PRODUCTION_OUTPUT_READY)
                     {
-                        AI* resourceAI = walker->getAI();
-                        AITaskSytem* resourceTasks =
-                            resourceAI != NULL
-                                ? resourceAI->getTaskSystem()
-                                : NULL;
-                        CharMovement* resourceMovement =
-                            walker->getMovement();
+                        bool selectedOrdersActive = false;
+                        bool resourceReleaseUnavailable = false;
+                        std::vector<Character*> resourceRecipients;
+                        for (std::vector<hand>::const_iterator it =
+                                 selectedHandles.begin();
+                             it != selectedHandles.end();
+                             ++it)
+                        {
+                            Character* recipient = it->getCharacter();
+                            AI* resourceAI =
+                                recipient != NULL ? recipient->getAI() : NULL;
+                            AITaskSytem* resourceTasks =
+                                resourceAI != NULL
+                                    ? resourceAI->getTaskSystem()
+                                    : NULL;
+                            CharMovement* resourceMovement =
+                                recipient != NULL
+                                    ? recipient->getMovement()
+                                    : NULL;
+                            if (recipient == NULL || resourceTasks == NULL ||
+                                resourceMovement == NULL)
+                            {
+                                resourceReleaseUnavailable = true;
+                                continue;
+                            }
+                            resourceRecipients.push_back(recipient);
+                            if (resourceTasks->hasPlayerOrders())
+                                selectedOrdersActive = true;
+                        }
                         if (g_activeNativeCommand.
                                 resourceTaskIssuedByCommand &&
-                            (resourceTasks == NULL ||
-                             resourceMovement == NULL))
+                            resourceReleaseUnavailable)
                         {
                             FinishActiveNativeCommand(
                                 "cancelled",
@@ -3801,9 +3950,7 @@ namespace
                             return;
                         }
                         const bool releaseStillActive =
-                            resourceTaskActive ||
-                            (resourceTasks != NULL &&
-                             resourceTasks->hasPlayerOrders());
+                            resourceTaskActive || selectedOrdersActive;
                         const bool releaseConfirmed =
                             g_activeNativeCommand.resourceTaskReleaseRequested &&
                             KenshiAgentTelemetry::
@@ -3824,16 +3971,27 @@ namespace
                                 RESOURCE_TASK_RELEASE_REQUESTED)
                         {
                             // newPlayerTaskSelectedCharacters(..., false)
-                            // replaced the actor's prior ordinary order queue,
-                            // so this command owns that queue. removeJob clears
-                            // the visible Jobs entry; clearOrders and halt end
-                            // the still-running operating order underneath it.
-                            walker->removeJob(
-                                g_activeNativeCommand.expectedTask);
-                            // resourceTasks and resourceMovement were proven
-                            // above for every controller-issued order.
-                            resourceTasks->clearOrders();
-                            resourceMovement->halt();
+                            // replaced every recipient's prior ordinary order
+                            // queue, so this command owns those queues. Release
+                            // all recipients, not merely the primary; selection
+                            // is a dispatch basis and the accepted-operator set
+                            // may contain any subset of it.
+                            for (std::vector<Character*>::const_iterator it =
+                                     resourceRecipients.begin();
+                                 it != resourceRecipients.end();
+                                 ++it)
+                            {
+                                Character* recipient = *it;
+                                AI* resourceAI = recipient->getAI();
+                                AITaskSytem* resourceTasks =
+                                    resourceAI->getTaskSystem();
+                                CharMovement* resourceMovement =
+                                    recipient->getMovement();
+                                recipient->removeJob(
+                                    g_activeNativeCommand.expectedTask);
+                                resourceTasks->clearOrders();
+                                resourceMovement->halt();
+                            }
                             g_activeNativeCommand.
                                 resourceTaskReleaseRequested = true;
                             KenshiAgentTelemetry::
@@ -3866,11 +4024,13 @@ namespace
                     if (resourceTaskActive)
                         g_activeNativeCommand.resourceTaskObserved = true;
                 }
-                else if (HasExactContextGoal(walker))
+                else if (HasSelectedResourceOperator(
+                             contextTarget,
+                             g_activeNativeCommand.selectedCharacterIds))
                 {
                     FinishActiveNativeCommand(
                         "completed",
-                        "context_task_started");
+                        "resource_operator_accepted");
                     return;
                 }
             }
@@ -5346,13 +5506,10 @@ namespace
             g_lastNativeCommandTarget = target->getName();
             g_lastNativeCommandTargetId = request.targetId;
 
-            Character* selected = selectedHandle.getCharacter();
-            const bool exactTaskAlreadyActive =
-                isResourceProduction &&
-                HasExactContextGoal(
-                    selected,
-                    OPERATE_MACHINERY,
-                    targetHandle);
+            const bool acceptedOperatorAlreadyActive =
+                HasSelectedResourceOperator(
+                    target,
+                    request.selectedCharacterIds);
             if (isResourceProduction)
             {
                 int outputQuantity = 0;
@@ -5382,7 +5539,7 @@ namespace
             }
             Building* destinationIndoors =
                 target->isIndoors().getBuilding();
-            if (!exactTaskAlreadyActive)
+            if (!acceptedOperatorAlreadyActive)
             {
                 player->newPlayerTaskSelectedCharacters(
                     OPERATE_MACHINERY,
@@ -5394,8 +5551,8 @@ namespace
             AddNativeAcknowledgement(
                 request,
                 "accepted",
-                exactTaskAlreadyActive
-                    ? "adopted_existing_task"
+                acceptedOperatorAlreadyActive
+                    ? "adopted_existing_operator"
                     : "issued",
                 true,
                 false);
@@ -5426,9 +5583,9 @@ namespace
             g_activeNativeCommand.isResourceProduction =
                 isResourceProduction;
             g_activeNativeCommand.resourceTaskObserved =
-                exactTaskAlreadyActive;
+                acceptedOperatorAlreadyActive;
             g_activeNativeCommand.resourceTaskIssuedByCommand =
-                isResourceProduction && !exactTaskAlreadyActive;
+                isResourceProduction && !acceptedOperatorAlreadyActive;
             g_activeNativeCommand.resourceTaskReleaseRequested = false;
             KenshiAgentTelemetry::ResetResourceTaskReleaseConfirmationWindow(
                 g_activeNativeCommand.resourceTaskReleaseWindow);
@@ -5444,8 +5601,8 @@ namespace
             g_activeNativeCommand.originX = 0.0f;
             g_activeNativeCommand.originZ = 0.0f;
             g_lastNativeCommandResult =
-                exactTaskAlreadyActive
-                    ? "adopted_existing_task"
+                acceptedOperatorAlreadyActive
+                    ? "adopted_existing_operator"
                     : "issued";
             return;
         }

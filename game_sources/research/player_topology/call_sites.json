@@ -28,7 +28,7 @@
       "inferred_signature_confidence": "medium",
       "declaration_source": "KenshiLib 0.4.0 Include/kenshi/PlayerInterface.h:179",
       "evidence": ["KenshiLib declaration and RVA", "current native roster call site"],
-      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 5898, "contains": "getAllPlayerCharacters"}]
+      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 6055, "contains": "getAllPlayerCharacters"}]
     },
     {
       "id": "character_platoon",
@@ -39,7 +39,7 @@
       "inferred_signature_confidence": "medium",
       "declaration_source": "KenshiLib 0.4.0 Include/kenshi/Character.h:588",
       "evidence": ["KenshiLib declaration and RVA", "current native membership call site"],
-      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 5923, "contains": "getPlatoon"}]
+      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 6080, "contains": "getPlatoon"}]
     },
     {
       "id": "platoon_string_id",
@@ -61,7 +61,7 @@
       "inferred_signature_confidence": "medium",
       "declaration_source": "KenshiLib 0.4.0 Include/kenshi/Platoon.h:260",
       "evidence": ["KenshiLib declaration and RVA", "current native topology call site"],
-      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 5934, "contains": "getName"}]
+      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 6091, "contains": "getName"}]
     },
     {
       "id": "active_platoon",
@@ -72,7 +72,7 @@
       "inferred_signature_confidence": "medium",
       "declaration_source": "KenshiLib 0.4.0 Include/kenshi/PlayerInterface.h:115",
       "evidence": ["KenshiLib declaration and RVA", "current native active-platoon call site"],
-      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 5942, "contains": "getCurrentActivePlatoon"}]
+      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 6099, "contains": "getCurrentActivePlatoon"}]
     },
     {
       "id": "primary_character",
@@ -83,7 +83,7 @@
       "inferred_signature_confidence": "medium",
       "declaration_source": "KenshiLib 0.4.0 Include/kenshi/PlayerInterface.h:191",
       "evidence": ["KenshiLib member declaration", "current native primary resolution"],
-      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 5895, "contains": "selectedCharacter.getCharacter"}]
+      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 6052, "contains": "selectedCharacter.getCharacter"}]
     },
     {
       "id": "selected_character_set",
@@ -94,7 +94,7 @@
       "inferred_signature_confidence": "medium",
       "declaration_source": "KenshiLib 0.4.0 Include/kenshi/PlayerInterface.h:241",
       "evidence": ["KenshiLib member declaration", "current native complete-selection walk"],
-      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 5982, "contains": "selectedCharacters.begin"}]
+      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 6139, "contains": "selectedCharacters.begin"}]
     }
   ]
 }

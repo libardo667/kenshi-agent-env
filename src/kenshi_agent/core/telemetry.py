@@ -557,6 +557,14 @@ class DiscoveredObject(StrictModel):
     advertised_tasks_probed: bool = True
 
 
+class ResourceOutputItem(StrictModel):
+    """One exact item stack in a natural resource's engine-owned output slot."""
+
+    name: str = Field(min_length=1, max_length=200)
+    quantity: int = Field(ge=0)
+    item_type: int
+
+
 class WorldTarget(StrictModel):
     """A non-character object with exact reviewed contextual affordances.
 
@@ -575,6 +583,16 @@ class WorldTarget(StrictModel):
     context_actions: list[ContextActionKind] = Field(default_factory=list)
     default_task: str
     mining_resource_level: float | None = None
+    # Kenshi's accepted operators, not the characters selected when an order
+    # was issued and not characters whose queues merely name this target.
+    operator_capacity: int | None = Field(default=None, ge=0)
+    current_operator_ids: list[str] = Field(default_factory=list, max_length=64)
+    current_operators_complete: bool = False
+    output_inventory: list[ResourceOutputItem] = Field(
+        default_factory=list,
+        max_length=128,
+    )
+    output_inventory_complete: bool = False
     screen_position: Vec2 | None = None
     # What Kenshi itself says the current selection may order this target to
     # do, discovered by probing its TaskType vocabulary rather than by the
@@ -585,6 +603,30 @@ class WorldTarget(StrictModel):
     # False means this target was outside the per-snapshot probe budget, so an
     # empty `advertised_tasks` says nothing about what it affords.
     advertised_tasks_probed: bool = False
+
+    @model_validator(mode="after")
+    def validate_resource_operator_state(self) -> WorldTarget:
+        if len(set(self.current_operator_ids)) != len(self.current_operator_ids):
+            raise ValueError("current_operator_ids contains duplicate identities")
+        if self.current_operators_complete and self.operator_capacity is None:
+            raise ValueError(
+                "complete current operators require an exact operator capacity"
+            )
+        if (
+            self.current_operators_complete
+            and self.operator_capacity is not None
+            and len(self.current_operator_ids) > self.operator_capacity
+        ):
+            raise ValueError("current operators exceed the engine operator capacity")
+        if self.kind != "natural_resource" and (
+            self.operator_capacity is not None
+            or self.current_operator_ids
+            or self.current_operators_complete
+            or self.output_inventory
+            or self.output_inventory_complete
+        ):
+            raise ValueError("resource operator state belongs only to natural resources")
+        return self
 
 
 class KnownMapDestination(StrictModel):
@@ -1488,7 +1530,7 @@ class NativeControlState(StrictModel):
 
 
 class TelemetrySnapshot(StrictModel):
-    protocol_version: str = "1.20.0"
+    protocol_version: str = "1.21.0"
     sequence: int = Field(default=0, ge=0)
     captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = "unknown"
