@@ -88,6 +88,12 @@ class OrderDisposition(StrEnum):
     one the old vocabulary could not say at all.
     """
 
+    OBSERVED_UNATTRIBUTED_WORK = "observed_unattributed_work"
+    """Kenshi retained ordinary work, but no causal controller link was proven."""
+
+    UNKNOWN_WITHOUT_CAUSAL_LINK = "unknown_without_causal_link"
+    """Fresh work state could not establish what became of this exact order."""
+
     EXPLICITLY_CLEARED = "explicitly_cleared"
     """The controller cleared an order it had issued and owned."""
 
@@ -110,6 +116,8 @@ class OrderDisposition(StrEnum):
         return self in {
             OrderDisposition.RETAINED_AT_LAST_OBSERVATION,
             OrderDisposition.UNKNOWN_AFTER_TELEMETRY_LOSS,
+            OrderDisposition.OBSERVED_UNATTRIBUTED_WORK,
+            OrderDisposition.UNKNOWN_WITHOUT_CAUSAL_LINK,
         }
 
 
@@ -157,6 +165,12 @@ class LifecycleOutcome:
             OrderDisposition.UNKNOWN_AFTER_TELEMETRY_LOSS: (
                 "what Kenshi did with the order is unknown"
             ),
+            OrderDisposition.OBSERVED_UNATTRIBUTED_WORK: (
+                "Kenshi retained ordinary work without a proven controller link"
+            ),
+            OrderDisposition.UNKNOWN_WITHOUT_CAUSAL_LINK: (
+                "fresh work state could not identify this exact order"
+            ),
             OrderDisposition.EXPLICITLY_CLEARED: "the controller cleared its own order",
             OrderDisposition.EXTERNALLY_REPLACED: "something else replaced the order",
             OrderDisposition.NATURALLY_ENDED: "the order ended on its own",
@@ -174,8 +188,8 @@ def order_disposition_from_evidence(
     *,
     issued: bool,
     telemetry_fresh: bool,
-    retained_task_names: frozenset[str] | set[str],
-    expected_task_name: str | None,
+    causally_retained: bool | None,
+    observed_unattributed_ordinary_work: bool,
 ) -> OrderDisposition:
     """Read the order's fate from what the last observation actually showed.
 
@@ -188,17 +202,13 @@ def order_disposition_from_evidence(
         return OrderDisposition.NEVER_ISSUED
     if not telemetry_fresh:
         return OrderDisposition.UNKNOWN_AFTER_TELEMETRY_LOSS
-    if expected_task_name is None:
-        # Something was issued but the controller cannot name what to look for,
-        # so a retained-work list cannot confirm or deny it.
-        return OrderDisposition.UNKNOWN_AFTER_TELEMETRY_LOSS
-    if expected_task_name in retained_task_names:
+    if causally_retained is True:
         return OrderDisposition.RETAINED_AT_LAST_OBSERVATION
-    if retained_task_names:
-        # The character is holding work, but not the work this operation
-        # ordered. Somebody else - a Job, the AI, a person - is driving.
-        return OrderDisposition.EXTERNALLY_REPLACED
-    return OrderDisposition.NATURALLY_ENDED
+    if causally_retained is False:
+        return OrderDisposition.NATURALLY_ENDED
+    if observed_unattributed_ordinary_work:
+        return OrderDisposition.OBSERVED_UNATTRIBUTED_WORK
+    return OrderDisposition.UNKNOWN_WITHOUT_CAUSAL_LINK
 
 
 # Why the monitor detached, for each way a run can stop watching. A supervisor

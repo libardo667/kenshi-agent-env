@@ -1,0 +1,25 @@
+{
+  "protocol_version": "1.19.0",
+  "sequence": 1,
+  "source": "superseded-task-shape",
+  "roster": [
+    {
+      "id": "character-old",
+      "name": "Old Shape",
+      "task_state": {
+        "has_player_orders": true,
+        "orders": [],
+        "orders_count": 0,
+        "orders_complete": true,
+        "jobs_enabled": true,
+        "jobs": [],
+        "jobs_count": 0,
+        "jobs_complete": true,
+        "permajobs": [],
+        "permajobs_count": 0,
+        "permajobs_complete": true,
+        "current_activity": null
+      }
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 
 Three questions were reported as unanswerable gaps in a bundle that answered
 all three. The probes said `offers`, `withheld` and `task_state`; the emitters
-write `offered`, `withheld_unauthorable` and `retained_work`. Because the
+write `offered`, `withheld_unauthorable` and `character_work`. Because the
 probes were resolved by substring-searching the rendered JSON, a name that
 matched nothing was indistinguishable from evidence that was never recorded -
 so the tool built to measure the reporting surface manufactured gaps in it, and
@@ -21,10 +21,12 @@ import pytest
 from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.telemetry import (
     CharacterState,
-    CharacterTaskState,
+    CharacterWorkState,
     GameState,
     NativeControlState,
     NormalizedPointerBounds,
+    TaskCollection,
+    TaskCollectionCompleteness,
     TelemetrySnapshot,
     UIState,
     VisibleUIControl,
@@ -63,7 +65,26 @@ def _observation_payload() -> dict[str, object]:
                 CharacterState(
                     id="barth",
                     name="Barth",
-                    task_state=CharacterTaskState(has_player_orders=True),
+                    work=CharacterWorkState(
+                        has_player_orders=True,
+                        ordinary_orders=TaskCollection(
+                            items=[],
+                            completeness=TaskCollectionCompleteness.COMPLETE,
+                            known_total=0,
+                        ),
+                        jobs_enabled=False,
+                        jobs=TaskCollection(
+                            items=[],
+                            completeness=TaskCollectionCompleteness.COMPLETE,
+                            known_total=0,
+                        ),
+                        permanent_jobs=TaskCollection(
+                            items=[],
+                            completeness=TaskCollectionCompleteness.COMPLETE,
+                            known_total=0,
+                        ),
+                        current_activity=None,
+                    ),
                 )
             ],
         ),
@@ -124,6 +145,18 @@ def test_presence_is_measured_rather_than_truthiness() -> None:
 
 
 def test_probes_descend_into_lists() -> None:
-    payload = {"roster": [{"task_state": {"orders_count": 0}}]}
+    payload = {
+        "roster": [
+            {
+                "work": {
+                    "ordinary_orders": {
+                        "items": [],
+                        "completeness": "complete",
+                        "known_total": 0,
+                    }
+                }
+            }
+        ]
+    }
 
-    assert resolve_probe(payload, "roster.task_state.orders_count")
+    assert resolve_probe(payload, "roster.work.ordinary_orders.known_total")

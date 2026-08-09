@@ -24,6 +24,7 @@ namespace KenshiAgentTelemetry
             "roster.inventory",
             "roster.indoors",
             "roster.current_goal",
+            "roster.work_channels",
             "platoons.membership",
             "platoons.active",
             "selection.complete",

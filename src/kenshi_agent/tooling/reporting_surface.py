@@ -77,13 +77,13 @@ POST_MORTEM_QUESTIONS: tuple[PostMortemQuestion, ...] = (
         ),
     ),
     PostMortemQuestion(
-        question="Was Kenshi holding retained work for a character?",
+        question="What retained work and current activity did Kenshi report?",
         event_type="observation",
-        probe="telemetry.retained_work",
+        probe="telemetry.character_work",
         why_it_matters=(
             "A retained order pulled a character out of a trade conversation "
             "and made a move order look stalled. Neither was diagnosable from "
-            "the bundle, because the digest keeps no task state."
+            "the bundle, because the digest kept no separate work channels."
         ),
     ),
     PostMortemQuestion(

@@ -1,5 +1,5 @@
 {
-  "protocol_version": "1.19.0",
+  "protocol_version": "1.20.0",
   "sequence": 1,
   "captured_at": "2026-08-09T12:00:00Z",
   "source": "sample",
@@ -13,7 +13,8 @@
     "platoons.membership",
     "platoons.active",
     "selection.complete",
-    "primary.character"
+    "primary.character",
+    "roster.work_channels"
   ],
   "game": {
     "loaded": true,
@@ -45,7 +46,27 @@
       "movement_speed": 18.0,
       "hunger": 2.5,
       "food_items": 1,
-      "first_aid_kits": 1
+      "first_aid_kits": 1,
+      "work": {
+        "has_player_orders": false,
+        "ordinary_orders": {
+          "items": [],
+          "completeness": "complete",
+          "known_total": 0
+        },
+        "jobs_enabled": true,
+        "jobs": {
+          "items": [],
+          "completeness": "complete",
+          "known_total": 0
+        },
+        "permanent_jobs": {
+          "items": [],
+          "completeness": "complete",
+          "known_total": 0
+        },
+        "current_activity": null
+      }
     }
   ],
   "roster_complete": true,

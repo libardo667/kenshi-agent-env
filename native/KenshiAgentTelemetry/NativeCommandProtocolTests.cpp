@@ -321,10 +321,26 @@ namespace
                 topology.get_child("roster");
             boost::property_tree::ptree::const_iterator rosterIt =
                 roster.begin();
-            if (topology.get<std::string>("protocol_version") != "1.19.0" ||
+            const boost::property_tree::ptree& work =
+                rosterIt->second.get_child("work");
+            const boost::property_tree::ptree& ordinaryOrders =
+                work.get_child("ordinary_orders");
+            if (topology.get<std::string>("protocol_version") != "1.20.0" ||
                 topology.count("squad") != 0U ||
                 roster.size() != 3U ||
                 rosterIt->second.count("selected") != 0U ||
+                rosterIt->second.count("task_state") != 0U ||
+                work.count("orders") != 0U ||
+                work.count("permajobs") != 0U ||
+                work.count("ordinary_orders") != 1U ||
+                work.count("jobs") != 1U ||
+                work.count("permanent_jobs") != 1U ||
+                work.count("current_activity") != 1U ||
+                ordinaryOrders.get_child("items").size() != 1U ||
+                ordinaryOrders.get<std::string>("completeness") != "complete" ||
+                ordinaryOrders.get<int>("known_total") != 1 ||
+                work.get_child("jobs.items").size() != 0U ||
+                work.get<int>("jobs.known_total") != 0 ||
                 topology.get_child("platoons").size() != 2U ||
                 topology.get<std::string>("active_platoon_id") !=
                     "platoon-beta" ||

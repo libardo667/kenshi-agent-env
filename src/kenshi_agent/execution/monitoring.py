@@ -17,7 +17,7 @@ from ..core.planning import (
     PlanEnvelope,
     PlanStep,
 )
-from ..core.transport import CommandDispatchContext, Transition
+from ..core.transport import CommandDispatchContext
 from ..future_planning import FuturePlanningPolicy, FuturePlanningSession
 from ..input_boundary import ExecutionToken
 from ..options import OptionStatus
@@ -34,7 +34,6 @@ from .monitor_types import (
 
 def _order_disposition_now(
     observation: Observation | None,
-    expected_task_name: str | None,
     *,
     issued: bool,
 ) -> tuple[OrderDisposition, int | None]:
@@ -51,36 +50,32 @@ def _order_disposition_now(
         and observation is not None
         and not observation.telemetry_stale
     )
-    retained: set[str] = set()
+    observed_unattributed_ordinary_work = False
     if telemetry is not None:
         for character in telemetry.roster:
-            state = character.task_state
-            if state is None:
+            work = character.work
+            if work is None:
                 continue
-            for entry in (*state.orders, *state.jobs, *state.permajobs):
-                if entry.task_name:
-                    retained.add(entry.task_name)
-            if state.current_activity is not None and state.current_activity.task_name:
-                retained.add(state.current_activity.task_name)
+            # Controller world commands currently enter Kenshi through the
+            # ordinary order path. Jobs, permanent Jobs, and current activity
+            # are independent evidence and cannot prove that order was retained.
+            if (
+                work.has_player_orders
+                or bool(work.ordinary_orders.items)
+                or (
+                    work.ordinary_orders.known_total is not None
+                    and work.ordinary_orders.known_total > 0
+                )
+            ):
+                observed_unattributed_ordinary_work = True
     disposition = order_disposition_from_evidence(
         issued=issued,
         telemetry_fresh=fresh,
-        retained_task_names=retained,
-        expected_task_name=expected_task_name,
+        causally_retained=None,
+        observed_unattributed_ordinary_work=observed_unattributed_ordinary_work,
     )
     sequence = telemetry.sequence if fresh and telemetry is not None else None
     return disposition, sequence
-
-
-def _expected_task_name(transition: Transition | None) -> str | None:
-    """The Kenshi task this operation asked for, when it named one."""
-
-    if transition is None:
-        return None
-    semantic = transition.receipt.semantic
-    if semantic is None:
-        return None
-    return semantic.resolved_label or None
 
 
 class MonitorEventReporter(Protocol):
@@ -288,7 +283,6 @@ class OperationMonitor:
                 monitor_disposition = MonitorDisposition.OBSERVED_TERMINAL
             order_disposition, at_sequence = _order_disposition_now(
                 latest,
-                _expected_task_name(transition),
                 issued=bool(transition.receipt.executed or transition.receipt.accepted),
             )
             lifecycle = LifecycleOutcome(

@@ -1,6 +1,6 @@
 # Protocol 2.0 world model
 
-Status: **accepted specification; 1.19 topology vocabulary landed, bounded work and plural command migration not started**
+Status: **accepted specification; 1.20 topology and bounded-work vocabulary landed, plural command migration not started**
 
 Protocol: `2.0.0`
 
@@ -10,13 +10,14 @@ Generated schema: `schemas/protocol_2_world_model.schema.json`
 
 ## Decision
 
-Protocol 2.0 remains a breaking transition for bounded work and controller
-causality. Its topology vocabulary has already landed as a clean break in the
-current 1.19 producer: the player collection is `roster`, never `squad`, and
-platoons, active, primary, and selection are distinct. Controller causality is
-still the future `controller_commands`, partitioned into plural
-`retained_commands` and `recent_terminal_commands`; current 1.19 still has the
-singular `native_control.active_command_id` and does not claim 2.0 compatibility.
+Protocol 2.0 remains a breaking transition for plural controller causality. Its
+topology and bounded-work vocabulary have landed as clean breaks in the current
+1.20 producer: the player collection is `roster`, never `squad`; platoons,
+active, primary, and selection are distinct; and ordinary orders, Jobs,
+permanent Jobs, and activity have separate owners. Controller causality is still
+the future `controller_commands`, partitioned into plural `retained_commands`
+and `recent_terminal_commands`; current 1.20 still has the singular
+`native_control.active_command_id` and does not claim 2.0 compatibility.
 
 The root world-model shape is:
 
@@ -48,6 +49,13 @@ and complete membership must agree with each character's `platoon_id`.
 No channel is inferred from another. A retained Job does not prove an ordinary
 order, and a current activity does not prove either.
 
+Task evidence carries nullable `task_value`, `task_name`, `subject_id`,
+`description`, and `position`. Unknown subjects and positions remain null. In
+the current 1.20 producer, KenshiLib's ordinary `ActionDeque` exposes first,
+second, and last accessors but no size, so a multi-entry queue has unknown total
+and its sampled tail has unknown numeric position. Enumerable Jobs and permanent
+Jobs retain exact totals within the shared bound.
+
 Each controller command retains its immutable dispatch primary, selected IDs,
 active platoon, exact recipient IDs, identity session, ownership generation,
 delivery evidence, recipient-level evidence, supersession links, monitor
@@ -76,8 +84,8 @@ not by an empty collection.
 
 All 2.0 objects reject extra fields. Protocol `1.x`, `squad`, `native_control`,
 and `active_command_id` therefore fail 2.0 validation rather than entering an
-alias or dual-read path. Independently, the 1.19 model also rejects the removed
-`squad`, per-character `selected`, and UI-owned selection fields.
+alias or dual-read path. Independently, the 1.20 model also rejects the removed
+`squad`, per-character `selected`, UI-owned selection, and `task_state` fields.
 
 ## Evidence boundary
 
@@ -91,13 +99,17 @@ alias or dual-read path. Independently, the 1.19 model also rejects the removed
   active-platoon and character-platoon APIs.
 - KenshiLib 0.4.0 `AITaskSystem.h` separately declares `orders`, `jobs`,
   `permajobs`, `isJobsEnabled()`, and `getCurrentGoal()`.
-- Current native source now emits 1.19 `roster`, platoons, active, primary, and
-  complete selection from those distinct structures. It still emits singular
-  `native_control.active_command_id`; bounded work and plural controller
-  records remain the 2.0 migration target.
+- Current native source now emits 1.20 `roster`, platoons, active, primary,
+  complete selection, and the four independent work channels from those
+  distinct structures. It still emits singular
+  `native_control.active_command_id`; plural controller records remain the 2.0
+  migration target.
 - `game_sources/research/player_topology` records the inspected KenshiLib,
   ForgottenGUI, current native call sites, portable contract, and live-proof
   boundary for the landed topology vocabulary.
+- `game_sources/research/task_channels` records the inspected task-system
+  declarations, executable call-site evidence, producer calls, portable
+  contract, and withheld ownership boundary.
 
 ### Test-proven
 
@@ -109,15 +121,18 @@ alias or dual-read path. Independently, the 1.19 model also rejects the removed
   and the old 1.x `squad` / `active_command_id` shape.
 - The Release x64 native conformance executable parses the same full and old
   fixtures and pins their two-platoon/two-command versus 1.x topology.
-- The current 1.19 shared native fixture separately pins roster/platoon
-  membership, active, primary-not-roster-order, complete selection, and removal
-  of the superseded authorities.
+- The current 1.20 shared native fixture separately pins roster/platoon
+  membership, active, primary-not-roster-order, complete selection, one retained
+  ordinary order beside current activity with empty Jobs, and removal of the
+  superseded authorities.
+- Portable tests keep unknown ordinary totals, task subjects, and positions
+  explicit, and prevent Jobs or activity from proving controller retention.
 - Schema and generated-document freshness are part of the portable gate.
 
 ### Live-proven
 
-The full Protocol 2.0 bounded-work and plural-command specification has not had
-a live producer run. Its already-landed 1.19 topology vocabulary has.
+The full Protocol 2.0 plural-command specification has not had a live producer
+run. Its already-landed 1.20 topology and bounded-work vocabulary have.
 `player-topology-20260809T161112Z`, using matching built and installed DLL
 SHA-256 `2dfee3ca27a3a2494b31386cff06e9db2ad02e38e7d3d6079fec0fb2234436bc`,
 proves two authored nonempty platoons and linkage, active-tab changes, primary
@@ -126,15 +141,17 @@ and save/load restoration of membership, primary, and selection. Kenshi reset
 the active tab on load. The bundle records the reset rather than inferring
 active from membership, primary, selection, or saved pre-state.
 
-This live result does not prove simultaneous native commands, bounded task
-channels, controller ownership, or any other not-yet-produced Protocol 2.0
-field.
+This topology result does not prove simultaneous native commands, task-channel
+behavior, controller ownership, or any other field not present in that 1.19
+bundle. Task-channel behavior is separately live-proven by
+`task-channels-20260809T172100Z` with matching built and installed 1.20 DLL
+SHA-256 `3746e1dfd1feb9564c4a539388790b7d3f7f19e3971d965c08b223e8766b0d2f`.
+Later engine sequence 329 shows a retained ordinary `OPERATE_MACHINERY` order
+beside separate current activity while Jobs and permanent Jobs remain complete
+and empty. That result does not establish a general command-ownership link.
 
 ### Withheld and named follow-on work
 
-- **Protocol 2.0 bounded-work producer migration:** replace the current task and
-  controller shapes atomically with bounded work and plural controller records;
-  do not reintroduce topology aliases during that transition.
 - **Native plural command registry:** populate more than one retained record,
   preserve disjoint recipient work, prove overlap behavior, and remove the
   current global singleton.
@@ -142,9 +159,9 @@ field.
   pointer-reuse, and empty-management-row questions as named work rather than
   broadening the proven topology slice. Character identity remains explicitly
   session-scoped.
-- **Task ownership correlation:** link ordinary orders or Jobs to controller
-  commands only from causal evidence; otherwise retain them as observed unowned
-  work.
+- **Task ownership correlation:** link an ordinary order to a controller command
+  only from causal evidence; otherwise retain it as observed unattributed work.
+  Jobs, permanent Jobs, and activity must not be adopted as controller-owned.
 - **Exact live bundle:** record built and installed DLL hashes, pre-dispatch
   state, requests, acknowledgements, later engine evidence, and final
   dispositions for simultaneous commands. A returning call is not proof that

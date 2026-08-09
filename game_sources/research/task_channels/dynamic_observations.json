@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "subsystem": "task_channels",
+  "observations": [
+    {
+      "id": "task_channels_portable_contract",
+      "kind": "portable_test",
+      "observed_on": "2026-08-09",
+      "kenshi_version": "No live executable loaded",
+      "executable_sha256_at_probe": null,
+      "installed_dll_sha256_at_probe": null,
+      "run_bundle": null,
+      "pre_dispatch_state": "A synthetic character has one retained OPERATE_MACHINERY ordinary order, empty Jobs, no permanent Jobs, and a separate OPERATE_MACHINERY current activity.",
+      "request": "Validate the 1.20 work shape, unknown total/target/position semantics, superseded-shape rejection, and unattributed lifecycle behavior.",
+      "acknowledgement": "The strict Python model and shared native telemetry fixture accept only the separate work channels; old task_state/count fields are rejected.",
+      "later_engine_evidence": "None; portable and compiled fixtures do not load Kenshi.",
+      "final_disposition": "Test-proves the repository contract only. Live proof remains required.",
+      "evidence_source": "tests/test_task_channels.py, tests/fixtures/native_telemetry/valid_player_topology.json, and native/KenshiAgentTelemetry/NativeCommandProtocolTests.cpp.",
+      "remaining_uncertainty": ["Fixtures cannot prove that the installed game publishes the retained order and activity together."]
+    },
+    {
+      "id": "task_name_ownership_conflation",
+      "kind": "contradiction",
+      "observed_on": "2026-08-09",
+      "kenshi_version": "No new live executable probe",
+      "executable_sha256_at_probe": null,
+      "installed_dll_sha256_at_probe": null,
+      "run_bundle": null,
+      "pre_dispatch_state": "The monitor gathered task names from ordinary orders, Jobs, permanent Jobs, and current activity across the roster.",
+      "request": "Determine the disposition of one controller-issued order from that gathered name set.",
+      "acknowledgement": "A matching name was classified as retained controller work even though the source channel and causal owner were discarded.",
+      "later_engine_evidence": "Source inspection shows no command-to-task causal link in the current singular telemetry shape.",
+      "final_disposition": "The inference was deleted. Fresh ordinary work without an exact causal link is observed_unattributed_work; Jobs, permanent Jobs, and activity are not order-disposition evidence.",
+      "evidence_source": "src/kenshi_agent/execution/monitoring.py, src/kenshi_agent/core/lifecycle.py, and tests/test_task_channels.py.",
+      "remaining_uncertainty": ["Exact controller ownership correlation remains Protocol 2.0 plural-command work."]
+    },
+    {
+      "id": "task_channels_live_retained_order_and_activity",
+      "kind": "live_probe",
+      "observed_on": "2026-08-09",
+      "kenshi_version": "1.0.65 x64 Steam build 13871665",
+      "executable_sha256_at_probe": "a596ab4e407c67b58599c54ffb32dc1bf2b64510cdebd3fa9359ef05a576aeb1",
+      "installed_dll_sha256_at_probe": "3746e1dfd1feb9564c4a539388790b7d3f7f19e3971d965c08b223e8766b0d2f",
+      "run_bundle": "runs/task-channels-20260809T172100Z/manifest.json",
+      "pre_dispatch_state": "Fresh 1.20 snapshot sequence 184 was loaded and paused with Paste selected and primary. Paste and Hep each had complete empty ordinary orders, Jobs, and permanent Jobs, and null current activity. The request was authored from fresh same-session telemetry sequence 279.",
+      "request": "cmd-536652d87c7b42e59187dc55c2278963 perform_context_action operate for exact selected Paste and exact observed Iron Resource.",
+      "acknowledgement": "The file-change watcher returned completed/context_task_started at accepted, acknowledged, and terminal telemetry sequence 280. The diagnostic helper's optional WSL hotkey path failed after writing the request; no hotkey receipt is claimed.",
+      "later_engine_evidence": "Raw snapshot sequence 329 showed Paste ordinary_orders complete with one OPERATE_MACHINERY entry at position 0 and current_activity separately OPERATE_MACHINERY with null position. Jobs and permanent Jobs were each complete with known_total 0.",
+      "final_disposition": "After bounded recovery, raw snapshot sequence 383 was loaded, paused, modal-free, and active_command_id was null. The retained ordinary order and current activity remained observable; both Job channels remained empty.",
+      "evidence_source": "Matching built and installed DLL sha256 3746e1dfd1feb9564c4a539388790b7d3f7f19e3971d965c08b223e8766b0d2f; exact request and raw snapshot paths indexed by the named bundle.",
+      "remaining_uncertainty": [
+        "Matching task identity and target do not establish a general controller-ownership correlator.",
+        "No live multi-entry ordinary queue was authored.",
+        "No invalid or targetless live task subject was observed."
+      ]
+    }
+  ]
+}

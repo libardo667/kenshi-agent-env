@@ -15,7 +15,7 @@ appears in captured telemetry.
 bundle                live_reporting_surface
 events                    45
 observation share       6.7%
-questions answered      8 of 8
+questions answered      7 of 8
 
 POST-MORTEM COVERAGE
   What did the agent choose, and did it work?
@@ -26,12 +26,16 @@ POST-MORTEM COVERAGE
     answered               via planner_context_prepared (1 events)
   Why was an expected affordance not offered?
     answered               via planner_context_prepared (1 events)
-  Was Kenshi holding retained work for a character?
-    answered               via observation (1 events)
+>>What retained work and current activity did Kenshi report?
+    recorded but silent    via observation (1 events)
   What did the native layer actually say?
     answered               via observation (1 events)
   What was the economic state over time?
     answered               via observation (1 events)
   What was on screen when a UI choice was made?
     answered               via observation (1 events)
+
+WHY THE GAPS MATTER
+  What retained work and current activity did Kenshi report?
+    A retained order pulled a character out of a trade conversation and made a move order look stalled. Neither was diagnosable from the bundle, because the digest kept no separate work channels.
 ```

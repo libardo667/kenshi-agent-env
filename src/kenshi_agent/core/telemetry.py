@@ -164,71 +164,86 @@ class InventoryItem(StrictModel):
         return self
 
 
+class TaskCollectionCompleteness(StrEnum):
+    """Whether absence from one bounded Kenshi task channel is meaningful."""
+
+    COMPLETE = "complete"
+    TRUNCATED = "truncated"
+
+
 class TaskEntry(StrictModel):
-    """One task, in whichever list Kenshi keeps it."""
+    """One entry read from one exact Kenshi task channel.
 
-    # Kenshi's own TaskType value and name. The value is authoritative; the name
-    # comes from the generated vocabulary so consumers need no copy of the enum.
-    task_value: int | None = None
-    task_name: str = Field(default="", max_length=80)
-    # What the task acts on, when it names something.
-    subject_id: str = Field(default="", max_length=500)
-    description: str = Field(default="", max_length=300)
-
-
-class CharacterTaskState(StrictModel):
-    """What a character has been told to do, by channel.
-
-    Kenshi keeps ordinary orders, Jobs, permajobs, and the AI's current goal in
-    four separate structures with different lifetimes, and none may be inferred
-    from another: a mining animation is not evidence of a Job, and an entry in
-    the Jobs list is not evidence of an ordinary order.
-
-    Exporting none of this had teeth. An `operate` order was accepted and
-    retained by Kenshi while the controller reported it failed and retried it
-    eight times, and a character holding a retained mining Job walked out of a
-    trade conversation because the Job pulled him back to the node. Both were
-    invisible.
+    Nullable facts are required on the wire. ``None`` means the source did not
+    prove the value; an empty string or an array position is never substituted
+    for an unknown target or queue position.
     """
 
-    # Whether Kenshi considers this character to be under player orders at all.
-    has_player_orders: bool = False
-    # The ordinary order queue - what a player fills by right-clicking.
-    orders: list[TaskEntry] = Field(default_factory=list, max_length=8)
-    orders_count: int = Field(default=0, ge=0)
-    # False when the export could not prove it had the whole queue, so a
-    # bounded list is never mistaken for a short one. Kenshi exports the head
-    # and the tail of the order queue and no size(), so any queue of two or
-    # more arrives incomplete: the count means "at least this many, each one
-    # proven", not a total.
-    orders_complete: bool = True
+    task_value: int | None
+    task_name: str | None = Field(max_length=80)
+    subject_id: str | None = Field(max_length=500)
+    description: str | None = Field(max_length=300)
+    position: int | None = Field(ge=0)
 
-    # Jobs: repeating assignments, with their own switch. A character can hold
-    # Jobs while they are disabled, which is why the flag is separate from the
-    # list rather than implied by it being empty.
-    jobs_enabled: bool = False
-    jobs: list[TaskEntry] = Field(default_factory=list, max_length=8)
-    jobs_count: int = Field(default=0, ge=0)
-    jobs_complete: bool = True
+    @model_validator(mode="after")
+    def task_identity_is_paired(self) -> TaskEntry:
+        if (self.task_value is None) != (self.task_name is None):
+            raise ValueError("task_value and task_name must be known or unknown together")
+        if self.task_name == "":
+            raise ValueError("an unknown task name must be null, not empty")
+        return self
 
-    # Permajobs: a distinct list with its own slot API and its own clear.
-    permajobs: list[TaskEntry] = Field(default_factory=list, max_length=8)
-    permajobs_count: int = Field(default=0, ge=0)
-    permajobs_complete: bool = True
 
-    # What the AI settled on doing now. Neither an order nor a Job, and not to
-    # be read as either - it is the goal the task system currently scores best.
-    current_activity: TaskEntry | None = None
+class TaskCollection(StrictModel):
+    """One bounded task container without a fabricated total."""
+
+    items: list[TaskEntry] = Field(max_length=8)
+    completeness: TaskCollectionCompleteness
+    known_total: int | None = Field(ge=0)
+
+    @model_validator(mode="after")
+    def completeness_matches_items(self) -> TaskCollection:
+        retained = len(self.items)
+        if self.completeness is TaskCollectionCompleteness.COMPLETE:
+            if self.known_total != retained:
+                raise ValueError(
+                    "a complete task collection requires known_total equal to len(items)"
+                )
+        elif self.known_total is not None and self.known_total <= retained:
+            raise ValueError(
+                "a truncated task collection's known_total must exceed len(items)"
+            )
+        return self
+
+
+class CharacterWorkState(StrictModel):
+    """Independent retained-work channels and current activity.
+
+    Kenshi's ordinary order queue, configured Jobs, permanent Jobs, and current
+    goal have separate owners and lifetimes. None is inferred from another.
+    The controller-issued command remains separate in ``native_control``.
+    """
+
+    has_player_orders: bool
+    ordinary_orders: TaskCollection
+    jobs_enabled: bool
+    jobs: TaskCollection
+    permanent_jobs: TaskCollection
+    current_activity: TaskEntry | None
 
     @property
     def has_retained_work(self) -> bool:
-        """Whether Kenshi is holding work for this character.
+        """Whether a retained channel proves at least one entry."""
 
-        The question the controller could not previously ask, and the one that
-        explains a character leaving a conversation on his own.
-        """
-
-        return bool(self.orders_count or self.jobs_count or self.permajobs_count)
+        return any(
+            bool(channel.items)
+            or (channel.known_total is not None and channel.known_total > 0)
+            for channel in (
+                self.ordinary_orders,
+                self.jobs,
+                self.permanent_jobs,
+            )
+        )
 
 
 class CharacterState(StrictModel):
@@ -276,10 +291,9 @@ class CharacterState(StrictModel):
     # False means the bounded native export omitted one or more items. Absence
     # from `inventory` is therefore usable as zero only when this is true.
     inventory_complete: bool | None = None
-    # Orders, Jobs, permajobs, and current activity, kept apart. None means the
-    # character's task system was unreachable, which is a different fact from
-    # holding no work.
-    task_state: CharacterTaskState | None = None
+    # Ordinary orders, Jobs, permanent Jobs, and current activity, kept apart.
+    # None means the task system was unreachable, not that every channel is empty.
+    work: CharacterWorkState | None = None
 
 
 class PlatoonState(StrictModel):
@@ -1474,7 +1488,7 @@ class NativeControlState(StrictModel):
 
 
 class TelemetrySnapshot(StrictModel):
-    protocol_version: str = "1.19.0"
+    protocol_version: str = "1.20.0"
     sequence: int = Field(default=0, ge=0)
     captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = "unknown"

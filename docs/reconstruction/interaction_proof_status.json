@@ -41,7 +41,7 @@
       "the Release x64 native conformance executable parses the shared full and old-shape fixtures and pins their breaking topology"
     ],
     "live_evidence": [],
-    "note": "Specification and portable-test proven only. The current 1.19 producer has landed the topology vocabulary but not bounded work or plural controller commands; no simultaneous-command behavior is claimed."
+    "note": "Specification and portable-test proven only. The current 1.20 producer has landed the topology and independent bounded-work vocabulary but not plural controller commands; no simultaneous-command behavior is claimed."
   },
   "player_topology": {
     "proof_status": "live_proven",
@@ -49,7 +49,7 @@
       "game_sources/research/player_topology records the inspected KenshiLib, ForgottenGUI, and current native call sites",
       "tests/fixtures/native_telemetry/valid_player_topology.json is shared by the strict Python model and compiled C++ conformance target",
       "tests/test_player_topology.py distinguishes roster, membership, active, primary, and complete selection; primary is deliberately not roster order",
-      "the current 1.19 model rejects squad, per-character selected, UI-owned selection, unresolved IDs, and contradictory membership",
+      "the current 1.20 model rejects squad, per-character selected, UI-owned selection, unresolved IDs, and contradictory membership",
       "the player-only identity registry preserves one ID across a live Character object's platoon-handle changes, rejects pointer reuse by validKey, and clears on GameWorld reset"
     ],
     "live_evidence": [
@@ -62,6 +62,25 @@
       "game_sources/research/player_topology"
     ],
     "note": "Source, portable-test, native-fixture, and named live-bundle proven. Character IDs remain session-scoped; F9 advanced the identity session. The save restored both platoons, membership, primary Paste, and selected Paste, while Kenshi reset active to Nameless_0 rather than persisting saved Nameless_1."
+  },
+  "task_channels": {
+    "proof_status": "live_proven",
+    "evidence": [
+      "game_sources/research/task_channels records the inspected KenshiLib task owners, ForgottenGUI Jobs surface, executable call-site metadata, and current producer calls",
+      "the strict 1.20 model and shared native fixture separately represent retained ordinary orders, configured Jobs, permanent Jobs, and current activity",
+      "tests/test_task_channels.py pins a retained ordinary order beside current activity with empty Jobs, explicit unknown targets and positions, unknown multi-entry ordinary totals, and rejection of the superseded task_state shape",
+      "monitoring no longer uses Jobs, permanent Jobs, or activity names as evidence that a controller-issued ordinary order remains"
+    ],
+    "live_evidence": [
+      "runs/task-channels-20260809T172100Z/manifest.json indexes the exact request and pre-dispatch, later-engine, and final-disposition raw frame-plus-telemetry snapshots",
+      "built and installed DLLs both sha256 3746e1dfd1feb9564c4a539388790b7d3f7f19e3971d965c08b223e8766b0d2f; compiled conformance executable passed",
+      "later snapshot sequence 329 shows Paste retaining one ordinary OPERATE_MACHINERY order at position 0 alongside separate current activity with null position while Jobs and permanent Jobs remain complete and empty",
+      "final snapshot sequence 383 is loaded, paused, modal-free, and has no active native command; the retained order and separate activity remain visible"
+    ],
+    "research": [
+      "game_sources/research/task_channels"
+    ],
+    "note": "Source, portable-test, compiled-fixture, and named live-bundle proven for independent channel export. The acknowledgement at sequence 280 is not the proof; later engine sequence 329 is. Exact command-to-order ownership, deep ordinary queue totals/positions, and unknown live task subjects remain withheld."
   },
   "entries": [
     {

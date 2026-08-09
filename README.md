@@ -34,7 +34,7 @@ The current action set covers:
   current party; and
 - using campaign memory, the fieldbook, and the read-only strategy advisor.
 
-The current 1.19 telemetry contract separately exports the complete player
+The current 1.20 telemetry contract separately exports the complete player
 `roster`, named `platoons` and exact membership, `active_platoon_id`,
 `primary_character_id`, and the complete `selected_character_ids` set. The
 primary is never inferred from roster order. The former `squad`, per-character
@@ -43,6 +43,15 @@ The named `player-topology-20260809T161112Z` live bundle proves two authored
 nonempty platoons, tab and exact-selection changes, and save/load restoration
 of membership, primary, and selection. Kenshi reset the active tab on load, so
 the exporter reports active separately instead of claiming it persisted.
+
+Each character's `work` record also keeps Kenshi's ordinary order queue,
+configured Jobs, permanent Jobs, and current activity separate. Empty Jobs do
+not prove that ordinary work is absent, and a matching Job or activity name is
+not treated as proof that a controller-issued order remains. Unknown task
+targets, queue positions, and unenumerable ordinary-queue totals remain null.
+The named `task-channels-20260809T172100Z` bundle proves one retained ordinary
+order beside separate current activity while Jobs and permanent Jobs remain
+empty; it does not infer general controller ownership from that similarity.
 
 Live acceptance runs have covered representative movement, trade-window opening,
 purchases, equipped-item looting, squadmate and resource-output transfers, resource
@@ -64,8 +73,8 @@ There are still important limits:
 - A native recovery command can close a trade window, but general window closing is
   not a planner action.
 
-The remaining bounded-work and plural-command shape for the next breaking
-boundary is in the
+The remaining plural controller-command shape for the next breaking boundary
+is in the
 [Protocol 2.0 world-model decision](docs/PROTOCOL_2_WORLD_MODEL_DECISION.md).
 
 ## How a run works

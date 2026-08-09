@@ -41,6 +41,11 @@ def test_shared_native_fixture_distinguishes_every_player_topology_role() -> Non
         "platoon-beta": ["character-beta-primary", "character-beta-second"],
     }
     assert all("selected" not in row.model_fields_set for row in snapshot.roster)
+    assert snapshot.roster[0].work is not None
+    assert snapshot.roster[0].work.ordinary_orders.known_total == 1
+    assert snapshot.roster[0].work.jobs.known_total == 0
+    assert snapshot.roster[0].work.current_activity is not None
+    assert snapshot.roster[0].work.current_activity.position is None
     assert "selected_character_id" not in type(snapshot.ui).model_fields
     assert "selected_character_ids" not in type(snapshot.ui).model_fields
 

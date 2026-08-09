@@ -203,7 +203,7 @@ namespace
     const unsigned int MAX_INVENTORY_ITEMS_PER_SECTION = 128;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "1.19.0";
+    const char* PROTOCOL_VERSION = "1.20.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -1842,52 +1842,92 @@ namespace
     // ordinary order. Each is reported from its own accessor or not at all.
     const unsigned int MAX_EXPORTED_TASK_ENTRIES = 8;
 
-    void AppendTaskEntry(std::ostringstream& json, Tasker* task)
+    struct TaskExportEntry
+    {
+        Tasker* task;
+        int position;
+
+        TaskExportEntry(Tasker* taskValue, int positionValue)
+            : task(taskValue), position(positionValue)
+        {
+        }
+    };
+
+    void AppendTaskEntry(
+        std::ostringstream& json,
+        Tasker* task,
+        int position)
     {
         json << "{";
         if (task == NULL)
         {
-            json << "\"task_value\":null,\"task_name\":\"\",";
-            json << "\"subject_id\":\"\",\"description\":\"\"}";
+            json << "\"task_value\":null,\"task_name\":null,";
+            json << "\"subject_id\":null,\"description\":null,";
+            json << "\"position\":";
+            if (position >= 0)
+                json << position;
+            else
+                json << "null";
+            json << "}";
             return;
         }
         const int value = static_cast<int>(task->key());
         json << "\"task_value\":" << value << ",";
         json << "\"task_name\":\"" << TaskTypeName(value) << "\",";
-        json << "\"subject_id\":\"" << StableEntityId(task->subject) << "\",";
+        const std::string subjectId = StableEntityId(task->subject);
+        json << "\"subject_id\":";
+        if (!subjectId.empty())
+            json << "\"" << JsonEscape(subjectId) << "\"";
+        else
+            json << "null";
+        json << ",";
         json << "\"description\":\""
-             << JsonEscape(task->getDescription()) << "\"";
+             << JsonEscape(task->getDescription()) << "\",";
+        json << "\"position\":";
+        if (position >= 0)
+            json << position;
+        else
+            json << "null";
         json << "}";
     }
 
-    // Serialize one bounded task list with its own completeness flag, so a
-    // truncated list is never mistaken for a short one.
-    // `wholeListKnown` is false when the caller sampled a container it cannot
-    // enumerate. The count then means "at least this many, each one proven"
-    // rather than a total, and the _complete flag is what says so.
-    void AppendTaskList(
+    // Serialize one bounded channel with a single non-contradictory statement
+    // about completeness. `knownTotal` is exact or null; the sample length is
+    // never substituted for an unknown queue total.
+    void AppendTaskCollection(
         std::ostringstream& json,
         const char* key,
-        const std::vector<Tasker*>& tasks,
-        bool wholeListKnown = true)
+        const std::vector<TaskExportEntry>& tasks,
+        bool wholeListKnown,
+        bool totalKnown,
+        unsigned int knownTotal)
     {
-        const unsigned int total = static_cast<unsigned int>(tasks.size());
+        const unsigned int sampled = static_cast<unsigned int>(tasks.size());
         const unsigned int retained =
-            total < MAX_EXPORTED_TASK_ENTRIES ? total : MAX_EXPORTED_TASK_ENTRIES;
-        json << "\"" << key << "\":[";
+            sampled < MAX_EXPORTED_TASK_ENTRIES
+                ? sampled
+                : MAX_EXPORTED_TASK_ENTRIES;
+        const bool complete =
+            wholeListKnown && totalKnown && retained == knownTotal;
+        json << "\"" << key << "\":{\"items\":[";
         for (unsigned int index = 0; index < retained; ++index)
         {
             if (index > 0)
                 json << ",";
-            AppendTaskEntry(json, tasks[index]);
+            AppendTaskEntry(json, tasks[index].task, tasks[index].position);
         }
         json << "],";
-        json << "\"" << key << "_count\":" << total << ",";
-        json << "\"" << key << "_complete\":"
-             << (wholeListKnown && retained == total ? "true" : "false");
+        json << "\"completeness\":\""
+             << (complete ? "complete" : "truncated") << "\",";
+        json << "\"known_total\":";
+        if (totalKnown)
+            json << knownTotal;
+        else
+            json << "null";
+        json << "}";
     }
 
-    void AppendCharacterTaskState(std::ostringstream& json, Character* character)
+    void AppendCharacterWorkState(std::ostringstream& json, Character* character)
     {
         AI* ai = character != NULL ? character->getAI() : NULL;
         AITaskSytem* tasks = ai != NULL ? ai->getTaskSystem() : NULL;
@@ -1895,11 +1935,11 @@ namespace
         {
             // No task system reachable. Absent, not empty - an empty order list
             // and an unreadable one are different facts.
-            json << "\"task_state\":null";
+            json << "\"work\":null";
             return;
         }
 
-        json << "\"task_state\":{";
+        json << "\"work\":{";
 
         // Ordinary orders: the queue a player fills by right-clicking.
         //
@@ -1908,54 +1948,87 @@ namespace
         // header, and iterating it means trusting that this plug-in's idea of
         // std::deque's internal layout matches the one Kenshi was built with.
         // getFirstTask/getSecondTask/getLastTask are exported functions and
-        // cost nothing but completeness, which the flag already reports
-        // honestly. A queue longer than three is marked incomplete rather than
-        // guessed at.
-        std::vector<Tasker*> orders;
+        // cost nothing but completeness, which the collection reports
+        // honestly. Any queue whose exact total cannot be established is
+        // marked truncated rather than guessed at.
+        std::vector<TaskExportEntry> orders;
         Tasker* firstOrder = tasks->orders.getFirstTask();
         if (firstOrder != NULL)
-            orders.push_back(firstOrder);
+            orders.push_back(TaskExportEntry(firstOrder, 0));
         Tasker* secondOrder = tasks->orders.getSecondTask();
         if (secondOrder != NULL && secondOrder != firstOrder)
-            orders.push_back(secondOrder);
+            orders.push_back(TaskExportEntry(secondOrder, 1));
         Tasker* lastOrder = tasks->orders.getLastTask();
         if (lastOrder != NULL && lastOrder != firstOrder && lastOrder != secondOrder)
-            orders.push_back(lastOrder);
+            orders.push_back(TaskExportEntry(lastOrder, -1));
         json << "\"has_player_orders\":"
              << JsonBool(tasks->hasPlayerOrders()) << ",";
         // The accessors reach the head and the tail, never the middle, and
         // ActionDeque exports no size(). A queue of two or more is therefore
         // reported as "at least these, proven" - never as a total, which is
         // the misreport that makes a bounded list look like a short one.
-        const bool ordersFullyKnown = tasks->orders.isEmpty() || tasks->orders.isOnlyOne();
-        AppendTaskList(json, "orders", orders, ordersFullyKnown);
+        const bool ordersFullyKnown =
+            tasks->orders.isEmpty() || tasks->orders.isOnlyOne();
+        AppendTaskCollection(
+            json,
+            "ordinary_orders",
+            orders,
+            ordersFullyKnown,
+            ordersFullyKnown,
+            static_cast<unsigned int>(orders.size()));
         json << ",";
 
         // Jobs: the repeating assignments the Jobs panel lists, with their own
         // enabled switch. A character can hold Jobs while they are switched off.
-        std::vector<Tasker*> jobs;
+        std::vector<TaskExportEntry> jobs;
         for (unsigned int index = 0; index < tasks->jobs.size(); ++index)
-            jobs.push_back(tasks->jobs[index]);
+            jobs.push_back(TaskExportEntry(tasks->jobs[index], index));
         json << "\"jobs_enabled\":" << JsonBool(tasks->isJobsEnabled()) << ",";
-        AppendTaskList(json, "jobs", jobs);
+        AppendTaskCollection(
+            json,
+            "jobs",
+            jobs,
+            true,
+            true,
+            static_cast<unsigned int>(jobs.size()));
         json << ",";
 
         // Permajobs: a separate list with its own slot API and its own clear.
-        std::vector<Tasker*> permajobs;
+        std::vector<TaskExportEntry> permajobs;
         for (unsigned int index = 0; index < tasks->permajobs.size(); ++index)
-            permajobs.push_back(tasks->permajobs[index]);
-        AppendTaskList(json, "permajobs", permajobs);
+            permajobs.push_back(TaskExportEntry(tasks->permajobs[index], index));
+        AppendTaskCollection(
+            json,
+            "permanent_jobs",
+            permajobs,
+            true,
+            true,
+            static_cast<unsigned int>(permajobs.size()));
         json << ",";
 
         // Current activity: what the AI settled on doing, which is neither an
         // order nor a Job and must not be read as either.
         const TaskMatch& goal = tasks->getCurrentGoal();
         const int goalValue = static_cast<int>(goal.key());
-        json << "\"current_activity\":{";
-        json << "\"task_value\":" << goalValue << ",";
-        json << "\"task_name\":\"" << TaskTypeName(goalValue) << "\",";
-        json << "\"subject_id\":\"" << StableEntityId(goal.subject) << "\"";
-        json << "}";
+        json << "\"current_activity\":";
+        if (goalValue == static_cast<int>(NULL_TASK))
+        {
+            json << "null";
+        }
+        else
+        {
+            const std::string subjectId = StableEntityId(goal.subject);
+            json << "{";
+            json << "\"task_value\":" << goalValue << ",";
+            json << "\"task_name\":\"" << TaskTypeName(goalValue) << "\",";
+            json << "\"subject_id\":";
+            if (!subjectId.empty())
+                json << "\"" << JsonEscape(subjectId) << "\"";
+            else
+                json << "null";
+            json << ",\"description\":null,\"position\":null";
+            json << "}";
+        }
 
         json << "}";
     }
@@ -2374,7 +2447,7 @@ namespace
     // stall detector then reports it ten seconds later as `movement_stalled` --
     // blaming the pathfinder for an order the engine dropped. Measured across
     // five stalls in one live run, every one of them had `hasPlayerOrders`
-    // false, `orders_count` zero and a NULL_TASK activity: nobody was stuck,
+    // false, an empty ordinary-order collection and null activity: nobody was stuck,
     // nobody was walking, there was simply no order left to carry out.
     bool HoldsNoOrderAtAll(Character* character)
     {
@@ -6569,7 +6642,7 @@ namespace
                     json << "null";
                 }
                 json << ",";
-                AppendCharacterTaskState(json, character);
+                AppendCharacterWorkState(json, character);
                 json << "}";
             }
         }

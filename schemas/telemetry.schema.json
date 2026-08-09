@@ -427,10 +427,10 @@
           "default": null,
           "title": "Inventory Complete"
         },
-        "task_state": {
+        "work": {
           "anyOf": [
             {
-              "$ref": "#/$defs/CharacterTaskState"
+              "$ref": "#/$defs/CharacterWorkState"
             },
             {
               "type": "null"
@@ -446,76 +446,26 @@
       "title": "CharacterState",
       "type": "object"
     },
-    "CharacterTaskState": {
+    "CharacterWorkState": {
       "additionalProperties": false,
-      "description": "What a character has been told to do, by channel.\n\nKenshi keeps ordinary orders, Jobs, permajobs, and the AI's current goal in\nfour separate structures with different lifetimes, and none may be inferred\nfrom another: a mining animation is not evidence of a Job, and an entry in\nthe Jobs list is not evidence of an ordinary order.\n\nExporting none of this had teeth. An `operate` order was accepted and\nretained by Kenshi while the controller reported it failed and retried it\neight times, and a character holding a retained mining Job walked out of a\ntrade conversation because the Job pulled him back to the node. Both were\ninvisible.",
+      "description": "Independent retained-work channels and current activity.\n\nKenshi's ordinary order queue, configured Jobs, permanent Jobs, and current\ngoal have separate owners and lifetimes. None is inferred from another.\nThe controller-issued command remains separate in ``native_control``.",
       "properties": {
         "has_player_orders": {
-          "default": false,
           "title": "Has Player Orders",
           "type": "boolean"
         },
-        "orders": {
-          "items": {
-            "$ref": "#/$defs/TaskEntry"
-          },
-          "maxItems": 8,
-          "title": "Orders",
-          "type": "array"
-        },
-        "orders_count": {
-          "default": 0,
-          "minimum": 0,
-          "title": "Orders Count",
-          "type": "integer"
-        },
-        "orders_complete": {
-          "default": true,
-          "title": "Orders Complete",
-          "type": "boolean"
+        "ordinary_orders": {
+          "$ref": "#/$defs/TaskCollection"
         },
         "jobs_enabled": {
-          "default": false,
           "title": "Jobs Enabled",
           "type": "boolean"
         },
         "jobs": {
-          "items": {
-            "$ref": "#/$defs/TaskEntry"
-          },
-          "maxItems": 8,
-          "title": "Jobs",
-          "type": "array"
+          "$ref": "#/$defs/TaskCollection"
         },
-        "jobs_count": {
-          "default": 0,
-          "minimum": 0,
-          "title": "Jobs Count",
-          "type": "integer"
-        },
-        "jobs_complete": {
-          "default": true,
-          "title": "Jobs Complete",
-          "type": "boolean"
-        },
-        "permajobs": {
-          "items": {
-            "$ref": "#/$defs/TaskEntry"
-          },
-          "maxItems": 8,
-          "title": "Permajobs",
-          "type": "array"
-        },
-        "permajobs_count": {
-          "default": 0,
-          "minimum": 0,
-          "title": "Permajobs Count",
-          "type": "integer"
-        },
-        "permajobs_complete": {
-          "default": true,
-          "title": "Permajobs Complete",
-          "type": "boolean"
+        "permanent_jobs": {
+          "$ref": "#/$defs/TaskCollection"
         },
         "current_activity": {
           "anyOf": [
@@ -525,11 +475,18 @@
             {
               "type": "null"
             }
-          ],
-          "default": null
+          ]
         }
       },
-      "title": "CharacterTaskState",
+      "required": [
+        "has_player_orders",
+        "ordinary_orders",
+        "jobs_enabled",
+        "jobs",
+        "permanent_jobs",
+        "current_activity"
+      ],
+      "title": "CharacterWorkState",
       "type": "object"
     },
     "ContextMenuProbe": {
@@ -1745,9 +1702,54 @@
       "title": "RuntimeContextMenu",
       "type": "object"
     },
+    "TaskCollection": {
+      "additionalProperties": false,
+      "description": "One bounded task container without a fabricated total.",
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/TaskEntry"
+          },
+          "maxItems": 8,
+          "title": "Items",
+          "type": "array"
+        },
+        "completeness": {
+          "$ref": "#/$defs/TaskCollectionCompleteness"
+        },
+        "known_total": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Known Total"
+        }
+      },
+      "required": [
+        "items",
+        "completeness",
+        "known_total"
+      ],
+      "title": "TaskCollection",
+      "type": "object"
+    },
+    "TaskCollectionCompleteness": {
+      "description": "Whether absence from one bounded Kenshi task channel is meaningful.",
+      "enum": [
+        "complete",
+        "truncated"
+      ],
+      "title": "TaskCollectionCompleteness",
+      "type": "string"
+    },
     "TaskEntry": {
       "additionalProperties": false,
-      "description": "One task, in whichever list Kenshi keeps it.",
+      "description": "One entry read from one exact Kenshi task channel.\n\nNullable facts are required on the wire. ``None`` means the source did not\nprove the value; an empty string or an array position is never substituted\nfor an unknown target or queue position.",
       "properties": {
         "task_value": {
           "anyOf": [
@@ -1758,28 +1760,64 @@
               "type": "null"
             }
           ],
-          "default": null,
           "title": "Task Value"
         },
         "task_name": {
-          "default": "",
-          "maxLength": 80,
-          "title": "Task Name",
-          "type": "string"
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Task Name"
         },
         "subject_id": {
-          "default": "",
-          "maxLength": 500,
-          "title": "Subject Id",
-          "type": "string"
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Subject Id"
         },
         "description": {
-          "default": "",
-          "maxLength": 300,
-          "title": "Description",
-          "type": "string"
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Description"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Position"
         }
       },
+      "required": [
+        "task_value",
+        "task_name",
+        "subject_id",
+        "description",
+        "position"
+      ],
       "title": "TaskEntry",
       "type": "object"
     },
@@ -2397,7 +2435,7 @@
   "additionalProperties": false,
   "properties": {
     "protocol_version": {
-      "default": "1.19.0",
+      "default": "1.20.0",
       "title": "Protocol Version",
       "type": "string"
     },

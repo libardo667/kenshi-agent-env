@@ -8,9 +8,9 @@ run evidence, not in a second current protocol narrative.
 ## Current protocol
 
 ```text
-telemetry protocol       1.19.0
+telemetry protocol       1.20.0
 native request schema    1.4
-loaded-world capabilities 47
+loaded-world capabilities 48
 active native commands  at most one
 ```
 
@@ -20,16 +20,21 @@ telemetry version, `NativeCommandRequest` in
 `GameplayCapabilities.json` owns the loaded-world capability vocabulary. The
 portable consistency tests and the native conformance executable compare the
 shared native-command JSON fixtures with both request implementations. The
-conformance target also reads the current 1.19 player-topology fixture and the
+conformance target also reads the current 1.20 player-topology/work fixture and the
 accepted Protocol 2.0 world-model fixtures. The former is current producer
-shape; the latter remains a specification for bounded work and plural command
-records that the producer does not yet emit.
+shape; the latter remains a specification for plural command records that the
+producer does not yet emit.
 
-Protocol 1.19.0 makes a clean player-topology break. Player characters are
+Protocol 1.20.0 retains the clean player-topology break introduced by 1.19.
+Player characters are
 serialized under `roster`; `platoons`, `active_platoon_id`,
 `primary_character_id`, and the complete root `selected_character_ids` set have
 separate owners. The old `squad`, per-character `selected`, and UI-owned
-selection fields are gone rather than accepted as aliases. The still-singular
+selection fields are gone rather than accepted as aliases. Each character's
+`work` object independently exports `ordinary_orders`, `jobs`,
+`permanent_jobs`, and `current_activity`. The old `task_state`, flattened
+count/completeness fields, and cross-channel task-name ownership inference are
+gone rather than retained as fallbacks. The still-singular
 `native_control.active_command_id` and one native active-command record remain
 an explicitly separate limit.
 
@@ -39,7 +44,7 @@ The plug-in installs hooks on Kenshi's own game/UI thread:
 
 - `TitleScreen::_NV_update` publishes a minimal title/control snapshot.
 - `PlayerInterface::update` monitors native commands and publishes loaded-world
-  telemetry after the original update returns.
+telemetry after the original update returns.
 - `ContextMenu::showContextMenu` plus a muted `ContextMenuGUI::show` hook let the
   plug-in ask Kenshi which orders it would display without drawing a menu over
   the operator's game. Exact declarations, addresses, failed predicates,
@@ -57,6 +62,14 @@ keyed native command acknowledgements. Stable character IDs are derived from
 validated Kenshi handles plus process/session generations. Platoon IDs use
 Kenshi's platoon string ID under a `platoon-` namespace. Names and list
 positions are not identities.
+
+Ordinary order queues expose only what KenshiLib's `ActionDeque` can prove:
+empty and one-item queues are complete, while larger queues retain bounded
+first/second/tail samples with an unknown total and no invented tail position.
+Jobs and permanent Jobs use their separately enumerable containers. Task
+subjects, positions, and totals are nullable wherever the inspected source
+cannot establish them. Current activity is observational and does not imply a
+retained ordinary order or configured Job.
 
 Bounded collections expose completeness or warning evidence where the model
 supports it. An empty bounded result must not be generalized beyond that stated
@@ -131,7 +144,8 @@ confidence, probes, crashes, contradictions, and withheld claims:
 - [inventory transfer and simplified pricing](../../game_sources/research/inventory_transfer/conclusion.md);
 - [body shift](../../game_sources/research/body_shift/conclusion.md);
 - [prospecting window](../../game_sources/research/prospecting_window/conclusion.md); and
-- [player topology](../../game_sources/research/player_topology/conclusion.md).
+- [player topology](../../game_sources/research/player_topology/conclusion.md); and
+- [task channels](../../game_sources/research/task_channels/conclusion.md).
 
 Current source implements those reviewed conclusions. The packages, not this
 overview, own the reverse-engineering argument. Acceptance of any native call
@@ -179,7 +193,7 @@ folder component.
 - The hook, protocol, command, inventory-model, simplified-pricing, and body
   shift paths above are present in the current source and in the configured
   KenshiLib declarations they call.
-- Protocol 1.19.0 and the 47-entry loaded-world capability manifest are embedded
+- Protocol 1.20.0 and the 48-entry loaded-world capability manifest are embedded
   into the native build inputs.
 - The file-change watcher and the optional hotkey both dispatch through the same
   request parser and command handler.
@@ -190,9 +204,9 @@ folder component.
   shared command vocabulary, generated schemas, capability manifest/header
   parity, and golden fixture set.
 - A Windows native build runs the production C++ parser/serializer against the
-  same golden request fixtures, checks the current multi-platoon telemetry
-  fixture, and checks the 2.0 specification fixtures keep their breaking
-  bounded-work/plural-command topology.
+  same golden request fixtures, checks the current multi-platoon and independent
+  work-channel telemetry fixture, and checks the 2.0 specification fixtures
+  keep their breaking plural-command topology.
 - `scripts/check_native_provenance.py` compares protocol and capability strings
   in the installed binary and records built/installed hashes. See the current
   [checkpoint](../../docs/CHECKPOINT.md) for the measured result.
@@ -210,6 +224,14 @@ load restored both platoons, membership, primary Paste, and selected `[Paste]`.
 Kenshi reset the active tab to `Nameless_0` instead of restoring saved
 `Nameless_1`; that observed result is not hidden behind a persistence claim.
 
+`task-channels-20260809T172100Z`, using matching built and installed 1.20 DLL
+SHA-256 `3746e1dfd1feb9564c4a539388790b7d3f7f19e3971d965c08b223e8766b0d2f`,
+records empty pre-dispatch work channels, exact request and acknowledgement, and
+later engine sequence 329. That later frame shows Paste retaining one ordinary
+`OPERATE_MACHINERY` order at position 0 beside separate current activity with
+null position while Jobs and permanent Jobs remain complete and empty. Final
+sequence 383 is loaded, paused, modal-free, and has no active native command.
+
 Other named live evidence remains operation-specific. Reverse-engineering
 conclusions and their exact limitations belong under `game_sources/research/`;
 the interaction proof ledger links those conclusions to operations. Every live
@@ -220,6 +242,12 @@ request delivery or an acknowledgement.
 
 - The plug-in does not support plural simultaneously active native command
   records.
+- Exact command-to-ordinary-order ownership remains withheld. A task observed in
+  an ordinary queue is unattributed unless causal command evidence establishes
+  ownership; Jobs, permanent Jobs, and activity are never substitutes.
+- No live multi-entry ordinary queue or invalid task subject was observed, so
+  unknown totals, sampled tail positions, and null subjects remain source- and
+  test-proven only.
 - Character identity is session-scoped. The topology bundle does not claim the
   same character ID survives GameWorld reset, that an empty management row is
   a player platoon, or that one bounded run proves arbitrary roster churn.

@@ -613,49 +613,28 @@ class Observation(StrictModel):
                 if selected is not None
                 else None
             ),
-            # What Kenshi is holding for every selected character, not just the
-            # first. Retained work is per-character and is the thing that makes
-            # an accepted order look like a failure and a move look stalled; a
-            # digest that drops it cannot explain either after the fact.
-            #
-            # Counts and the leading entries only. The full lists are bounded in
-            # telemetry already, and a post-mortem needs to know that work was
-            # retained and roughly what, not every queued step.
-            "retained_work": [
+            # Every work channel for each selected character. The nested
+            # collections are already bounded, so preserve their exact
+            # completeness, nullable totals, targets, and positions in the run
+            # trace rather than collapsing them into names and sample counts.
+            "character_work": [
                 {
                     "id": character.id,
                     "name": character.name,
-                    "has_player_orders": character.task_state.has_player_orders,
-                    "orders_count": character.task_state.orders_count,
-                    "jobs_enabled": character.task_state.jobs_enabled,
-                    "jobs_count": character.task_state.jobs_count,
-                    "permajobs_count": character.task_state.permajobs_count,
-                    "orders": [
-                        entry.task_name for entry in character.task_state.orders[:3]
-                    ],
-                    "jobs": [entry.task_name for entry in character.task_state.jobs[:3]],
+                    "has_player_orders": character.work.has_player_orders,
+                    "ordinary_orders": _json_model(character.work.ordinary_orders),
+                    "jobs_enabled": character.work.jobs_enabled,
+                    "jobs": _json_model(character.work.jobs),
+                    "permanent_jobs": _json_model(character.work.permanent_jobs),
                     "current_activity": (
-                        character.task_state.current_activity.task_name
-                        if character.task_state.current_activity is not None
+                        _json_model(character.work.current_activity)
+                        if character.work.current_activity is not None
                         else None
                     ),
-                    # Channels whose count is a lower bound rather than a
-                    # total. Kenshi exports no size() for the order queue, so
-                    # a deep queue arrives proven-but-partial; reporting the
-                    # count bare would present a floor as a ceiling.
-                    "bounded_counts": [
-                        name
-                        for name, complete in (
-                            ("orders", character.task_state.orders_complete),
-                            ("jobs", character.task_state.jobs_complete),
-                            ("permajobs", character.task_state.permajobs_complete),
-                        )
-                        if not complete
-                    ],
                 }
                 for character in telemetry.roster
                 if character.id in telemetry.selected_character_ids
-                and character.task_state is not None
+                and character.work is not None
             ],
         }
         return digest

@@ -1446,7 +1446,7 @@ Updated 2026-08-09. Sections 19.3 and 19.4 preserve the exact 2026-08-03
 observations and therefore retain the then-current `squad`, per-character
 `selected`, and UI-owned selection examples. They are not current authority.
 
-Protocol 1.19 now exports the complete player `roster`, explicit `platoons` and
+Protocol 1.20 exports the complete player `roster`, explicit `platoons` and
 membership, `active_platoon_id`, `primary_character_id`, and the complete root
 `selected_character_ids` set. Primary is read from Kenshi's primary-character
 owner and is never inferred from roster position. The old fields were deleted
@@ -1458,6 +1458,33 @@ nonempty platoons, active-tab and exact-selection changes, and save/load
 restoration of membership, primary, and selection. It also records that Kenshi
 reset the active tab on load. Cross-session character-ID continuity, empty
 management rows, and arbitrary long-run roster churn remain withheld.
+
+### 19.6 Current work authority separates retention from activity
+
+Updated 2026-08-09. Protocol 1.20 deletes `CharacterTaskState` and the flattened
+`orders` / `jobs` / `permajobs` count fields. Each roster character instead has
+one nullable `work` record with four independent Kenshi-owned channels:
+
+- `ordinary_orders`, the player order queue;
+- `jobs` plus the separate `jobs_enabled` switch;
+- `permanent_jobs`, sourced from KenshiLib's `permajobs`; and
+- `current_activity`, sourced from the current goal.
+
+Every retained collection states `items`, `completeness`, and `known_total`.
+KenshiLib's ordinary `ActionDeque` has first, second, and last readers but no
+size reader. Empty and one-entry queues can therefore be complete; a larger
+queue is truncated with an unknown total, and its sampled tail has an unknown
+numeric position. The exporter does not derive either fact from the sample.
+Jobs and permanent Jobs are separately enumerable and do not fill gaps in the
+ordinary queue.
+
+Monitoring no longer gathers task names across these channels. An ordinary
+task without causal command linkage is reported as observed unattributed work;
+a configured Job, permanent Job, or current activity is not evidence that a
+controller command remains. Empty Jobs prove only that the Jobs container was
+empty. Exact command-to-order ownership remains future plural-command work.
+The source and evidence boundary is recorded under
+`game_sources/research/task_channels`.
 
 ---
 

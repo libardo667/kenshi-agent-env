@@ -130,24 +130,27 @@ def test_a_survey_commands_nobody_so_it_demands_no_selection() -> None:
     assert definition.recipient_scope_for() is RecipientScope.NONE
 
 
-def test_a_partially_known_order_queue_is_never_reported_as_a_total() -> None:
-    """Kenshi exports the head and tail of the order queue, and no size().
-
-    A queue of three sampled as two would otherwise arrive as `orders_count: 2`
-    with nothing marking it a floor - the same shape of misreport as a bounded
-    list read as a short one. The digest names the channel as bounded instead.
-    """
+def test_a_partially_known_order_queue_keeps_unknown_total_and_position() -> None:
+    """Kenshi exports head, second, and tail but no queue size."""
 
     from kenshi_agent.core.observation import Observation
     from kenshi_agent.core.telemetry import (
         CharacterState,
-        CharacterTaskState,
+        CharacterWorkState,
         GameState,
+        TaskCollection,
+        TaskCollectionCompleteness,
         TaskEntry,
         TelemetrySnapshot,
     )
 
-    def digest_for(**task_state: object) -> dict[str, object]:
+    empty = TaskCollection(
+        items=[],
+        completeness=TaskCollectionCompleteness.COMPLETE,
+        known_total=0,
+    )
+
+    def digest_for(ordinary_orders: TaskCollection) -> dict[str, object]:
         observation = Observation(
             run_id="r",
             step_index=0,
@@ -159,32 +162,41 @@ def test_a_partially_known_order_queue_is_never_reported_as_a_total() -> None:
                     CharacterState(
                         id="barth",
                         name="Barth",
-                        task_state=CharacterTaskState(**task_state),
+                        work=CharacterWorkState(
+                            has_player_orders=True,
+                            ordinary_orders=ordinary_orders,
+                            jobs_enabled=False,
+                            jobs=empty,
+                            permanent_jobs=empty,
+                            current_activity=None,
+                        ),
                     )
                 ],
                 primary_character_id="barth",
                 selected_character_ids=["barth"],
             ),
         )
-        entries = observation.log_digest()["telemetry"]["retained_work"]
+        entries = observation.log_digest()["telemetry"]["character_work"]
         assert len(entries) == 1
         return entries[0]
 
-    proven = TaskEntry(task_name="TASK_MINE", task_value=1)
-
+    first = TaskEntry(
+        task_name="TASK_MINE",
+        task_value=1,
+        subject_id=None,
+        description=None,
+        position=0,
+    )
+    tail = first.model_copy(update={"position": None})
     partial = digest_for(
-        has_player_orders=True,
-        orders=[proven, proven],
-        orders_count=2,
-        orders_complete=False,
+        TaskCollection(
+            items=[first, tail],
+            completeness=TaskCollectionCompleteness.TRUNCATED,
+            known_total=None,
+        )
     )
-    assert partial["orders_count"] == 2
-    assert partial["bounded_counts"] == ["orders"]
-
-    whole = digest_for(
-        has_player_orders=True,
-        orders=[proven],
-        orders_count=1,
-        orders_complete=True,
-    )
-    assert whole["bounded_counts"] == []
+    orders = partial["ordinary_orders"]
+    assert isinstance(orders, dict)
+    assert orders["completeness"] == "truncated"
+    assert orders["known_total"] is None
+    assert orders["items"][-1]["position"] is None  # type: ignore[index]

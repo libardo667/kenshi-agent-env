@@ -13,5 +13,6 @@ of restating their reverse-engineering conclusions.
 | [`inventory_transfer`](../../game_sources/research/inventory_transfer/conclusion.md) | `live_proven` | 1.0.65 `a596ab4e407c...` | `medium` | 2 | 1 | 4 |
 | [`player_topology`](../../game_sources/research/player_topology/conclusion.md) | `live_proven` | 1.0.65 `a596ab4e407c...` | `medium` | 1 | 0 | 4 |
 | [`prospecting_window`](../../game_sources/research/prospecting_window/conclusion.md) | `source_proven` | 1.0.65 `a596ab4e407c...` | `medium` | 0 | 1 | 3 |
+| [`task_channels`](../../game_sources/research/task_channels/conclusion.md) | `live_proven` | 1.0.65 `a596ab4e407c...` | `medium` | 1 | 0 | 3 |
 
 Regenerate with `python scripts/export_docs.py`.

@@ -139,14 +139,14 @@ class _RunSession:
 
 
 
-def _retained_work_at_exit(observation: Observation | None) -> dict[str, object]:
-    """Orders Kenshi still holds as the run ends, and how current that is."""
+def _character_work_at_exit(observation: Observation | None) -> dict[str, object]:
+    """Separately report Kenshi's retained channels and current activity."""
 
     telemetry = None if observation is None else observation.telemetry
     if telemetry is None:
         return {
-            "orders_at_exit": None,
-            "orders_at_exit_note": (
+            "character_work_at_exit": None,
+            "character_work_at_exit_note": (
                 "No final observation, so what Kenshi holds is unknown. Nothing "
                 "was cleared by ending the run."
             ),
@@ -154,23 +154,25 @@ def _retained_work_at_exit(observation: Observation | None) -> dict[str, object]
     held = [
         {
             "character": character.name,
-            "orders": character.task_state.orders_count,
-            "jobs": character.task_state.jobs_count,
-            "permajobs": character.task_state.permajobs_count,
+            "has_player_orders": character.work.has_player_orders,
+            "ordinary_orders": character.work.ordinary_orders.model_dump(mode="json"),
+            "jobs_enabled": character.work.jobs_enabled,
+            "jobs": character.work.jobs.model_dump(mode="json"),
+            "permanent_jobs": character.work.permanent_jobs.model_dump(mode="json"),
             "current_activity": (
-                character.task_state.current_activity.task_name
-                if character.task_state.current_activity is not None
+                character.work.current_activity.model_dump(mode="json")
+                if character.work.current_activity is not None
                 else None
             ),
         }
         for character in telemetry.roster
-        if character.task_state is not None and character.task_state.has_retained_work
+        if character.work is not None
     ]
     stale = observation is not None and observation.telemetry_stale
     return {
-        "orders_at_exit": held,
-        "orders_at_exit_observed_sequence": None if stale else telemetry.sequence,
-        "orders_at_exit_note": (
+        "character_work_at_exit": held,
+        "character_work_at_exit_observed_sequence": None if stale else telemetry.sequence,
+        "character_work_at_exit_note": (
             "Read from stale telemetry; treat as a last-known state."
             if stale
             else "Ending the run sent no order-clearing input; these remain with "
@@ -850,7 +852,7 @@ class RunCoordinator:
                                 "Preemption sent no order-clearing input; any order "
                                 "the characters hold remains with them."
                             ),
-                            **_retained_work_at_exit(preemption.observation),
+                            **_character_work_at_exit(preemption.observation),
                             "world_revision": (
                                 preemption.observation.world_revision.model_dump(mode="json")
                             ),
@@ -2024,7 +2026,7 @@ class RunCoordinator:
                     else MonitorDisposition.DETACHED_AT_SHUTDOWN.value
                 ),
                 "evidence_semantics_version": EVIDENCE_SEMANTICS_VERSION,
-                **_retained_work_at_exit(observation),
+                **_character_work_at_exit(observation),
             },
         )
         if self.reporter is not None:

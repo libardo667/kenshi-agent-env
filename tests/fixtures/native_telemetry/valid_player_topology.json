@@ -1,5 +1,5 @@
 {
-  "protocol_version": "1.19.0",
+  "protocol_version": "1.20.0",
   "sequence": 419,
   "source": "KenshiAgentTelemetry",
   "identity_session_id": "session-player-topology-fixture",
@@ -9,24 +9,61 @@
     "platoons.membership",
     "platoons.active",
     "selection.complete",
-    "primary.character"
+    "primary.character",
+    "roster.work_channels"
   ],
   "game": {"loaded": true, "paused": true},
   "roster": [
     {
       "id": "character-alpha",
       "name": "Alpha",
-      "platoon_id": "platoon-alpha"
+      "platoon_id": "platoon-alpha",
+      "work": {
+        "has_player_orders": true,
+        "ordinary_orders": {
+          "items": [
+            {
+              "task_value": 87,
+              "task_name": "OPERATE_MACHINERY",
+              "subject_id": null,
+              "description": "Operating machine",
+              "position": 0
+            }
+          ],
+          "completeness": "complete",
+          "known_total": 1
+        },
+        "jobs_enabled": true,
+        "jobs": {
+          "items": [],
+          "completeness": "complete",
+          "known_total": 0
+        },
+        "permanent_jobs": {
+          "items": [],
+          "completeness": "complete",
+          "known_total": 0
+        },
+        "current_activity": {
+          "task_value": 87,
+          "task_name": "OPERATE_MACHINERY",
+          "subject_id": null,
+          "description": null,
+          "position": null
+        }
+      }
     },
     {
       "id": "character-beta-primary",
       "name": "Beta Primary",
-      "platoon_id": "platoon-beta"
+      "platoon_id": "platoon-beta",
+      "work": null
     },
     {
       "id": "character-beta-second",
       "name": "Beta Second",
-      "platoon_id": "platoon-beta"
+      "platoon_id": "platoon-beta",
+      "work": null
     }
   ],
   "roster_complete": true,

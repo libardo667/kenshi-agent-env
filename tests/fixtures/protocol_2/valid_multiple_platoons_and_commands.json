@@ -11,14 +11,36 @@
         "work": {
           "has_player_orders": true,
           "ordinary_orders": {
-            "items": [{"task_value": 29, "task_name": "MOVE_CUS_ORDERED", "subject_id": "target-town", "description": "Travel"}],
+            "items": [
+              {
+                "task_value": 29,
+                "task_name": "MOVE_CUS_ORDERED",
+                "subject_id": "target-town",
+                "description": "Travel",
+                "position": null
+              }
+            ],
             "completeness": "complete",
             "known_total": 1
           },
           "jobs_enabled": true,
-          "jobs": {"items": [], "completeness": "complete", "known_total": 0},
-          "permanent_jobs": {"items": [], "completeness": "complete", "known_total": 0},
-          "current_activity": {"task_value": 29, "task_name": "MOVE_CUS_ORDERED", "subject_id": "target-town", "description": null}
+          "jobs": {
+            "items": [],
+            "completeness": "complete",
+            "known_total": 0
+          },
+          "permanent_jobs": {
+            "items": [],
+            "completeness": "complete",
+            "known_total": 0
+          },
+          "current_activity": {
+            "task_value": 29,
+            "task_name": "MOVE_CUS_ORDERED",
+            "subject_id": "target-town",
+            "description": null,
+            "position": null
+          }
         }
       },
       {
@@ -28,14 +50,36 @@
         "work": {
           "has_player_orders": true,
           "ordinary_orders": {
-            "items": [{"task_value": 29, "task_name": "MOVE_CUS_ORDERED", "subject_id": "target-town", "description": "Travel"}],
+            "items": [
+              {
+                "task_value": 29,
+                "task_name": "MOVE_CUS_ORDERED",
+                "subject_id": "target-town",
+                "description": "Travel",
+                "position": null
+              }
+            ],
             "completeness": "complete",
             "known_total": 1
           },
           "jobs_enabled": false,
-          "jobs": {"items": [], "completeness": "complete", "known_total": 0},
-          "permanent_jobs": {"items": [], "completeness": "complete", "known_total": 0},
-          "current_activity": {"task_value": 29, "task_name": "MOVE_CUS_ORDERED", "subject_id": "target-town", "description": null}
+          "jobs": {
+            "items": [],
+            "completeness": "complete",
+            "known_total": 0
+          },
+          "permanent_jobs": {
+            "items": [],
+            "completeness": "complete",
+            "known_total": 0
+          },
+          "current_activity": {
+            "task_value": 29,
+            "task_name": "MOVE_CUS_ORDERED",
+            "subject_id": "target-town",
+            "description": null,
+            "position": null
+          }
         }
       },
       {
@@ -44,15 +88,37 @@
         "platoon_id": "platoon-beta",
         "work": {
           "has_player_orders": false,
-          "ordinary_orders": {"items": [], "completeness": "complete", "known_total": 0},
+          "ordinary_orders": {
+            "items": [],
+            "completeness": "complete",
+            "known_total": 0
+          },
           "jobs_enabled": true,
           "jobs": {
-            "items": [{"task_value": 87, "task_name": "OPERATE_MACHINERY", "subject_id": "resource-iron", "description": "Operate"}],
+            "items": [
+              {
+                "task_value": 87,
+                "task_name": "OPERATE_MACHINERY",
+                "subject_id": "resource-iron",
+                "description": "Operate",
+                "position": null
+              }
+            ],
             "completeness": "complete",
             "known_total": 1
           },
-          "permanent_jobs": {"items": [], "completeness": "complete", "known_total": 0},
-          "current_activity": {"task_value": 87, "task_name": "OPERATE_MACHINERY", "subject_id": "resource-iron", "description": null}
+          "permanent_jobs": {
+            "items": [],
+            "completeness": "complete",
+            "known_total": 0
+          },
+          "current_activity": {
+            "task_value": 87,
+            "task_name": "OPERATE_MACHINERY",
+            "subject_id": "resource-iron",
+            "description": null,
+            "position": null
+          }
         }
       },
       {
@@ -61,11 +127,27 @@
         "platoon_id": "platoon-beta",
         "work": {
           "has_player_orders": false,
-          "ordinary_orders": {"items": [], "completeness": "complete", "known_total": 0},
+          "ordinary_orders": {
+            "items": [],
+            "completeness": "complete",
+            "known_total": 0
+          },
           "jobs_enabled": false,
-          "jobs": {"items": [], "completeness": "complete", "known_total": 0},
+          "jobs": {
+            "items": [],
+            "completeness": "complete",
+            "known_total": 0
+          },
           "permanent_jobs": {
-            "items": [{"task_value": 59, "task_name": "JOB_MEDIC", "subject_id": null, "description": "Medic"}],
+            "items": [
+              {
+                "task_value": 59,
+                "task_name": "JOB_MEDIC",
+                "subject_id": null,
+                "description": "Medic",
+                "position": null
+              }
+            ],
             "completeness": "complete",
             "known_total": 1
           },
@@ -81,12 +163,26 @@
       {
         "id": "platoon-alpha",
         "name": "Alpha",
-        "member_ids": {"items": ["character-a", "character-b"], "completeness": "complete", "known_total": 2}
+        "member_ids": {
+          "items": [
+            "character-a",
+            "character-b"
+          ],
+          "completeness": "complete",
+          "known_total": 2
+        }
       },
       {
         "id": "platoon-beta",
         "name": "Beta",
-        "member_ids": {"items": ["character-c", "character-d"], "completeness": "complete", "known_total": 2}
+        "member_ids": {
+          "items": [
+            "character-c",
+            "character-d"
+          ],
+          "completeness": "complete",
+          "known_total": 2
+        }
       }
     ],
     "completeness": "complete",
@@ -95,7 +191,10 @@
   "active_platoon_id": "platoon-alpha",
   "primary_character_id": "character-a",
   "selected_character_ids": {
-    "items": ["character-a", "character-b"],
+    "items": [
+      "character-a",
+      "character-b"
+    ],
     "completeness": "complete",
     "known_total": 2
   },
@@ -110,17 +209,55 @@
           "target_id": "target-town",
           "dispatch_basis": {
             "primary_character_id": "character-a",
-            "selected_character_ids": ["character-a", "character-b"],
+            "selected_character_ids": [
+              "character-a",
+              "character-b"
+            ],
             "active_platoon_id": "platoon-alpha",
-            "recipient_ids": ["character-a", "character-b"]
+            "recipient_ids": [
+              "character-a",
+              "character-b"
+            ]
           },
           "delivery_status": "accepted",
           "accepted_at_sequence": 111,
           "highest_milestone": "activity_running",
           "recipient_states": {
             "items": [
-              {"recipient_id": "character-a", "accepted": true, "activity_observed": true, "outcome_observed": false, "current_activity": {"task_value": 29, "task_name": "MOVE_CUS_ORDERED", "subject_id": "target-town", "description": null}, "disposition": "retained", "disposition_reason": "movement still observed", "superseded_by_command_id": null, "last_observed_sequence": 120},
-              {"recipient_id": "character-b", "accepted": true, "activity_observed": true, "outcome_observed": false, "current_activity": {"task_value": 29, "task_name": "MOVE_CUS_ORDERED", "subject_id": "target-town", "description": null}, "disposition": "retained", "disposition_reason": "movement still observed", "superseded_by_command_id": null, "last_observed_sequence": 120}
+              {
+                "recipient_id": "character-a",
+                "accepted": true,
+                "activity_observed": true,
+                "outcome_observed": false,
+                "current_activity": {
+                  "task_value": 29,
+                  "task_name": "MOVE_CUS_ORDERED",
+                  "subject_id": "target-town",
+                  "description": null,
+                  "position": null
+                },
+                "disposition": "retained",
+                "disposition_reason": "movement still observed",
+                "superseded_by_command_id": null,
+                "last_observed_sequence": 120
+              },
+              {
+                "recipient_id": "character-b",
+                "accepted": true,
+                "activity_observed": true,
+                "outcome_observed": false,
+                "current_activity": {
+                  "task_value": 29,
+                  "task_name": "MOVE_CUS_ORDERED",
+                  "subject_id": "target-town",
+                  "description": null,
+                  "position": null
+                },
+                "disposition": "retained",
+                "disposition_reason": "movement still observed",
+                "superseded_by_command_id": null,
+                "last_observed_sequence": 120
+              }
             ],
             "completeness": "complete",
             "known_total": 2
@@ -137,16 +274,36 @@
           "target_id": "resource-iron",
           "dispatch_basis": {
             "primary_character_id": "character-c",
-            "selected_character_ids": ["character-c"],
+            "selected_character_ids": [
+              "character-c"
+            ],
             "active_platoon_id": "platoon-beta",
-            "recipient_ids": ["character-c"]
+            "recipient_ids": [
+              "character-c"
+            ]
           },
           "delivery_status": "accepted",
           "accepted_at_sequence": 115,
           "highest_milestone": "activity_running",
           "recipient_states": {
             "items": [
-              {"recipient_id": "character-c", "accepted": true, "activity_observed": true, "outcome_observed": false, "current_activity": {"task_value": 87, "task_name": "OPERATE_MACHINERY", "subject_id": "resource-iron", "description": null}, "disposition": "retained", "disposition_reason": "resource activity still observed", "superseded_by_command_id": null, "last_observed_sequence": 120}
+              {
+                "recipient_id": "character-c",
+                "accepted": true,
+                "activity_observed": true,
+                "outcome_observed": false,
+                "current_activity": {
+                  "task_value": 87,
+                  "task_name": "OPERATE_MACHINERY",
+                  "subject_id": "resource-iron",
+                  "description": null,
+                  "position": null
+                },
+                "disposition": "retained",
+                "disposition_reason": "resource activity still observed",
+                "superseded_by_command_id": null,
+                "last_observed_sequence": 120
+              }
             ],
             "completeness": "complete",
             "known_total": 1
@@ -159,7 +316,11 @@
       "completeness": "complete",
       "known_total": 2
     },
-    "recent_terminal_commands": {"items": [], "completeness": "complete", "known_total": 0}
+    "recent_terminal_commands": {
+      "items": [],
+      "completeness": "complete",
+      "known_total": 0
+    }
   },
   "observed_unowned_kenshi_work": {
     "items": [
@@ -167,7 +328,13 @@
         "ownership": "observed_unowned",
         "character_id": "character-d",
         "channel": "permanent_job",
-        "task": {"task_value": 59, "task_name": "JOB_MEDIC", "subject_id": null, "description": "Medic"},
+        "task": {
+          "task_value": 59,
+          "task_name": "JOB_MEDIC",
+          "subject_id": null,
+          "description": "Medic",
+          "position": null
+        },
         "reason": "preexisting",
         "observed_at_sequence": 120
       }

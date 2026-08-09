@@ -780,13 +780,26 @@
             }
           ],
           "title": "Description"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Position"
         }
       },
       "required": [
         "task_value",
         "task_name",
         "subject_id",
-        "description"
+        "description",
+        "position"
       ],
       "title": "TaskEvidence",
       "type": "object"

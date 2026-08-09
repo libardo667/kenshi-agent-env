@@ -40,7 +40,7 @@
         },
         {
           "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
-          "line": 7300,
+          "line": 7373,
           "contains": "ContextMenu::showContextMenu"
         }
       ]
@@ -66,7 +66,7 @@
         },
         {
           "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
-          "line": 7317,
+          "line": 7390,
           "contains": "ContextMenuGUI::show"
         }
       ]
@@ -138,7 +138,7 @@
       "project_call_sites": [
         {
           "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
-          "line": 4774,
+          "line": 4847,
           "contains": "newPlayerTaskSelectedCharacters"
         }
       ]

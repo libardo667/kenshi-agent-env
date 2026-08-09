@@ -31,8 +31,8 @@ def _order(**kwargs: object) -> OrderDisposition:
     base: dict[str, object] = {
         "issued": True,
         "telemetry_fresh": True,
-        "retained_task_names": frozenset(),
-        "expected_task_name": MINE,
+        "causally_retained": None,
+        "observed_unattributed_ordinary_work": False,
     }
     base.update(kwargs)
     return order_disposition_from_evidence(**base)  # type: ignore[arg-type]
@@ -47,7 +47,7 @@ def test_a_timeout_leaves_a_retained_order_retained() -> None:
 
     outcome = LifecycleOutcome(
         monitor=MonitorDisposition.DETACHED_AFTER_TIMEOUT,
-        order=_order(retained_task_names={MINE}),
+        order=_order(causally_retained=True),
         observed_at_sequence=412,
     )
 
@@ -67,7 +67,7 @@ def test_telemetry_loss_makes_the_order_unknown_rather_than_ended() -> None:
 
     outcome = LifecycleOutcome(
         monitor=MonitorDisposition.DETACHED_ON_TELEMETRY_LOSS,
-        order=_order(telemetry_fresh=False, retained_task_names=frozenset()),
+        order=_order(telemetry_fresh=False),
     )
 
     assert outcome.order is OrderDisposition.UNKNOWN_AFTER_TELEMETRY_LOSS
@@ -81,7 +81,7 @@ def test_telemetry_loss_makes_the_order_unknown_rather_than_ended() -> None:
 def test_a_human_handoff_says_handoff_not_cancelled() -> None:
     outcome = LifecycleOutcome(
         monitor=MonitorDisposition.DETACHED_FOR_HUMAN_HANDOFF,
-        order=_order(retained_task_names={MINE}),
+        order=_order(causally_retained=True),
         observed_at_sequence=9,
     )
 
@@ -125,28 +125,28 @@ def test_an_order_that_was_never_issued_says_so() -> None:
     assert _order(issued=False) is OrderDisposition.NEVER_ISSUED
 
 
-def test_other_work_present_reads_as_replaced_not_ended() -> None:
-    """A Job pulling a character away is not the order finishing."""
+def test_observed_ordinary_work_is_not_adopted_as_the_controller_order() -> None:
+    """Task-name similarity is not causal ownership."""
 
-    assert _order(retained_task_names={"TASK_EAT"}) is OrderDisposition.EXTERNALLY_REPLACED
+    assert (
+        _order(observed_unattributed_ordinary_work=True)
+        is OrderDisposition.OBSERVED_UNATTRIBUTED_WORK
+    )
 
 
-def test_nothing_retained_on_fresh_evidence_reads_as_ended() -> None:
-    assert _order(retained_task_names=frozenset()) is OrderDisposition.NATURALLY_ENDED
+def test_fresh_work_state_without_a_causal_link_does_not_claim_the_order_ended() -> None:
+    assert _order() is OrderDisposition.UNKNOWN_WITHOUT_CAUSAL_LINK
 
 
-def test_an_unnameable_task_is_unknown_rather_than_assumed_ended() -> None:
-    """If the controller cannot say what to look for, absence proves nothing."""
-
-    assert _order(expected_task_name=None) is OrderDisposition.UNKNOWN_AFTER_TELEMETRY_LOSS
-
+def test_exact_causal_absence_can_prove_the_order_ended() -> None:
+    assert _order(causally_retained=False) is OrderDisposition.NATURALLY_ENDED
 
 def test_stale_evidence_never_concludes_the_order_ended() -> None:
     """The rule that keeps every other rule honest."""
 
-    for retained in (frozenset(), frozenset({MINE}), frozenset({"TASK_EAT"})):
+    for retained in (None, True, False):
         assert (
-            _order(telemetry_fresh=False, retained_task_names=retained)
+            _order(telemetry_fresh=False, causally_retained=retained)
             is OrderDisposition.UNKNOWN_AFTER_TELEMETRY_LOSS
         )
 
@@ -265,24 +265,44 @@ def test_the_run_report_states_what_kenshi_still_holds() -> None:
     stopped with it.
     """
 
-    from kenshi_agent.run_coordinator import _retained_work_at_exit
+    from kenshi_agent.run_coordinator import _character_work_at_exit
 
-    absent = _retained_work_at_exit(None)
+    absent = _character_work_at_exit(None)
 
-    assert absent["orders_at_exit"] is None
-    assert "Nothing" in str(absent["orders_at_exit_note"])
+    assert absent["character_work_at_exit"] is None
+    assert "Nothing" in str(absent["character_work_at_exit_note"])
 
 
 def test_the_run_report_names_retained_work_and_its_currency() -> None:
     from kenshi_agent.core.observation import Observation
     from kenshi_agent.core.telemetry import (
         CharacterState,
-        CharacterTaskState,
+        CharacterWorkState,
         GameState,
+        TaskCollection,
+        TaskCollectionCompleteness,
         TaskEntry,
         TelemetrySnapshot,
     )
-    from kenshi_agent.run_coordinator import _retained_work_at_exit
+    from kenshi_agent.run_coordinator import _character_work_at_exit
+
+    mine = TaskEntry(
+        task_value=87,
+        task_name=MINE,
+        subject_id=None,
+        description=None,
+        position=0,
+    )
+    one_order = TaskCollection(
+        items=[mine],
+        completeness=TaskCollectionCompleteness.COMPLETE,
+        known_total=1,
+    )
+    empty = TaskCollection(
+        items=[],
+        completeness=TaskCollectionCompleteness.COMPLETE,
+        known_total=0,
+    )
 
     observation = Observation(
         run_id="r",
@@ -295,29 +315,93 @@ def test_the_run_report_names_retained_work_and_its_currency() -> None:
                 CharacterState(
                     id="barth",
                     name="Barth",
-                    task_state=CharacterTaskState(
+                    work=CharacterWorkState(
                         has_player_orders=True,
-                        orders=[TaskEntry(task_name=MINE)],
-                        orders_count=1,
+                        ordinary_orders=one_order,
+                        jobs_enabled=False,
+                        jobs=empty,
+                        permanent_jobs=empty,
+                        current_activity=None,
                     ),
                 )
             ],
         ),
     )
 
-    report = _retained_work_at_exit(observation)
+    report = _character_work_at_exit(observation)
 
-    assert report["orders_at_exit"] == [
+    assert report["character_work_at_exit"] == [
         {
             "character": "Barth",
-            "orders": 1,
-            "jobs": 0,
-            "permajobs": 0,
+            "has_player_orders": True,
+            "ordinary_orders": one_order.model_dump(mode="json"),
+            "jobs_enabled": False,
+            "jobs": empty.model_dump(mode="json"),
+            "permanent_jobs": empty.model_dump(mode="json"),
             "current_activity": None,
         }
     ]
-    assert report["orders_at_exit_observed_sequence"] == 77
-    assert "sent no order-clearing input" in str(report["orders_at_exit_note"])
+    assert report["character_work_at_exit_observed_sequence"] == 77
+    assert "sent no order-clearing input" in str(
+        report["character_work_at_exit_note"]
+    )
+
+
+def test_the_run_report_does_not_drop_activity_when_retained_work_is_empty() -> None:
+    from kenshi_agent.core.observation import Observation
+    from kenshi_agent.core.telemetry import (
+        CharacterState,
+        CharacterWorkState,
+        GameState,
+        TaskCollection,
+        TaskCollectionCompleteness,
+        TaskEntry,
+        TelemetrySnapshot,
+    )
+    from kenshi_agent.run_coordinator import _character_work_at_exit
+
+    empty = TaskCollection(
+        items=[],
+        completeness=TaskCollectionCompleteness.COMPLETE,
+        known_total=0,
+    )
+    activity = TaskEntry(
+        task_value=87,
+        task_name=MINE,
+        subject_id=None,
+        description=None,
+        position=None,
+    )
+    observation = Observation(
+        run_id="r",
+        step_index=0,
+        mode="live",
+        telemetry=TelemetrySnapshot(
+            sequence=78,
+            game=GameState(loaded=True, paused=False),
+            roster=[
+                CharacterState(
+                    id="barth",
+                    name="Barth",
+                    work=CharacterWorkState(
+                        has_player_orders=False,
+                        ordinary_orders=empty,
+                        jobs_enabled=True,
+                        jobs=empty,
+                        permanent_jobs=empty,
+                        current_activity=activity,
+                    ),
+                )
+            ],
+        ),
+    )
+
+    work = _character_work_at_exit(observation)["character_work_at_exit"]
+
+    assert isinstance(work, list)
+    assert work[0]["ordinary_orders"]["known_total"] == 0
+    assert work[0]["jobs"]["known_total"] == 0
+    assert work[0]["current_activity"]["position"] is None
 
 
 def test_a_later_order_fact_is_a_linked_event_not_a_receipt_edit() -> None:
@@ -429,5 +513,5 @@ def test_preemption_reports_what_kenshi_still_holds() -> None:
     block = cancelled[cancelled.index('"plan_execution_cancelled"') :][:1600]
 
     assert "monitor_disposition" in block
-    assert "_retained_work_at_exit" in block
+    assert "_character_work_at_exit" in block
     assert "sent no order-clearing input" in block

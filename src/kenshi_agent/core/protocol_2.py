@@ -74,6 +74,9 @@ class TaskEvidence(StrictModel):
     task_name: str = Field(min_length=1, max_length=80)
     subject_id: EntityId | None
     description: str | None = Field(max_length=300)
+    # Exact source-container index when the inspected API proves it. Null for
+    # current activity and for sampled order-tail entries whose index is unknown.
+    position: int | None = Field(ge=0)
 
 
 class CharacterWorkState(StrictModel):
