@@ -1309,9 +1309,10 @@ NativeWireCommand = Literal[
     "perform_context_action",
     "perform_character_order",
     "produce_resource_output",
-    # One transfer between two open inventories, whatever owns them. Kenshi
-    # adjudicates it and says why not, so looting, buying, selling, giving and
-    # harvesting are one command rather than five that each drive a mouse.
+    # One transfer between two open inventories, whatever owns them. Native
+    # inventory-model movement and the project's explicit shop-pricing rule make
+    # looting, buying, selling, giving and harvesting one command rather than
+    # five operations that each drove a mouse.
     "transfer_item",
     # Both inventories at once, typed by Kenshi's own TradeWindowType. The
     # single-window opener beside it shows a character's personal gear, which
@@ -1350,15 +1351,18 @@ class NativeCommandAcknowledgement(StrictModel):
     # command cannot silently satisfy a later request for a larger yield.
     minimum_output_quantity: int = Field(default=1, ge=1, le=5)
     # A transfer names two inventories and one slot. `target_id` is the source
-    # owner; these are the rest of the address. Kenshi's own `RClickAutoTrade`
-    # takes a section name and an x/y, so a slot is how an item is named to the
-    # engine - unlike a cell label scraped off a widget, which names a picture
-    # of it.
+    # owner; these are the rest of the address. Native code resolves the item
+    # through `InventorySection::getItemAt(x, y)`, so the model slot names the
+    # item rather than a cell label scraped from a widget.
     destination_id: str = Field(default="", max_length=200)
     section_name: str = Field(default="", max_length=80)
     slot_x: int = Field(default=0, ge=0)
     slot_y: int = Field(default=0, ge=0)
-    selected_character_ids: list[str] = Field(min_length=1, max_length=64)
+    # Body-shift acknowledgements truthfully echo an empty selection after
+    # total loss because the target names its own recipient. Wire-shape
+    # validation below still requires a selection for selection-addressed
+    # commands.
+    selected_character_ids: list[str] = Field(max_length=64)
     based_on_telemetry_sequence: int = Field(ge=0)
     acknowledged_at_telemetry_sequence: int = Field(ge=0)
     accepted_at_telemetry_sequence: int | None = Field(default=None, ge=0)

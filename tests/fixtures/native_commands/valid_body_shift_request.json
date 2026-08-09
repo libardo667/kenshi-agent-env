@@ -10,10 +10,7 @@
     "capability_epoch": 2,
     "observed_at_monotonic": 19.25
   },
-  "selected_character_ids": [
-    "entity-selected",
-    "entity-companion"
-  ],
+  "selected_character_ids": [],
   "target_id": "entity-body-to-enter",
   "context_action": "",
   "bearing_degrees": 0.0,

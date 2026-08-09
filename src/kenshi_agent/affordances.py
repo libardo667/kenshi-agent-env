@@ -577,11 +577,9 @@ def _body_shift_offers(observation: Observation) -> Iterable[AffordanceOffer]:
 
 
 # One person affording a dozen distinct orders is already an unusual scene;
-# the cap keeps a crowd from crowding out every other kind of choice.
-# Also uncapped, and for the same reason. Twelve orders per person, chosen
-# silently, with nothing saying a thirteenth was dropped -- Kenshi's own menu
-# already decided what this person affords, and cutting its answer down is
-# overruling the authority we went to the trouble of asking.
+# Uncapped. Twelve orders per person, chosen silently, with nothing saying a
+# thirteenth was dropped, would overrule the menu authority we asked Kenshi to
+# provide.
 MAX_ORDERS_OFFERED_PER_PERSON = None
 
 
@@ -646,9 +644,6 @@ def _character_order_offers(observation: Observation) -> Iterable[AffordanceOffe
                 ),
                 arguments={"target_id": entity.id, "order": order},
             )
-
-
-MAX_INVENTORY_OWNERS_OFFERED = 12
 
 
 def _semantic_slug(value: str) -> str:
@@ -755,12 +750,11 @@ def _trade_window_offers(observation: Observation) -> Iterable[AffordanceOffer]:
 def _item_transfer_offers(observation: Observation) -> Iterable[AffordanceOffer]:
     """Offer moving each item in each open inventory to each other open one.
 
-    Uncurated on purpose, in the same way orders are. Whether a given move is
-    allowed is Kenshi's judgment and Kenshi gives it in detail - no room, cannot
-    afford, that is mine, a thief was spotted - so enumerating the moves and
-    letting the engine refuse is more faithful than a Python rule that guesses
-    which ones are sensible. Looting, buying, selling and giving are not four
-    kinds of offer here; they are this offer with different owners.
+    Uncurated on purpose, in the same way orders are. Looting, buying, selling
+    and giving are not four kinds of offer here; they are this offer with
+    different owners. Native code owns model capacity and simplified shop
+    pricing. It deliberately does not claim Kenshi's richer theft, faction,
+    stolen-goods, or haggling adjudication.
 
     Reach is the one exception, and it is not an exception to that principle:
     `within_trade_range` is Kenshi's `isWithinRangeToTrade`, not a distance rule
@@ -815,8 +809,8 @@ def _item_transfer_offers(observation: Observation) -> Iterable[AffordanceOffer]
                         ),
                         description=(
                             f"Move {item.item_name!r} from {source.owner_name!r} "
-                            f"to {destination.owner_name!r}. Kenshi decides "
-                            "whether it is allowed and says why not."
+                            f"to {destination.owner_name!r} through the native "
+                            "inventory model and declared shop-pricing rule."
                         ),
                         operation_kind="transfer_item",
                         target=AffordanceTarget(
@@ -1232,9 +1226,9 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
         operation_kinds=frozenset({"perform_context_action"}),
         denominator="Every exact world-target/order pair advertised by current telemetry.",
         completeness_boundary=(
-            "Native execution proves the reviewed natural-resource operate and "
-            "squad-character first_aid semantics; other orders require current screen "
-            "geometry and stop at the generic UI delivery boundary."
+            "Only the reviewed native natural-resource operate and squad-character "
+            "first_aid subcases are emitted. Every other telemetry context action is "
+            "withheld rather than routed through the retired pointer path."
         ),
         enumerate=_context_order_offers,
     ),
@@ -1274,8 +1268,9 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
             "inventory."
         ),
         completeness_boundary=(
-            "Bounded to the first few moves. Whether one is allowed is Kenshi's "
-            "answer at dispatch, reported in its own words."
+            "Uncapped across the currently exported open inventories. Native model "
+            "capacity and simplified shop pricing are enforced at dispatch; Kenshi's "
+            "richer trade and theft adjudication is not claimed."
         ),
         enumerate=_item_transfer_offers,
     ),

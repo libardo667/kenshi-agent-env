@@ -45,10 +45,10 @@ DEFINITIONS
 
 SOURCE-SPECIFIC COMPLETENESS BOUNDARIES
   runtime: Only choices applicable to the current run state.
-  context_orders: Native execution proves the reviewed natural-resource operate and squad-character first_aid semantics; other orders require current screen geometry and stop at the generic UI delivery boundary.
+  context_orders: Only the reviewed native natural-resource operate and squad-character first_aid subcases are emitted. Every other telemetry context action is withheld rather than routed through the retired pointer path.
   body_shift: Native-assisted stable identity and nearby-character evidence; a body outside the reported radius cannot be offered and a hostile one is deliberately withheld.
   character_orders: Bounded by the native probe budget: the nearest few people are asked what they afford, and the rest report that they were not asked.
-  item_transfers: Bounded to the first few moves. Whether one is allowed is Kenshi's answer at dispatch, reported in its own words.
+  item_transfers: Uncapped across the currently exported open inventories. Native model capacity and simplified shop pricing are enforced at dispatch; Kenshi's richer trade and theft adjudication is not claimed.
   trade_windows: Squadmates and reviewed resources are prioritized before the nearby-owner cap. Whether Kenshi pairs a given two is its answer at dispatch.
   dialogue_targets: Native-assisted stable identity and dialogue-role evidence.
   characters: Offers require the source-specific selection, identity, geometry, and safety facts.

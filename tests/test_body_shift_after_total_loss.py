@@ -17,8 +17,11 @@ from kenshi_agent.core.interaction import RecipientScope
 from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.operation import ControlMode, ShiftIntoBodyAction
 from kenshi_agent.core.telemetry import (
+    CharacterState,
     Disposition,
     GameState,
+    NativeCommandAcknowledgement,
+    NativeCommandStatus,
     NearbyEntity,
     TelemetrySnapshot,
     UIState,
@@ -92,6 +95,47 @@ def test_a_body_is_still_offered_when_every_character_is_dead() -> None:
     assert [offer.target.target_id for offer in offers if offer.target] == [STRANGER]
 
 
+def test_body_shifting_is_elective_not_restricted_to_total_loss() -> None:
+    """The implemented policy deliberately supersedes the original recovery fence."""
+
+    from kenshi_agent.affordances import offered_affordances
+
+    observation = _wiped_world()
+    assert observation.telemetry is not None
+    current = "entity-current-body"
+    observation = observation.model_copy(
+        update={
+            "telemetry": observation.telemetry.model_copy(
+                update={
+                    "squad": [
+                        CharacterState(
+                            id=current,
+                            name="Current Body",
+                            selected=True,
+                            conscious=True,
+                        )
+                    ],
+                    "ui": UIState(
+                        active_screen="world",
+                        modal_open=False,
+                        dialogue_open=False,
+                        selected_character_id=current,
+                        selected_character_ids=[current],
+                    ),
+                }
+            )
+        }
+    )
+
+    offers = [
+        offer
+        for offer in offered_affordances(observation)
+        if offer.operation_kind == "shift_into_body"
+    ]
+
+    assert [offer.target.target_id for offer in offers if offer.target] == [STRANGER]
+
+
 def test_the_shift_binds_with_no_roster_and_no_selection() -> None:
     definition = OPERATION_DEFINITIONS["shift_into_body"]
     action = ShiftIntoBodyAction(target_id=STRANGER)
@@ -131,6 +175,23 @@ def test_the_wire_accepts_a_shift_with_no_selected_recipients() -> None:
     )
 
     assert request.selected_character_ids == []
+
+
+def test_the_acknowledgement_echoes_the_empty_selection_truthfully() -> None:
+    acknowledgement = NativeCommandAcknowledgement(
+        command_id="cmd-" + "1" * 32,
+        command="shift_into_body",
+        status=NativeCommandStatus.COMPLETED,
+        reason="shift_body_recruited",
+        target_id=STRANGER,
+        selected_character_ids=[],
+        based_on_telemetry_sequence=400,
+        acknowledged_at_telemetry_sequence=401,
+        accepted_at_telemetry_sequence=401,
+        terminal_at_telemetry_sequence=401,
+    )
+
+    assert acknowledgement.selected_character_ids == []
 
 
 def test_every_other_command_still_requires_a_recipient() -> None:

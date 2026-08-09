@@ -30,14 +30,16 @@ The current action set covers:
 - starting or adopting resource work and waiting for output;
 - reading a local resource survey;
 - pausing, changing game speed, waiting, and stopping a run;
-- shifting into an eligible nearby body after losing the current party; and
+- electively shifting into an eligible nearby body, including after losing the
+  current party; and
 - using campaign memory, the fieldbook, and the read-only strategy advisor.
 
 Live acceptance runs have covered representative movement and character orders,
 trade-window opening, purchases, equipped-item looting, squadmate and resource-output
-transfers, resource production, body shifting, human handoff, emergency stop, and a
-confirmed final pause. The exact evidence for each operation is recorded in
-[the proof ledger](docs/reconstruction/interaction_proof_status.json).
+transfers, resource production, human handoff, emergency stop, and a confirmed final
+pause. Body shifting was observed in a supervised manual dispatch, but no named run
+bundle preserves the complete proof chain. The exact durable classification for each
+operation is recorded in [the proof ledger](docs/reconstruction/interaction_proof_status.json).
 
 There are still important limits:
 

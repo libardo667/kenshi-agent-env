@@ -6,11 +6,13 @@
 
 namespace KenshiAgentTelemetry
 {
-    // A request crosses Python, an atomic file replace, SendInput, and the
-    // Kenshi UI-thread hook. At the 500 ms telemetry cadence that proven path
-    // advanced by two snapshots in a live run. Four snapshots is the bounded
-    // transport allowance; every command still revalidates current selection,
-    // target lifetime, role, UI state, and command-specific authority natively.
+    // A request crosses Python, an atomic file replace, and the Kenshi UI-thread
+    // hook. The plug-in notices the file replacement itself; the legacy hotkey
+    // remains an optional manual/diagnostic signal. At the 500 ms telemetry
+    // cadence the proven transport advanced by two snapshots in a live run.
+    // Four snapshots is the bounded allowance; every command still revalidates
+    // current selection, target lifetime, role, UI state, and command-specific
+    // authority natively.
     const unsigned long long MAX_NATIVE_COMMAND_REVISION_LAG = 4ULL;
 
     inline bool IsNativeCommandRevisionWithinTransportWindow(
@@ -40,9 +42,8 @@ namespace KenshiAgentTelemetry
         double distanceUnits;
         unsigned int minimumOutputQuantity;
         // A transfer names two inventories and one slot. `targetId` is the
-        // source owner; these are the rest of the address. Kenshi's own
-        // `RClickAutoTrade` takes a section name and an x/y, so a slot is how
-        // an item is named to the engine.
+        // source owner; these are the rest of the address. Native code resolves
+        // the item through `InventorySection::getItemAt(x, y)`.
         std::string destinationId;
         std::string sectionName;
         int slotX;
@@ -74,9 +75,8 @@ namespace KenshiAgentTelemetry
         double distanceUnits;
         unsigned int minimumOutputQuantity;
         // A transfer names two inventories and one slot. `targetId` is the
-        // source owner; these are the rest of the address. Kenshi's own
-        // `RClickAutoTrade` takes a section name and an x/y, so a slot is how
-        // an item is named to the engine.
+        // source owner; these are the rest of the address. Native code resolves
+        // the item through `InventorySection::getItemAt(x, y)`.
         std::string destinationId;
         std::string sectionName;
         int slotX;

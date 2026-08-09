@@ -131,10 +131,9 @@ class NativeCommandRequest(StrictModel):
     distance_units: float = Field(default=0.0, ge=0.0, le=2000.0)
     minimum_output_quantity: int = Field(default=1, ge=1, le=5)
     # A transfer names two inventories and one slot. `target_id` is the source
-    # owner; these are the rest of the address. Kenshi's own `RClickAutoTrade`
-    # takes a section name and an x/y, so a slot is how an item is named to the
-    # engine - unlike a cell label scraped off a widget, which names a picture
-    # of it.
+    # owner; these are the rest of the address. Native code resolves the item
+    # through `InventorySection::getItemAt(x, y)`, so the model slot names the
+    # item rather than a cell label scraped from a widget.
     destination_id: str = Field(default="", max_length=200)
     section_name: str = Field(default="", max_length=80)
     slot_x: int = Field(default=0, ge=0)

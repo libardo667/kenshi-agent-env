@@ -2539,12 +2539,13 @@ TRANSFER_ITEM_DEFINITION = OperationDefinition(
     summary=(
         "Move one item between two open inventories, whatever owns them. "
         "Looting a body, buying from a shop, handing something to a squadmate "
-        "and emptying a crate are the same act with different owners, and "
-        "Kenshi performs all four through one call. Open both inventories "
-        "first, then name the source slot. Whether the transfer is allowed is "
-        "Kenshi's answer, reported verbatim: no_room, cant_afford, thats_mine, "
-        "thief_detected, locked, container_not_empty and the rest. Success "
-        "requires an observed move, not merely a permitted one."
+        "and emptying a crate are one inventory-model act with different owners. "
+        "Open both inventories first, then name the source slot. Native code "
+        "removes from the source and tries to add to the destination; when a "
+        "shop trade is open, the project charges a simplified buy or sell value "
+        "from Item::getValueSingle. This does not reproduce Kenshi's theft, "
+        "faction-standing, stolen-goods, or haggling rules. Success requires an "
+        "observed move, not merely a returned call."
     ),
     argument_source=(
         "Copy source_owner_id and destination_owner_id from open_inventories, "

@@ -2719,21 +2719,6 @@ namespace
         json << "\"item_type\":" << static_cast<int>(item->getItemType()) << ",";
     }
 
-    // Returns `int`, deliberately, and this is the whole bug.
-    //
-    // `RClickAutoTrade` returns `InventoryGUI::TradeResult`, a class with a
-    // user-declared constructor. Declaring the pointer that way made MSVC pass
-    // a hidden return buffer in RCX and shift `this` to RDX. Kenshi's own build
-    // returns it in EAX and keeps `this` in RCX -- disassembling the shipped
-    // RE_Kenshi binary at the fault shows the function prologue immediately
-    // doing `mov (%rcx),%rax; call *0x70(%rax)`, which is `this->getInventory()`
-    // through vtable slot 0x70. With a sret buffer in RCX that reads an
-    // uninitialised stack slot as a vtable pointer and calls through it.
-    //
-    // That is every `RClickAutoTrade` crash: four of them, blamed in turn on
-    // equipment, shop state, trade rosters and the mouse. The verdict is a
-    // 4-byte enum, so an `int` return carries it in EAX with no hidden pointer
-    // and leaves `this` where the function expects it.
     // The title screen's own menu handlers.
     //
     // `./dev launch` reaches the main menu by clicking its pixels, which is the
@@ -2765,47 +2750,25 @@ namespace
         ~TitleScreenReach();
     };
 
-    typedef int (*RClickAutoTradeFunction)(
-        InventoryGUI*,
-        const std::string&,
-        int,
-        int,
-        InventoryGUI*,
-        bool,
-        bool);
-
     typedef bool (*WithinRangeToTradeFunction)(
         InventoryGUI*,
         RootObject*,
         bool);
 
-    // `RClickAutoTrade` is the right-click transfer, and the five item
-    // operations in this project simulate it with a mouse.
-    //
-    // The header marks it protected, but KenshiLib exports its stub mangled as
-    // public (`?RClickAutoTrade@InventoryGUI@@QEAA...`), so the symbol is
-    // reachable; only C++ access control is in the way. A derived class may
-    // name a protected member of its base, which is all this exists to do. It
-    // is never constructed -- the destructor is left undefined so that trying
-    // would not link.
-    struct InventoryTradeReach : public InventoryGUI
+    // Kenshi's range predicate is protected. A derived class may name the
+    // member without constructing an `InventoryGUI`, which lets telemetry ask
+    // the same reach question before a transfer is attempted.
+    struct InventoryTradeRangeReach : public InventoryGUI
     {
-        static RClickAutoTradeFunction Resolve()
-        {
-            return reinterpret_cast<RClickAutoTradeFunction>(
-                KenshiLib::GetRealAddress(
-                    &InventoryTradeReach::RClickAutoTrade));
-        }
-
         static WithinRangeToTradeFunction ResolveRange()
         {
             return reinterpret_cast<WithinRangeToTradeFunction>(
                 KenshiLib::GetRealAddress(
-                    &InventoryTradeReach::isWithinRangeToTrade));
+                    &InventoryTradeRangeReach::isWithinRangeToTrade));
         }
 
     private:
-        ~InventoryTradeReach();
+        ~InventoryTradeRangeReach();
     };
 
     // Whether Kenshi considers these two close enough to trade, asked rather
@@ -2826,7 +2789,8 @@ namespace
         known = false;
         if (window == NULL || other == NULL || !other->isValid())
             return false;
-        WithinRangeToTradeFunction withinRange = InventoryTradeReach::ResolveRange();
+        WithinRangeToTradeFunction withinRange =
+            InventoryTradeRangeReach::ResolveRange();
         if (withinRange == NULL)
             return false;
         known = true;
@@ -2903,10 +2867,9 @@ namespace
     // one path, and the transfer built on it does not need to know which it is
     // looking at.
     //
-    // Positions are exported because they are the transfer's coordinates:
-    // `InventoryGUI::RClickAutoTrade` takes a section name and an x/y, so an
-    // item's slot is what names it to the engine. A cell label scraped off a
-    // MyGUI widget is not.
+    // Positions are exported because the inventory model resolves an item by
+    // section and x/y. The slot names the item to `InventorySection::getItemAt`;
+    // a cell label scraped off a MyGUI widget does not.
     void AppendOpenInventories(
         std::ostringstream& json,
         ForgottenGUI* gui,
@@ -2986,10 +2949,7 @@ namespace
                     InventoryWindowIsWithinTradeRange(window, selected, rangeKnown);
                 json << "\"within_trade_range\":"
                      << (rangeKnown ? JsonBool(withinRange) : "null") << ",";
-                // Whether Kenshi counts this window as a party to the trade.
-                // `RClickAutoTrade` faulted reading -1 with both windows open,
-                // in range, and holding the right item, so what the engine
-                // requires around the call is the thing being measured.
+                // The exact model sections and items exposed by this window.
                 json << "\"sections\":[";
                 bool firstSection = true;
                 unsigned int sectionCount = 0;
@@ -4974,10 +4934,10 @@ namespace
             // with a mouse, and `harvest_resource` spent twelve pointer actions
             // doing so.
             //
-            // Kenshi adjudicates it. `RClickAutoTrade` returns a `TradeResult`
-            // that already separates "no room" from "cannot afford" from "that
-            // is mine" from "a thief was spotted", so the reason reported here
-            // is the engine's word rather than a coarser one invented above it.
+            // The inventory model moves it. Capacity comes from the destination
+            // inventory; shop affordability and payment follow the deliberately
+            // simplified rule below. This path does not claim the richer trade
+            // and theft adjudication carried by Kenshi's mouse handler.
             if (gui == NULL || gui->inDialogue() || gui->hasModalMessage())
             {
                 RejectNativeCommand(request, "conflicting_modal_open");

@@ -265,11 +265,11 @@ class KenshiResourceMechanics:
     ) -> ActionReceipt:
         """Move one item between two open inventories, with no pointer at all.
 
-        The five operations this replaces each drove a mouse over a cell.
-        Kenshi's own `RClickAutoTrade` takes a section and a slot, performs the
-        move, and returns why not when it refuses - so the terminal reason here
-        is the engine's word, and success additionally requires that something
-        actually moved rather than merely being permitted.
+        Native code resolves the exact model slot, removes the item from the
+        source inventory, and tries to add it to the destination. Shop transfers
+        use the project's explicit simplified price. A terminal acknowledgement
+        still is not enough by itself: later inventory and money telemetry is the
+        evidence that goods and funds actually moved.
         """
 
         semantic = SemanticActionReceipt(
@@ -280,8 +280,8 @@ class KenshiResourceMechanics:
             source_revision=command.based_on_revision,
             revalidation=(
                 "Re-proved both inventories open and the named item still in its "
-                "slot, then let Kenshi adjudicate the transfer and report its own "
-                "verdict."
+                "slot, then asked native inventory-model code to move it under "
+                "the declared transfer and shop-pricing rules."
             ),
         )
         return await self._surface.run_native_order(

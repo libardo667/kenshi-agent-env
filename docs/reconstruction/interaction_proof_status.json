@@ -3,7 +3,7 @@
   "stage": "interaction-scope-and-order-lifecycle",
   "slice": 1,
   "authority": "docs/KENSHI_INTERACTION_SCOPE_ORDER_LIFECYCLE_PLAN.md",
-  "captured_at_utc": "2026-08-08T19:53:55Z",
+  "captured_at_utc": "2026-08-09T13:25:55Z",
   "note": [
     "Hand-authored. Not an authority over gameplay semantics, and no longer a",
     "home for the interaction contract: Slice 1 moved that into",
@@ -198,15 +198,15 @@
       "operation_kind": "transfer_item",
       "proof_status": "live_proven",
       "evidence": [
-        "KenshiAgentTelemetry.cpp transfer_item: resolves both owners to handles, requires both inventory windows open, and calls InventoryGUI::RClickAutoTrade(section, x, y, destination, thieveryChecks, first) -- the engine's own right-click transfer, which the five operations it replaces each simulated with a mouse",
-        "The verdict is Kenshi's and is reported verbatim rather than collapsed into success or failure: ok, no_room, cant_afford, shopkeeper_cant_afford, cant_wear_item, incompatible_item, locked, thief_detected, selling_stolen_item_detected, thats_mine, target_conscious, smuggling_only, illegal_goods, uniforms, container_not_empty. Inventing a coarser vocabulary on top of a finer one is how selection_mismatch came to mean six conditions",
-        "Conservation is measured across the call rather than inferred from the verdict: a permitted transfer that moved nothing terminates as permitted_without_moving rather than as success, because an engine answering OK has said the transfer was allowed, not that an item moved",
-        "The slot is the address. RClickAutoTrade takes a section name and an x/y, and UIState.open_inventories exports exactly that per item, so no cell label is scraped from a MyGUI widget and no pointer is used at all",
+        "KenshiAgentTelemetry.cpp transfer_item resolves both owners through ForgottenGUI::inventoryWindowsOpen, requires both exact windows open, resolves the source item with InventorySection::getItemAt(section, x, y), removes through Inventory::removeItemDontDestroy_returnsItem, and adds through Inventory::tryAddItem. It does not call InventoryGUI::RClickAutoTrade",
+        "Capacity comes from the destination Inventory. A failed tryAddItem is rolled back when possible; if destination getNumItems proves that part of a stack moved despite a false return, the command reports item_partly_transferred and charges only the stranded gain rather than claiming a refusal",
+        "When InventoryGUI::getNPCTrader reports a shop trade, the project applies simplified economics: destination ownership chooses buy versus sell, Item::getValueSingle supplies unit cost, destination getNumItems after-minus-before supplies actual quantity, and Inventory::takeMoney moves equal funds between payer and payee. Theft, haggling, faction standing, stolen-goods penalties, uniforms, illegal-goods and the rest of RClickAutoTrade adjudication are not reproduced or claimed",
+        "The slot is the address because InventorySection::getItemAt resolves it directly. UIState.open_inventories exports section and x/y per item, so no cell label is scraped from a MyGUI widget and no pointer is used",
         "pointer_actions is 0. The operations this subsumes spend 23 pointer actions between them, 12 of those in harvest_resource alone",
-        "closure-loot-20260808 transferred Burn's equipped Katana and Halfpants (ragged) into Fish with item_transferred terminals cmd-460ee0bb31814fd98e7d7057747348f6 and cmd-2538e63cec614d87a06511aa925f4256",
-        "closure-harvest-fixed-20260808 transferred Raw Iron from the Iron Resource output slot into Fish with item_transferred terminal cmd-90f4f3ab3ea449539a64040290c7f1e3"
+        "closure-loot-20260808 transferred Burn's equipped Katana and Halfpants (ragged) into Fish with item_transferred terminals cmd-460ee0bb31814fd98e7d7057747348f6 and cmd-2538e63cec614d87a06511aa925f4256; later open-inventory telemetry showed Burn empty and Fish holding the moved items",
+        "closure-harvest-fixed-20260808 transferred Raw Iron from the Iron Resource output slot into Fish with item_transferred terminal cmd-90f4f3ab3ea449539a64040290c7f1e3 and later inventory telemetry recorded the resource loss and Fish gain"
       ],
-      "note": "Live-proven for equipped-body loot and resource-output collection, in addition to the earlier squadmate and purchase paths. Binding still proves both inventories open, the section present, and the named item still in its slot, since position alone is not identity."
+      "note": "Named bundles live-prove inventory-model movement for equipped-body loot and resource-output collection. A supervised purchase separately observed conserved project-owned payment, but no exact named purchase bundle is cited here, so the ledger does not generalize those two movement bundles into durable proof of all shop economics. Binding still proves both inventories open, the section present, and the named item still in its slot, since position alone is not identity."
     },
     {
       "operation_kind": "travel_to_map_destination",

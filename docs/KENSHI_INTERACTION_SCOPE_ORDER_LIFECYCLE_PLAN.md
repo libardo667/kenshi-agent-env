@@ -1,10 +1,32 @@
-# Kenshi Interaction Scope and Order Lifecycle Reconstruction
+# Kenshi Interaction Scope and Order Lifecycle: implementation record and open plan
 
-**Status:** Proposed post-reconstruction architecture stage  
+**Status:** In progress. Slice 0, Slice 1, and Slice 1b are complete on current `main`; the protocol/plural-command and broader live-proof work remains open.
 **Working name:** Interaction Scope and Order Lifecycle Reconstruction  
 **Placement:** Begin only from a tagged, accepted Stage 8 commit. If numbered, this becomes Stage 9 rather than being folded retroactively into Stage 8. Do not let this stage absorb, excuse, or silently waive an unfinished Stage 8 gate.  
 **Primary objective:** Make the agent's interaction model match Kenshi's selection-broadcast, asynchronous, squad-based play model without surrendering the reconstructed system's exact identity, causal authority, typed operation registry, or safety boundaries.  
 **Revision note:** This version folds in the architectural lessons exposed while executing Stages 0–8: accepted checkpoints and rollback boundaries, same-operation identity across fresh rebinding, single-owner planner/outcome/finalization services, versioned evidence, generated audits that do not become rival registries, plan synchronization at asynchronous milestones, idempotent native delivery, and cold residue audits.
+
+**Current authority boundary (2026-08-09):** The operation registry is the sole
+source authority for implemented interaction contracts. The generated
+`docs/generated/INTERACTION_CATALOG.md` reports that registry, and
+`docs/reconstruction/interaction_proof_status.json` separately records proof.
+Sections below retain the dated baseline and intended later architecture; their
+present-tense findings describe the baseline at which they were written unless a
+current status note says otherwise. They must not be read as newer than the
+current source, generated catalog, proof ledger, or checkpoint.
+
+Current slice disposition:
+
+| Slice | Disposition | Current evidence |
+|---|---|---|
+| 0 | Complete | Baseline, generated catalog, manifest separation, and strict target scenarios exist. Remaining target scenarios are explicit open work rather than unmarked behavior. |
+| 1 | Complete | `OperationInteractionContract` and resolvers live in the sole registry; `SelectionRequirement` and the telemetry helper's selection-count authority are absent. Transport classifies wire addressing, including target-owned body shift, but does not decide operation recipient scope. |
+| 1b | Complete | `core/lifecycle.py` separates `MonitorDisposition` from `OrderDisposition`, versions the evidence semantics, maps every safety cause, and reports retained/unknown order state without rewriting terminal receipts. |
+| 2-8 | Open or partially advanced | Later commits implemented useful pieces, but protocol 2.0, plural active native commands, the complete live matrix, and stage closure are not proven. Partial progress does not mark a slice complete. |
+
+The Slice 1 and Slice 1b completion claims are source- and portable-test-proven.
+They do not upgrade any declared Kenshi recipient behavior to live-proven; that
+classification remains per operation in the proof ledger.
 
 **Reconciliation note (2026-08-04):** The plan was originally drafted against an
 uploaded Stage 8 snapshot rather than the live repository. It has since been
@@ -958,7 +980,16 @@ Add failing/xfail proof scenarios that encode the desired A/B concurrency behavi
 
 **Gate:** Every current operation/control route appears exactly once in the generated catalog or is explicitly internal and named; the proof-status manifest cannot restate semantic contract fields; the Stage 8 checkpoint and rollback boundary are recorded.
 
-### Slice 1 — Core interaction vocabulary and sole registry authority
+### Slice 1 — Core interaction vocabulary and sole registry authority — COMPLETE
+
+**Current completion record:** Landed as the accepted
+`interaction-scope-slice-1` boundary and retained on current `main`. The old
+selection-cardinality authority was deleted in the same slice. Transport still
+classifies structural wire shapes: for example, `shift_into_body` names its own
+recipient in `target_id`, so an empty selected-character list is truthful. That
+classification does not assign operation recipient scope; the registry does.
+`tests/test_interaction_scope_targets.py` now asserts the actual ownership
+boundary without `xfail`.
 
 **Goal:** Introduce the new contract model without yet changing native concurrency.
 
@@ -970,17 +1001,30 @@ Add failing/xfail proof scenarios that encode the desired A/B concurrency behavi
 - Convert all definitions in one coherent edit.
 - Make authorability consult the resolved scope rather than `SelectionRequirement`.
 - Delete `SelectionRequirement` immediately; do not retain both models.
-- Remove command-name cardinality exception sets from Python models, replacing them with generic dispatch-basis consistency validation.
+- Remove command-name rules that assign recipient cardinality from Python models,
+  replacing them with generic dispatch-basis consistency validation. Wire-shape
+  classification may still distinguish a target-owned recipient from a
+  selection-addressed command.
 - Absorb the `selected_count` gate in `map_destination_already_reached` (§2.6). Whether travel remains available at the current location is a recipient-scope question and belongs to the map-travel definition's contract, not to a telemetry helper.
 - Name the concrete member set for `SIMULATION_PROCESS`, or delete the member (§4.1).
 
 During this slice, conservative contracts may preserve current runtime behavior where native support has not migrated yet, but the type system must already express the intended distinction.
 
-**Deletes:** `SelectionRequirement` (source-only; it appears in no test); duplicated Python command-name selection fences; the telemetry-helper cardinality gate.
+**Deletes:** `SelectionRequirement` (source-only; it appears in no test);
+duplicated command-name recipient-scope authority; the telemetry-helper
+cardinality gate. Target-owned versus selection-addressed wire shape remains a
+protocol fact and is fixture-tested in both languages.
 
 **Gate:** No operation's recipient scope is inferred outside the operation registry/resolver.
 
-### Slice 1b — Monitor disposition vocabulary and evidence versioning
+### Slice 1b — Monitor disposition vocabulary and evidence versioning — COMPLETE
+
+**Current completion record:** `src/kenshi_agent/core/lifecycle.py`, monitoring,
+run-finalization reporting, and `tests/test_lifecycle_vocabulary.py` implement
+and pin the separate monitor/order vocabulary and evidence versioning. The
+historical baseline test that searched `core.operation` for
+`MonitorDisposition`/`NativeOrderDisposition` has been retired in favor of a
+passing test against the real `core.lifecycle` owner and current enum names.
 
 **Goal:** Stop recording fiction before doing the dangerous work, not after.
 
@@ -1352,7 +1396,9 @@ Everything not marked is structural.
 This architecture stage is complete only when **all** of the following are true on one commit:
 
 1. Stage 8 is green on its supported deterministic environment, accepted on one commit, and recorded as the rollback checkpoint for this stage.
-2. `SelectionRequirement` and all duplicated command-cardinality exception lists are gone.
+2. `SelectionRequirement` and all duplicated command-name recipient-scope
+   authorities are gone; protocol-only addressing shape does not claim that
+   authority.
 3. Every planner-visible and internal operation resolves one typed interaction contract from the sole operation registry.
 4. Primary, selection, active platoon, platoon memberships, and overall roster are distinct first-class telemetry concepts.
 5. Ordinary orders, Jobs, permajobs, and Jobs-enabled state are not conflated.

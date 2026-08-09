@@ -42,7 +42,7 @@ INVENTORY
 TRADE
   ok  enter     Open a money-trading, looting, or automatic transfer window.  [native: open_trade_window]
   ok  navigate  Read every exported inventory section and slot.  [native: telemetry.ui.open_inventories]
-  ok  interact  Buy, sell, give, loot, or collect through one engine transfer.  [native: transfer_item]
+  ok  interact  Buy, sell, give, loot, or collect through one inventory-model transfer.  [native: transfer_item]
   GAP exit      Close the trade window.  [none: ForgottenGUI::closeTradeWindow @ 0x790630]
         -> The recovery command is live-proven, but it has no registry-backed runtime lifecycle and the planner cannot currently select it.
 

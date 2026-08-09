@@ -6,7 +6,8 @@ the test stops being a prediction. That is the intended signal: retire the
 marker in the slice that implements it rather than discovering months later
 that a gate has been silently passing.
 
-Slice 1's three targets have been retired and now assert plainly.
+Slice 1's three targets and Slice 1b's lifecycle-vocabulary target have been
+retired and now assert plainly.
 
 Nothing here weakens an existing test. Every assertion is about the target
 model; the current model is pinned by the suite as it stands.
@@ -126,23 +127,17 @@ def test_dispatch_basis_is_available_as_an_immutable_capture() -> None:
     assert "interaction_contract_fingerprint" in basis.model_fields
 
 
-@pytest.mark.xfail(strict=True, reason=SLICE_4)
-def test_monitor_disposition_is_distinct_from_native_order_disposition() -> None:
-    """Section 3.4: detaching a monitor is not clearing a Kenshi order."""
+def test_monitor_disposition_is_distinct_from_order_disposition() -> None:
+    """Completed Slice 1b: detaching a monitor is not clearing a Kenshi order."""
 
-    from kenshi_agent.core import operation
+    from kenshi_agent.core.lifecycle import MonitorDisposition, OrderDisposition
 
-    monitor = getattr(operation, "MonitorDisposition", None)
-    order = getattr(operation, "NativeOrderDisposition", None)
-    assert monitor is not None
-    assert order is not None
+    monitor_values = {member.value for member in MonitorDisposition}
+    order_values = {member.value for member in OrderDisposition}
 
-    monitor_values = {member.value for member in monitor}
-    order_values = {member.value for member in order}
-
-    assert "detached_timeout" in monitor_values
-    assert "retained" in order_values
-    # "cancelled" is the word that currently lies about both.
+    assert "detached_after_timeout" in monitor_values
+    assert "retained_at_last_observation" in order_values
+    assert not monitor_values & order_values
     assert "cancelled" not in order_values
 
 

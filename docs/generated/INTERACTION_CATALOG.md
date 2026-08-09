@@ -2,20 +2,17 @@
 
 # Interaction catalog
 
-Slice 0 inventory for the interaction-scope and order-lifecycle stage.
+Current inventory for the interaction-scope and order-lifecycle stage.
 
-The first table is derived from the sole operation registry and states
-only what the code says today, including the `SelectionRequirement`
-this stage exists to delete. The second table is the hand-authored
-proposal in `docs/reconstruction/interaction_proof_status.json`, kept
-separate so the proposal and the implementation cannot silently
-converge. Slice 1 moves the proposed contract into the registry, after
-which the manifest may carry only proof status and evidence.
+The interaction table is derived from the sole operation registry and
+states the typed contract the code implements today. Slice 1 deleted the
+old selection-cardinality authority. The hand-authored manifest in
+`docs/reconstruction/interaction_proof_status.json` carries only proof
+status and evidence, so it cannot become a second contract registry.
 
-Neither table is an authority over Kenshi's behavior. `unproven` is the
-honest majority: no group-scope behavior is live-proven anywhere in this
-repository, and every captured context-menu witness had exactly one
-character selected.
+The registry is source authority, not proof of Kenshi behavior. Named live
+evidence appears only through the proof manifest, and unproven group cases
+remain unproven even when their intended contract is implemented.
 
 ```text
 operations               23

@@ -372,14 +372,16 @@ class TransferItemAction(StrictModel):
     """Move one item between two open inventories, whatever owns them.
 
     Looting a body, buying from a shop, handing something to a squadmate and
-    emptying a mining crate are the same act with different owners, and Kenshi
-    already knows it: `InventoryGUI::RClickAutoTrade` performs all four and
-    returns why not when it refuses. This project had five separate operations
-    for them, all driving a mouse, one of them costing twelve pointer actions.
+    emptying a mining crate are one model-level move with different owners.
+    The plug-in removes the item from the source `Inventory` and tries to add it
+    to the destination. When a shop trade is open, the project applies a
+    deliberately simplified price from `Item::getValueSingle`; it does not call
+    `InventoryGUI::RClickAutoTrade` or inherit Kenshi's theft, faction-standing,
+    stolen-goods, or haggling adjudication.
 
-    The slot is the address. Kenshi's transfer takes a section name and an x/y,
-    so `(section_name, slot_x, slot_y)` names the item to the engine - unlike a
-    cell label read off a widget, which names a picture of it.
+    The slot is the address. `InventorySection::getItemAt(x, y)` resolves the
+    source item, so `(section_name, slot_x, slot_y)` names it to the model,
+    unlike a cell label read off a widget, which names a picture of it.
     """
 
     kind: Literal["transfer_item"] = "transfer_item"

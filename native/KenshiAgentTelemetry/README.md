@@ -1,171 +1,177 @@
-# KenshiAgentTelemetry native plugin
+# KenshiAgentTelemetry native plug-in
 
-This DLL is the telemetry and narrowly bounded control bridge from Kenshi to the
-Python environment. It hooks Kenshi's own `TitleScreen::_NV_update` and
-`PlayerInterface::update` methods, samples after the corresponding original
-method returns on the same game/UI thread, and atomically replaces
-`telemetry.latest.json`. The title hook emits a deliberately minimal
-title/control-only snapshot. The player hook emits loaded-game telemetry and
-owns native-command monitoring.
+`KenshiAgentTelemetry.dll` is the loaded-game telemetry and bounded control
+bridge between Kenshi and the Python runtime. This file describes the current
+source contract. Historical protocol milestones belong in Git history and named
+run evidence, not in a second current protocol narrative.
 
-It exports fields with a relatively clear KenshiLib/MyGUI surface: pause,
-speed, money, elapsed game minutes, camera state, complete selection, squad
-life/conscious/down/crippled/combat state, nutrition reserve, blood,
-inventory/equipment, modal and management UI state, exact dialogue
-target/options, tooltip evidence, and bounded visible buttons/text plus named
-item cells with owner windows and current bounds. Nearby telemetry carries
-stable identity, roles, disposition, distance, position, viewport state, and
-camera-relative bearing. Bounded world-target telemetry separately carries
-exact reviewed mining-resource identities, positions, distances, supported
-context actions, and resource levels. Squad telemetry includes Kenshi's
-UI-facing current goal when available.
+## Current protocol
 
-An item cell's `item_value` is base worth, not the shop's authoritative asking
-price or sale offer. Transaction effect must be established from later money
-telemetry.
+```text
+telemetry protocol       1.18.0
+native request schema    1.4
+loaded-world capabilities 43
+active native commands  at most one
+```
 
-Nearby roles keep anatomy, platoon commerce, leadership, dialogue, and exact
-`ShopTrader::getTrader()` ownership separate. Exact ownership comes from a bounded registry maintained by
-`ShopTrader` constructor/destructor hooks installed before save load; Kenshi's
-spatial query does not enumerate these wrappers. A `GameWorld::resetGame` hook
-clears that registry and prior native command acknowledgements before Kenshi
-constructs a new or loaded session, since the plugin DLL remains resident
-across those transitions.
-Opaque entity IDs derive from validated Kenshi handles plus process/session
-generations. Character IDs also survive handle-container transitions; other IDs
-retain the complete handle identity. They survive squad/nearby and
-world-target list reordering and distinguish duplicate names without serializing
-addresses.
-`identity_session_id` changes across process or game-session lifetimes.
-`selected_character_ids` reports the full player-character selection set, while
-the singular ID identifies its active member.
-It retains the `0.3.0` causal command envelope and `0.4.0` dialogue/tooltip
-observations, and adds capability-gated visible controls, management state,
-named inventory cells, squad inventory/vitals, and additional movement
-commands. The former food-specific policy is retired; these observations now
-serve generic semantic contracts.
-The first supervised `0.5.0` load found that sampling solely from
-`PlayerInterface::update` cannot publish title controls before a save exists.
-Both a direct detour of MyGUI's exported frame function and a MyGUI
-`eventFrameStart` subscription crashed during startup and are rejected. They
-also invoked a snapshot builder whose loaded-game assumptions were not valid
-before world/player initialization. The lifecycle revision keeps the `0.5.0`
-wire schema, hooks the pinned Kenshi `TitleScreen` method, and separates a
-minimal title snapshot from the loaded-game snapshot. No third-party MyGUI
-function or delegate list is modified.
-Dialogue choices remain null when the dialogue cannot be read. Tooltip text and
-source-widget bounds remain null when no tooltip is visible. Visible controls
-are read only after the relevant Kenshi UI-thread update and bounded to 224
-results, 2,048 visited widgets per pass, and depth 32; the plugin never invokes
-their callbacks.
+The source declarations are authoritative. `KenshiAgentTelemetry.cpp` owns the
+telemetry version, `NativeCommandRequest` in
+`src/kenshi_agent/core/transport.py` owns the strict Python request schema, and
+`GameplayCapabilities.json` owns the loaded-world capability vocabulary. The
+portable consistency tests and the native conformance executable compare the
+shared JSON fixtures with both protocol implementations.
 
-It also recognizes a private `Ctrl+Shift+F10` request bridge. Before the
-hotkey, Python atomically publishes a strict `native_command.request.json`
-carrying its UUID command ID, complete world revision, `native_assisted` mode,
-identity session, the complete nonempty selected stable-ID basis, and
-command-specific arguments. Actor-specific commands require exactly one selected
-ID; dialogue approach, ordinary movement, squad selection, and map travel
-deliberately accept a group:
+Protocol 1.18.0 is additive over the earlier 1.x telemetry family. The proposed
+2.0 roster/platoon/plural-command redesign in the interaction-scope plan has not
+landed. Current telemetry still serializes player characters under `squad`, and
+`native_control.active_command_id` plus one native active-command record still
+limit the controller to one monitored command at a time.
 
-- `approach_confirmed_vendor` is the legacy wire name for approaching any exact
-  conscious, non-hostile humanoid dialogue target. It gives the complete current
-  selection Kenshi's ordinary `PLAYER_TALK_TO` order, retains the primary
-  selected character as the monitored speaker, and completes only when dialogue
-  opens with that exact target.
-- `move_to_character` walks to one exact current nearby character through
-  `MOVE_CUS_ORDERED` without opening dialogue and completes on arrival.
-- `select_squad_member` collapses any exact current squad selection to one exact
-  stable target and terminally verifies the resulting singular selection.
-- `move_in_direction` walks a bearing/distance from the selected character,
-  capped at 2,000 units, and completes inside the fixed arrival tolerance or
-  after crossing the intended destination plane. Its request and acknowledgement
-  carry an empty target plus the exact bearing and distance.
-- `travel_to_map_destination` gives the complete exact current selection one
-  ordinary group order toward an exact discovered town's direction-dependent
-  gate waypoint. The map distance is measured from the farthest selected member,
-  so a primary member already in town cannot hide travel from a remote groupmate.
-  A gated town then receives one controller-owned interior order.
-  Crossing the wall predicate does not terminate that order. Completion requires
-  every member of the command's selection basis to reach the exact town; a
-  reached interior leg without that group evidence cancels rather than inventing
-  arrival.
-- `exit_current_building` requires the selected character's indoor handle to
-  resolve to a valid building, then resolves its current unlocked exit and
-  outside point without accepting model-authored geometry.
-- `perform_context_action` carries one reviewed semantic. `operate` re-resolves
-  an exact current natural resource and `first_aid` an exact eligible squad
-  member; both complete only after the selected character's exact AI goal names
-  the corresponding Kenshi task and target.
-- `produce_resource_output` adopts that exact already-running task or issues it
-  once, then stays active through `Operating machine` and completes only when
-  the resource output section contains a positive quantity. An order issued by
-  the command has its visible job and underlying ordinary order queue cleared,
-  then proves both that no player order remains and that the exact operating
-  goal stays inactive through a stability window before
-  `resource_output_ready_task_released`; matching work that was already active
-  is adopted without taking ownership and retains `resource_output_ready`.
-The plugin rechecks all shared and command-specific facts and never substitutes
-a nearer target. `native_control` exposes a bounded ring of keyed
-accepted/rejected/completed/cancelled acknowledgements. Active work cancels if
-selection, uninterrupted pause beyond the bounded handoff window, target
-lifetime, or required target role changes. The legacy last-command fields
-remain diagnostics. While an active command still belongs to its complete exact
-selection basis, the player-update hook reasserts `CameraClass::followObject`
-on the primary member each frame. This keeps the camera and world streaming
-centered on the command owner; inactive, ambiguous, or selection-mismatched
-states never claim camera ownership.
-This makes the DLL a native-assisted control bridge, not a globally read-only
-plugin. The Python runtime exposes these commands only in `native_assisted`
-mode; `interface_only` filters their capabilities/state and rejects the marked
-actions. The bounded nearby query uses a 400-world-unit town-local radius,
-which covers most of the Hub from the default Wanderer spawn without encoding
-a person or coordinate. World targets combine a 400-unit local scan and a
-2,000-unit outer scan, deduplicate stable IDs, retain the nearest 128 recognized
-objects, and warn if either source scan reaches capacity.
+## Hooks and telemetry
 
-It explicitly leaves body-part wounds, bleeding rate, getting-eaten state,
-imprisonment/enslavement, the internal task stack, distant world state, and
-geometry occlusion unavailable or unvalidated. KenshiLib's raw
-`isGettingEaten` byte is not exported because live validation found it set on a
-healthy new character. The `food_items` scalar remains for compatibility but
-has disagreed with named inventory in live evidence; consumers must prefer the
-inventory list.
+The plug-in installs hooks on Kenshi's own game/UI thread:
 
-## Build
+- `TitleScreen::_NV_update` publishes a minimal title/control snapshot.
+- `PlayerInterface::update` monitors native commands and publishes loaded-world
+  telemetry after the original update returns.
+- `ContextMenu::showContextMenu` plus a muted `ContextMenuGUI::show` hook let the
+  plug-in ask Kenshi which orders it would display without drawing a menu over
+  the operator's game.
+- `ShopTrader` lifecycle hooks maintain exact shop-owner identity, and
+  `GameWorld::resetGame` clears session-bound registries and acknowledgements.
 
-The completed [reconstruction](../../docs/ARCHITECTURE_RECONSTRUCTION.md)
-preserved native protocol compatibility. The active
-[interaction-scope authority](../../docs/KENSHI_INTERACTION_SCOPE_ORDER_LIFECYCLE_PLAN.md)
-plans a deliberate breaking bump to telemetry `2.0.0` and native request schema
-`2.0` in its Slice 2; until that lands, protocol compatibility still holds. Exact contributor-supplied media identities
-remain recorded in [`docs/native-media.lock.json`](../../docs/native-media.lock.json),
-and the checked-in diagnostic script verifies the installed build prerequisites.
+Loaded telemetry includes clock and location state, camera state, complete
+current selection, squad vitals/inventory/task summaries, nearby characters and
+roles, bounded world targets, discovered map destinations, dialogue and tooltip
+state, visible controls, every currently exported open inventory, and keyed
+native command acknowledgements. Stable IDs are derived from validated Kenshi
+handles plus process/session generations; names and list positions are not
+identities.
 
-1. Install RE_Kenshi and obtain the matching maintained KenshiLib development
-   dependencies.
-2. Install a Visual Studio version capable of using the Visual C++ 2010 x64
-   (`v100`) platform toolset.
-3. Set `KENSHILIB_DIR` to the dependency directory containing `Include` and
+Bounded collections expose completeness or warning evidence where the model
+supports it. An empty bounded result must not be generalized beyond that stated
+boundary.
+
+## Request transport
+
+Python atomically replaces
+`%LOCALAPPDATA%\KenshiAgent\native_command.request.json`. The title and player
+update hooks watch the file's last-write time, wait one frame after a change so
+an atomic replacement cannot be read halfway through, and then parse and
+dispatch the request on Kenshi's UI thread.
+
+`Ctrl+Shift+F10` is no longer required to wake the plug-in. It remains an
+optional manual/diagnostic signal for `scripts/dispatch_native_command.py`.
+The current Python gameplay path still sends that short hotkey after publishing
+most native gameplay requests, so the supported path is presently redundant:
+file-change dispatch plus a compatibility trigger. Native pause and speed
+control use the file-change path without a hotkey. Startup, recovery, emergency
+stop, and host-safety paths may still use Windows input when the native side is
+absent or cannot be trusted to stop itself.
+
+Every request carries:
+
+- a strict schema version and UUID-shaped command ID;
+- `native_assisted` control mode and the current identity session;
+- the complete authored selected-recipient basis, except for commands that name
+  their own recipient;
+- the telemetry revision on which dispatch authority was based; and
+- only the fields belonging to that command's wire projection.
+
+The plug-in rejects duplicate IDs, future or stale revisions, session mismatch,
+malformed command shapes, conflicting UI state, changed targets, and failed
+command-specific authority. Acknowledgements are keyed and carry accepted and
+terminal telemetry sequences where applicable. An acknowledgement proves what
+the plug-in accepted or observed at its terminal boundary; it is not by itself
+proof of an intended later world outcome.
+
+## Current command surface
+
+The loaded-world protocol currently covers:
+
+- exact selection, regrouping, nearby movement, directional movement, building
+  exit, and map travel;
+- exact dialogue approach, resource context actions, generic character orders,
+  resource production, and local resource survey;
+- paired trade/loot/resource windows and item transfer;
+- elective body shifting;
+- pause and speed control; and
+- recovery-only trade-window close plus the diagnostic body-platoon probe.
+
+`close_trade_window` and `shift_body_platoon` have no planner-visible operation
+definition. They are recovery/diagnostic routes, not hidden fallbacks.
+
+The wire name `approach_confirmed_vendor` is historical. Its current operation
+is `approach_dialogue_target`, and it may target any exact conscious,
+non-hostile character currently confirmed talkable.
+
+The native bridge still holds one active command. Selection is captured in the
+request but several native monitors still depend on the current selection, and
+separate retained commands for disjoint recipient groups are not implemented.
+Those open limits are tracked in the
+[interaction scope and lifecycle record](../../docs/KENSHI_INTERACTION_SCOPE_ORDER_LIFECYCLE_PLAN.md).
+
+## Inventory and shop semantics
+
+`open_trade_window` calls `ForgottenGUI::showTradeWindow` with two exact owner
+handles and Kenshi's `TradeWindowType`, then waits for both inventory windows to
+be observed. Acceptance of that call is not the same as observing the windows.
+
+`transfer_item` does **not** call `InventoryGUI::RClickAutoTrade`. Live attempts
+showed that the KenshiLib declaration does not safely match the shipped binary
+for out-of-band use. Current code resolves the source item with
+`InventorySection::getItemAt`, removes it through
+`Inventory::removeItemDontDestroy_returnsItem`, and adds it through
+`Inventory::tryAddItem`. It checks model capacity, attempts rollback on a
+refusal, and reports a partial transfer if later destination counts prove that
+some goods moved despite a false return.
+
+When `InventoryGUI::getNPCTrader()` reports a shop trade, the project applies
+its own simplified economics. The receiving side determines buy versus sell;
+`Item::getValueSingle` supplies the unit value; the destination's before/after
+`Inventory::getNumItems` count determines how many actually arrived; and money
+moves between the two inventories for that measured count. This does not
+reproduce Kenshi's haggling, faction standing, stolen-goods penalties, theft
+detection, uniforms, illegal-goods, or other `RClickAutoTrade` rules. Documents
+and receipts must call it simplified project-owned pricing, not Kenshi
+adjudication.
+
+An item cell's `item_base_value` and `item_sell_value` are the two values
+reported by `Item::getValueSingle`; neither field alone proves the final charge.
+Later inventory and money telemetry is the outcome evidence.
+
+## Body shift semantics
+
+`shift_into_body` is elective, not total-loss-only. It resolves one exact
+conscious, non-animal, non-hostile body; uses `PlayerInterface::recruit` when
+crossing into the player faction; creates a separate squad; carries selection
+identity across `Character::setFaction`; makes that squad current; and selects
+and tracks the body. The exact implementation and open live-proof obligations
+are recorded in the
+[body-shift record](../../docs/KENSHI_BODY_SHIFT_PLAN.md).
+
+## Build and install
+
+The plug-in targets Visual C++ 2010 SP1 x64 (`v100`) and the configured
+maintained KenshiLib headers/libraries.
+
+1. Set `KENSHILIB_DIR` to the dependency directory containing `Include` and
    `Libraries`.
-4. Set `BOOST_INCLUDE_PATH` to the extracted Boost 1.60 root containing both
-   `boost` and `stage\lib`.
-5. Run `scripts\native_doctor.ps1` and resolve every failed check.
-6. Run `scripts\build_native.ps1` to build **Release | x64** with local Windows
-   intermediate/output directories. The build also runs the production native
-   parser/serializer against the golden JSON fixtures shared with Python.
-7. Run `scripts\stage_native.ps1 -BuiltDll <path-to-built-dll>`.
-8. After reviewing the staged files, copy the staged `KenshiAgentTelemetry`
-   folder to `<Kenshi>\mods\KenshiAgentTelemetry` and enable the mod in the
-   Kenshi launcher.
+2. Set `BOOST_INCLUDE_PATH` to Boost 1.60 containing `boost` and `stage\lib`.
+3. Run `scripts\native_doctor.ps1` and resolve every failed check.
+4. Run `scripts\build_native.ps1`. The Release x64 build also runs
+   `NativeCommandProtocolTests.exe` against `tests\fixtures\native_commands`.
+5. Run `scripts\stage_native.ps1 -BuiltDll <path-to-built-dll>`.
+6. After review, copy the staged `KenshiAgentTelemetry` folder into Kenshi's
+   `mods` directory and enable it in the launcher.
 
-The staged layout follows the current upstream HelloWorld example: its 46-byte
-native-only `.mod` stub, `RE_Kenshi.json`, and the plugin DLL in one Kenshi mod
-folder. A zero-byte marker is invalid and Kenshi will reject it while loading
-game data.
+The staging script includes the DLL, `RE_Kenshi.json`, third-party notices,
+this README, and the 46-byte native-only `.mod` stub. It stages only; it does
+not install into Kenshi.
 
-## Output
+## Output paths
 
-By default the plugin writes to:
+By default the plug-in writes:
 
 ```text
 %LOCALAPPDATA%\KenshiAgent\telemetry.latest.json
@@ -174,91 +180,54 @@ By default the plugin writes to:
 ```
 
 Set `KENSHI_AGENT_TELEMETRY_DIR` before launching Kenshi to override the folder.
-The parent of an override must already exist; the plugin creates only the final
+The parent of an override must already exist; the plug-in creates only the final
 folder component.
 
-## Verification sequence
+## Evidence classification
 
-- Launch to the title screen and confirm `plugin_status.json` says `ready`.
-- At two client resolutions, verify `ui.visible_controls` reports the same
-  unique configured title/save labels with different current bounds.
-- Enter a disposable save and confirm telemetry sequence numbers increase.
-- Pause/unpause and verify the field changes.
-- Select different squad members and verify the singular ID, complete selected
-  ID set, and squad `selected` flags agree.
-- Compare nutrition reserve, blood, combat state, and named inventory/equipment
-  against the selected character's visible UI.
-- Open inventory, trade, stats, map, tech, and squad management. Verify window
-  ownership, named item cells, dedicated window/tab fields, and current control
-  bounds.
-- Reorder a squad and change the camera/nearby presentation; verify entity IDs
-  remain attached to handles rather than list positions or names.
-- Load a disposable save and verify `identity_session_id` changes without
-  retaining old selection, nearby, or native target IDs.
-- Publish a stale-revision request and verify its exact command ID is rejected
-  without movement.
-- Publish one current exact-target request and verify a later keyed acceptance,
-  no substitute target, terminal completion/cancellation semantics, and final
-  pause.
-- Repeat for `move_to_character`, verifying bounded arrival without opening
-  dialogue and explicit cancellation when the world is paused.
-- Perform the same live check for `move_in_direction`. The 2026-07-25 probe
-  `20260725T2223-direction-smoke-061-green` proved one exact 36.5-degree,
-  30-unit order from keyed acceptance through `walk_destination_reached`, about
-  30.4 units of plausible movement, a resulting frame, and safe final pause.
-  Repeat across other bearings, distances, obstacles, and scenes before making
-  broader movement claims.
-- During native movement, verify the camera center follows the exact selected
-  character without a separate portrait gesture. Confirm inactive commands and
-  selection mismatch do not retain agent camera ownership.
-- Repeat for `perform_context_action`: first verify the exact target/action pair
-  is present in `world_targets`, then issue that pair and confirm keyed
-  `context_task_started`, plausible movement/task behavior in a resulting
-  frame, fresh advancing telemetry, and final pause.
-- Repeat the full resource transaction: prove `produce_resource_output` adopts
-  matching work without reissue and reaches `resource_output_ready`; prove the
-  exact contextual inventory opens; then prove equal output loss and selected
-  inventory gain after one exact-cell transfer.
-- Move a character and verify position and movement speed change plausibly.
-- Compare squad count and names against the UI.
-- Leave the game running for ten minutes and inspect `kenshi.log` for plugin
-  errors or hitches.
+### Source-proven
 
-Do not enable live Python input until these checks pass. The source is based on
-the pinned maintained headers and compiles as a VS2010 SP1 `Release | x64` DLL.
-Protocol `0.3.0` passed its load/two-hertz telemetry smoke test and one
-supervised stale-rejection/exact-target completion proof. The additive `0.5.0`
-split-lifecycle build passed a supervised 1920x1080 title canary, semantic
-load-to-pause, generic dialogue/trade chain, UI surveys, and later long-form
-runs with inventory/trading/movement telemetry. Alternate-resolution, broader
-identity transitions, repeated interruption/ownership trials, and multi-hour
-stability remain open in the broader checklist.
+- The hook, protocol, command, inventory-model, simplified-pricing, and body
+  shift paths above are present in the current source and in the configured
+  KenshiLib declarations they call.
+- Protocol 1.18.0 and the 43-entry loaded-world capability manifest are embedded
+  into the native build inputs.
+- The file-change watcher and the optional hotkey both dispatch through the same
+  request parser and command handler.
 
-Protocol `0.6.0` is the additive command-identity correction built and installed
-on 2026-07-25. Its first live targetless probe exposed the paused-start timing
-defect. Protocol `0.6.1` replaces tick-count cancellation with a resettable
-wall-clock pause window and adds production-tested destination-plane completion.
-The final 202,240-byte installed DLL has SHA-256
-`0f30b245382210b5a0e7c3c347d22f3c320eae17142808cea1a44ae49f214afb`;
-it passed the guarded loaded/paused health window and the exact live completion
-run named above.
+### Test-proven
 
-Protocol `0.7.0` adds reported squad indoor membership, the parameterless
-`exit_current_building` request, and shared no-progress movement
-terminalization. The plugin resolves one valid unlocked door and its outside
-point from the selected character's current building. The current 205,824-byte
-installed DLL has SHA-256
-`2110dcf73421a5919e5c3f0efb44cdd9929946a0902aa09d8662191cd94ba8d9`;
-run `20260726Tnative-building-exit-live-04` completed the exact keyed exit with
-`outside_door_destination_reached` and a safe final pause.
+- Portable tests validate the strict Python request/acknowledgement models,
+  shared command vocabulary, generated schemas, capability manifest/header
+  parity, and golden fixture set.
+- A Windows native build runs the production C++ parser/serializer against the
+  same golden request fixtures.
+- `scripts/check_native_provenance.py` compares protocol and capability strings
+  in the installed binary and records built/installed hashes. See the current
+  [checkpoint](../../docs/CHECKPOINT.md) for the measured result.
 
-Protocol `1.0.0` removes undocumented task-probability fields from the wire.
-Structural mining identity determines presence; an advertised context action
-authorizes only a bounded exact-target attempt. The bridge revalidates the
-target and completes only on the exact AI task and subject. This observability
-boundary is protected by the active reconstruction authority.
+### Live-proven
 
-Protocol `1.1.0` adds completeness markers for bounded visible controls and
-squad inventory, exact contextual-inventory ownership, retained resource
-production, and exact inventory opening. Its C++ conformance target builds, but
-the DLL has not yet been live-loaded or supervised in Kenshi.
+Named live evidence is operation-specific and belongs in
+`docs/reconstruction/interaction_proof_status.json`. Representative accepted
+commands include trade-window opening, inventory-model transfers, resource
+production, and character orders. Each live conclusion depends on later engine
+telemetry in its named bundle, not merely on request delivery or an
+acknowledgement.
+
+### Withheld and open
+
+- The plug-in does not support plural simultaneously active native command
+  records.
+- Several group-recipient, delayed-continuation, session-reset, and retained
+  order lifecycle conclusions remain unproven.
+- The native recovery close command is not a planner-visible general close
+  operation.
+- Body shift lacks a complete named operation bundle even though a manual live
+  dispatch informed the implementation.
+- Alternate host configurations and long-duration stability require their own
+  evidence; an installed hash match does not prove live behavior.
+
+Exact current source, test, live, and withheld classifications are maintained in
+the [checkpoint](../../docs/CHECKPOINT.md) and
+[proof ledger](../../docs/reconstruction/interaction_proof_status.json).

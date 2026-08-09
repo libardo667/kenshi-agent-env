@@ -1260,6 +1260,30 @@ int main(int argc, char** argv)
         return Fail("first-aid context action lost its exact semantic target");
     }
 
+    // Body shift names its recipient in target_id. The empty selection is the
+    // total-loss shape and must cross the native parser, not merely Python's
+    // model, or the recovery command is unreachable when it matters.
+    KenshiAgentTelemetry::NativeCommandRequest bodyShift;
+    const std::string bodyShiftPayload =
+        ReadFile(prefix + "valid_body_shift_request.json");
+    if (bodyShiftPayload.empty())
+        return Fail("could not read valid_body_shift_request.json");
+    if (!KenshiAgentTelemetry::ParseNativeCommandRequest(
+            bodyShiftPayload,
+            bodyShift,
+            rejectionReason))
+    {
+        return Fail(
+            "valid empty-selection body shift was rejected as " +
+            rejectionReason);
+    }
+    if (bodyShift.command != "shift_into_body" ||
+        !bodyShift.selectedCharacterIds.empty() ||
+        bodyShift.targetId != "entity-body-to-enter")
+    {
+        return Fail("body shift lost its target-owned recipient shape");
+    }
+
     KenshiAgentTelemetry::NativeCommandRequest resourceProduction;
     const std::string resourceProductionPayload =
         ReadFile(prefix + "valid_resource_production_request.json");

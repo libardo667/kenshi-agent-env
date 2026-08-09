@@ -174,6 +174,14 @@ namespace KenshiAgentTelemetry
         return command == "move_in_direction";
     }
 
+    // Wire-addressing shape, not operation recipient scope. Body shift names
+    // the body it acts on in `target_id`; requiring a selected character would
+    // make the total-loss recovery request impossible at the native edge.
+    bool NativeCommandNamesOwnRecipient(const std::string& command)
+    {
+        return command == "shift_into_body";
+    }
+
     bool NativeCommandNamesTarget(const std::string& command)
     {
         return command == "approach_confirmed_vendor" ||
@@ -195,10 +203,10 @@ namespace KenshiAgentTelemetry
                // than as three hand-written whitelists.
                command == "perform_character_order" ||
                command == "produce_resource_output" ||
-               // One transfer between two open inventories, wherever they came
-               // from. Kenshi adjudicates it and says why not, so looting,
-               // buying, selling, giving and harvesting are one command rather
-               // than five that each drive a mouse.
+               // One inventory-model transfer between two open inventories,
+               // wherever they came from. Capacity and the project's explicit
+               // shop-pricing rule make looting, buying, selling, giving and
+               // harvesting one command rather than five mouse paths.
                command == "transfer_item" ||
                // Both inventories at once, typed by Kenshi's own enum:
                // money_trading, looting, auto. `showInventory` opens one
@@ -409,20 +417,18 @@ namespace KenshiAgentTelemetry
 
             // Recipient cardinality is not decided here. The operation
             // registry owns recipient scope; this parser validates only that a
-            // dispatch basis is structurally coherent.
-            //
-            // A command-name exception set used to live here, the native twin
-            // of one deleted from the Python transport. Keeping it meant two
-            // edges could disagree with the definition they were both meant to
-            // enforce - and it silently rejected any group-scoped command that
-            // had not been added to both lists.
-            // A menu command has no characters to name, because no world is
-            // loaded yet. Every other command still requires a recipient; this
-            // is the one shape where empty is the truthful answer rather than a
-            // missing field.
+            // dispatch basis is structurally coherent. A title-screen command
+            // has no loaded-world selection. Body shift is the other truthful
+            // empty shape: its target is its recipient, including after total
+            // party loss. Every selection-addressed command still names at
+            // least one selected character.
             const bool titleScreenCommand =
                 NativeCommandDrivesTitleScreen(request.command);
-            if ((selectedIds.empty() && !titleScreenCommand) ||
+            const bool commandNamesOwnRecipient =
+                NativeCommandNamesOwnRecipient(request.command);
+            if ((selectedIds.empty() &&
+                 !titleScreenCommand &&
+                 !commandNamesOwnRecipient) ||
                 selectedIds.size() > 64)
             {
                 rejectionReason = "malformed_request";

@@ -113,6 +113,16 @@ def test_python_accepts_exact_first_aid_context_action_request_fixture() -> None
     assert request.target_id == "entity-injured-squadmate"
 
 
+def test_python_accepts_body_shift_fixture_without_a_selected_recipient() -> None:
+    request = NativeCommandRequest.model_validate_json(
+        (FIXTURES / "valid_body_shift_request.json").read_bytes()
+    )
+
+    assert request.command == "shift_into_body"
+    assert request.selected_character_ids == []
+    assert request.target_id == "entity-body-to-enter"
+
+
 @pytest.mark.parametrize(
     ("fixture", "command"),
     [

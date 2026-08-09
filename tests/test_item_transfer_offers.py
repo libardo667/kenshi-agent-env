@@ -7,6 +7,8 @@ items, and refused all three.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from kenshi_agent.affordances import offered_affordances
 from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.operation import ControlMode
@@ -220,3 +222,28 @@ def test_identically_named_items_stay_distinguishable_by_slot() -> None:
 
     assert "transfer_water_backpack_content_1_1_to_fish" in semantics
     assert "transfer_water_backpack_content_9_9_to_fish" in semantics
+
+
+def test_native_transfer_authority_is_the_inventory_model_not_auto_trade() -> None:
+    """Pin the call sites behind the proof-ledger description."""
+
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "native"
+        / "KenshiAgentTelemetry"
+        / "KenshiAgentTelemetry.cpp"
+    ).read_text(encoding="utf-8")
+    transfer = source[
+        source.index("        if (isTransfer)\n") : source.index(
+            "        if (isContextAction || isResourceProduction)\n"
+        )
+    ]
+
+    assert "InventorySection* section" in transfer
+    assert "section->getItemAt" in transfer
+    assert "removeItemDontDestroy_returnsItem" in transfer
+    assert "destinationInventory->tryAddItem" in transfer
+    assert "InventoryGUI::getNPCTrader" in transfer
+    assert "item->getValueSingle" in transfer
+    assert "payer->takeMoney" in transfer
+    assert "RClickAutoTrade(" not in transfer

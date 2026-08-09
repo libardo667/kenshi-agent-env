@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+from kenshi_agent.affordances import AFFORDANCE_ADAPTERS
 from kenshi_agent.operation_definitions import OPERATION_DEFINITION_LIST
 from kenshi_agent.tooling.interaction_catalog import (
     MANIFEST_PATH,
@@ -117,6 +118,20 @@ def test_catalog_renders_the_contract_execution_and_native_routes() -> None:
     assert "EXECUTION AND ROUTING" in body
     assert "NATIVE COMMAND ROUTES" in body
     assert "coverage proof          PASS" in body
+
+
+def test_generated_adapter_prose_describes_current_limits() -> None:
+    adapters = {adapter.name: adapter for adapter in AFFORDANCE_ADAPTERS}
+
+    transfers = adapters["item_transfers"].completeness_boundary
+    assert "Uncapped" in transfers
+    assert "simplified shop pricing" in transfers
+    assert "richer trade and theft adjudication is not claimed" in transfers
+
+    context_orders = adapters["context_orders"].completeness_boundary
+    assert "Only the reviewed native" in context_orders
+    assert "withheld" in context_orders
+    assert "screen geometry" not in context_orders
 
 
 def test_diagnostic_only_routes_are_exactly_the_reviewed_set() -> None:

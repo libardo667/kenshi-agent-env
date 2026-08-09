@@ -220,10 +220,12 @@ AFFORDANCES: tuple[Affordance, ...] = (
     Affordance(
         Interface.TRADE,
         Operation.INTERACT,
-        "Buy, sell, give, loot, or collect through one engine transfer.",
+        "Buy, sell, give, loot, or collect through one inventory-model transfer.",
         Mechanism.NATIVE,
         "transfer_item",
-        native_entry_point="InventoryGUI::RClickAutoTrade @ 0x712AB0",
+        native_entry_point=(
+            "Inventory::removeItemDontDestroy_returnsItem / Inventory::tryAddItem"
+        ),
     ),
     Affordance(
         Interface.TRADE,

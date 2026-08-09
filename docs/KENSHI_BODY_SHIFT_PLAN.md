@@ -1,194 +1,129 @@
-# Body shift: surviving the absorbing state
+# Body shift: implementation and open-proof record
 
-Status: **spec, not built.** Scope here is the narrowest useful slice.
+Status: **implemented and planner-visible; full live proof remains open.**
 
-## The problem this exists to solve
+This document records the mechanic that exists now and the evidence still
+missing. It replaces the original total-loss-only specification.
 
-A total party loss is an absorbing state. The save continues — Kenshi has no
-game-over — so the run does not crash, error, or terminate. It simply stops
-mattering: zero living characters, no legal operation, a planner reasoning
-forever about a world it can no longer touch. For an instance meant to run
-continuously and unattended, that is the worst failure shape available, because
-nothing reports it.
+## Current decision
 
-Observed live, run `20260806T151213.413667Z`: bandits downed both characters,
-the agent planned `wait` for recovery, and stomach bleeding killed them. Every
-subsequent turn was well-formed and pointless.
+`shift_into_body` is elective. The planner may choose any currently offered
+eligible nearby body even while the current squad is alive and conscious.
 
-The fix is not to make the agent survive better. It is to stop equating *the
-agent* with *the bodies it currently owns*.
+That policy deliberately superseded the original restriction that body shifting
+could occur only after total party loss. A mechanic available only while dying
+could not be practised, tested repeatedly, or used as an ordinary part of play.
+Total loss remains the motivating recovery case, and the transport still permits
+the empty-selection request needed for it, but it is no longer the authorability
+gate.
 
-## The nesting
+## Implemented contract
 
-Kenshi's own object model is four nested containers, and the player's foothold
-in each is separately settable:
+The current operation has one exact target and no pointer path:
 
-| Layer | Kenshi API | What a shift at this layer means |
-|---|---|---|
-| Faction | `PlayerInterface::setFaction(Faction*)`, `getFaction()` | Change allegiance wholesale. Rewrites every relation at once. |
-| Platoon | `PlayerInterface::setCurrentPlatoon(Platoon*)`, `getCurrentPlatoon()` | Move between groups inside a faction. |
-| Squad | `PlayerInterface::createSquad()` → `ActivePlatoon*`, `getDeadSquad()` | The active roster the UI drives. |
-| Body | `PlayerInterface::_selectPlayerCharacter(RootObject*, bool, bool)` | Which character is primary. Already used by the plug-in. |
+- The affordance adapter enumerates every reported nearby character that is
+  conscious, non-animal, and non-hostile. It does not ask whether the player
+  roster is empty.
+- Binding re-resolves one exact current stable ID and fails closed if the target
+  is absent, ambiguous, stale, dead, unconscious, animal, or hostile.
+- The operation registry assigns `NAMED_BODY` recipient scope,
+  `WORLD_OUTCOME_OBSERVED` completion, `AT_MOST_ONCE` idempotency, one native
+  action of risk, and the `shift_into_body` wire command.
+- Native request schema 1.4 permits an empty selected-recipient list for this
+  command because the named body is the recipient. Other recipient-bound
+  commands still refuse an empty basis.
+- The native handler resolves the exact target, rejects an invalid, destroyed,
+  unconscious, or hostile body, recruits across the faction boundary through
+  `PlayerInterface::recruit`, creates a separate squad, moves the target with
+  `Character::setFaction`, repairs selection identity with
+  `PlayerInterface::updatePlayerSelection`, makes the new squad current, and
+  selects and tracks the body through `_selectPlayerCharacter`.
+- Completion is acknowledged only after `PlayerInterface::isObjectSelected`
+  confirms the target is selected. The acknowledgement reasons are
+  `shift_body_recruited`, `shift_body_recruited_forced`, or
+  `shift_body_already_held`.
 
-`Character::setFaction(Faction*, ActivePlatoon*)` takes faction and platoon
-together, so relocating a body is placing it at a (faction, platoon) coordinate
-rather than flipping a single field.
+The configured KenshiLib headers declare each native API named above. The
+shipped plug-in call sites, not this document, remain the implementation
+authority.
 
-**Only the innermost doll is in scope.** The outer three are recorded here
-because the shape of the eventual mechanic should be visible from the start,
-and because a body shift that ignores them will silently do one of them by
-accident — recruiting across a faction boundary *is* a faction event whether or
-not anyone modelled it.
+## Source-proven
 
-## Scope: one trigger, one operation
+- `src/kenshi_agent/affordances.py` and
+  `src/kenshi_agent/operation_definitions.py` implement elective enumeration,
+  exact binding, and the sole interaction contract. There is no total-loss
+  authorability condition.
+- `src/kenshi_agent/core/transport.py` and
+  `src/kenshi_agent/core/telemetry.py` classify body shift as naming its own
+  recipient, so its request can carry no selected characters without weakening
+  the recipient rule for other commands.
+- `native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp` implements the recruit,
+  separate-squad, handle-repair, exclusive-selection, and terminal-selection
+  checks described above.
+- The installed KenshiLib headers declare `PlayerInterface::recruit`,
+  `createSquad`, `setCurrentPlatoon`, `updatePlayerSelection`,
+  `_selectPlayerCharacter`, and `Character::setFaction` with the signatures used
+  by the plug-in.
+- The diagnostic-only `shift_body_platoon` command remains a separate manual
+  probe. It is not a planner operation and is not an old fallback for
+  `shift_into_body`.
 
-### Trigger
+## Test-proven
 
-Total party loss, defined as: no character in the player faction is both alive
-and conscious. Kenshi offers `selectedCharactersUnconcious(bool)` for the
-selection; the roster question needs `getAllPlayerCharacters` plus per-character
-`alive`/`conscious`, both already exported.
+- `tests/test_body_shift_after_total_loss.py` constructs an empty-roster,
+  empty-selection world and proves an eligible body is offered, binds under
+  `NAMED_BODY`, produces a recipient basis containing that body, and validates a
+  schema 1.4 request with no selected recipients.
+- The same module proves the offer remains available with a living selected
+  squad member. This pins the elective policy rather than merely omitting the
+  old restriction.
+- The `valid_body_shift_request.json` native fixture carries an empty selection.
+  Python's strict model and the compiled C++ protocol-fixture target both parse
+  that same document and retain its exact target-owned recipient shape.
+- Registry and catalog tests prove the operation has one definition, handler,
+  adapter, wire owner, and interaction contract.
 
-Deliberately *not* triggered by: one character down, a losing fight, low health,
-or operator preference. Those are strategy. This is the terminal case only.
+These are portable structural proofs. They do not prove that Kenshi changed a
+live save.
 
-### Operation: `shift_into_body`
+## Live-proven
 
-A new typed operation, not a side effect of selection. It changes **who the
-agent is**, which is a different kind of authority from every existing
-operation, all of which change *what the agent's squad does*.
+No named durable run bundle currently proves the complete body-shift operation
+under the proof ledger's definition of `live_proven`.
 
-- **Recipient scope**: a new `RecipientScope` member. Existing scopes
-  (`CURRENT_SELECTION`, `PRIMARY`, `EXPLICIT_RECIPIENTS`) all presuppose a
-  living selection, which by construction does not exist here.
-- **Binding**: one exact candidate character, bound from current telemetry by
-  stable id, refusing on absence or ambiguity like every other target binding.
-- **Milestone**: `WORLD_OUTCOME_OBSERVED` — the shift succeeded when the new
-  body is alive, conscious, in the player faction, and selected. Not when the
-  call returned.
-- **Risk**: its own budget line. This is not a pointer action or a native order.
-- **Idempotency**: `AT_MOST_ONCE`.
+A supervised manual dispatch against Molly of the Drifters observed
+`shift_body_recruited`, exclusive selection and primary identity moving to
+Molly, and Molly leaving `nearby_entities` after becoming a player character.
+That observation informed the implementation, but the repository does not name
+an exact bundle containing its pre-dispatch state, request, acknowledgement,
+later engine evidence, final disposition, and safe final state. The proof ledger
+therefore keeps the operation `source_proven` rather than upgrading an
+unbundled observation into durable live proof.
 
-### Candidate eligibility
+Run `20260806T151213.413667Z` proves the motivating failure shape only: both
+characters died, the save continued, and later planner turns had no useful body
+to command. It is not proof that a shift recovered that run.
 
-A character is shiftable if it is alive, conscious, not imprisoned, not
-enslaved, not `getting_eaten`, not in combat, is not a unique/named story
-character, and belongs to a faction not hostile to the player. Nearest eligible
-candidate wins; ties broken by stable id so the choice is deterministic.
+## Withheld and open proof
 
-Eligibility is computed **native-side** and exported as a candidate list, so the
-planner chooses among offers rather than proposing an arbitrary entity — the
-same discipline as every other affordance.
+- Prove one elective shift in a named bundle from pre-dispatch telemetry through
+  the exact request and acknowledgement to later roster, faction, platoon,
+  primary-selection, camera, and ordinary-action evidence.
+- Prove the original recovery case in a named bundle: total party loss, an
+  offered body with an empty selection, successful entry, then at least one
+  ordinary operation carried out by the new body.
+- Measure faction and relationship consequences across more than the neutral
+  Drifters case. Hostile bodies remain withheld.
+- The current eligibility rule does not inspect imprisonment, enslavement,
+  combat, uniqueness, story role, or `getting_eaten`. Those restrictions from
+  the original specification were never implemented and must not be described
+  as current safeguards.
+- Only bodies present in bounded `nearby_entities` can be offered. Distant body
+  discovery is not implemented.
+- Repeated shifts, save/load after a shift, and long-run squad/platoon cleanup
+  remain unproven.
 
-## Release is already solved, by Kenshi, on every death
-
-The original worry was that `recruit()` only *adds*, so shifting would accrete
-hosts rather than move between them, and that no release API was apparent.
-
-Kenshi performs the release itself, constantly. Observed live: when a player
-character dies it leaves the active squad and becomes inspectable exactly like
-any other non-player character — the player ends with an empty roster and two
-bodies still in the world. `PlayerInterface` holds `deadPlayerSquad` and
-`getDeadSquad()`, which returns an `ActivePlatoon*`.
-
-The primitive is `setFaction(Faction*, ActivePlatoon*)`, declared on `RootObject`
-(vtable offset `0x0`) and overridden by `Character`. Membership is a
-**(faction, platoon) coordinate**, and that single call rewrites it. Death is
-that call with the same faction and a different platoon: still player faction,
-which is why the corpses stay inspectable; different platoon, which is why they
-leave the roster.
-
-So the nesting is not a metaphor for the mechanic. It **is** the mechanic:
-
-- **Seize** — `setFaction(playerFaction, playerActivePlatoon)`
-- **Release** — `setFaction(<faction>, <other platoon>)`
-- **Faction hop** — the same call with the outer coordinate changed
-- **Death** — the engine already doing it
-
-One call, four dolls, distinguished only by which coordinates move. Prototype
-order is therefore reversed from the original plan: release is evidenced, so the
-first thing to prove is a *round trip* — release a living body to a non-player
-platoon and seize it back — since anything the engine only ever does to corpses
-may behave differently on the living.
-
-## Proven live: release works, and control is not roster membership
-
-The probe (`shift_body_platoon`, diagnostic-only wire command) released a living
-Bombingham out of the active platoon into the dead squad, same faction. It
-completed. What the resulting game state showed:
-
-- He left the squad roster while alive — confirmed in Kenshi's own squad screen,
-  and he appeared in no squad at all.
-- Squad movement orders moved only the remaining roster member.
-- **Left-clicking his model selected him and moved him normally.** A released
-  body is still fully controllable.
-
-That last point reshapes the design. **Control follows selection, not roster
-membership.** The roster is bookkeeping and UI. A shift therefore does not need
-roster manipulation to *command* a body — it needs it for the squad UI to make
-sense and for selection-scoped orders to stay coherent.
-
-### The invariant the probe found by breaking it
-
-Releasing without deselecting leaves a selection entry with no roster slot, and
-three things break at once:
-
-1. `selected_character_ids` (built from `player->selectedCharacters`) and the
-   per-character `selected` flags contradict each other, which fails
-   `TelemetrySnapshot`'s own validator — telemetry stops being readable at all.
-2. Kenshi's squad portraits desynchronize: the portrait list maps index onto the
-   selection set, so clicking one character's portrait focuses a different
-   character. Recovering required clicking the character's model, not the
-   portrait.
-3. It is exactly the `selection_size_differs` condition the native command
-   validator refuses on, which would make every subsequent order unauthorizable.
-
-**Invariant: `player->selectedCharacters` must remain a subset of the active
-roster.** Release deselects; seize reselects. `RootObject::unselect()` and
-`PlayerInterface::_selectPlayerCharacter` are the two halves.
-
-This is the fourth instance today of two authorities disagreeing about "the
-selection" — after the affordance gate, the boundary observation, and
-`selection_mismatch`. The pattern is worth naming as a standing hazard rather
-than a series of coincidences.
-
-## The remaining hard part
-
-**Faction consequence.** Recruiting pulls a character out of their faction.
-Shifting into a Holy Nation paladin plausibly creates a deserter and makes the
-faction hostile to the body now being worn. That is an *outer doll* moving
-because an inner one did. It must be observed and reported, not assumed benign.
-
-## Telemetry additions
-
-- `shift_candidates`: eligible characters with id, name, distance, faction, and
-  the eligibility reasons that passed.
-- `player_faction_id` / `player_platoon_id`: the outer coordinates, so a shift's
-  side effects on the outer dolls are visible rather than inferred.
-
-Both are additive; `CharacterState` already carries `alive`, `conscious`,
-`imprisoned`, `enslaved`, `getting_eaten`, and `in_combat`.
-
-## What must not happen
-
-- A shift must never be reachable while any player character is alive and
-  conscious. Guarded native-side, not only by planner instruction.
-- A failed shift must name which eligibility condition refused, per character.
-  `selection_mismatch` stood for six conditions and cost a full day of live
-  diagnosis; this operation must not repeat that.
-- A shift must not be inferable from a defaulted field. Every new observation
-  field gets an owner in `WORLD_FACT_FIELDS` / `RUNTIME_CONTEXT_FIELDS`.
-
-## Acceptance
-
-First, a round trip proven in isolation: a living body released to a non-player
-platoon and seized back, with telemetry showing it leave and rejoin the roster.
-Only then the full case.
-
-One live run, from an authored start, in which the party is deliberately lost
-and the agent continues playing in a new body, with the run bundle showing:
-the terminal condition detected, the candidate list offered, one
-`shift_into_body` bound and succeeded against world outcome, and a subsequent
-ordinary operation issued and carried out by the new body.
-
-Steps completed after the shift is the only number that proves it.
+For every future live proof, record the built and installed DLL hashes, exact
+run bundle, pre-dispatch state, request, acknowledgement, later engine evidence,
+and final disposition. A completed call or acknowledgement alone is never proof
+that the save changed.
