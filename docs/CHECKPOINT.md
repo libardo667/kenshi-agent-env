@@ -1,15 +1,14 @@
 # Checkpoint: reproducible current main
 
-This checkpoint replaces the pre-integration closure candidate. It describes the
-actual `main` checkout from which the reproducibility slice was made, the single
-portable gate now used locally and in CI, the native artifact currently installed,
-and the behavior that remains unproven.
+This checkpoint is the durable state boundary for the current goal commit. It
+describes the actual `main` parent from which this slice was made, the portable gate,
+the native artifact currently installed, and the behavior that remains unproven.
 
 ## Repository
 
 ```text
-main at slice start    6e8b7d13b1b228917513c27f186245a9af0bb8cd
-branch                 main
+parent commit          2686719fb9051b8d4109c6309d560665112fa1ed
+integration branch     main
 remote state           matched origin/main
 tree state             clean before this slice
 supported Python       CPython 3.11, 3.12, 3.13, and 3.14
@@ -17,14 +16,15 @@ package constraint     >=3.11,<3.15
 native protocol        1.18.0
 ```
 
-Commit `59e5e0b` integrated the reconstructed operation-surface closure into
-`main`; commit `6e8b7d1` then changed only `README.md`. The old checkpoint's
-`a73e06c` base, `interaction-scope-order-lifecycle` branch, and dirty-candidate
-state are historical and no longer authoritative.
+Commit `2686719` established the reproducible Python range, portable matrix, unified
+local gate, generated-artifact ownership, and native/proof boundary recorded below.
+This follow-on makes the checkpoint itself a tested part of every future goal.
 
-The checkpoint revision is the commit containing this file. The literal hash above
-is the verified `main` parent on which that revision is based; embedding a commit's
-own hash in its contents would change the hash it claims to record.
+The checkpoint revision is the commit containing this file. Its literal hash cannot
+be embedded without changing itself, so the repository block records its parent.
+The portable test accepts an in-progress candidate only when this file is modified
+and its parent equals the current `HEAD`. In a clean checkout it requires this file
+to have been modified by `HEAD` and the recorded parent to equal `HEAD^`.
 
 ## Portable gate
 
@@ -44,7 +44,9 @@ or competing gates.
 `.github/workflows/portable.yml` runs this exact command on Linux for each declared
 Python version: 3.11, 3.12, 3.13, and 3.14. `pyproject.toml`, `uv.lock`, the Windows
 bootstrap guards, the README, the local command, and the workflow all state the same
-closed version set.
+closed version set. CI checks out the source commit rather than GitHub's synthetic PR
+merge commit and fetches full history so the checkpoint ratchet has authoritative
+commit ancestry.
 
 ## Native artifact
 
@@ -76,6 +78,8 @@ source contract. They do not prove that any command changed live game state.
   including `DEV_CLI.md`; `scripts/export_schemas.py` is the sole schema writer.
 - The workflow matrix and local command share the same gate implementation rather
   than restating its commands in YAML.
+- `tests/test_checkpoint_freshness.py` makes a checkpoint edit mandatory in every
+  dirty goal candidate and every clean completed goal commit.
 - Native source still declares protocol 1.18.0 and the generated capability header
   still matches its 43-entry manifest.
 
@@ -87,6 +91,8 @@ source contract. They do not prove that any command changed live game state.
   `./dev` reference through the same documentation exporter.
 - Portable-gate tests pin the complete command sequence and prove that a generated
   byte change fails the gate.
+- The checkpoint ratchet proves this file belongs to the current goal commit and
+  records that commit's exact parent and intended integration branch.
 - Six strict xfails remain explicit reconstruction targets; they are not counted as
   evidence for the behavior they name.
 
