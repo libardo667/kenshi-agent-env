@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import datetime
 import os
 import re
 import signal
@@ -58,8 +57,8 @@ def _run_tui(
     *,
     environment: dict[str, str],
 ) -> int:
-    from kenshi_agent.tooling.dev_tui import run_from_dev_args
     from kenshi_agent.config import load_config
+    from kenshi_agent.tooling.dev_tui import run_from_dev_args
 
     run_environment = _forwarded_environment()
 
@@ -225,6 +224,10 @@ def _terminate_transport_process(
 def main(argv: list[str] | None = None) -> int:
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     args = build_parser().parse_args(raw_argv)
+    if args.command == "verify-portable":
+        from kenshi_agent.tooling.portable_gate import run_portable_gate
+
+        return run_portable_gate(REPO_DIR)
     if args.command == "tui":
         try:
             return _run_tui(args, environment=os.environ.copy())

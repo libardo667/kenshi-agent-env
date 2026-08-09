@@ -9,9 +9,9 @@ $repo = Split-Path -Parent $PSScriptRoot
 $venv = Join-Path $env:LOCALAPPDATA "KenshiAgent\venvs\kenshi-agent-env"
 $venvPython = Join-Path $venv "Scripts\python.exe"
 
-& $Python -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)"
+& $Python -c "import sys; raise SystemExit(0 if (3, 11) <= sys.version_info < (3, 15) else 1)"
 if ($LASTEXITCODE -ne 0) {
-    throw "Python 3.11 or newer is required. Pass -Python with a suitable executable."
+    throw "Python 3.11 through 3.14 is required. Pass -Python with a suitable executable."
 }
 
 if (-not (Test-Path $venvPython)) {

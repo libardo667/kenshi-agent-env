@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Protocol
 
 LIVE_CONFIG = "config/live.yaml"
 # Two modes, because there were never really three.
@@ -27,16 +28,40 @@ LIVE_CONFIG = "config/live.yaml"
 CONTROL_MODES = ("plan-only", "live")
 
 
+class _FormatterFactory(Protocol):
+    def __call__(self, *, prog: str) -> argparse.HelpFormatter: ...
+
+
 class _HelpFormatter(argparse.ArgumentDefaultsHelpFormatter):
-    def __init__(self, prog: str) -> None:
-        super().__init__(prog, max_help_position=30, width=100)
+    def __init__(self, prog: str, *, width: int = 100) -> None:
+        super().__init__(prog, max_help_position=30, width=width)
+        # Python 3.11 and 3.12 calculate a different natural help column for a
+        # subparser whose longest name is ``install-starts``. A floor keeps the
+        # generated command reference byte-identical across the supported matrix.
+        self._action_max_length = 18  # noqa: SLF001
+
+    def _get_help_string(self, action: argparse.Action) -> str:
+        """Pin the Python 3.13 default-display rule across supported versions."""
+
+        help_text = action.help or ""
+        if (
+            "%(default)" not in help_text
+            and action.default is not argparse.SUPPRESS
+            and not action.required
+            and (
+                action.option_strings
+                or action.nargs in (argparse.OPTIONAL, argparse.ZERO_OR_MORE)
+            )
+        ):
+            help_text += " (default: %(default)s)"
+        return help_text
 
 
 class _RootHelpFormatter(argparse.RawDescriptionHelpFormatter):
-    def __init__(self, prog: str) -> None:
+    def __init__(self, prog: str, *, width: int = 100) -> None:
         # Width changes that do not cross a wrap boundary are presentation-equivalent.
         # pragma: no mutate start
-        super().__init__(prog, max_help_position=30, width=100)
+        super().__init__(prog, max_help_position=30, width=width)
         # pragma: no mutate end
 
 
@@ -114,11 +139,13 @@ def _add_display_option(parser: argparse.ArgumentParser) -> None:
 
 def _scenario_capture_parser(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+    *,
+    formatter_class: _FormatterFactory,
 ) -> None:
     capture = subparsers.add_parser(
         "capture",
         help="Copy one closed save into the immutable fixture store.",
-        formatter_class=_HelpFormatter,
+        formatter_class=formatter_class,
     )
     capture.add_argument(
         "--source-save",
@@ -163,7 +190,14 @@ def build_parser(
     *,
     prog: str = "./dev",
     include_transport: bool = False,
+    help_width: int = 100,
 ) -> argparse.ArgumentParser:
+    def formatter(*, prog: str) -> argparse.HelpFormatter:
+        return _HelpFormatter(prog, width=help_width)
+
+    def root_formatter(*, prog: str) -> argparse.HelpFormatter:
+        return _RootHelpFormatter(prog, width=help_width)
+
     common = _common_parser(include_transport=include_transport)
     parser = argparse.ArgumentParser(
         prog=prog,
@@ -178,11 +212,21 @@ def build_parser(
             "  ./dev telemetry --watch\n"
             "  ./dev recover"
         ),
-        formatter_class=_RootHelpFormatter,
+        formatter_class=root_formatter,
     )
     commands = parser.add_subparsers(
         dest="command",
         required=True,
+    )
+
+    commands.add_parser(
+        "verify-portable",
+        help="Run the complete reproducible gate without touching Windows or Kenshi.",
+        description=(
+            "Install the locked development environment, run every portable check, "
+            "and prove checked-in schemas and documentation are current."
+        ),
+        formatter_class=formatter,
     )
 
     doctor = commands.add_parser(
@@ -190,7 +234,7 @@ def build_parser(
         parents=[common],
         help="Check every launch prerequisite without sending input.",
         description="Check Steam, memory, graphics, display, crash, and selected start state.",
-        formatter_class=_HelpFormatter,
+        formatter_class=formatter,
     )
     doctor.add_argument(
         "--timeout",
@@ -206,7 +250,7 @@ def build_parser(
         parents=[common],
         help="Launch Kenshi without starting an agent.",
         description="Launch Kenshi and optionally load one exact start source.",
-        formatter_class=_HelpFormatter,
+        formatter_class=formatter,
     )
     launch.add_argument(
         "--timeout",
@@ -236,7 +280,7 @@ def build_parser(
         description=(
             "Run the agent in a fresh or already-loaded world. Ambiguous live state fails closed."
         ),
-        formatter_class=_HelpFormatter,
+        formatter_class=formatter,
     )
     run.add_argument(
         "--timeout",
@@ -257,14 +301,14 @@ def build_parser(
             "Drive ./dev run through a compact terminal UI and launch with the same "
             "safety rules."
         ),
-        formatter_class=_HelpFormatter,
+        formatter_class=formatter,
     )
 
     telemetry = commands.add_parser(
         "telemetry",
         parents=[common],
         help="Print the current player-readable telemetry as JSON.",
-        formatter_class=_HelpFormatter,
+        formatter_class=formatter,
     )
     telemetry.add_argument(
         "--watch",
@@ -282,7 +326,7 @@ def build_parser(
         "affordances",
         parents=[common],
         help="Show the affordance menu the agent would be offered right now.",
-        formatter_class=_HelpFormatter,
+        formatter_class=formatter,
     )
     affordances.add_argument(
         "--watch",
@@ -311,7 +355,7 @@ def build_parser(
         "snapshot",
         parents=[common],
         help="Capture one frame with its matching telemetry evidence.",
-        formatter_class=_HelpFormatter,
+        formatter_class=formatter,
     )
     snapshot.add_argument(
         "--label",
@@ -323,7 +367,7 @@ def build_parser(
         "recover",
         parents=[common],
         help="Leave Kenshi safely paused and release stranded display ownership.",
-        formatter_class=_HelpFormatter,
+        formatter_class=formatter,
     )
     recover.add_argument(
         "--timeout",
@@ -341,7 +385,7 @@ def build_parser(
         "stop",
         parents=[common],
         help="Safely pause and close Kenshi.",
-        formatter_class=_HelpFormatter,
+        formatter_class=formatter,
     )
     stop.add_argument(
         "--timeout",
@@ -354,7 +398,7 @@ def build_parser(
         "scenario",
         parents=[common],
         help="Manage reproducible starts and immutable save fixtures.",
-        formatter_class=_HelpFormatter,
+        formatter_class=formatter,
     )
     scenario_actions = scenario.add_subparsers(
         dest="scenario_action",
@@ -366,7 +410,7 @@ def build_parser(
         "install-starts",
         help="Install and verify the exact bundled authored starts.",
     )
-    _scenario_capture_parser(scenario_actions)
+    _scenario_capture_parser(scenario_actions, formatter_class=formatter)
     restore = scenario_actions.add_parser(
         "restore",
         help="Restore a fixture into the reserved project-owned save slot.",
@@ -377,7 +421,7 @@ def build_parser(
         "setup",
         parents=[common],
         help="Apply an explicit reversible host repair.",
-        formatter_class=_HelpFormatter,
+        formatter_class=formatter,
     )
     setup_actions = setup.add_subparsers(
         dest="setup_action",
@@ -403,7 +447,7 @@ def render_reference() -> str:
         "# `./dev` command reference",
         "",
         "Generated from `kenshi_agent.tooling.dev_cli`; do not edit by hand.",
-        "Regenerate with `python scripts/export_dev_cli.py`.",
+        "Regenerate with `python scripts/export_docs.py`.",
         "",
     ]
 
@@ -424,15 +468,7 @@ def render_reference() -> str:
             for child in action.choices.values():
                 append(child)
 
-    append(build_parser())
+    # A wide reference avoids version-specific usage wrapping in argparse while
+    # runtime help retains the terminal-friendly 100-column layout.
+    append(build_parser(help_width=1000))
     return "\n".join(sections).rstrip() + "\n"
-
-
-def export_reference(path: Path) -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # UTF-8's canonical spelling, alias, and the supported platform default
-    # produce identical generated bytes; the exact output is gated separately.
-    # pragma: no mutate start
-    path.write_text(render_reference(), encoding="utf-8")
-    # pragma: no mutate end
-    return path

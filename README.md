@@ -73,7 +73,9 @@ live game.
 
 ## Try the mock environment
 
-Python 3.11 or newer and [uv](https://docs.astral.sh/uv/) are recommended.
+CPython 3.11, 3.12, 3.13, and 3.14 are supported. The package metadata rejects
+older and newer feature releases until they are covered by the portable matrix.
+[uv](https://docs.astral.sh/uv/) is recommended.
 
 ```bash
 uv sync --extra dev
@@ -91,7 +93,7 @@ WSL. It expects:
 
 - Kenshi installed through Steam;
 - RE_Kenshi and the `KenshiAgentTelemetry` native mod;
-- Python 3.11 or newer on Windows for the live host process;
+- CPython 3.11, 3.12, 3.13, or 3.14 on Windows for the live host process;
 - the display, graphics, and memory setup checked by `config/live.yaml`; and
 - an OpenRouter API key for the default live planner, or credentials for another
   configured planner.
@@ -192,18 +194,17 @@ save is not enough by itself to claim that the expected world is loaded.
 
 ## Development checks
 
-Run the portable checks from the repository root:
+Run the complete portable gate from the repository root:
 
 ```bash
-uv run pytest -q
-uv run ruff check .
-uv run mypy src
-uv run python scripts/export_schemas.py
-uv run python scripts/export_docs.py
+./dev verify-portable
 ```
 
-Files under `schemas/` and `docs/generated/` are generated from the current models
-and registries. Do not edit them by hand.
+The command installs the locked development dependencies, runs tests, Ruff, and
+mypy, regenerates schemas and documentation, checks their bytes for staleness, and
+rejects whitespace errors. GitHub Actions runs that same command on every supported
+Python version. Files under `schemas/` and `docs/generated/` are generated from the
+current models and registries. Do not edit them by hand.
 
 Useful current references:
 

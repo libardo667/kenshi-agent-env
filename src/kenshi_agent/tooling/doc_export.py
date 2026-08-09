@@ -11,6 +11,7 @@ from .context_action_parity import (
     render_context_action_parity,
 )
 from .coverage_frontier import assess_coverage_frontier, render_coverage_frontier
+from .dev_cli import render_reference
 from .gui_coverage import assess_gui_coverage, render_gui_coverage
 from .interaction_catalog import (
     audit_interaction_catalog,
@@ -281,6 +282,7 @@ def export_docs(output_dir: Path) -> list[Path]:
             load_witnesses(WITNESSES_PATH)
         ),
         "COVERAGE_FRONTIER.md": _coverage_frontier(),
+        "DEV_CLI.md": render_reference(),
         "GUI_COVERAGE.md": _gui_coverage(),
         "REPORTING_SURFACE.md": _reporting_surface(),
         "GAME_BINDING_PARITY.md": _game_binding_parity(),

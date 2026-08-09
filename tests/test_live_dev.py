@@ -32,7 +32,7 @@ from kenshi_agent.core.telemetry import (
 from kenshi_agent.core.transport import ActionReceipt
 from kenshi_agent.telemetry import TelemetryRead
 from kenshi_agent.tooling import live_dev
-from kenshi_agent.tooling.dev_cli import export_reference, parse_args, render_reference
+from kenshi_agent.tooling.dev_cli import parse_args, render_reference
 from kenshi_agent.tooling.live_dev import (
     MYGUI_CLICK_HOLD_SECONDS,
     LaunchFailed,
@@ -136,6 +136,7 @@ def test_live_dev_exposes_only_the_approved_top_level_commands() -> None:
 
     assert commands == {
         "doctor",
+        "verify-portable",
         "launch",
         "run",
         "telemetry",
@@ -194,13 +195,10 @@ def test_parser_preserves_typed_runtime_and_safety_defaults() -> None:
     assert stop.timeout == 5.5
 
 
-def test_shared_parser_entrypoint_and_reference_export(tmp_path: Path) -> None:
+def test_shared_parser_entrypoint_and_reference_render() -> None:
     assert parse_args(["telemetry"]).command == "telemetry"
-
-    destination = tmp_path / "nested" / "reference" / "DEV_CLI.md"
-    assert export_reference(destination) == destination
-    assert destination.read_text(encoding="utf-8") == render_reference()
-    assert export_reference(destination) == destination
+    assert parse_args(["verify-portable"]).command == "verify-portable"
+    assert render_reference().startswith("# `./dev` command reference\n")
 
 
 def test_run_control_mode_is_one_explicit_authority_choice() -> None:

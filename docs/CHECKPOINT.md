@@ -1,46 +1,56 @@
-# Checkpoint: bounded closure before branch integration
+# Checkpoint: reproducible current main
 
-This is the reproducible boundary after retiring the abandoned pointer/UI stack and
-closing the unified inventory and resource-production proof loop. It records a dirty
-pre-commit worktree intentionally; the integration commit has not been chosen yet.
+This checkpoint replaces the pre-integration closure candidate. It describes the
+actual `main` checkout from which the reproducibility slice was made, the single
+portable gate now used locally and in CI, the native artifact currently installed,
+and the behavior that remains unproven.
 
 ## Repository
 
 ```text
-base commit           a73e06c40a13f9052db6089018e1708c50ff03b6
-branch                interaction-scope-order-lifecycle
-tree state            DIRTY closure candidate at capture time
-python (gate)         Python 3.12.13
-native protocol       1.18.0
+main at slice start    6e8b7d13b1b228917513c27f186245a9af0bb8cd
+branch                 main
+remote state           matched origin/main
+tree state             clean before this slice
+supported Python       CPython 3.11, 3.12, 3.13, and 3.14
+package constraint     >=3.11,<3.15
+native protocol        1.18.0
 ```
 
-The worktree removes the retired camera, generic-screen, pointer-based inventory and
-trade, legacy-harvest, and non-progress policy layers. The planner-visible gameplay
-surface is now registry-backed and coordinate-independent. Host startup, recovery,
-and narrow safety fallbacks still use synthesized Windows input where their contracts
-require it.
+Commit `59e5e0b` integrated the reconstructed operation-surface closure into
+`main`; commit `6e8b7d1` then changed only `README.md`. The old checkpoint's
+`a73e06c` base, `interaction-scope-order-lifecycle` branch, and dirty-candidate
+state are historical and no longer authoritative.
+
+The checkpoint revision is the commit containing this file. The literal hash above
+is the verified `main` parent on which that revision is based; embedding a commit's
+own hash in its contents would change the hash it claims to record.
 
 ## Portable gate
 
-Run from the repository root:
+The one supported command is:
 
-```text
-uv run pytest -q --color=no             passed (six expected strict xfails)
-uv run ruff check .                      passed
-uv run mypy src                          passed (145 source files)
-uv run python scripts/export_schemas.py  checked-in schemas regenerated
-uv run python scripts/export_docs.py     checked-in generated docs regenerated
-git diff --check                         passed
+```bash
+./dev verify-portable
 ```
 
-The six strict xfails remain explicit reconstruction targets. They are not treated as
-evidence for behavior that the current architecture has not demonstrated.
+It installs the development dependency set from `uv.lock`, runs Ruff over the whole
+tree, runs strict mypy over `src`, regenerates every JSON schema, regenerates every
+document under `docs/generated/`, rejects any generated-byte change, runs the full
+pytest suite, and rejects whitespace errors. The partial PowerShell test script and
+separate DEV CLI documentation writer were deleted rather than retained as partial
+or competing gates.
+
+`.github/workflows/portable.yml` runs this exact command on Linux for each declared
+Python version: 3.11, 3.12, 3.13, and 3.14. `pyproject.toml`, `uv.lock`, the Windows
+bootstrap guards, the README, the local command, and the workflow all state the same
+closed version set.
 
 ## Native artifact
 
-Built in Release mode, exercised by `NativeCommandProtocolTests.exe`, installed only
-while Kenshi was confirmed stopped, and rechecked with
-`scripts/check_native_provenance.py`:
+No native source, fixture, protocol, build, or installation changed in this slice.
+Read-only provenance was rechecked against the current source, build output, and
+installed DLL:
 
 ```text
 declared protocol     1.18.0
@@ -51,48 +61,64 @@ declared capabilities 43
 chain consistent      YES
 ```
 
-The native fixture suite reported `Native protocol fixtures and semantics passed.`
-The hash equality proves the installed file is the built file; the embedded protocol
-and capability strings prove that build carried this source contract.
+The matching DLL hashes prove that the installed file is the recorded build output.
+The embedded protocol and capability strings prove that binary carries the declared
+source contract. They do not prove that any command changed live game state.
 
-## Live closure evidence
+## Evidence classification
 
-All runs used the supervised disposable Kenshi fixture and ended with a confirmed
-paused world. The run directories are local diagnostic artifacts under `runs/`.
+### Source-proven
 
-- `closure-loot-20260808`: opened Fish and unconscious Burn as a paired inventory,
-  then moved Burn's equipped `Katana` and `Halfpants (ragged)` into Fish. Both
-  transfers reached the exact `item_transferred` terminal. Zero plan actions were
-  rejected or aborted.
-- `close_trade_window` recovery command
-  `cmd-bec439c9589c4a4fb4fc72a06b561722`: closed the resulting looting window at
-  telemetry sequence 1660 with terminal reason `trade_window_closed`. This is native
-  recovery proof, not a claim that closing arbitrary windows is a planner operation.
-- `closure-harvest-20260808`: exposed the cleanup omission that the surviving
-  `produce_resource_output` operation had no affordance offer and resource owners were
-  absent from trade-window offers. Its task-start acknowledgement is not counted as a
-  completed harvest.
-- `closure-harvest-fixed-20260808`: selected the repaired
-  `produce_resource_output` affordance, adopted the exact already-running two-person
-  resource task without reissuing it, stayed monitored until
-  `resource_output_ready`, paired Fish with the Iron Resource, transferred one
-  `Raw Iron`, verified the move, and stopped voluntarily. Zero plan actions were
-  rejected or aborted.
-- Recovery command `cmd-e5d5b8b05f354f768f4b14866c2c2d79` closed the final resource
-  window with `trade_window_closed`.
+- `pyproject.toml` and `uv.lock` reject Python before 3.11 and at or after 3.15.
+- `./dev verify-portable` is a portable-only branch in the WSL entrypoint. It does not
+  locate Windows Python, start a transport, synthesize input, or touch Kenshi.
+- `scripts/export_docs.py` is the sole writer for all checked-in generated Markdown,
+  including `DEV_CLI.md`; `scripts/export_schemas.py` is the sole schema writer.
+- The workflow matrix and local command share the same gate implementation rather
+  than restating its commands in YAML.
+- Native source still declares protocol 1.18.0 and the generated capability header
+  still matches its 43-entry manifest.
 
-The durable proof classification is in
-`docs/reconstruction/interaction_proof_status.json`. In particular, one resource run
-does not prove every current-selection or order-lifecycle case.
+### Test-proven
 
-## Remaining boundary
+- The full portable gate passes independently under every declared Python version.
+- The test suite renders schemas and generated documents into temporary directories,
+  compares their exact file sets and bytes with the checkout, and checks the generated
+  `./dev` reference through the same documentation exporter.
+- Portable-gate tests pin the complete command sequence and prove that a generated
+  byte change fails the gate.
+- Six strict xfails remain explicit reconstruction targets; they are not counted as
+  evidence for the behavior they name.
 
-- The generated interface audit deliberately reports the human UI affordances that
-  are not planner-visible. Those gaps are not papered over with the deleted pointer
-  handlers.
-- `close_trade_window` is intentionally recovery-only. A planner-visible general
-  close-window operation would require its own registry contract and evidence.
-- The operation proof ledger still marks several navigation, threat-response, and
-  group-recipient semantics unproven. This closure pass does not broaden those claims.
-- Branch integration and GitHub publication are separate steps: inspect the final
-  diff, commit this bounded slice intentionally, then merge it into `main` and push.
+### Live-proven
+
+This slice adds no live-game proof. The latest durable gameplay evidence remains the
+named bundles already classified in
+`docs/reconstruction/interaction_proof_status.json`:
+
+- `closure-loot-20260808` for paired-inventory opening and equipped-item transfer;
+- `closure-harvest-fixed-20260808` for adopting existing two-character resource work,
+  observing `resource_output_ready`, opening the resource inventory, and transferring
+  one `Raw Iron`;
+- recovery acknowledgements `cmd-bec439c9589c4a4fb4fc72a06b561722` and
+  `cmd-e5d5b8b05f354f768f4b14866c2c2d79` for closing those exact trade windows.
+
+Those conclusions depend on later engine evidence recorded in the bundles, not on a
+request returning or an acknowledgement alone.
+
+### Withheld and surviving limitations
+
+- Python 3.15 and later are unsupported until added to both the package range and the
+  passing portable matrix. Python 3.10 and earlier remain unsupported.
+- GitHub-hosted runs prove the portable Linux surface. They do not prove Windows live
+  transport, native compilation, native fixture execution, DLL installation, or live
+  Kenshi behavior on every supported Python version.
+- `close_trade_window` remains a recovery-only native command, not a planner-visible
+  general close-window operation.
+- The proof ledger still withholds several navigation, threat-response,
+  current-selection, group-recipient, and order-lifecycle conclusions. One successful
+  two-person resource run does not generalize across those cases.
+- The generated interface audit still names human UI surfaces that are not
+  planner-visible. The deleted pointer handlers are not a fallback for those gaps.
+- `survey_local_resources` remains source-proven but not live-proven for its null-biome
+  call or returned value scale.

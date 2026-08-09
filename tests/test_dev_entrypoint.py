@@ -200,7 +200,7 @@ def test_dev_help_is_local_and_describes_the_complete_supported_surface(
 
     assert result.returncode == 0
     assert (
-        "{doctor,launch,run,tui,telemetry,affordances,snapshot,recover,stop,scenario,setup}"
+        "{verify-portable,doctor,launch,run,tui,telemetry,affordances,snapshot,recover,stop,scenario,setup}"
     ) in result.stdout
     assert "Windows live Python" not in result.stderr
 
@@ -213,6 +213,7 @@ def test_every_help_page_is_local(tmp_path: Path) -> None:
     }
 
     for command in (
+        "verify-portable",
         "doctor",
         "launch",
         "run",

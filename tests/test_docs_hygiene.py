@@ -36,7 +36,11 @@ def test_relative_document_links_resolve() -> None:
 
 
 def test_generated_docs_are_not_stale(tmp_path: Path) -> None:
-    for fresh in export_docs(tmp_path):
+    fresh_documents = export_docs(tmp_path)
+    assert {path.name for path in fresh_documents} == {
+        path.name for path in GENERATED_DOCS.glob("*.md")
+    }, "docs/generated contains an output not owned by scripts/export_docs.py"
+    for fresh in fresh_documents:
         checked_in = GENERATED_DOCS / fresh.name
         assert checked_in.exists(), (
             f"{fresh.name} is generated but not checked in; "
@@ -51,7 +55,11 @@ def test_generated_docs_are_not_stale(tmp_path: Path) -> None:
 def test_exported_schemas_are_not_stale(tmp_path: Path) -> None:
     """The changelog regenerated these by hand once. Now the suite checks."""
 
-    for fresh in export_schemas(tmp_path):
+    fresh_schemas = export_schemas(tmp_path)
+    assert {path.name for path in fresh_schemas} == {
+        path.name for path in (ROOT / "schemas").glob("*.json")
+    }, "schemas contains an output not owned by scripts/export_schemas.py"
+    for fresh in fresh_schemas:
         checked_in = ROOT / "schemas" / fresh.name
         assert checked_in.exists(), (
             f"{fresh.name} is generated but not checked in; "
@@ -127,16 +135,6 @@ def test_authored_docs_only_name_commands_that_exist() -> None:
         "authored documents name things that do not exist: "
         + ", ".join(missing)
         + ". Update the document, or restore what it describes."
-    )
-
-
-def test_generated_dev_reference_is_not_stale() -> None:
-    from kenshi_agent.tooling.dev_cli import render_reference
-
-    checked_in = ROOT / "docs" / "generated" / "DEV_CLI.md"
-    assert checked_in.read_text(encoding="utf-8") == render_reference(), (
-        "docs/generated/DEV_CLI.md is stale; run "
-        "`python scripts/export_dev_cli.py`"
     )
 
 

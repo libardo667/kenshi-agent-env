@@ -1,18 +1,18 @@
 # `./dev` command reference
 
 Generated from `kenshi_agent.tooling.dev_cli`; do not edit by hand.
-Regenerate with `python scripts/export_dev_cli.py`.
+Regenerate with `python scripts/export_docs.py`.
 
 ## `./dev`
 
 ```text
-usage: ./dev [-h]
-             {doctor,launch,run,tui,telemetry,affordances,snapshot,recover,stop,scenario,setup} ...
+usage: ./dev [-h] {verify-portable,doctor,launch,run,tui,telemetry,affordances,snapshot,recover,stop,scenario,setup} ...
 
 Safe, state-aware Kenshi live development. Use 'run' for the normal launch-and-agent workflow.
 
 positional arguments:
-  {doctor,launch,run,tui,telemetry,affordances,snapshot,recover,stop,scenario,setup}
+  {verify-portable,doctor,launch,run,tui,telemetry,affordances,snapshot,recover,stop,scenario,setup}
+    verify-portable           Run the complete reproducible gate without touching Windows or Kenshi.
     doctor                    Check every launch prerequisite without sending input.
     launch                    Launch Kenshi without starting an agent.
     run                       Use a safe loaded game or launch one, then run the agent.
@@ -35,6 +35,17 @@ Examples:
   ./dev recover
 ```
 
+## `./dev verify-portable`
+
+```text
+usage: ./dev verify-portable [-h]
+
+Install the locked development environment, run every portable check, and prove checked-in schemas and documentation are current.
+
+options:
+  -h, --help        show this help message and exit
+```
+
 ## `./dev doctor`
 
 ```text
@@ -46,16 +57,13 @@ options:
   -h, --help               show this help message and exit
   --timeout TIMEOUT        Maximum seconds for bounded readiness checks. (default: 60.0)
   --scenario SCENARIO      Use this exact restored and attested scenario fixture. (default: None)
-  --game-start GAME_START  Start this exact bundled authored start and prove its initial state.
-                           (default: None)
+  --game-start GAME_START  Start this exact bundled authored start and prove its initial state. (default: None)
 ```
 
 ## `./dev launch`
 
 ```text
-usage: ./dev launch [-h] [--timeout TIMEOUT]
-                    [--scenario SCENARIO | --game-start GAME_START | --title] [--resume-launcher]
-                    [--focus-display]
+usage: ./dev launch [-h] [--timeout TIMEOUT] [--scenario SCENARIO | --game-start GAME_START | --title] [--resume-launcher] [--focus-display]
 
 Launch Kenshi and optionally load one exact start source.
 
@@ -63,22 +71,16 @@ options:
   -h, --help               show this help message and exit
   --timeout TIMEOUT        Maximum seconds for each bounded startup wait. (default: 60.0)
   --scenario SCENARIO      Use this exact restored and attested scenario fixture. (default: None)
-  --game-start GAME_START  Start this exact bundled authored start and prove its initial state.
-                           (default: None)
+  --game-start GAME_START  Start this exact bundled authored start and prove its initial state. (default: None)
   --title                  Stop at the title screen instead of loading a world. (default: True)
-  --resume-launcher        Resume one verified pre-game launcher left by an interruption. (default:
-                           False)
-  --focus-display          Temporarily switch to the external 1920x1080 display only; the default
-                           keeps the internal panel and external display active. (default: False)
+  --resume-launcher        Resume one verified pre-game launcher left by an interruption. (default: False)
+  --focus-display          Temporarily switch to the external 1920x1080 display only; the default keeps the internal panel and external display active. (default: False)
 ```
 
 ## `./dev run`
 
 ```text
-usage: ./dev run [-h] [--timeout TIMEOUT] [--scenario SCENARIO | --game-start GAME_START]
-                 [--objective OBJECTIVE] [--campaign CAMPAIGN] [--prompt-file PROMPT_FILE]
-                 [--advisor-corpus-file ADVISOR_CORPUS_FILE] [--steps STEPS] [--run-id RUN_ID]
-                 [--control {plan-only,live}] [--focus-display]
+usage: ./dev run [-h] [--timeout TIMEOUT] [--scenario SCENARIO | --game-start GAME_START] [--objective OBJECTIVE] [--campaign CAMPAIGN] [--prompt-file PROMPT_FILE] [--advisor-corpus-file ADVISOR_CORPUS_FILE] [--steps STEPS] [--run-id RUN_ID] [--control {plan-only,live}] [--focus-display]
 
 Run the agent in a fresh or already-loaded world. Ambiguous live state fails closed.
 
@@ -86,20 +88,16 @@ options:
   -h, --help                  show this help message and exit
   --timeout TIMEOUT           Maximum seconds for each bounded startup wait. (default: 60.0)
   --scenario SCENARIO         Use this exact restored and attested scenario fixture. (default: None)
-  --game-start GAME_START     Start this exact bundled authored start and prove its initial state.
-                              (default: None)
+  --game-start GAME_START     Start this exact bundled authored start and prove its initial state. (default: None)
   --objective OBJECTIVE       Override the configured objective for this run. (default: None)
-  --campaign CAMPAIGN         Save-lineage identity used for durable memory continuity. (default:
-                              None)
+  --campaign CAMPAIGN         Save-lineage identity used for durable memory continuity. (default: None)
   --prompt-file PROMPT_FILE   Planner prompt file override. (default: None)
   --advisor-corpus-file ADVISOR_CORPUS_FILE
                               Advisor corpus file override. (default: None)
   --steps STEPS               Override the configured step ceiling. (default: None)
   --run-id RUN_ID             Exact run identifier; generated when omitted. (default: None)
-  --control {plan-only,live}  plan-only sends no gameplay actions; live takes desktop input
-                              ownership for the run. (default: plan-only)
-  --focus-display             Temporarily switch to the external 1920x1080 display only; the default
-                              keeps the internal panel and external display active. (default: False)
+  --control {plan-only,live}  plan-only sends no gameplay actions; live takes desktop input ownership for the run. (default: plan-only)
+  --focus-display             Temporarily switch to the external 1920x1080 display only; the default keeps the internal panel and external display active. (default: False)
 ```
 
 ## `./dev tui`
@@ -110,7 +108,7 @@ usage: ./dev tui [-h]
 Drive ./dev run through a compact terminal UI and launch with the same safety rules.
 
 options:
-  -h, --help  show this help message and exit
+  -h, --help        show this help message and exit
 ```
 
 ## `./dev telemetry`
@@ -133,10 +131,8 @@ options:
   -h, --help           show this help message and exit
   --watch              Re-render whenever the menu changes until interrupted. (default: False)
   --interval INTERVAL  Seconds between telemetry reads while watching. (default: 1.0)
-  --json               Emit newline-delimited menu payloads instead of a rendered menu. (default:
-                       False)
-  --capture CAPTURE    Append every distinct menu to this newline-delimited JSON file. (default:
-                       None)
+  --json               Emit newline-delimited menu payloads instead of a rendered menu. (default: False)
+  --capture CAPTURE    Append every distinct menu to this newline-delimited JSON file. (default: None)
 ```
 
 ## `./dev snapshot`
@@ -145,8 +141,8 @@ options:
 usage: ./dev snapshot [-h] [--label LABEL]
 
 options:
-  -h, --help     show this help message and exit
-  --label LABEL  Filesystem-safe evidence label. (default: snapshot)
+  -h, --help        show this help message and exit
+  --label LABEL     Filesystem-safe evidence label. (default: snapshot)
 ```
 
 ## `./dev recover`
@@ -157,8 +153,7 @@ usage: ./dev recover [-h] [--timeout TIMEOUT] [--dismiss-crash]
 options:
   -h, --help         show this help message and exit
   --timeout TIMEOUT  Maximum seconds for each bounded recovery wait. (default: 15.0)
-  --dismiss-crash    After archiving a visible crash, explicitly dismiss its unsent reporter.
-                     (default: False)
+  --dismiss-crash    After archiving a visible crash, explicitly dismiss its unsent reporter. (default: False)
 ```
 
 ## `./dev stop`
@@ -208,22 +203,19 @@ options:
 ## `./dev scenario capture`
 
 ```text
-usage: ./dev scenario capture [-h] --source-save SOURCE_SAVE --scenario-id SCENARIO_ID --save-id
-                              SAVE_ID --environment {indoor,outdoor} --danger {hostile,safe}
-                              --economy {broke,funded} --party {solo,squad} --time-of-day
-                              {day,night}
+usage: ./dev scenario capture [-h] --source-save SOURCE_SAVE --scenario-id SCENARIO_ID --save-id SAVE_ID --environment {indoor,outdoor} --danger {hostile,safe} --economy {broke,funded} --party {solo,squad} --time-of-day {day,night}
 
 options:
   -h, --help                  show this help message and exit
-  --source-save SOURCE_SAVE   Closed Kenshi save directory to copy. (default: None)
-  --scenario-id SCENARIO_ID   New immutable fixture ID. (default: None)
-  --save-id SAVE_ID           Stable source-save identity. (default: None)
+  --source-save SOURCE_SAVE   Closed Kenshi save directory to copy.
+  --scenario-id SCENARIO_ID   New immutable fixture ID.
+  --save-id SAVE_ID           Stable source-save identity.
   --environment {indoor,outdoor}
-                              Observable environment axis. (default: None)
-  --danger {hostile,safe}     Observable danger axis. (default: None)
-  --economy {broke,funded}    Observable economy axis. (default: None)
-  --party {solo,squad}        Observable party axis. (default: None)
-  --time-of-day {day,night}   Observable time axis. (default: None)
+                              Observable environment axis.
+  --danger {hostile,safe}     Observable danger axis.
+  --economy {broke,funded}    Observable economy axis.
+  --party {solo,squad}        Observable party axis.
+  --time-of-day {day,night}   Observable time axis.
 ```
 
 ## `./dev scenario restore`
@@ -245,10 +237,10 @@ usage: ./dev setup [-h] ACTION ...
 
 positional arguments:
   ACTION
-    graphics  Install the canonical live configuration's reversible graphics settings.
+    graphics        Install the canonical live configuration's reversible graphics settings.
 
 options:
-  -h, --help  show this help message and exit
+  -h, --help        show this help message and exit
 ```
 
 ## `./dev setup graphics`
