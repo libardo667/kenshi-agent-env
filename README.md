@@ -34,12 +34,13 @@ The current action set covers:
   current party; and
 - using campaign memory, the fieldbook, and the read-only strategy advisor.
 
-Live acceptance runs have covered representative movement and character orders,
-trade-window opening, purchases, equipped-item looting, squadmate and resource-output
-transfers, resource production, human handoff, emergency stop, and a confirmed final
-pause. Body shifting was observed in a supervised manual dispatch, but no named run
-bundle preserves the complete proof chain. The exact durable classification for each
-operation is recorded in [the proof ledger](docs/reconstruction/interaction_proof_status.json).
+Live acceptance runs have covered representative movement, trade-window opening,
+purchases, equipped-item looting, squadmate and resource-output transfers, resource
+production, human handoff, emergency stop, and a confirmed final pause. Character
+orders and body shifting were observed in supervised sessions, but no exact named
+run bundle preserves either complete proof chain. The exact durable classification
+for each operation is recorded in
+[the proof ledger](docs/reconstruction/interaction_proof_status.json).
 
 There are still important limits:
 
@@ -203,10 +204,18 @@ Run the complete portable gate from the repository root:
 ```
 
 The command installs the locked development dependencies, runs tests, Ruff, and
-mypy, regenerates schemas and documentation, checks their bytes for staleness, and
-rejects whitespace errors. GitHub Actions runs that same command on every supported
-Python version. Files under `schemas/` and `docs/generated/` are generated from the
-current models and registries. Do not edit them by hand.
+mypy, validates reverse-engineering evidence, regenerates schemas and documentation,
+checks their bytes for staleness, and rejects whitespace errors. GitHub Actions runs
+that same command on every supported Python version. Files under `schemas/` and
+`docs/generated/` are generated from the current models and registries. Do not edit
+them by hand.
+
+Before adding controller-authored behavior for an inferred engine rule, start from
+the [reverse-engineering evidence guide](game_sources/research/README.md) and the
+[reverse-engineering issue form](.github/ISSUE_TEMPLATE/reverse-engineering-evidence.yml).
+Each subsystem gets the same validated six-file package; the generated
+[research index](docs/generated/RESEARCH_EVIDENCE_INDEX.md) shows the current
+conclusions and withheld boundaries.
 
 Useful current references:
 
@@ -226,6 +235,7 @@ current work plan.
 ```text
 src/kenshi_agent/          Python runtime, planning, actions, and tools
 native/                    Kenshi native mod and command protocol
+game_sources/              Captured Kenshi declarations and research evidence
 config/                    Mock and live configuration
 prompts/                   Planner and memory prompts
 knowledge/                 Strategy reference material

@@ -18,6 +18,11 @@ from ..core.transport import (
     NativeCommandRequest,
 )
 from ..planners.plan_proposal import PlanProposal
+from .research_evidence import (
+    DynamicObservations,
+    ResearchCallSites,
+    ResearchConclusion,
+)
 
 
 def export_schemas(output_dir: Path) -> list[Path]:
@@ -34,6 +39,11 @@ def export_schemas(output_dir: Path) -> list[Path]:
         "native_command_request.schema.json": NativeCommandRequest.model_json_schema(),
         "runtime_plan.schema.json": PlanEnvelope.model_json_schema(),
         "runtime_plan_patch.schema.json": PlanPatch.model_json_schema(),
+        "research_call_sites.schema.json": ResearchCallSites.model_json_schema(),
+        "research_dynamic_observations.schema.json": (
+            DynamicObservations.model_json_schema()
+        ),
+        "research_conclusion.schema.json": ResearchConclusion.model_json_schema(),
     }
     paths: list[Path] = []
     for name, schema in schemas.items():

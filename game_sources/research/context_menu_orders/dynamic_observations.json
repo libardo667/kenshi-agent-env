@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "subsystem": "context_menu_orders",
+  "observations": [
+    {
+      "id": "selection_filter_admits_every_task",
+      "kind": "contradiction",
+      "observed_on": "2026-08-06",
+      "kenshi_version": "1.0.65 x64",
+      "executable_sha256_at_probe": null,
+      "installed_dll_sha256_at_probe": null,
+      "run_bundle": null,
+      "pre_dispatch_state": "A loaded game had one selected player character and a cannibal target; the full captured 291-entry TaskType vocabulary was available to the diagnostic probe.",
+      "request": "Call isOrderValidForSelection once for each of the 291 TaskType values. This was an in-process diagnostic probe, not a native command request.",
+      "acknowledgement": "No native acknowledgement existed for this diagnostic.",
+      "later_engine_evidence": "The predicate returned true for all 291 values and therefore did not discriminate the target-specific right-click set.",
+      "final_disposition": "Rejected as the authority for target-specific offers.",
+      "evidence_source": "Repository commit ce9a232337d7cae3248e8ad7e994bddef35e6c5e and its retained source rationale; no exact run bundle survives.",
+      "remaining_uncertainty": [
+        "The exact executable and installed DLL hashes at probe time were not captured.",
+        "Behavior for other selections is not generalized from this one probe."
+      ]
+    },
+    {
+      "id": "odds_and_menu_disagree",
+      "kind": "contradiction",
+      "observed_on": "2026-08-06",
+      "kenshi_version": "1.0.65 x64",
+      "executable_sha256_at_probe": null,
+      "installed_dll_sha256_at_probe": null,
+      "run_bundle": null,
+      "pre_dispatch_state": "A loaded game had one selected player character and one cannibal target whose normal right-click menu was inspected.",
+      "request": "Query getPlayerTaskProbability across the TaskType vocabulary for that exact target and compare positive results with the visible right-click menu.",
+      "acknowledgement": "No native acknowledgement existed for this diagnostic.",
+      "later_engine_evidence": "The odds getter returned KIDNAP_ORDER and STEALTH_KNOCKOUT; the menu offered ATTACK_ENEMIES and FOCUSED_MELEE_ATTACK and neither odds-bearing task.",
+      "final_disposition": "Retained only as an additional odds source; rejected as a replacement for the menu-derived set.",
+      "evidence_source": "Repository commit ce9a232337d7cae3248e8ad7e994bddef35e6c5e and its retained source rationale; no exact run bundle survives.",
+      "remaining_uncertainty": [
+        "The exact executable and installed DLL hashes at probe time were not captured.",
+        "The visible-menu comparison was not preserved as a frame or typed bundle."
+      ]
+    },
+    {
+      "id": "problem_check_attempts_orders",
+      "kind": "contradiction",
+      "observed_on": "2026-08-06",
+      "kenshi_version": "1.0.65 x64",
+      "executable_sha256_at_probe": null,
+      "installed_dll_sha256_at_probe": null,
+      "run_bundle": null,
+      "pre_dispatch_state": "A loaded game had a selected player character and candidate targets while the diagnostic iterated the TaskType vocabulary.",
+      "request": "Call Character::checkPlayerOrderForProblems speculatively for candidate tasks. This was an in-process diagnostic, not a native command request.",
+      "acknowledgement": "No native acknowledgement existed; the call itself produced gameplay-facing effects.",
+      "later_engine_evidence": "Kenshi floated 'I don't have a medkit' over a character and returned no-problem for 285 of 291 tasks, showing that the function validates or complains about an attempted order rather than enumerating the menu.",
+      "final_disposition": "Deleted from the probe path and classified as unsafe for speculative enumeration.",
+      "evidence_source": "Repository commit ce9a232337d7cae3248e8ad7e994bddef35e6c5e and its retained source rationale; no exact run bundle survives.",
+      "remaining_uncertainty": [
+        "The six negative TaskType values were not preserved.",
+        "The exact executable and installed DLL hashes at probe time were not captured."
+      ]
+    },
+    {
+      "id": "problem_check_world_load_crashes",
+      "kind": "crash",
+      "observed_on": "2026-08-06",
+      "kenshi_version": "1.0.65 x64",
+      "executable_sha256_at_probe": null,
+      "installed_dll_sha256_at_probe": null,
+      "run_bundle": null,
+      "pre_dispatch_state": "World load was in progress while the speculative Character::checkPlayerOrderForProblems probe remained installed.",
+      "request": "The probe invoked checkPlayerOrderForProblems while enumerating candidate target orders; no external native request initiated either crash.",
+      "acknowledgement": "None. Both sessions terminated during world load.",
+      "later_engine_evidence": "Two world-load crashes were observed; no later engine telemetry exists for either terminated session.",
+      "final_disposition": "The probe was disabled and then superseded by the muted context-menu path.",
+      "evidence_source": "Repository commit ce9a232337d7cae3248e8ad7e994bddef35e6c5e; crash archives and exact run directories were not retained with the conclusion.",
+      "remaining_uncertainty": [
+        "No retained dump proves the precise faulting instruction.",
+        "The two exact run bundle names and binary hashes are missing, so causality remains a strong temporal inference rather than a dump-proven fact."
+      ]
+    },
+    {
+      "id": "character_order_goal_adoption",
+      "kind": "live_probe",
+      "observed_on": "2026-08-07",
+      "kenshi_version": "1.0.65 x64",
+      "executable_sha256_at_probe": null,
+      "installed_dll_sha256_at_probe": null,
+      "run_bundle": null,
+      "pre_dispatch_state": "The kae-04-funded-pair authored start had one ordering character and conscious or unconscious bandit targets as the sequence progressed.",
+      "request": "The agent issued stealth_knockout, unprovoked_focused_melee_attack, attack_enemies, player_talk_to, and loot_target through perform_character_order. Exact command ids were not retained in the proof record.",
+      "acknowledgement": "Each request was reported accepted, but exact acknowledgement payloads and sequences were not retained in a named bundle.",
+      "later_engine_evidence": "Each operation later reached context_task_started with the exact ordered TaskType and exact target held as the ordering character's current goal. Conscious and unconscious targets exposed different menu-derived orders.",
+      "final_disposition": "Historical live observation retained, but durable live proof is withheld because the record names an authored start rather than an exact run bundle and omits command ids, hashes, and sequences.",
+      "evidence_source": "Repository commit 114e80f232282b745e51e125391d0b924d440fe6 and the former proof-ledger prose.",
+      "remaining_uncertainty": [
+        "The exact run bundle, request ids, acknowledgement sequences, and binary hashes are missing.",
+        "No A/B bundle compares silent probing with a normal right-click.",
+        "Group delivery and post-adoption world outcomes remain unproven."
+      ]
+    },
+    {
+      "id": "portable_probe_semantics",
+      "kind": "portable_test",
+      "observed_on": "2026-08-09",
+      "kenshi_version": "No live executable loaded",
+      "executable_sha256_at_probe": null,
+      "installed_dll_sha256_at_probe": null,
+      "run_bundle": null,
+      "pre_dispatch_state": "Portable and compiled tests construct synthetic advertised-task lists and request fixtures without starting Kenshi.",
+      "request": "Exercise source tagging, menu-over-odds precedence, deduplication, probe completeness, binding, and acknowledgement parsing.",
+      "acknowledgement": "Synthetic fixture acknowledgements only.",
+      "later_engine_evidence": "None; these tests do not load or observe the engine.",
+      "final_disposition": "Test-proves repository semantics only and cannot upgrade a Kenshi behavior claim.",
+      "evidence_source": "tests/test_character_orders.py and native/KenshiAgentTelemetry/NativeCommandProtocolTests.cpp",
+      "remaining_uncertainty": [
+        "Portable and compiled fixtures cannot verify the Kenshi call signatures or world effects."
+      ]
+    }
+  ]
+}

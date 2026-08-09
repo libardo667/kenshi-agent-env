@@ -23,9 +23,9 @@ manifest entries         24
 coverage proof          PASS
 
 PROOF STATUS
-  source_proven     11
+  source_proven     12
   unit_proven        0
-  live_proven        4
+  live_proven        3
   unproven           9
   withheld           0
 
@@ -39,7 +39,7 @@ INTERACTION CONTRACT (resolved from the sole operation registry)
   noop                                runtime_only       none                none             input_delivered         source_proven
   open_trade_window                   global_ui          none                none             world_outcome_observed  live_proven
   pause                               global_ui          none                none             world_outcome_observed  source_proven
-  perform_character_order             ordinary_order     current_selection   dispatch_only    order_accepted          live_proven
+  perform_character_order             ordinary_order     current_selection   dispatch_only    order_accepted          source_proven
   perform_context_action *            varies             current_selection   varies           varies                  unproven
   produce_resource_output             ordinary_order     current_selection   dispatch_only    world_outcome_observed  live_proven
   read_fieldbook                      runtime_only       none                none             input_delivered         source_proven

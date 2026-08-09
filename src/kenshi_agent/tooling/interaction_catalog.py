@@ -31,13 +31,10 @@ from ..operation_definitions import (
     OperationDefinition,
     native_wire_command_for,
 )
+from .research_evidence import RESEARCH_ROOT, load_research_package
 
-MANIFEST_PATH = (
-    Path(__file__).resolve().parents[3]
-    / "docs"
-    / "reconstruction"
-    / "interaction_proof_status.json"
-)
+ROOT = Path(__file__).resolve().parents[3]
+MANIFEST_PATH = ROOT / "docs" / "reconstruction" / "interaction_proof_status.json"
 
 PROOF_STATUSES = (
     "source_proven",
@@ -198,6 +195,7 @@ class ProofEntry:
     subcase: str
     proof_status: str
     evidence: tuple[str, ...]
+    research: tuple[str, ...]
     note: str
 
 
@@ -213,6 +211,8 @@ class InteractionCatalogAudit:
     manifest_restates_registry: tuple[str, ...]
     native_commands_without_definition: tuple[str, ...]
     entries_without_evidence: tuple[str, ...]
+    invalid_research_refs: tuple[str, ...]
+    embedded_research_claims: tuple[str, ...]
 
     @property
     def passed(self) -> bool:
@@ -225,6 +225,8 @@ class InteractionCatalogAudit:
                 self.manifest_restates_registry,
                 self.native_commands_without_definition,
                 self.entries_without_evidence,
+                self.invalid_research_refs,
+                self.embedded_research_claims,
             )
         )
 
@@ -333,6 +335,7 @@ def load_proof_manifest(path: Path = MANIFEST_PATH) -> tuple[ProofEntry, ...]:
                 subcase=subcase,
                 proof_status=str(raw.get("proof_status", "")),
                 evidence=tuple(str(item) for item in raw.get("evidence", [])),
+                research=tuple(str(item) for item in raw.get("research", [])),
                 note=str(raw.get("note", "")),
             )
         )
@@ -368,6 +371,39 @@ def audit_interaction_catalog(
 
     claimed_commands = {row.native_command for row in rows if row.native_command}
 
+    invalid_research_refs: list[str] = []
+    for entry in entries:
+        for reference in entry.research:
+            path = ROOT / reference
+            if path.parent != RESEARCH_ROOT or not path.is_dir():
+                invalid_research_refs.append(f"{entry.key}={reference}")
+                continue
+            try:
+                load_research_package(path)
+            except (OSError, ValueError):
+                invalid_research_refs.append(f"{entry.key}={reference}")
+
+    reverse_engineering_tokens = (
+        "KenshiLib",
+        "ForgottenGUI",
+        "RVA",
+        "ContextMenu::",
+        "Inventory::",
+        "PlayerInterface::",
+        "Character::",
+        "ZoneManager::",
+    )
+    embedded_research_claims = tuple(
+        sorted(
+            entry.key
+            for entry in entries
+            if any(
+                token in " ".join((*entry.evidence, entry.note))
+                for token in reverse_engineering_tokens
+            )
+        )
+    )
+
     return InteractionCatalogAudit(
         rows=rows,
         entries=entries,
@@ -395,6 +431,8 @@ def audit_interaction_catalog(
                 if not entry.evidence and entry.proof_status != "unproven"
             )
         ),
+        invalid_research_refs=tuple(sorted(invalid_research_refs)),
+        embedded_research_claims=embedded_research_claims,
     )
 
 
@@ -472,6 +510,11 @@ def render_interaction_catalog(audit: InteractionCatalogAudit) -> list[str]:
         ("manifest restates registry-owned fields", audit.manifest_restates_registry),
         ("native commands without a definition", audit.native_commands_without_definition),
         ("entries claiming proof without evidence", audit.entries_without_evidence),
+        ("invalid research evidence references", audit.invalid_research_refs),
+        (
+            "reverse-engineering claims embedded in proof ledger",
+            audit.embedded_research_claims,
+        ),
     )
     for label, values in failures:
         if values:

@@ -1,0 +1,207 @@
+{
+  "$defs": {
+    "ExecutableIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "product": {
+          "minLength": 1,
+          "title": "Product",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        },
+        "architecture": {
+          "minLength": 1,
+          "title": "Architecture",
+          "type": "string"
+        },
+        "steam_build_id": {
+          "pattern": "^[0-9]+$",
+          "title": "Steam Build Id",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "product",
+        "version",
+        "architecture",
+        "steam_build_id",
+        "sha256"
+      ],
+      "title": "ExecutableIdentity",
+      "type": "object"
+    },
+    "LibraryIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        },
+        "repository_commit": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Repository Commit",
+          "type": "string"
+        },
+        "artifact_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Artifact Sha256",
+          "type": "string"
+        },
+        "headers_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Headers Sha256",
+          "type": "string"
+        },
+        "working_tree_state": {
+          "minLength": 1,
+          "title": "Working Tree State",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "repository_commit",
+        "artifact_sha256",
+        "headers_sha256",
+        "working_tree_state"
+      ],
+      "title": "LibraryIdentity",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "subsystem": {
+      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+      "title": "Subsystem",
+      "type": "string"
+    },
+    "title": {
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    },
+    "proof_status": {
+      "enum": [
+        "source_proven",
+        "test_proven",
+        "live_proven",
+        "withheld",
+        "inconclusive"
+      ],
+      "title": "Proof Status",
+      "type": "string"
+    },
+    "executable": {
+      "$ref": "#/$defs/ExecutableIdentity"
+    },
+    "libraries": {
+      "items": {
+        "$ref": "#/$defs/LibraryIdentity"
+      },
+      "minItems": 1,
+      "title": "Libraries",
+      "type": "array"
+    },
+    "source_refs": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Source Refs",
+      "type": "array"
+    },
+    "inferred_signature_confidence": {
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "title": "Inferred Signature Confidence",
+      "type": "string"
+    },
+    "portable_test_refs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Portable Test Refs",
+      "type": "array"
+    },
+    "live_probe_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Live Probe Ids",
+      "type": "array"
+    },
+    "crash_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Crash Ids",
+      "type": "array"
+    },
+    "contradiction_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Contradiction Ids",
+      "type": "array"
+    },
+    "remaining_uncertainty": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Remaining Uncertainty",
+      "type": "array"
+    },
+    "supersedes": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Supersedes",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "subsystem",
+    "title",
+    "proof_status",
+    "executable",
+    "libraries",
+    "source_refs",
+    "inferred_signature_confidence",
+    "portable_test_refs",
+    "live_probe_ids",
+    "crash_ids",
+    "contradiction_ids",
+    "remaining_uncertainty",
+    "supersedes"
+  ],
+  "title": "ResearchConclusion",
+  "type": "object"
+}

@@ -18,7 +18,9 @@
     "game_sources/kenshi/context_menu_witnesses.json was captured with exactly",
     "one character selected, so other multi-recipient semantics remain declared",
     "rather than demonstrated. close_trade_window is separately live-proven as a",
-    "native recovery command, not a registry-backed gameplay operation."
+    "native recovery command, not a registry-backed gameplay operation.",
+    "Reverse-engineering conclusions live only under game_sources/research;",
+    "entries here link to those packages instead of restating their argument."
   ],
   "planner_output_contract": {
     "proof_status": "unit_proven",
@@ -75,10 +77,11 @@
       "operation_kind": "open_trade_window",
       "proof_status": "live_proven",
       "evidence": [
-        "KenshiAgentTelemetry.cpp open_trade_window: resolves both parties to handles and calls ForgottenGUI::showTradeWindow(a, b, TradeWindowType), then requires getNumOpenInventoryWindows() >= 2 as terminal evidence",
-        "TradeWindowType is Kenshi's own enum - TW_OFF, TW_MONEY_TRADING, TW_LOOTING, TW_AUTO - so trading and looting arrive as one mechanism with a flag rather than as two operations invented here",
         "closure-loot-20260808 command cmd-ad044f547c894764b0506d8459545a81 paired Fish with unconscious Burn and completed as trade_window_open",
         "closure-harvest-fixed-20260808 command cmd-1c78e8d12e4a403f83bfc3df8f3bee46 paired Fish with the Iron Resource and completed as trade_window_open"
+      ],
+      "research": [
+        "game_sources/research/inventory_transfer"
       ],
       "note": "One mechanism now has live witnesses for both looting a body and collecting a resource output. Whether Kenshi treats other owner kinds as valid remains its dispatch-time answer."
     },
@@ -92,15 +95,14 @@
     },
     {
       "operation_kind": "perform_character_order",
-      "proof_status": "live_proven",
+      "proof_status": "source_proven",
       "evidence": [
-        "KenshiAgentTelemetry.cpp ProbeMenuOrders: hooks ContextMenuGUI::show and returns early during a probe, then calls ContextMenu::showContextMenu(true, target) and reads ContextMenu::orders before closing it again. Kenshi already separates building the order list from drawing it, so muting the second leaves the first intact and the agent is offered the same list a player sees on right-click, with no widget shown. It refuses to run while a menu is already open and calls through the saved original rather than our own hook, so what the player opened a menu on is never overwritten",
-        "The three passive predicates were each measured live and each answers a different question: isOrderValidForSelection returned true for all 291 vocabulary entries; getPlayerTaskProbability is an odds getter that returned exactly KIDNAP_ORDER and STEALTH_KNOCKOUT against a cannibal whose own menu offered ATTACK_ENEMIES and FOCUSED_MELEE_ATTACK; Character::checkPlayerOrderForProblems is not a query at all -- it floated 'I don't have a medkit' over a character, crashed world load twice, and answered 'no problem' for 285 of 291",
-        "Both probes still run and the union is reported with provenance, since they disagree in both directions and neither can be subtracted from the other. AdvertisedTask.source records menu or odds, and it travels into the bound reason so an order that binds and then fails to take is attributable without a second live run",
-        "KenshiAgentTelemetry.cpp perform_character_order: resolves the wire's lowercased vocabulary name to its TaskType, re-probes with the same ProbeAdvertisedTasks that published the offer so publication and dispatch cannot consult different oracles, adopts an identical active goal via HasExactContextGoal instead of reissuing, then newPlayerTaskSelectedCharacters(task, handle, building, position, false) -- the same generic call that already carries MOVE_CUS_ORDERED and PLAYER_TALK_TO",
-        "Target resolution deliberately uses FindExactNearbyCharacter, which applies no disposition filter, rather than FindExactDialogueTarget: an order is not a conversation, and hostiles, the unconscious, and the dead are exactly who orders are for"
+        "game_sources/research/context_menu_orders records the inspected source, ABI, contradictions, crashes, tests, and historical live observation"
       ],
-      "note": "Dispatched live on kae-04-funded-pair: stealth_knockout, unprovoked_focused_melee_attack, attack_enemies, player_talk_to and loot_target each reached goal adoption and finished on context_task_started, none of them a verb written into this repo. Kenshi's own state reasoning arrived with them -- measured live, an unconscious bandit advertised LOOT_TARGET, LIFT_PERSON_PLAYER_ORDER and FIRST_AID_ORDER and no attack, while a conscious one advertised UNPROVOKED_FOCUSED_MELEE_ATTACK and no looting. Both probes earned their place: the knockout that created the lootable body came from the odds getter, and the looting from the menu. The probe budget means an unprobed person reports advertised_tasks_probed false, and both the binding and the affordance treat that as unknown rather than empty. A dispatch whose probe could not run is refused as order_probe_unavailable rather than context_action_unavailable, so 'Kenshi withdrew this order' stays distinct from 'nobody could ask'. Two gaps remain, both past the order rather than in it: roughly a third of orders finish as movement_stalled because the ordered character cannot path to the target, and the order is terminal at goal adoption, so nothing observes the looting that follows -- with the loot window open the agent had no affordance to take anything and waited for a completion no field reports."
+      "research": [
+        "game_sources/research/context_menu_orders"
+      ],
+      "note": "Historical exact-task adoption was observed from the kae-04-funded-pair start, but no exact run bundle, command ids, sequences, or binary hashes survive. Durable live proof is withheld; group delivery and post-adoption outcomes remain unproven."
     },
     {
       "operation_kind": "perform_context_action",
@@ -172,8 +174,10 @@
       "operation_kind": "shift_into_body",
       "proof_status": "source_proven",
       "evidence": [
-        "KenshiAgentTelemetry.cpp shift_into_body: PlayerInterface::recruit for a cross-faction body, createSquad + setFaction so the body is its own unit, updatePlayerSelection across the container move, then _selectPlayerCharacter(modifier=false, track=true) for exclusive primary selection",
-        "Dispatched live against Molly of the Drifters: reason shift_body_recruited, selected_character_ids reduced to the entered body, primary resolved to it, and the character left nearby_entities because it became a player character"
+        "game_sources/research/body_shift records the canonical source, ABI, fixture, and incomplete Molly conclusion"
+      ],
+      "research": [
+        "game_sources/research/body_shift"
       ],
       "note": "Refuses a dead, unconscious, or hostile body natively as well as in the binding. Entering a body is not repeatable against the same evidence, so it is at_most_once."
     },
@@ -189,22 +193,22 @@
       "operation_kind": "survey_local_resources",
       "proof_status": "source_proven",
       "evidence": [
-        "KenshiLib ZoneManager::getResource/getResourceBase is the resource field the Prospecting window reads",
-        "native survey completes on publication and issues no order, so it commands no recipient"
+        "game_sources/research/prospecting_window records the deleted direct sampler, window ABI, crash, scalar contradiction, and current caption-copy path"
       ],
-      "note": "Reads Kenshi's resource field around the primary character and returns a grid rather than the window's area-averaged scalar, which reports 0 for a discrete deposit. Gated on an action deliberately: the agent learns what it surveyed, not what exists everywhere. Two things are unproven and are live-proof items - whether the null biome argument is accepted at runtime, and what the returned value scale means."
+      "research": [
+        "game_sources/research/prospecting_window"
+      ],
+      "note": "Reads verbatim populated Prospecting-window captions. The displayed scalar's area, aggregation, unit, and relationship to discrete deposits remain withheld."
     },
     {
       "operation_kind": "transfer_item",
       "proof_status": "live_proven",
       "evidence": [
-        "KenshiAgentTelemetry.cpp transfer_item resolves both owners through ForgottenGUI::inventoryWindowsOpen, requires both exact windows open, resolves the source item with InventorySection::getItemAt(section, x, y), removes through Inventory::removeItemDontDestroy_returnsItem, and adds through Inventory::tryAddItem. It does not call InventoryGUI::RClickAutoTrade",
-        "Capacity comes from the destination Inventory. A failed tryAddItem is rolled back when possible; if destination getNumItems proves that part of a stack moved despite a false return, the command reports item_partly_transferred and charges only the stranded gain rather than claiming a refusal",
-        "When InventoryGUI::getNPCTrader reports a shop trade, the project applies simplified economics: destination ownership chooses buy versus sell, Item::getValueSingle supplies unit cost, destination getNumItems after-minus-before supplies actual quantity, and Inventory::takeMoney moves equal funds between payer and payee. Theft, haggling, faction standing, stolen-goods penalties, uniforms, illegal-goods and the rest of RClickAutoTrade adjudication are not reproduced or claimed",
-        "The slot is the address because InventorySection::getItemAt resolves it directly. UIState.open_inventories exports section and x/y per item, so no cell label is scraped from a MyGUI widget and no pointer is used",
-        "pointer_actions is 0. The operations this subsumes spend 23 pointer actions between them, 12 of those in harvest_resource alone",
         "closure-loot-20260808 transferred Burn's equipped Katana and Halfpants (ragged) into Fish with item_transferred terminals cmd-460ee0bb31814fd98e7d7057747348f6 and cmd-2538e63cec614d87a06511aa925f4256; later open-inventory telemetry showed Burn empty and Fish holding the moved items",
         "closure-harvest-fixed-20260808 transferred Raw Iron from the Iron Resource output slot into Fish with item_transferred terminal cmd-90f4f3ab3ea449539a64040290c7f1e3 and later inventory telemetry recorded the resource loss and Fish gain"
+      ],
+      "research": [
+        "game_sources/research/inventory_transfer"
       ],
       "note": "Named bundles live-prove inventory-model movement for equipped-body loot and resource-output collection. A supervised purchase separately observed conserved project-owned payment, but no exact named purchase bundle is cited here, so the ledger does not generalize those two movement bundles into durable proof of all shop economics. Binding still proves both inventories open, the section present, and the named item still in its slot, since position alone is not identity."
     },

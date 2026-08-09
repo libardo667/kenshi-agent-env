@@ -18,6 +18,17 @@ CHECKS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ("uv", "run", "--frozen", "--no-sync", "mypy", "src"),
     ),
     (
+        "research evidence",
+        (
+            "uv",
+            "run",
+            "--frozen",
+            "--no-sync",
+            "python",
+            "scripts/check_research_evidence.py",
+        ),
+    ),
+    (
         "schema generation",
         (
             "uv",

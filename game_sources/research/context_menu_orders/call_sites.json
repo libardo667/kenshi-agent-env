@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "subsystem": "context_menu_orders",
+  "executable": {
+    "product": "Kenshi",
+    "version": "1.0.65",
+    "architecture": "x64",
+    "steam_build_id": "13871665",
+    "sha256": "a596ab4e407c67b58599c54ffb32dc1bf2b64510cdebd3fa9359ef05a576aeb1"
+  },
+  "libraries": [
+    {
+      "name": "KenshiLib",
+      "version": "0.4.0",
+      "repository_commit": "b566d74bf3d74629cc2fb632a97595b8202993f1",
+      "artifact_sha256": "d407bf18c807cd3390643227ca4dc3ee4628fedc520870eee250201c04db311d",
+      "headers_sha256": "fbfa33a283ed840e70f6f5f6675c2544df89bc18f8901b81eaa7095b466ec4c8",
+      "working_tree_state": "KenshiLib 0.4.0 checkout with locally modified library binaries; exact artifact and header hashes are authoritative"
+    }
+  ],
+  "sites": [
+    {
+      "id": "context_menu_build",
+      "component": "Kenshi",
+      "symbol": "ContextMenu::showContextMenu",
+      "rva": "0x7A5960",
+      "declared_signature": "void ContextMenu::showContextMenu(bool on, RootObject* what)",
+      "inferred_signature_confidence": "medium",
+      "declaration_source": "KenshiLib 0.4.0 Include/kenshi/gui/ContextMenu.h:45 and Include/kenshi/PlayerInterface.h:41",
+      "evidence": [
+        "KenshiLib declaration and RVA",
+        "executable bytes present at image base plus RVA",
+        "current native hook and direct probe call"
+      ],
+      "project_call_sites": [
+        {
+          "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
+          "line": 1532,
+          "contains": "ProbeMenuOrders"
+        },
+        {
+          "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
+          "line": 7147,
+          "contains": "ContextMenu::showContextMenu"
+        }
+      ]
+    },
+    {
+      "id": "context_menu_draw",
+      "component": "Kenshi",
+      "symbol": "ContextMenuGUI::show",
+      "rva": "0x7A6D80",
+      "declared_signature": "void ContextMenuGUI::show(const lektor<int>& ordersList, const std::string& name, bool offset)",
+      "inferred_signature_confidence": "medium",
+      "declaration_source": "KenshiLib 0.4.0 Include/kenshi/gui/ContextMenu.h:21",
+      "evidence": [
+        "KenshiLib declaration and RVA",
+        "executable bytes present at image base plus RVA",
+        "current native hook suppresses this call only while probing"
+      ],
+      "project_call_sites": [
+        {
+          "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
+          "line": 591,
+          "contains": "ContextMenuGUIShowHook"
+        },
+        {
+          "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
+          "line": 7164,
+          "contains": "ContextMenuGUI::show"
+        }
+      ]
+    },
+    {
+      "id": "selection_validity_predicate",
+      "component": "Kenshi",
+      "symbol": "PlayerInterface::isOrderValidForSelection",
+      "rva": "0x7F1150",
+      "declared_signature": "bool PlayerInterface::isOrderValidForSelection(TaskType task) const",
+      "inferred_signature_confidence": "medium",
+      "declaration_source": "KenshiLib 0.4.0 Include/kenshi/PlayerInterface.h:180",
+      "evidence": [
+        "KenshiLib declaration and RVA",
+        "executable bytes present at image base plus RVA",
+        "historical live probe recorded in commit ce9a232337d7cae3248e8ad7e994bddef35e6c5e"
+      ],
+      "project_call_sites": []
+    },
+    {
+      "id": "task_probability_predicate",
+      "component": "Kenshi",
+      "symbol": "PlayerInterface::getPlayerTaskProbability",
+      "rva": "0x7F5380",
+      "declared_signature": "bool PlayerInterface::getPlayerTaskProbability(TaskType task, RootObject* target, float& probability)",
+      "inferred_signature_confidence": "medium",
+      "declaration_source": "KenshiLib 0.4.0 Include/kenshi/PlayerInterface.h:161",
+      "evidence": [
+        "KenshiLib declaration and RVA",
+        "executable bytes present at image base plus RVA",
+        "current odds-probe call site"
+      ],
+      "project_call_sites": [
+        {
+          "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
+          "line": 1598,
+          "contains": "getPlayerTaskProbability"
+        }
+      ]
+    },
+    {
+      "id": "order_problem_side_effect",
+      "component": "Kenshi",
+      "symbol": "Character::checkPlayerOrderForProblems",
+      "rva": "0x5D11C0",
+      "declared_signature": "bool Character::checkPlayerOrderForProblems(TaskType task, RootObject* subject)",
+      "inferred_signature_confidence": "medium",
+      "declaration_source": "KenshiLib 0.4.0 Include/kenshi/Character.h:569",
+      "evidence": [
+        "KenshiLib declaration and RVA",
+        "executable bytes present at image base plus RVA",
+        "historical crash and side-effect observations recorded in commit ce9a232337d7cae3248e8ad7e994bddef35e6c5e"
+      ],
+      "project_call_sites": []
+    },
+    {
+      "id": "selected_character_dispatch",
+      "component": "Kenshi",
+      "symbol": "PlayerInterface::newPlayerTaskSelectedCharacters",
+      "rva": "0x7F93F0",
+      "declared_signature": "void PlayerInterface::newPlayerTaskSelectedCharacters(TaskType task, const hand& target, Building* destinationIndoors, const Ogre::Vector3& clickPosition, bool addDontClear)",
+      "inferred_signature_confidence": "medium",
+      "declaration_source": "KenshiLib 0.4.0 Include/kenshi/PlayerInterface.h:160",
+      "evidence": [
+        "KenshiLib declaration and RVA",
+        "executable bytes present at image base plus RVA",
+        "current character-order dispatch call site"
+      ],
+      "project_call_sites": [
+        {
+          "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
+          "line": 4737,
+          "contains": "newPlayerTaskSelectedCharacters"
+        }
+      ]
+    }
+  ]
+}

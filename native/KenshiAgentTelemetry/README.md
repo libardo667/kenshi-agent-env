@@ -36,7 +36,9 @@ The plug-in installs hooks on Kenshi's own game/UI thread:
   telemetry after the original update returns.
 - `ContextMenu::showContextMenu` plus a muted `ContextMenuGUI::show` hook let the
   plug-in ask Kenshi which orders it would display without drawing a menu over
-  the operator's game.
+  the operator's game. Exact declarations, addresses, failed predicates,
+  crashes, and withheld conclusions live in the
+  [context-menu research object](../../game_sources/research/context_menu_orders/conclusion.md).
 - `ShopTrader` lifecycle hooks maintain exact shop-owner identity, and
   `GameWorld::resetGame` clears session-bound registries and acknowledgements.
 
@@ -111,44 +113,20 @@ separate retained commands for disjoint recipient groups are not implemented.
 Those open limits are tracked in the
 [interaction scope and lifecycle record](../../docs/KENSHI_INTERACTION_SCOPE_ORDER_LIFECYCLE_PLAN.md).
 
-## Inventory and shop semantics
+## Reverse-engineered subsystem authority
 
-`open_trade_window` calls `ForgottenGUI::showTradeWindow` with two exact owner
-handles and Kenshi's `TradeWindowType`, then waits for both inventory windows to
-be observed. Acceptance of that call is not the same as observing the windows.
+This README no longer restates ABI conclusions. The canonical packages record
+the exact executable and library identity, symbols or RVAs, signature
+confidence, probes, crashes, contradictions, and withheld claims:
 
-`transfer_item` does **not** call `InventoryGUI::RClickAutoTrade`. Live attempts
-showed that the KenshiLib declaration does not safely match the shipped binary
-for out-of-band use. Current code resolves the source item with
-`InventorySection::getItemAt`, removes it through
-`Inventory::removeItemDontDestroy_returnsItem`, and adds it through
-`Inventory::tryAddItem`. It checks model capacity, attempts rollback on a
-refusal, and reports a partial transfer if later destination counts prove that
-some goods moved despite a false return.
+- [context-menu orders](../../game_sources/research/context_menu_orders/conclusion.md);
+- [inventory transfer and simplified pricing](../../game_sources/research/inventory_transfer/conclusion.md);
+- [body shift](../../game_sources/research/body_shift/conclusion.md); and
+- [prospecting window](../../game_sources/research/prospecting_window/conclusion.md).
 
-When `InventoryGUI::getNPCTrader()` reports a shop trade, the project applies
-its own simplified economics. The receiving side determines buy versus sell;
-`Item::getValueSingle` supplies the unit value; the destination's before/after
-`Inventory::getNumItems` count determines how many actually arrived; and money
-moves between the two inventories for that measured count. This does not
-reproduce Kenshi's haggling, faction standing, stolen-goods penalties, theft
-detection, uniforms, illegal-goods, or other `RClickAutoTrade` rules. Documents
-and receipts must call it simplified project-owned pricing, not Kenshi
-adjudication.
-
-An item cell's `item_base_value` and `item_sell_value` are the two values
-reported by `Item::getValueSingle`; neither field alone proves the final charge.
-Later inventory and money telemetry is the outcome evidence.
-
-## Body shift semantics
-
-`shift_into_body` is elective, not total-loss-only. It resolves one exact
-conscious, non-animal, non-hostile body; uses `PlayerInterface::recruit` when
-crossing into the player faction; creates a separate squad; carries selection
-identity across `Character::setFaction`; makes that squad current; and selects
-and tracks the body. The exact implementation and open live-proof obligations
-are recorded in the
-[body-shift record](../../docs/KENSHI_BODY_SHIFT_PLAN.md).
+Current source implements those reviewed conclusions. The packages, not this
+overview, own the reverse-engineering argument. Acceptance of any native call
+is not proof of later game state.
 
 ## Build and install
 
@@ -208,12 +186,11 @@ folder component.
 
 ### Live-proven
 
-Named live evidence is operation-specific and belongs in
-`docs/reconstruction/interaction_proof_status.json`. Representative accepted
-commands include trade-window opening, inventory-model transfers, resource
-production, and character orders. Each live conclusion depends on later engine
-telemetry in its named bundle, not merely on request delivery or an
-acknowledgement.
+Named live evidence is operation-specific. Reverse-engineering conclusions and
+their exact limitations belong under `game_sources/research/`; the interaction
+proof ledger links those conclusions to operations. Each live conclusion
+depends on later engine telemetry in its named bundle, not merely on request
+delivery or an acknowledgement.
 
 ### Withheld and open
 

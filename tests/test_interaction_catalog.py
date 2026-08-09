@@ -74,20 +74,39 @@ def test_proof_status_is_typed_and_claims_carry_evidence() -> None:
             assert entry.evidence
 
 
+def test_reverse_engineering_claims_link_canonical_research_objects() -> None:
+    audit = audit_interaction_catalog()
+
+    assert not audit.invalid_research_refs
+    assert not audit.embedded_research_claims
+    by_kind = {entry.operation_kind: entry for entry in audit.entries}
+    assert by_kind["perform_character_order"].research == (
+        "game_sources/research/context_menu_orders",
+    )
+    assert by_kind["shift_into_body"].research == (
+        "game_sources/research/body_shift",
+    )
+    assert by_kind["survey_local_resources"].research == (
+        "game_sources/research/prospecting_window",
+    )
+    assert by_kind["open_trade_window"].research == (
+        "game_sources/research/inventory_transfer",
+    )
+    assert by_kind["transfer_item"].research == (
+        "game_sources/research/inventory_transfer",
+    )
+
+
 def test_only_operations_with_a_recorded_live_run_claim_live_proof() -> None:
     """Updated deliberately, which is what the characterization asked for.
 
-    `perform_character_order` dispatched stealth_knockout,
-    unprovoked_focused_melee_attack, attack_enemies, player_talk_to and
-    loot_target on kae-04-funded-pair. The 2026-08-08 closure runs additionally
-    proved the paired-window and item-transfer route against an unconscious
-    body and a resource output, plus resource production through the exact
-    `resource_output_ready` terminal.
-
-    The claim stays narrow on purpose. Goal adoption was observed for the
-    ordering character, so what is proven is that the order reached Kenshi and
-    took. Group delivery is not proven by it: Kenshi orders every member of the
-    selection, and no run has yet checked adoption member by member.
+    Historical `perform_character_order` dispatches were observed from the
+    kae-04-funded-pair start, but no exact retained run bundle, command ids,
+    sequences, or binary hashes survive. Its canonical research package
+    therefore downgrades the durable classification to source-proven. The
+    2026-08-08 closure runs prove the paired-window and item-transfer route
+    against an unconscious body and a resource output, plus resource production
+    through the exact `resource_output_ready` terminal.
 
     So the assertion is now an allowlist rather than a zero. Any other
     operation claiming live proof has to be added here by someone who has the
@@ -104,7 +123,6 @@ def test_only_operations_with_a_recorded_live_run_claim_live_proof() -> None:
 
     assert live_proven == {
         "open_trade_window",
-        "perform_character_order",
         "produce_resource_output",
         "transfer_item",
     }

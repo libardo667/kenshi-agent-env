@@ -32,20 +32,14 @@ The current operation has one exact target and no pointer path:
 - Native request schema 1.4 permits an empty selected-recipient list for this
   command because the named body is the recipient. Other recipient-bound
   commands still refuse an empty basis.
-- The native handler resolves the exact target, rejects an invalid, destroyed,
-  unconscious, or hostile body, recruits across the faction boundary through
-  `PlayerInterface::recruit`, creates a separate squad, moves the target with
-  `Character::setFaction`, repairs selection identity with
-  `PlayerInterface::updatePlayerSelection`, makes the new squad current, and
-  selects and tracks the body through `_selectPlayerCharacter`.
-- Completion is acknowledged only after `PlayerInterface::isObjectSelected`
-  confirms the target is selected. The acknowledgement reasons are
+- The native handler resolves the exact target, applies the reviewed body-shift
+  sequence, and waits for its terminal selection check. Exact Kenshi
+  declarations, call sites, addresses, signature confidence, and observations
+  belong to the canonical
+  [body-shift research object](../game_sources/research/body_shift/conclusion.md).
+- The terminal acknowledgement reasons are
   `shift_body_recruited`, `shift_body_recruited_forced`, or
   `shift_body_already_held`.
-
-The configured KenshiLib headers declare each native API named above. The
-shipped plug-in call sites, not this document, remain the implementation
-authority.
 
 ## Source-proven
 
@@ -57,13 +51,9 @@ authority.
   `src/kenshi_agent/core/telemetry.py` classify body shift as naming its own
   recipient, so its request can carry no selected characters without weakening
   the recipient rule for other commands.
-- `native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp` implements the recruit,
-  separate-squad, handle-repair, exclusive-selection, and terminal-selection
-  checks described above.
-- The installed KenshiLib headers declare `PlayerInterface::recruit`,
-  `createSquad`, `setCurrentPlatoon`, `updatePlayerSelection`,
-  `_selectPlayerCharacter`, and `Character::setFaction` with the signatures used
-  by the plug-in.
+- `native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp` implements the current
+  handler. The research object, rather than this operation record, owns all
+  claims that relate that code to Kenshi declarations or binary call sites.
 - The diagnostic-only `shift_body_platoon` command remains a separate manual
   probe. It is not a planner operation and is not an old fallback for
   `shift_into_body`.
@@ -89,16 +79,9 @@ live save.
 ## Live-proven
 
 No named durable run bundle currently proves the complete body-shift operation
-under the proof ledger's definition of `live_proven`.
-
-A supervised manual dispatch against Molly of the Drifters observed
-`shift_body_recruited`, exclusive selection and primary identity moving to
-Molly, and Molly leaving `nearby_entities` after becoming a player character.
-That observation informed the implementation, but the repository does not name
-an exact bundle containing its pre-dispatch state, request, acknowledgement,
-later engine evidence, final disposition, and safe final state. The proof ledger
-therefore keeps the operation `source_proven` rather than upgrading an
-unbundled observation into durable live proof.
+under the proof ledger's definition of `live_proven`. The canonical research
+object records the historical probe and precisely why its live conclusion is
+withheld; this implementation record does not duplicate that argument.
 
 Run `20260806T151213.413667Z` proves the motivating failure shape only: both
 characters died, the save continued, and later planner turns had no useful body

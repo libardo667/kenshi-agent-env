@@ -1,0 +1,239 @@
+{
+  "$defs": {
+    "ExecutableIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "product": {
+          "minLength": 1,
+          "title": "Product",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        },
+        "architecture": {
+          "minLength": 1,
+          "title": "Architecture",
+          "type": "string"
+        },
+        "steam_build_id": {
+          "pattern": "^[0-9]+$",
+          "title": "Steam Build Id",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "product",
+        "version",
+        "architecture",
+        "steam_build_id",
+        "sha256"
+      ],
+      "title": "ExecutableIdentity",
+      "type": "object"
+    },
+    "LibraryIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        },
+        "repository_commit": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Repository Commit",
+          "type": "string"
+        },
+        "artifact_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Artifact Sha256",
+          "type": "string"
+        },
+        "headers_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Headers Sha256",
+          "type": "string"
+        },
+        "working_tree_state": {
+          "minLength": 1,
+          "title": "Working Tree State",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "repository_commit",
+        "artifact_sha256",
+        "headers_sha256",
+        "working_tree_state"
+      ],
+      "title": "LibraryIdentity",
+      "type": "object"
+    },
+    "NativeCallSite": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "component": {
+          "enum": [
+            "Kenshi",
+            "KenshiLib",
+            "ForgottenGUI",
+            "project_native"
+          ],
+          "title": "Component",
+          "type": "string"
+        },
+        "symbol": {
+          "minLength": 1,
+          "title": "Symbol",
+          "type": "string"
+        },
+        "rva": {
+          "anyOf": [
+            {
+              "pattern": "^0x[0-9A-Fa-f]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rva"
+        },
+        "declared_signature": {
+          "minLength": 1,
+          "title": "Declared Signature",
+          "type": "string"
+        },
+        "inferred_signature_confidence": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Inferred Signature Confidence",
+          "type": "string"
+        },
+        "declaration_source": {
+          "minLength": 1,
+          "title": "Declaration Source",
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Evidence",
+          "type": "array"
+        },
+        "project_call_sites": {
+          "items": {
+            "$ref": "#/$defs/RepositoryCallSite"
+          },
+          "title": "Project Call Sites",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "component",
+        "symbol",
+        "declared_signature",
+        "inferred_signature_confidence",
+        "declaration_source",
+        "evidence"
+      ],
+      "title": "NativeCallSite",
+      "type": "object"
+    },
+    "RepositoryCallSite": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "line": {
+          "exclusiveMinimum": 0,
+          "title": "Line",
+          "type": "integer"
+        },
+        "contains": {
+          "minLength": 1,
+          "title": "Contains",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "line",
+        "contains"
+      ],
+      "title": "RepositoryCallSite",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "subsystem": {
+      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+      "title": "Subsystem",
+      "type": "string"
+    },
+    "executable": {
+      "$ref": "#/$defs/ExecutableIdentity"
+    },
+    "libraries": {
+      "items": {
+        "$ref": "#/$defs/LibraryIdentity"
+      },
+      "minItems": 1,
+      "title": "Libraries",
+      "type": "array"
+    },
+    "sites": {
+      "items": {
+        "$ref": "#/$defs/NativeCallSite"
+      },
+      "minItems": 1,
+      "title": "Sites",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "subsystem",
+    "executable",
+    "libraries",
+    "sites"
+  ],
+  "title": "ResearchCallSites",
+  "type": "object"
+}

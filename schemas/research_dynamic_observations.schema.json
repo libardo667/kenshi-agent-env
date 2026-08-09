@@ -1,0 +1,151 @@
+{
+  "$defs": {
+    "DynamicObservation": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "live_probe",
+            "crash",
+            "contradiction",
+            "portable_test"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "observed_on": {
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "title": "Observed On",
+          "type": "string"
+        },
+        "kenshi_version": {
+          "minLength": 1,
+          "title": "Kenshi Version",
+          "type": "string"
+        },
+        "executable_sha256_at_probe": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Executable Sha256 At Probe"
+        },
+        "installed_dll_sha256_at_probe": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Installed Dll Sha256 At Probe"
+        },
+        "run_bundle": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Bundle"
+        },
+        "pre_dispatch_state": {
+          "minLength": 1,
+          "title": "Pre Dispatch State",
+          "type": "string"
+        },
+        "request": {
+          "minLength": 1,
+          "title": "Request",
+          "type": "string"
+        },
+        "acknowledgement": {
+          "minLength": 1,
+          "title": "Acknowledgement",
+          "type": "string"
+        },
+        "later_engine_evidence": {
+          "minLength": 1,
+          "title": "Later Engine Evidence",
+          "type": "string"
+        },
+        "final_disposition": {
+          "minLength": 1,
+          "title": "Final Disposition",
+          "type": "string"
+        },
+        "evidence_source": {
+          "minLength": 1,
+          "title": "Evidence Source",
+          "type": "string"
+        },
+        "remaining_uncertainty": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Remaining Uncertainty",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "observed_on",
+        "kenshi_version",
+        "pre_dispatch_state",
+        "request",
+        "acknowledgement",
+        "later_engine_evidence",
+        "final_disposition",
+        "evidence_source",
+        "remaining_uncertainty"
+      ],
+      "title": "DynamicObservation",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "subsystem": {
+      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+      "title": "Subsystem",
+      "type": "string"
+    },
+    "observations": {
+      "items": {
+        "$ref": "#/$defs/DynamicObservation"
+      },
+      "title": "Observations",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "subsystem",
+    "observations"
+  ],
+  "title": "DynamicObservations",
+  "type": "object"
+}

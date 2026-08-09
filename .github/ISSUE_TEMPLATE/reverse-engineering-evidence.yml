@@ -1,0 +1,59 @@
+name: Reverse-engineering evidence
+description: Investigate a Kenshi engine question before adding controller-authored behavior.
+title: "[research]: "
+labels:
+  - reverse-engineering
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Create or update `game_sources/research/<subsystem>/`. A returned call or acknowledgement is not proof of a game-state change. Keep source-proven, test-proven, live-proven, and withheld conclusions separate.
+  - type: textarea
+    id: engine-question
+    attributes:
+      label: What engine question was investigated?
+      description: State one falsifiable question, the exact subsystem, and the decision it gates.
+    validations:
+      required: true
+  - type: textarea
+    id: declarations
+    attributes:
+      label: What did KenshiLib/ForgottenGUI claim?
+      description: Record exact dependency version or commit, header path, symbol or RVA, declared signature, and confidence.
+    validations:
+      required: true
+  - type: textarea
+    id: binary
+    attributes:
+      label: What did the binary show?
+      description: Record exact Kenshi version, Steam build, executable hash, address or symbol, disassembly or byte evidence, and contradictions.
+    validations:
+      required: true
+  - type: textarea
+    id: live-state
+    attributes:
+      label: What did live state show?
+      description: Name the exact bundle, built and installed DLL hashes, pre-state, request, acknowledgement, later engine evidence, crashes, and final disposition. Say explicitly when any field is missing.
+    validations:
+      required: true
+  - type: textarea
+    id: deleted-authority
+    attributes:
+      label: What framework authority is being deleted?
+      description: Name the controller-authored rule, old evidence location, fallback, or duplicated conclusion removed by this work.
+    validations:
+      required: true
+  - type: textarea
+    id: withheld
+    attributes:
+      label: What remains withheld?
+      description: List every unproven behavior, ABI uncertainty, missing probe, crash ambiguity, and non-generalizable case.
+    validations:
+      required: true
+  - type: checkboxes
+    id: repository-object
+    attributes:
+      label: Repository evidence object
+      options:
+        - label: I updated all six files under `game_sources/research/<subsystem>/` and ran `./dev verify-portable`.
+          required: true

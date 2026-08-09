@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "subsystem": "body_shift",
+  "observations": [
+    {
+      "id": "molly_manual_shift",
+      "kind": "live_probe",
+      "observed_on": "2026-08-08",
+      "kenshi_version": "1.0.65 x64",
+      "executable_sha256_at_probe": null,
+      "installed_dll_sha256_at_probe": null,
+      "run_bundle": null,
+      "pre_dispatch_state": "Molly of the Drifters was a nearby conscious, non-animal, non-hostile non-player character. The exact prior selection and telemetry sequence were not preserved.",
+      "request": "A supervised direct shift_into_body dispatch targeted Molly. The exact command id and request JSON were not preserved.",
+      "acknowledgement": "The plugin reported shift_body_recruited, but the exact acknowledgement payload and sequence were not preserved.",
+      "later_engine_evidence": "Selected character ids reduced to Molly, primary selection resolved to her, and she disappeared from nearby non-player entities after becoming a player character.",
+      "final_disposition": "Historical live observation retained but durable live proof withheld because no named run bundle or binary provenance captures the complete chain.",
+      "evidence_source": "Former interaction proof ledger and docs/KENSHI_BODY_SHIFT_PLAN.md.",
+      "remaining_uncertainty": ["Exact run bundle, command id, sequences, built DLL hash, installed DLL hash, and final saved-world disposition are missing.", "Repeat behavior and every eligibility boundary remain unproven live."]
+    },
+    {
+      "id": "body_shift_portable_contract",
+      "kind": "portable_test",
+      "observed_on": "2026-08-09",
+      "kenshi_version": "No live executable loaded",
+      "executable_sha256_at_probe": null,
+      "installed_dll_sha256_at_probe": null,
+      "run_bundle": null,
+      "pre_dispatch_state": "Synthetic telemetry covers elective and total-loss selection states.",
+      "request": "Bind and validate shift_into_body requests, including truthful empty selection after total loss.",
+      "acknowledgement": "Python and compiled C++ fixtures preserve the exact target and selection basis.",
+      "later_engine_evidence": "None; fixture tests do not load Kenshi.",
+      "final_disposition": "Test-proves the repository contract and native wire shape only.",
+      "evidence_source": "tests/test_body_shift_after_total_loss.py and tests/fixtures/native_commands/valid_body_shift_request.json.",
+      "remaining_uncertainty": ["Fixtures cannot validate the Kenshi ABI or world transition."]
+    }
+  ]
+}

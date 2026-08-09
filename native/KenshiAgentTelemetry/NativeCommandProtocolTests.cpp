@@ -2,6 +2,7 @@
 #include <boost/property_tree/ptree.hpp>
 
 #include <cmath>
+#include <exception>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -154,6 +155,93 @@ namespace
             return Fail("conditional gameplay capability was not serialized");
         }
         return 0;
+    }
+
+    int CheckResearchCallSite(
+        const std::string& researchRoot,
+        const std::string& subsystem,
+        const std::string& symbol,
+        const std::string& rva)
+    {
+        const std::string path =
+            researchRoot + "/" + subsystem + "/call_sites.json";
+        const std::string payload = ReadFile(path);
+        if (payload.empty())
+            return Fail("could not read canonical research fixture " + path);
+
+        try
+        {
+            std::istringstream input(payload);
+            boost::property_tree::ptree evidence;
+            boost::property_tree::read_json(input, evidence);
+            if (evidence.get<int>("schema_version") != 1 ||
+                evidence.get<std::string>("subsystem") != subsystem ||
+                evidence.get<std::string>("executable.version").empty() ||
+                evidence.get<std::string>("executable.sha256").size() != 64U)
+            {
+                return Fail(
+                    "canonical research fixture lost its exact identity: " +
+                    subsystem);
+            }
+
+            bool found = false;
+            const boost::property_tree::ptree& sites =
+                evidence.get_child("sites");
+            for (boost::property_tree::ptree::const_iterator it = sites.begin();
+                 it != sites.end();
+                 ++it)
+            {
+                if (it->second.get<std::string>("symbol") == symbol &&
+                    it->second.get<std::string>("rva") == rva)
+                {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+            {
+                return Fail(
+                    "canonical research fixture lost native call site " +
+                    symbol + " at " + rva);
+            }
+        }
+        catch (const std::exception& error)
+        {
+            return Fail(
+                "could not parse canonical research fixture " + path +
+                ": " + error.what());
+        }
+        return 0;
+    }
+
+    int TestResearchEvidence(const std::string& researchRoot)
+    {
+        int result = CheckResearchCallSite(
+            researchRoot,
+            "context_menu_orders",
+            "ContextMenu::showContextMenu",
+            "0x7A5960");
+        if (result != 0)
+            return result;
+        result = CheckResearchCallSite(
+            researchRoot,
+            "inventory_transfer",
+            "ForgottenGUI::showTradeWindow",
+            "0x7905D0");
+        if (result != 0)
+            return result;
+        result = CheckResearchCallSite(
+            researchRoot,
+            "body_shift",
+            "PlayerInterface::recruit",
+            "0x6920A0");
+        if (result != 0)
+            return result;
+        return CheckResearchCallSite(
+            researchRoot,
+            "prospecting_window",
+            "ProspectingWindow::showT",
+            "0x48E260");
     }
 
     int TestInventoryScreenSemantics()
@@ -997,8 +1085,14 @@ namespace
 
 int main(int argc, char** argv)
 {
-    if (argc != 2)
-        return Fail("expected the native fixture directory as one argument");
+    if (argc != 3)
+    {
+        return Fail(
+            "expected native fixture and canonical research directories");
+    }
+    const int researchResult = TestResearchEvidence(argv[2]);
+    if (researchResult != 0)
+        return researchResult;
     const int capabilityResult = TestGameplayCapabilities();
     if (capabilityResult != 0)
         return capabilityResult;

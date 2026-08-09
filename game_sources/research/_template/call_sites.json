@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "subsystem": "replace_me",
+  "executable": {
+    "product": "Kenshi",
+    "version": "replace_me",
+    "architecture": "x64",
+    "steam_build_id": "0",
+    "sha256": "replace_with_64_lowercase_hex_characters"
+  },
+  "libraries": [],
+  "sites": []
+}

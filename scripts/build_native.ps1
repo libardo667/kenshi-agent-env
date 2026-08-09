@@ -65,7 +65,8 @@ if (-not (Test-Path -LiteralPath $protocolTests -PathType Leaf)) {
     throw "MSBuild completed without producing $protocolTests"
 }
 $fixtures = Join-Path $repo "tests\fixtures\native_commands"
-& $protocolTests $fixtures
+$research = Join-Path $repo "game_sources\research"
+& $protocolTests $fixtures $research
 if ($LASTEXITCODE -ne 0) {
     throw "Native command protocol conformance failed with exit code $LASTEXITCODE."
 }

@@ -1,189 +1,194 @@
-# Checkpoint: current-state truth audit
+# Checkpoint: reverse-engineering evidence is a repository object
 
-This checkpoint is the durable boundary for the documentation and evidence
-audit made from current `main`. It records what the current source proves, what
-portable and compiled tests prove, what named live evidence proves, and what is
-still withheld.
+This checkpoint is the durable boundary for the reverse-engineering evidence
+authority made from current `main`. It separates source-proven, test-proven,
+live-proven, and withheld conclusions and records the native fixture build
+without claiming that a compiled call changed Kenshi.
 
 ## Repository
 
 ```text
-parent commit          20cbb773058907141271ec15844e99bea9fecaad
+parent commit          04855dc7fd18fb8caf9a738482ff4c11698d75fc
 integration branch     main
-remote state           matched origin/main before this slice
+remote state           origin/main was one commit behind before this slice
 tree state             clean before this slice
 native protocol        1.18.0
 request schema         1.4
 loaded-world caps      43
 ```
 
-Recent `main` authority was inspected before editing: `20cbb77` pins the
-portable setup action, `ac9202c` gives the hosted planner one output contract,
-`965a495` requires a fresh checkpoint for every goal, `2686719` makes the
-portable gate reproducible, `6e8b7d1` rewrites the public README, and `59e5e0b`
-closes the reconstructed operation surface.
+Recent `main` authority was inspected before editing: `04855dc` is the current
+truth audit, `20cbb77` pins the portable setup action, `ac9202c` owns the hosted
+planner output contract, `965a495` requires this checkpoint to move with every
+goal, `2686719` owns the complete portable gate, and `59e5e0b` closes the
+reconstructed operation surface.
 
-Current authority is split deliberately:
-
-- `src/kenshi_agent/operation_definitions.py` owns implemented operation and
-  interaction contracts.
-- `src/kenshi_agent/affordances.py` owns current planner-visible enumeration
-  and completeness boundaries.
-- `NativeCommandProtocol.*` owns the native wire parser and serializer;
-  `KenshiAgentTelemetry.cpp` owns loaded-game dispatch and telemetry.
-- Generated schemas and `docs/generated/` report typed source. They do not own
-  a second contract.
-- `docs/reconstruction/interaction_proof_status.json` owns proof status and
-  named evidence, not gameplay semantics.
-
-The checkpoint revision is the commit containing this file. Its literal hash
-cannot be embedded without changing itself, so the repository block records its
-parent. The freshness ratchet accepts this dirty candidate only while this file
-is changed and the recorded parent is current `HEAD`.
+Before this slice, reverse-engineering conclusions were embedded in
+`docs/reconstruction/interaction_proof_status.json`, the native README, native
+source comments, commit messages, and local run directories. The proof ledger
+was the operation-proof authority but had no exact executable/library identity,
+typed call sites, signature confidence, crash record, or consistent withheld
+boundary. It also classified character orders as live-proven while naming an
+authored start rather than an exact retained run bundle.
 
 ## Coherent slice
 
-The slice replaces the stale dirty-branch checkpoint and the total-loss-only
-body-shift specification, corrects transfer and native-transport descriptions,
-refreshes generated catalogs and schemas, and records Slice 1 and Slice 1b as
-complete where current source and portable tests prove them.
+`game_sources/research/<subsystem>/` is now the canonical reverse-engineering
+object. Every package has exactly the reviewed six-file boundary:
 
-It also closes one protocol contradiction found by the audit. Body shift has
-long been classified by Python as naming its own recipient, but the C++ parser
-still rejected the empty selection required after total loss and the strict
-acknowledgement model could not read the resulting empty-selection
-acknowledgement. The same native fixture now carries an empty selection, Python
-and the compiled C++ target both accept it, and acknowledgements preserve that
-truthful basis. Selection-addressed commands still require at least one
-selected recipient.
+```text
+question.md
+static_evidence.md
+call_sites.json
+dynamic_observations.json
+abi_notes.md
+conclusion.md
+```
 
-The obsolete `RClickAutoTrade` resolver was deleted. Current transfer authority
-is the inventory model: exact open windows, `InventorySection::getItemAt`,
-`Inventory::removeItemDontDestroy_returnsItem`, and `Inventory::tryAddItem`.
-Shop detection uses `InventoryGUI::getNPCTrader`; the project applies explicit
-simplified price movement from `Item::getValueSingle`, actual destination
-quantity, and `Inventory::takeMoney`. It does not claim Kenshi's theft,
-haggling, faction, stolen-goods, uniform, or illegal-goods adjudication.
+The typed loader requires exact Kenshi version, Steam build, executable SHA-256,
+KenshiLib version/commit/artifact/header fingerprints, symbol or RVA, declared
+signature, inferred-signature confidence, referenced tests and observations,
+remaining uncertainty, and a conclusion with separate source, test, live, and
+withheld sections. Live observations retain pre-state, request,
+acknowledgement, later engine evidence, final disposition, run bundle, binary
+hashes when captured, and explicit uncertainty when historical evidence omitted
+them. A `live_proven` conclusion cannot validate without at least one exact run
+bundle.
 
-## Portable gate
+Four legacy conclusion families were migrated:
 
-The supported command is:
+- `context_menu_orders` records the muted-menu path, three contradictory
+  predicates, two reported world-load crashes, exact symbols/RVAs, and the
+  missing durable character-order bundle. The ledger classification is now
+  `source_proven`, not `live_proven`.
+- `inventory_transfer` records paired-window and inventory-model calls, the
+  rejected GUI ABI, three reported crashes, partial-add contradiction,
+  simplified project-owned pricing, and the two exact movement bundles.
+- `body_shift` records recruit/squad/faction/selection ABI and the incomplete
+  Molly observation without upgrading it to durable live proof.
+- `prospecting_window` records the deleted direct resource sampler, crash,
+  scalar-zero contradiction, and current verbatim window-caption path.
+
+The proof ledger now classifies operations and links canonical research
+packages. A ratchet rejects missing package references and reverse-engineering
+claims pasted back into ledger prose. The native README links the packages
+instead of retaining duplicate ABI conclusions. No old/new fallback remains.
+
+The template under `game_sources/research/_template/` gives a future agent the
+same six-file route. The required GitHub issue form asks the exact six intake
+questions: engine question, KenshiLib/ForgottenGUI declaration, binary evidence,
+live state, deleted framework authority, and what remains withheld. The root
+README points to both routes.
+
+## Generated and portable authority
+
+Three new generated JSON schemas describe call sites, dynamic observations, and
+conclusion metadata. `docs/generated/RESEARCH_EVIDENCE_INDEX.md` is generated
+from every validated package. `scripts/check_research_evidence.py` is an
+explicit stage in `./dev verify-portable`, before schema and documentation
+freshness checks. Portable tests cover required files, identity fields,
+cross-file references, exact proof headings, live-proof bundle requirements,
+ledger links, issue-form questions, native-fixture wiring, and generated bytes.
+
+The complete portable gate ran at `2026-08-09T14:13:41Z` using:
 
 ```bash
 ./dev verify-portable
 ```
 
-It installs the locked development dependencies, runs Ruff, strict mypy,
-schema and generated-document freshness checks, the complete pytest suite, and
-`git diff --check`. The complete command passed under CPython 3.12.13 at
-`2026-08-09T13:31:00Z`: Ruff clean, mypy clean across 146 source files, every
-generated byte current, the complete pytest suite green with five explicit
-xfails, and no whitespace errors.
+It passed the locked-environment sync, Ruff, strict mypy across 147 source
+files, research-package validation, schema generation, documentation
+generation, the complete pytest suite, and `git diff --check`. Generated bytes
+were current. The checkpoint was then updated with this result and the same
+complete gate was rerun over the final tree.
 
-Focused tests already pass for elective and total-loss body-shift authorability,
-empty-selection request and acknowledgement shape, the shared native fixture,
-inventory-model transfer authority, generated catalog language, the sole
-interaction registry, and the current lifecycle vocabulary. Five strict xfails
-remain for named later slices; the stale lifecycle xfail is no longer one of
-them.
+## Native fixture build and installed artifact
 
-## Native build and installation
-
-Kenshi was not running when the installed DLL was replaced. The exact build
-command was:
+No native gameplay implementation, protocol, capability, or command fixture
+changed. The compiled conformance executable now reads the canonical
+`call_sites.json` files and pins one reviewed symbol/RVA from each migrated
+subsystem. The exact build command was:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/build_native.ps1
 ```
 
-That Release x64 build ran `NativeCommandProtocolTests.exe` against
-`tests/fixtures/native_commands` and reported `Native protocol fixtures and
-semantics passed.` The exact built DLL was then copied to the existing
-`KenshiAgentTelemetry` mod directory while the process remained stopped.
+The Release x64 build completed and reported `Native protocol fixtures and
+semantics passed.` It rebuilt the DLL as a side effect but did not install it.
 
 ```text
 declared protocol     1.18.0
 source sha256         b923c3d392e98bdaed9cea600d0b67fada9baf808af73931a451c29ba76bbe9f
-built sha256          262dcc137b8f1c3a0ce2bc63ae74d362cfb209889aefa01e69427912fef37537
+built sha256          4a4ec865a6ce04b0f91be07b59770ae4d6213223a2ef30fef63ba4557283ed9d
 installed sha256      262dcc137b8f1c3a0ce2bc63ae74d362cfb209889aefa01e69427912fef37537
-fixture exe sha256    7cf67cb8ea9b7cc6411e4f492f9a848b3d202507bb0fabc484c9f9fb5f9002f7
+fixture exe sha256    b7aae3a9ea12652abb56fe7cfb94aca1cc9329d6fe05ff4112268aceb4780aa9
 declared capabilities 43
-chain consistent      YES
+chain consistent      NO: rebuilt DLL was not installed
 ```
 
-Hash parity proves installation provenance, protocol/capability embedding, and
-compiled fixture conformance. It does not prove that a live game loaded the
-DLL or changed state.
+This native work had no run bundle, gameplay pre-dispatch state, native gameplay
+request, acknowledgement, or later engine evidence because it dispatched
+nothing and never started Kenshi. Final disposition: canonical research
+fixtures compiled and passed; gameplay DLL installation and live verification
+were intentionally not performed. Built/installed mismatch is recorded rather
+than hidden and does not weaken the compiled fixture result.
 
 ## Evidence classification
 
 ### Source-proven
 
-- Body shift is elective: an eligible reported nearby body remains authorable
-  with a living selected squad, and the old total-loss gate is absent.
-- Body shift names one exact body, and both wire edges admit its truthful empty
-  selection without relaxing selection-addressed commands.
-- The native handler uses the inspected KenshiLib declarations for recruit,
-  squad/faction movement, selection repair, current-platoon change, and exact
-  target selection. Completion checks engine selection rather than call return.
-- Native request delivery is atomic-file publication observed by the plug-in's
-  file-change watcher. Python still sends the optional hotkey after most
-  loaded-world requests; pause and speed use file notification only.
-- Item transfer uses inventory-model movement and the project's explicit
-  simplified economics, not `RClickAutoTrade` adjudication.
-- `OperationInteractionContract` is the sole recipient/completion authority.
-  `core/lifecycle.py` separately owns current monitor and order dispositions.
+- Every research package validates against one typed cross-file contract and
+  contains the six required files.
+- Exact installed Kenshi and local KenshiLib identities were read from the
+  executable, Steam manifest, dependency checkout, library, and header tree.
+- KenshiLib declarations and current native call sites were inspected for each
+  migrated symbol; executable bytes were inspected at the recorded RVAs.
+- The proof ledger and native README no longer own duplicate reverse-engineering
+  conclusions.
+- The GitHub issue form and repository template give future work an obvious
+  evidence-first entry route.
 
 ### Test-proven
 
-- Python tests cover elective body-shift offers, the empty-roster recovery
-  shape, exact binding and recipient capture, request validation, and
-  empty-selection acknowledgement validation.
-- Python and compiled C++ tests parse the same empty-selection body-shift
-  fixture and retain its exact target.
-- A portable source ratchet checks the native transfer branch for exact model
-  movement and simplified-price call sites and for absence of an
-  `RClickAutoTrade` call.
-- Catalog tests pin uncapped exported item offers, simplified economics, and
-  withholding of unreviewed context actions instead of a retired pointer path.
-- The lifecycle target now imports `MonitorDisposition` and `OrderDisposition`
-  from their real `core.lifecycle` owner and asserts the current enum values.
-- Generated-schema and generated-document freshness are enforced by the
-  portable suite.
+- Focused research, ledger, documentation-hygiene, and portable-gate tests pass.
+- Ruff passes for the changed Python and strict mypy passes across 147 source
+  files.
+- The compiled Windows conformance target loaded the four canonical call-site
+  fixtures and passed the complete native protocol/semantics suite.
+- The full portable gate passed, including generated schema and documentation
+  freshness and the complete pytest suite.
 
 ### Live-proven
 
-This slice performed no live gameplay request and therefore adds no live proof.
-The durable transfer conclusions remain narrow and named in the proof ledger:
+This slice performed no live gameplay request and adds no new live proof.
+`inventory_transfer` preserves two existing exact bundles with later engine
+inventory evidence:
 
-- `closure-loot-20260808`: requests
-  `cmd-460ee0bb31814fd98e7d7057747348f6` and
-  `cmd-2538e63cec614d87a06511aa925f4256` moved Burn's Katana and Halfpants;
-  later inventory telemetry showed Burn empty and Fish holding both items.
-- `closure-harvest-fixed-20260808`: request
-  `cmd-90f4f3ab3ea449539a64040290c7f1e3` moved one Raw Iron; later inventory
-  telemetry showed resource output loss and Fish gain.
+- `closure-loot-20260808` moved Burn's Katana and Halfpants to Fish under exact
+  command ids and later showed source loss plus destination gain.
+- `closure-harvest-fixed-20260808` moved Raw Iron from resource output to Fish
+  and later showed source loss plus destination gain.
 
-Those are inventory-model movement proofs. They are not generalized proof of
-shop economics or Kenshi trade adjudication.
+Those bundles prove only the recorded inventory-model movements. Their missing
+built/installed DLL hashes are explicit limitations.
 
 ### Withheld and named follow-on work
 
-- **Body-shift durable live proof:** The manual Molly dispatch remains an
-  unbundled observation, so body shift stays `source_proven`. A future named
-  run must preserve pre-dispatch state, exact request, acknowledgement, later
-  roster/faction/platoon/primary-selection evidence, an ordinary action by the
-  new body, and final disposition. The total-loss case needs its own bundle.
-- **Simplified shop-economics proof:** A supervised Dried Fish purchase was
-  observed, but no exact named bundle in the ledger preserves the complete
-  causal chain. Do not generalize it to richer Kenshi trade rules.
-- **Plural native order lifecycle:** Protocol 1.18.0 still tracks one active
-  native command. Later interaction-plan slices remain open for disjoint
-  recipient concurrency and broader group/order lifecycle proof.
-- **This native installation:** run bundle `none`; pre-dispatch game state
-  `Kenshi process absent`; gameplay request `none`; acknowledgement `none`;
-  later engine evidence `none`; final disposition `built, fixture-tested and
-  installed, not loaded or live-verified`.
+- **Character-order durable live proof:** repeat the exact-task sequence in one
+  named bundle with binary hashes, command ids, acknowledgement and later goal
+  sequences, group-recipient evidence, and post-adoption outcome.
+- **Body-shift durable live proof:** repeat elective and total-loss cases with a
+  complete bundle, provenance, later faction/platoon/selection evidence, an
+  ordinary action by the entered body, and final disposition.
+- **Inventory breadth:** shop economics, richer Kenshi adjudication, additional
+  owner/stack/equipment cases, and rollback behavior remain narrow or withheld.
+- **Prospecting meaning:** scalar units, area, aggregation, and relationship to
+  discrete deposits remain unknown; preserve captions rather than inventing a
+  model.
+- **ABI confidence:** executable bytes at an RVA do not independently recover a
+  C++ signature. Current inferred signatures remain medium confidence.
+- **Native installation:** the rebuilt DLL differs from the installed DLL and
+  was not installed or loaded. No live claim is made from its build.
 
-A call returning, a compiled test passing, or matching DLL hashes never proves
-that Kenshi changed a save.
+A returned call, acknowledgement, passing fixture, matching address, or matching
+DLL hash is never by itself proof that Kenshi changed the world or save.
