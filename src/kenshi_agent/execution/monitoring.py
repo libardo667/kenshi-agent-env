@@ -53,7 +53,7 @@ def _order_disposition_now(
     )
     retained: set[str] = set()
     if telemetry is not None:
-        for character in telemetry.squad:
+        for character in telemetry.roster:
             state = character.task_state
             if state is None:
                 continue

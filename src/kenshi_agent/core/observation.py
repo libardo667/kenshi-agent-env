@@ -138,7 +138,7 @@ class Observation(StrictModel):
         target_ids = {
             item.id
             for collection in (
-                telemetry.squad,
+                telemetry.roster,
                 telemetry.nearby_entities,
                 telemetry.world_targets,
                 telemetry.known_map_destinations,
@@ -193,16 +193,14 @@ class Observation(StrictModel):
 
         if self.telemetry is None or self.telemetry_stale:
             return []
-        # Budgeted/replay observations can omit the squad while retaining the
+        # Budgeted/replay observations can omit the roster while retaining the
         # primary character's authoritative game location. Preserve the
         # historical single-character interpretation in that case.
         #
         # One selected character at the destination means everyone travelling is
         # there. A group can be scattered, so arrival is not proven and travel
         # stays available.
-        whole_group_present = (
-            max(1, sum(character.selected for character in self.telemetry.squad)) == 1
-        )
+        whole_group_present = max(1, len(self.telemetry.selected_character_ids)) == 1
         return [
             destination.model_dump(mode="json", exclude_none=True)
             | {
@@ -316,7 +314,7 @@ class Observation(StrictModel):
         # Squad last: a window naming one of your own characters is yours, even
         # if something nearby shares the name.
         squad_by_caption: dict[str, list[CharacterState]] = {}
-        for character in telemetry.squad:
+        for character in telemetry.roster:
             if character.name:
                 squad_by_caption.setdefault(normalize_control_label(character.name), []).append(
                     character
@@ -497,15 +495,14 @@ class Observation(StrictModel):
             digest["telemetry"] = None
             return digest
 
-        selected = next(
-            (character for character in telemetry.squad if character.selected),
-            None,
-        )
+        selected = telemetry.primary_character()
         digest["telemetry"] = {
             "sequence": telemetry.sequence,
             "source": telemetry.source,
             "identity_session_id": telemetry.identity_session_id,
             "capabilities": list(telemetry.capabilities),
+            "primary_character_id": telemetry.primary_character_id,
+            "selected_character_ids": list(telemetry.selected_character_ids),
             "game": {
                 "loaded": telemetry.game.loaded,
                 "paused": telemetry.game.paused,
@@ -530,7 +527,6 @@ class Observation(StrictModel):
                 "open_inventory_windows": telemetry.ui.open_inventory_windows,
                 "management_screen_open": telemetry.ui.management_screen_open,
                 "management_tab": telemetry.ui.management_tab,
-                "selected_character_id": telemetry.ui.selected_character_id,
                 # These are not bulk UI detail: together they are the authority
                 # boundary for binding an output cell to one exact resource.
                 "context_inventory_target_id": telemetry.ui.context_inventory_target_id,
@@ -657,8 +653,9 @@ class Observation(StrictModel):
                         if not complete
                     ],
                 }
-                for character in telemetry.squad
-                if character.selected and character.task_state is not None
+                for character in telemetry.roster
+                if character.id in telemetry.selected_character_ids
+                and character.task_state is not None
             ],
         }
         return digest

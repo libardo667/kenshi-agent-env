@@ -174,10 +174,17 @@
           "title": "Name",
           "type": "string"
         },
-        "selected": {
-          "default": false,
-          "title": "Selected",
-          "type": "boolean"
+        "platoon_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Platoon Id"
         },
         "alive": {
           "anyOf": [
@@ -1593,6 +1600,40 @@
       "title": "OpenInventory",
       "type": "object"
     },
+    "PlatoonState": {
+      "additionalProperties": false,
+      "description": "One player platoon and its exact observed roster membership.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "member_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Member Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "PlatoonState",
+      "type": "object"
+    },
     "ProspectReading": {
       "additionalProperties": false,
       "description": "One line as Kenshi's Prospecting window displays it.\n\nThe label is verbatim. The window builds each line from a resource name and\na value but exposes only the button, so the exact split is unproven -\nparsing it here would assert a format nobody has confirmed. Whatever\nstructure this turns out to have can be modelled once it is observed.",
@@ -2057,33 +2098,6 @@
           "default": null,
           "title": "Management Tab"
         },
-        "selected_character_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Selected Character Id"
-        },
-        "selected_character_ids": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Selected Character Ids",
-          "type": "array"
-        },
-        "selected_character_ids_withheld": {
-          "items": {
-            "type": "string"
-          },
-          "maxItems": 64,
-          "title": "Selected Character Ids Withheld",
-          "type": "array"
-        },
         "selection_handle_audit": {
           "items": {
             "type": "string"
@@ -2383,7 +2397,7 @@
   "additionalProperties": false,
   "properties": {
     "protocol_version": {
-      "default": "1.18.0",
+      "default": "1.19.0",
       "title": "Protocol Version",
       "type": "string"
     },
@@ -2434,12 +2448,65 @@
     "native_control": {
       "$ref": "#/$defs/NativeControlState"
     },
-    "squad": {
+    "roster": {
       "items": {
         "$ref": "#/$defs/CharacterState"
       },
-      "title": "Squad",
+      "title": "Roster",
       "type": "array"
+    },
+    "roster_complete": {
+      "default": true,
+      "title": "Roster Complete",
+      "type": "boolean"
+    },
+    "platoons": {
+      "items": {
+        "$ref": "#/$defs/PlatoonState"
+      },
+      "title": "Platoons",
+      "type": "array"
+    },
+    "platoons_complete": {
+      "default": false,
+      "title": "Platoons Complete",
+      "type": "boolean"
+    },
+    "active_platoon_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Active Platoon Id"
+    },
+    "primary_character_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Primary Character Id"
+    },
+    "selected_character_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Selected Character Ids",
+      "type": "array"
+    },
+    "selected_character_ids_complete": {
+      "default": true,
+      "title": "Selected Character Ids Complete",
+      "type": "boolean"
     },
     "active_shop_trader_count": {
       "anyOf": [

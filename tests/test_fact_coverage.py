@@ -32,15 +32,16 @@ def snapshot(
             dialogue_open=dialogue_open,
             visible_controls=controls,
         ),
-        squad=[
+        roster=[
             CharacterState(
                 id="hep",
                 name="Hep",
-                selected=True,
                 hunger=hunger,
                 current_goal=current_goal,
             )
         ],
+        primary_character_id="hep",
+        selected_character_ids=["hep"],
     )
 
 
@@ -56,7 +57,7 @@ def test_a_fact_the_snapshot_carries_is_exported() -> None:
 def test_current_goal_requires_its_truthfulness_capability() -> None:
     unadvertised = snapshot(current_goal="Operating machine")
     advertised = snapshot(
-        capabilities=["squad.current_goal"],
+        capabilities=["roster.current_goal"],
         current_goal="Operating machine",
     )
 
@@ -71,7 +72,7 @@ def test_a_fact_reachable_only_by_acting_is_discoverable() -> None:
     # Judged by advertised capability, not by whether a value happens to be set:
     # an empty inventory is information, and a null hunger is absence.
     assert (
-        _state(snapshot(capabilities=["squad.hunger"]), "self.hunger")
+        _state(snapshot(capabilities=["roster.hunger"]), "self.hunger")
         is FactState.EXPORTED
     )
 

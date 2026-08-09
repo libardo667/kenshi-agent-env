@@ -154,17 +154,16 @@ def _rich_observation(*, item_control_count: int = 61) -> Observation:
                 visible_controls=controls,
                 visible_controls_complete=False,
                 context_inventory_target_id="entity-machine",
-                open_inventory_windows=2,
-                management_screen_open=True,
-                management_tab=3,
-                selected_character_id="entity-hep",
+                    open_inventory_windows=2,
+                    management_screen_open=True,
+                    management_tab=3,
+                ),
+                primary_character_id="entity-hep",
                 selected_character_ids=["entity-hep"],
-            ),
-            squad=[
+            roster=[
                 CharacterState(
                     id="entity-hep",
                     name="Hep",
-                    selected=True,
                     in_combat=True,
                     indoors=False,
                     position=Vec3(x=1.0, y=2.0, z=3.0),
@@ -524,7 +523,7 @@ def test_open_windows_ignore_empty_captions_and_preserve_first_appearance() -> N
     assert observation.open_window_captions() == ["First", "Second"]
 
 
-def test_window_ownership_requires_positive_vendor_evidence_and_squad_wins() -> None:
+def test_window_ownership_requires_positive_vendor_evidence_and_roster_wins() -> None:
     observation = _rich_observation(item_control_count=0)
     assert observation.telemetry is not None
     observation.telemetry.nearby_entities = [
@@ -539,7 +538,9 @@ def test_window_ownership_requires_positive_vendor_evidence_and_squad_wins() -> 
             shop_inventory_owner=True,
         ),
     ]
-    observation.telemetry.squad = [
+    observation.telemetry.primary_character_id = None
+    observation.telemetry.selected_character_ids = []
+    observation.telemetry.roster = [
         CharacterState(id="player", name="Shared"),
     ]
 
@@ -548,10 +549,12 @@ def test_window_ownership_requires_positive_vendor_evidence_and_squad_wins() -> 
     }
 
 
-def test_duplicate_squad_window_names_fail_closed() -> None:
+def test_duplicate_roster_window_names_fail_closed() -> None:
     observation = _rich_observation(item_control_count=0)
     assert observation.telemetry is not None
-    observation.telemetry.squad = [
+    observation.telemetry.primary_character_id = None
+    observation.telemetry.selected_character_ids = []
+    observation.telemetry.roster = [
         CharacterState(id="first", name="Shared"),
         CharacterState(id="second", name="shared"),
     ]
@@ -769,6 +772,8 @@ def test_log_digest_conserves_the_complete_bounded_logging_contract() -> None:
         "source",
         "identity_session_id",
         "capabilities",
+        "primary_character_id",
+        "selected_character_ids",
         "game",
         "ui",
         "native_control",
@@ -791,6 +796,8 @@ def test_log_digest_conserves_the_complete_bounded_logging_contract() -> None:
         "source": "rich-fixture",
         "identity_session_id": "identity-rich",
         "capabilities": ["ui.visible_controls"],
+        "primary_character_id": "entity-hep",
+        "selected_character_ids": ["entity-hep"],
         "native_control": telemetry.native_control.model_dump(mode="json"),
         "active_shop_trader_count": 5,
         "nearby_entity_count": 2,
@@ -823,7 +830,6 @@ def test_log_digest_conserves_the_complete_bounded_logging_contract() -> None:
         "open_inventory_windows": 2,
         "management_screen_open": True,
         "management_tab": 3,
-        "selected_character_id": "entity-hep",
         "context_inventory_target_id": "entity-machine",
         "visible_controls_complete": False,
         "visible_control_count": 62,
@@ -913,20 +919,19 @@ def test_planner_payload_default_and_rendering_are_exact_public_contracts() -> N
     )
 
 
-def test_planner_payload_interprets_nutrition_reserve_for_the_whole_squad() -> None:
+def test_planner_payload_interprets_nutrition_reserve_for_the_whole_roster() -> None:
     observation = _rich_observation(item_control_count=0)
     assert observation.telemetry is not None
     empty = observation.model_copy(
-        update={"telemetry": observation.telemetry.model_copy(update={"squad": []})}
+        update={"telemetry": observation.telemetry.model_copy(update={"roster": []})}
     )
     assert planner_nutrition_digest(empty) == {}
     observation.telemetry = observation.telemetry.model_copy(
         update={
-            "squad": [
+            "roster": [
                 CharacterState(
                     id="entity-hep",
                     name="Hep",
-                    selected=True,
                     hunger=2.775886,
                 ),
                 CharacterState(id="entity-boundary", name="Boundary", hunger=2.5),
@@ -1014,9 +1019,9 @@ def test_planner_payload_interprets_nutrition_reserve_for_the_whole_squad() -> N
             observation,
         )
     )
-    assert full_payload["squad_nutrition"] == expected
-    model_facing_squad = full_payload["telemetry"]["squad"]
-    assert [member["nutrition_reserve"] for member in model_facing_squad] == [
+    assert full_payload["roster_nutrition"] == expected
+    model_facing_roster = full_payload["telemetry"]["roster"]
+    assert [member["nutrition_reserve"] for member in model_facing_roster] == [
         2.775886,
         2.5,
         2.4,
@@ -1026,10 +1031,10 @@ def test_planner_payload_interprets_nutrition_reserve_for_the_whole_squad() -> N
         0.9,
         None,
     ]
-    assert all("hunger" not in member for member in model_facing_squad)
+    assert all("hunger" not in member for member in model_facing_roster)
     assert (
         json.loads(render_planner_payload(observation, max_chars=1, max_context_chars=1_000_000))[
-            "squad_nutrition"
+            "roster_nutrition"
         ]
         == expected
     )

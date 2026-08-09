@@ -422,13 +422,13 @@ class OutcomeRecorder:
         changed("context menu open", before.ui.context_menu_open, after.ui.context_menu_open)
         changed(
             "selected character",
-            before.ui.selected_character_id,
-            after.ui.selected_character_id,
+            before.primary_character_id,
+            after.primary_character_id,
         )
         changed(
             "selected characters",
-            sorted(before.ui.selected_character_ids),
-            sorted(after.ui.selected_character_ids),
+            sorted(before.selected_character_ids),
+            sorted(after.selected_character_ids),
         )
 
         selected_before = cls._selected_character(before)
@@ -585,10 +585,10 @@ class OutcomeRecorder:
     def _selected_character(snapshot: TelemetrySnapshot | None) -> CharacterState | None:
         if snapshot is None:
             return None
-        selected_id = snapshot.ui.selected_character_id
+        selected_id = snapshot.primary_character_id
         if selected_id is not None:
             selected = next(
-                (character for character in snapshot.squad if character.id == selected_id),
+                (character for character in snapshot.roster if character.id == selected_id),
                 None,
             )
             if selected is not None:
@@ -596,12 +596,10 @@ class OutcomeRecorder:
         # Without an exported primary, only an unambiguous selection can stand
         # in for one. The old fallback returned the first `selected` character
         # of several - which is roster order, not Kenshi's primary - and then,
-        # if none were selected at all, `squad[0]`, who need not be selected in
+        # if none were selected at all, `roster[0]`, who need not be selected in
         # any sense. Facts about "the selected character" were answered about
         # somebody else and reported as true.
-        selected_members = [
-            character for character in snapshot.squad if character.selected
-        ]
+        selected_members = snapshot.selected_characters()
         if len(selected_members) == 1:
             return selected_members[0]
         return None

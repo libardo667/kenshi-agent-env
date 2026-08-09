@@ -35,11 +35,11 @@ def threat_response_health_error(observation: Observation) -> str | None:
     telemetry = observation.telemetry
     if telemetry is None:
         return "No telemetry is available to monitor squad health."
-    if "squad.health" not in telemetry.capabilities:
-        return "The squad.health capability is unavailable."
-    if not telemetry.squad:
+    if "roster.health" not in telemetry.capabilities:
+        return "The roster.health capability is unavailable."
+    if not telemetry.roster:
         return "No squad members are available to monitor."
-    for member in telemetry.squad:
+    for member in telemetry.roster:
         if member.alive is not True:
             return f"{member.name} is not confirmed alive."
         if member.conscious is not True or member.down is True:
@@ -65,14 +65,14 @@ def _selected_actor(
         return None
     selected = [
         member
-        for member in telemetry.squad
-        if member.selected and member.id == action.actor_id
+        for member in telemetry.roster
+        if member.id in telemetry.selected_character_ids and member.id == action.actor_id
     ]
     if len(selected) != 1:
         return None
-    if telemetry.ui.selected_character_ids != [action.actor_id]:
+    if telemetry.selected_character_ids != [action.actor_id]:
         return None
-    if telemetry.ui.selected_character_id != action.actor_id:
+    if telemetry.primary_character_id != action.actor_id:
         return None
     return selected[0]
 
@@ -120,9 +120,9 @@ def threat_response_terminal_reached(
     """Whether both the immediate threat and squad combat state have cleared."""
 
     telemetry = observation.telemetry
-    if telemetry is None or not telemetry.squad:
+    if telemetry is None or not telemetry.roster:
         return False
-    actor = next((member for member in telemetry.squad if member.id == action.actor_id), None)
+    actor = next((member for member in telemetry.roster if member.id == action.actor_id), None)
     return bool(
         actor is not None
         and not visible_immediate_hostile(observation)
@@ -159,7 +159,7 @@ def withdrawal_move(
         return None
     reunion_candidates = [
         member
-        for member in telemetry.squad
+        for member in telemetry.roster
         if member.id != actor.id
         and member.alive is True
         and member.position is not None

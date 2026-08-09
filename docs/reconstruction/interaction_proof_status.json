@@ -3,7 +3,7 @@
   "stage": "interaction-scope-and-order-lifecycle",
   "slice": 1,
   "authority": "docs/PROTOCOL_2_WORLD_MODEL_DECISION.md",
-  "captured_at_utc": "2026-08-09T13:25:55Z",
+  "captured_at_utc": "2026-08-09T16:33:17Z",
   "note": [
     "Hand-authored. Not an authority over gameplay semantics, and no longer a",
     "home for the interaction contract: Slice 1 moved that into",
@@ -41,7 +41,27 @@
       "the Release x64 native conformance executable parses the shared full and old-shape fixtures and pins their breaking topology"
     ],
     "live_evidence": [],
-    "note": "Specification and portable-test proven only. The current native producer remains 1.x, and no simultaneous-command or multi-platoon live behavior is claimed."
+    "note": "Specification and portable-test proven only. The current 1.19 producer has landed the topology vocabulary but not bounded work or plural controller commands; no simultaneous-command behavior is claimed."
+  },
+  "player_topology": {
+    "proof_status": "live_proven",
+    "evidence": [
+      "game_sources/research/player_topology records the inspected KenshiLib, ForgottenGUI, and current native call sites",
+      "tests/fixtures/native_telemetry/valid_player_topology.json is shared by the strict Python model and compiled C++ conformance target",
+      "tests/test_player_topology.py distinguishes roster, membership, active, primary, and complete selection; primary is deliberately not roster order",
+      "the current 1.19 model rejects squad, per-character selected, UI-owned selection, unresolved IDs, and contradictory membership",
+      "the player-only identity registry preserves one ID across a live Character object's platoon-handle changes, rejects pointer reuse by validKey, and clears on GameWorld reset"
+    ],
+    "live_evidence": [
+      "runs/player-topology-20260809T161112Z/manifest.json indexes the exact raw frame-plus-telemetry snapshots and every request, receipt, acknowledgement, later engine result, save-tree change, and final disposition",
+      "built and installed DLLs both sha256 2dfee3ca27a3a2494b31386cff06e9db2ad02e38e7d3d6079fec0fb2234436bc; compiled conformance executable passed",
+      "the named bundle proves two nonempty platoons, exact linkage, Tab changing active independently, primary and complete selection changes, same-session player ID stability across membership moves, and quickload restoration of topology/primary/selection",
+      "final snapshot sequence 1096 is loaded, paused, modal-free, idle, and has no active native command"
+    ],
+    "research": [
+      "game_sources/research/player_topology"
+    ],
+    "note": "Source, portable-test, native-fixture, and named live-bundle proven. Character IDs remain session-scoped; F9 advanced the identity session. The save restored both platoons, membership, primary Paste, and selected Paste, while Kenshi reset active to Nameless_0 rather than persisting saved Nameless_1."
   },
   "entries": [
     {

@@ -1440,6 +1440,25 @@ Worth revisiting afterward: scope such gates to the phase that needs them.
 Requiring at bind time what only one late phase depends on removes an operation
 from the menu for situations it would have handled correctly.
 
+### 19.5 Current topology authority supersedes the historical field names above
+
+Updated 2026-08-09. Sections 19.3 and 19.4 preserve the exact 2026-08-03
+observations and therefore retain the then-current `squad`, per-character
+`selected`, and UI-owned selection examples. They are not current authority.
+
+Protocol 1.19 now exports the complete player `roster`, explicit `platoons` and
+membership, `active_platoon_id`, `primary_character_id`, and the complete root
+`selected_character_ids` set. Primary is read from Kenshi's primary-character
+owner and is never inferred from roster position. The old fields were deleted
+from the model, producer, consumers, fixtures, and generated schema rather than
+kept as a dual reader.
+
+The `player-topology-20260809T161112Z` bundle live-proves two authored
+nonempty platoons, active-tab and exact-selection changes, and save/load
+restoration of membership, primary, and selection. It also records that Kenshi
+reset the active tab on load. Cross-session character-ID continuity, empty
+management rows, and arbitrary long-run roster churn remain withheld.
+
 ---
 
 ## 20. Named residue after Stage 4

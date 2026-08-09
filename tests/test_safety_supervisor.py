@@ -62,7 +62,7 @@ def observation(
                 if threatened
                 else []
             ),
-            squad=(
+            roster=(
                 [
                     CharacterState(
                         id="entity-bark",
@@ -435,7 +435,7 @@ def test_hostility_is_ordinary_but_getting_eaten_still_preempts() -> None:
         update={
             "telemetry": catastrophic_observation.telemetry.model_copy(
                 update={
-                    "squad": [
+                    "roster": [
                         CharacterState(
                             id="entity-bark",
                             name="Bark",

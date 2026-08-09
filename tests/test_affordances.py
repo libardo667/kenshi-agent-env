@@ -53,7 +53,9 @@ def _observation(
     *,
     capabilities: list[str],
     ui: UIState | None = None,
-    squad: list[CharacterState] | None = None,
+    roster: list[CharacterState] | None = None,
+    primary_character_id: str | None = None,
+    selected_character_ids: list[str] | None = None,
     nearby: list[NearbyEntity] | None = None,
     targets: list[WorldTarget] | None = None,
     stale: bool = False,
@@ -93,7 +95,9 @@ def _observation(
                 money=money,
             ),
             ui=effective_ui,
-            squad=squad or [],
+            roster=roster or [],
+            primary_character_id=primary_character_id,
+            selected_character_ids=selected_character_ids or [],
             nearby_entities=nearby or [],
             world_targets=targets or [],
             active_shop_trader_count=active_shop_trader_count,
@@ -111,7 +115,6 @@ def test_character_adapter_exposes_one_runtime_chosen_squad_reunion() -> None:
     bark = CharacterState(
         id="entity-bark",
         name="Bark",
-        selected=True,
         alive=True,
         conscious=True,
         down=False,
@@ -135,14 +138,14 @@ def test_character_adapter_exposes_one_runtime_chosen_squad_reunion() -> None:
             "game.pause",
             "game.speed",
             "identity.stable_handles",
-            "squad.basic",
-            "squad.health",
+            "roster.basic",
+            "roster.health",
         ],
-        squad=[bark, ruka, plant],
+        roster=[bark, ruka, plant],
+        primary_character_id=bark.id,
+        selected_character_ids=[bark.id],
         ui=UIState(
             active_screen="world",
-            selected_character_id=bark.id,
-            selected_character_ids=[bark.id],
         ),
     )
 
@@ -163,21 +166,21 @@ def test_character_adapter_exposes_one_runtime_chosen_squad_reunion() -> None:
 
 
 def test_character_adapter_prefers_exact_native_selection_over_portrait_geometry() -> None:
-    bark = CharacterState(id="entity-bark", name="Bark", selected=True)
+    bark = CharacterState(id="entity-bark", name="Bark")
     plant = CharacterState(id="entity-plant", name="Plant")
     observation = _observation(
         capabilities=[
             "control.select_squad_member",
             "identity.stable_handles",
-            "squad.basic",
+            "roster.basic",
         ],
-        squad=[bark, plant],
+        roster=[bark, plant],
+        primary_character_id=bark.id,
+        selected_character_ids=[bark.id],
         ui=UIState(
             active_screen="world",
             dialogue_open=False,
             modal_open=False,
-            selected_character_id=bark.id,
-            selected_character_ids=[bark.id],
             visible_controls=[],
         ),
     )
@@ -194,21 +197,21 @@ def test_character_adapter_prefers_exact_native_selection_over_portrait_geometry
 
 
 def test_character_adapter_retains_exact_native_selection_from_a_group() -> None:
-    bark = CharacterState(id="entity-bark", name="Bark", selected=True)
-    plant = CharacterState(id="entity-plant", name="Plant", selected=True)
+    bark = CharacterState(id="entity-bark", name="Bark")
+    plant = CharacterState(id="entity-plant", name="Plant")
     observation = _observation(
         capabilities=[
             "control.select_squad_member",
             "identity.stable_handles",
-            "squad.basic",
+            "roster.basic",
         ],
-        squad=[bark, plant],
+        roster=[bark, plant],
+        primary_character_id=bark.id,
+        selected_character_ids=[bark.id, plant.id],
         ui=UIState(
             active_screen="world",
             dialogue_open=False,
             modal_open=False,
-            selected_character_id=bark.id,
-            selected_character_ids=[bark.id, plant.id],
             visible_controls=[],
         ),
     )
@@ -231,8 +234,8 @@ def test_character_adapter_retains_exact_native_selection_from_a_group() -> None
 
 
 def test_group_selection_can_issue_broadcast_orders_and_still_narrow() -> None:
-    bark = CharacterState(id="entity-bark", name="Bark", selected=True)
-    plant = CharacterState(id="entity-plant", name="Plant", selected=True)
+    bark = CharacterState(id="entity-bark", name="Bark")
+    plant = CharacterState(id="entity-plant", name="Plant")
     resource = WorldTarget(
         id="resource-copper",
         name="Copper Resource",
@@ -249,17 +252,17 @@ def test_group_selection_can_issue_broadcast_orders_and_still_narrow() -> None:
             "control.select_squad_member",
             "game.pause",
             "identity.stable_handles",
-            "squad.basic",
+            "roster.basic",
             "world.context_targets",
         ],
-        squad=[bark, plant],
+        roster=[bark, plant],
         targets=[resource],
+        primary_character_id=bark.id,
+        selected_character_ids=[bark.id, plant.id],
         ui=UIState(
             active_screen="world",
             dialogue_open=False,
             modal_open=False,
-            selected_character_id=bark.id,
-            selected_character_ids=[bark.id, plant.id],
         ),
     )
 
@@ -280,7 +283,6 @@ def test_resource_output_and_inventory_pair_are_both_offered() -> None:
     actor = CharacterState(
         id="entity-bark",
         name="Bark",
-        selected=True,
         alive=True,
         conscious=True,
         down=False,
@@ -302,18 +304,18 @@ def test_resource_output_and_inventory_pair_are_both_offered() -> None:
             "identity.stable_handles",
             "world.context_targets",
         ],
-        squad=[actor],
+        roster=[actor],
         nearby=[
             NearbyEntity(id=f"entity-nearby-{index:02d}", name=f"Nearby {index}")
             for index in range(12)
         ],
         targets=[resource],
+        primary_character_id=actor.id,
+        selected_character_ids=[actor.id],
         ui=UIState(
             active_screen="world",
             dialogue_open=False,
             modal_open=False,
-            selected_character_id=actor.id,
-            selected_character_ids=[actor.id],
         ),
     )
 
@@ -334,7 +336,7 @@ def test_resource_output_and_inventory_pair_are_both_offered() -> None:
 
 
 def test_reviewed_first_aid_context_order_uses_the_generic_native_route() -> None:
-    healer = CharacterState(id="squad-healer", name="Plant", selected=True)
+    healer = CharacterState(id="squad-healer", name="Plant")
     target = WorldTarget(
         id="squad-injured",
         name="Bark",
@@ -351,14 +353,14 @@ def test_reviewed_first_aid_context_order_uses_the_generic_native_route() -> Non
             "game.pause",
             "identity.stable_handles",
         ],
+        primary_character_id=healer.id,
+        selected_character_ids=[healer.id],
         ui=UIState(
             active_screen="world",
             dialogue_open=False,
             modal_open=False,
-            selected_character_id=healer.id,
-            selected_character_ids=[healer.id],
         ),
-        squad=[healer, CharacterState(id="squad-injured", name="Bark")],
+        roster=[healer, CharacterState(id="squad-injured", name="Bark")],
         targets=[target],
     )
 
@@ -378,7 +380,6 @@ def test_map_adapter_offers_every_currently_travelable_exact_destination() -> No
     actor = CharacterState(
         id="actor-1",
         name="Bark",
-        selected=True,
         alive=True,
         conscious=True,
         down=False,
@@ -390,13 +391,13 @@ def test_map_adapter_offers_every_currently_travelable_exact_destination() -> No
             "game.pause",
             "game.speed",
             "identity.stable_handles",
-            "squad.health",
+            "roster.health",
             "world.known_map_destinations",
         ],
-        squad=[actor],
+        roster=[actor],
+        primary_character_id=actor.id,
+        selected_character_ids=[actor.id],
         ui=UIState(
-            selected_character_id=actor.id,
-            selected_character_ids=[actor.id],
         ),
     )
     assert observation.telemetry is not None
@@ -436,7 +437,7 @@ def test_map_adapter_offers_every_currently_travelable_exact_destination() -> No
 
 
 def test_exact_current_offer_is_the_only_action_language() -> None:
-    actor = CharacterState(id="actor-1", name="Bark", selected=True)
+    actor = CharacterState(id="actor-1", name="Bark")
     target = NearbyEntity(
         id="person-1",
         name="Wanderer",
@@ -452,13 +453,13 @@ def test_exact_current_offer_is_the_only_action_language() -> None:
             "nearby.characters",
             "nearby.roles",
         ],
-        squad=[actor],
+        roster=[actor],
+        primary_character_id=actor.id,
+        selected_character_ids=[actor.id],
         ui=UIState(
             active_screen="world",
             modal_open=False,
             dialogue_open=False,
-            selected_character_id=actor.id,
-            selected_character_ids=[actor.id],
         ),
         nearby=[target],
     )
@@ -515,7 +516,6 @@ def test_planner_projection_excludes_runtime_mechanics() -> None:
     selected = CharacterState(
         id="actor-1",
         name="Bark",
-        selected=True,
         alive=True,
         conscious=True,
         down=False,
@@ -530,9 +530,9 @@ def test_planner_projection_excludes_runtime_mechanics() -> None:
             "game.pause",
             "game.speed",
             "nearby.visible_entities",
-            "squad.health",
+            "roster.health",
         ],
-        squad=[selected],
+        roster=[selected],
         nearby=[
             NearbyEntity(
                 id="hostile-1",
@@ -544,9 +544,9 @@ def test_planner_projection_excludes_runtime_mechanics() -> None:
                 position=Vec3(x=10, y=0, z=0),
             )
         ],
+        primary_character_id=selected.id,
+        selected_character_ids=[selected.id],
         ui=UIState(
-            selected_character_id=selected.id,
-            selected_character_ids=[selected.id],
         ),
     )
     offer = next(

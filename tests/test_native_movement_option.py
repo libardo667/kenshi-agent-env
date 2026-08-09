@@ -139,13 +139,13 @@ def observation(
             capabilities=[
                 "game.pause",
                 "control.move_in_direction",
-                "squad.health",
+                "roster.health",
             ],
             game=GameState(paused=paused, elapsed_minutes=0.0),
-            ui=UIState(
-                selected_character_id=SELECTED_ID,
-                selected_character_ids=[SELECTED_ID],
-            ),
+            ui=UIState(),
+            primary_character_id=SELECTED_ID,
+            selected_character_ids=[SELECTED_ID],
+            roster=[CharacterState(id=SELECTED_ID, name="Hep")],
             native_control=NativeControlState(
                 active_command_id=(
                     ack.command_id
@@ -207,13 +207,13 @@ def map_travel_observation(
                 "game.pause",
                 "control.travel_to_map_destination",
                 "world.known_map_destinations",
-                "squad.health",
+                "roster.health",
             ],
             game=GameState(paused=True, elapsed_minutes=0.0),
-            ui=UIState(
-                selected_character_id=SELECTED_ID,
-                selected_character_ids=[SELECTED_ID],
-            ),
+            ui=UIState(),
+            primary_character_id=SELECTED_ID,
+            selected_character_ids=[SELECTED_ID],
+            roster=[CharacterState(id=SELECTED_ID, name="Hep")],
             known_map_destinations=[
                 KnownMapDestination(
                     id="entity-known-town",
@@ -286,19 +286,17 @@ def squad_regroup_observation(
                 "game.pause",
                 "control.regroup_with_squad_member",
                 "identity.stable_handles",
-                "squad.basic",
-                "squad.health",
+                "roster.basic",
+                "roster.health",
             ],
             game=GameState(paused=True, elapsed_minutes=0.0),
-            ui=UIState(
-                selected_character_id=SELECTED_ID,
-                selected_character_ids=[SELECTED_ID],
-            ),
-            squad=[
+            ui=UIState(),
+            primary_character_id=SELECTED_ID,
+            selected_character_ids=[SELECTED_ID],
+            roster=[
                 CharacterState(
                     id=SELECTED_ID,
                     name="Bark",
-                    selected=True,
                     alive=True,
                     conscious=True,
                     down=False,
@@ -385,22 +383,19 @@ def character_observation(
                 "nearby.characters",
             ],
             game=GameState(paused=True, elapsed_minutes=0.0),
-            ui=UIState(
-                selected_character_id=SELECTED_ID,
-                selected_character_ids=selection,
-            ),
-            squad=[
+            ui=UIState(),
+            primary_character_id=SELECTED_ID,
+            selected_character_ids=selection,
+            roster=[
                 CharacterState(
                     id=SELECTED_ID,
                     name="Hep",
-                    selected=True,
                 ),
                 *(
                     [
                         CharacterState(
                             id=SQUADMATE_ID,
                             name="Bark",
-                            selected=True,
                         )
                     ]
                     if SQUADMATE_ID in selection
@@ -490,18 +485,16 @@ def exit_observation(
             capabilities=[
                 "game.pause",
                 "control.exit_current_building",
-                "squad.indoors",
+                "roster.indoors",
             ],
             game=GameState(paused=True, elapsed_minutes=0.0),
-            ui=UIState(
-                selected_character_id=SELECTED_ID,
-                selected_character_ids=[SELECTED_ID],
-            ),
-            squad=[
+            ui=UIState(),
+            primary_character_id=SELECTED_ID,
+            selected_character_ids=[SELECTED_ID],
+            roster=[
                 CharacterState(
                     id=SELECTED_ID,
                     name="Hep",
-                    selected=True,
                     indoors=indoors,
                 )
             ],
@@ -569,10 +562,10 @@ def context_observation(
                 "world.context_targets",
             ],
             game=GameState(paused=True, elapsed_minutes=0.0),
-            ui=UIState(
-                selected_character_id=SELECTED_ID,
-                selected_character_ids=[SELECTED_ID],
-            ),
+            ui=UIState(),
+            primary_character_id=SELECTED_ID,
+            selected_character_ids=[SELECTED_ID],
+            roster=[CharacterState(id=SELECTED_ID, name="Hep")],
             world_targets=[
                 WorldTarget(
                     id="entity-copper",
@@ -631,7 +624,6 @@ def production_observation(
     selected = CharacterState(
         id=SELECTED_ID,
         name="Hep",
-        selected=True,
         current_goal=current_goal,
     )
     return state.model_copy(
@@ -643,7 +635,7 @@ def production_observation(
                         "control.produce_resource_output",
                         "world.context_targets",
                     ],
-                    "squad": [selected],
+                    "roster": [selected],
                     "native_control": NativeControlState(
                         active_command_id=(
                             ack.command_id
@@ -1160,15 +1152,14 @@ def test_map_travel_option_matches_a_group_basis_independent_of_set_order() -> N
             update={
                 "telemetry": start.telemetry.model_copy(
                     update={
-                        "ui": start.telemetry.ui.model_copy(
-                            update={
-                                "selected_character_id": SELECTED_ID,
-                                "selected_character_ids": [
-                                    SELECTED_ID,
-                                    SQUADMATE_ID,
-                                ],
-                            }
-                        )
+                        "selected_character_ids": [
+                            SELECTED_ID,
+                            SQUADMATE_ID,
+                        ],
+                        "roster": [
+                            CharacterState(id=SELECTED_ID, name="Hep"),
+                            CharacterState(id=SQUADMATE_ID, name="Bark"),
+                        ],
                     }
                 )
             },

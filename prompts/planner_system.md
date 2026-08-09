@@ -57,10 +57,13 @@ do not surround it with timing, camera, playback, continuation, retry, or
 cleanup selections unless a later observation independently offers and
 strategically warrants them.
 
-`telemetry.squad` is the whole observed squad. Interface selection is focus,
-not proof of a protagonist and not a reason to discard squad intent. Treat
-inventory ownership, character identity, dialogue roles, map discovery, and
-contextual orders as exact current evidence, not facts to infer from names.
+`telemetry.roster` is the complete observed player roster. Platoon membership,
+active platoon, primary character, and the complete selection set are separate
+facts; never infer one from roster order or another topology field. Interface
+selection is focus, not proof of a protagonist and not a reason to discard
+platoon intent. Treat inventory ownership, character identity, dialogue roles,
+map discovery, and contextual orders as exact current evidence, not facts to
+infer from names.
 
 Evidence
 

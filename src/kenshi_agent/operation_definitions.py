@@ -754,11 +754,11 @@ def bind_survey_local_resources(
     telemetry = observation.telemetry
     if telemetry is None or observation.telemetry_stale:
         return _unbound("A survey requires fresh telemetry.")
-    actor_id = telemetry.ui.selected_character_id
+    actor_id = telemetry.primary_character_id
     if not actor_id:
         return _unbound("A survey requires an exported primary character.")
     actor = next(
-        (member for member in telemetry.squad if member.id == actor_id),
+        (member for member in telemetry.roster if member.id == actor_id),
         None,
     )
     if actor is None:
@@ -777,11 +777,11 @@ def survey_local_resources_is_currently_authorable(observation: Observation) -> 
     telemetry = observation.telemetry
     if telemetry is None or observation.telemetry_stale:
         return False
-    primary = telemetry.ui.selected_character_id
+    primary = telemetry.primary_character_id
     return bool(
         telemetry.game.loaded is True
         and primary
-        and primary in telemetry.ui.selected_character_ids
+        and primary in telemetry.selected_character_ids
     )
 
 
@@ -876,13 +876,13 @@ def bind_select_squad_member_exact(
             "The modal and dialogue state is not confirmed clear, so a squad "
             "member selection cannot bind; finish or close the interface first."
         )
-    selected_ids = telemetry.ui.selected_character_ids
-    if not selected_ids or telemetry.ui.selected_character_id not in selected_ids:
+    selected_ids = telemetry.selected_character_ids
+    if not selected_ids or telemetry.primary_character_id not in selected_ids:
         return _unbound(
             "Native squad selection requires one or more exact current squad "
             "selections as its causal basis."
         )
-    matches = [character for character in telemetry.squad if character.id == action.target_id]
+    matches = [character for character in telemetry.roster if character.id == action.target_id]
     if len(matches) != 1:
         return _unbound(
             f"Target {action.target_id!r} identifies {len(matches)} current squad "
@@ -908,14 +908,14 @@ def exact_squad_member_selection_is_currently_authorable(
     return bool(
         telemetry is not None
         and not observation.telemetry_stale
-        and bool(telemetry.ui.selected_character_ids)
-        and telemetry.ui.selected_character_id in telemetry.ui.selected_character_ids
+        and bool(telemetry.selected_character_ids)
+        and telemetry.primary_character_id in telemetry.selected_character_ids
         and any(
             bind_select_squad_member_exact(
                 SelectSquadMemberExactAction(target_id=character.id),
                 observation,
             ).bound
-            for character in telemetry.squad
+            for character in telemetry.roster
         )
     )
 
@@ -1023,7 +1023,7 @@ def _observed_inventory_owner(
     telemetry = observation.telemetry
     if telemetry is None:
         return None
-    for member in telemetry.squad:
+    for member in telemetry.roster:
         if member.id == target_id:
             return member.name, "squad_character"
     for entity in telemetry.nearby_entities:
@@ -1091,8 +1091,8 @@ def trade_window_is_currently_authorable(observation: Observation) -> bool:
         return False
     if telemetry.ui.dialogue_open is not False:
         return False
-    return bool(telemetry.squad) and bool(
-        telemetry.nearby_entities or telemetry.world_targets or len(telemetry.squad) > 1
+    return bool(telemetry.roster) and bool(
+        telemetry.nearby_entities or telemetry.world_targets or len(telemetry.roster) > 1
     )
 
 
@@ -1215,7 +1215,7 @@ def bind_move_in_direction(
         return _unbound("The game is not loaded, so no order can be given.")
     if failure := _world_interface_error(observation):
         return _unbound(failure)
-    selected = [character for character in telemetry.squad if character.selected]
+    selected = telemetry.selected_characters()
     if len(selected) != 1:
         return _unbound(
             f"{len(selected)} characters are selected; exactly one must be, so the "
@@ -1250,7 +1250,7 @@ def bind_travel_to_map_destination(
         return _unbound("The game is not loaded, so map travel cannot begin.")
     if failure := _world_interface_error(observation):
         return _unbound(failure)
-    selected = [character for character in telemetry.squad if character.selected]
+    selected = telemetry.selected_characters()
     if not selected:
         return _unbound("No squad members are selected to receive the travel order.")
     matches = [
@@ -1312,7 +1312,7 @@ def map_travel_is_currently_authorable(observation: Observation) -> bool:
     telemetry = observation.telemetry
     if telemetry is None:
         return False
-    selected = [character for character in telemetry.squad if character.selected]
+    selected = telemetry.selected_characters()
     location_authoritative = "game.location.identity" in telemetry.capabilities
     return bool(
         not observation.telemetry_stale
@@ -1354,12 +1354,15 @@ def bind_regroup_with_squad_member(
             "option owns the complete playback boundary."
         )
     actor_matches = [
-        member for member in telemetry.squad if member.id == action.actor_id and member.selected
+        member
+        for member in telemetry.roster
+        if member.id == action.actor_id
+        and member.id in telemetry.selected_character_ids
     ]
     if (
         len(actor_matches) != 1
-        or telemetry.ui.selected_character_id != action.actor_id
-        or telemetry.ui.selected_character_ids != [action.actor_id]
+        or telemetry.primary_character_id != action.actor_id
+        or telemetry.selected_character_ids != [action.actor_id]
     ):
         return _unbound("actor_id must be the one exact currently selected squad member.")
     actor = actor_matches[0]
@@ -1367,7 +1370,7 @@ def bind_regroup_with_squad_member(
         return _unbound(f"Selected actor {actor.name!r} is not confirmed able to travel.")
     if action.target_id == action.actor_id:
         return _unbound("A squad member cannot regroup with itself.")
-    target_matches = [member for member in telemetry.squad if member.id == action.target_id]
+    target_matches = [member for member in telemetry.roster if member.id == action.target_id]
     if len(target_matches) != 1:
         return _unbound(
             f"target_id must identify one exact current squad member; found "
@@ -1400,7 +1403,7 @@ def squad_regroup_is_currently_authorable(observation: Observation) -> bool:
     telemetry = observation.telemetry
     if telemetry is None:
         return False
-    selected = [member for member in telemetry.squad if member.selected]
+    selected = telemetry.selected_characters()
     if len(selected) != 1:
         return False
     actor = selected[0]
@@ -1412,7 +1415,7 @@ def squad_regroup_is_currently_authorable(observation: Observation) -> bool:
             ),
             observation,
         ).bound
-        for target in telemetry.squad
+        for target in telemetry.roster
         if target.id != actor.id
     )
 
@@ -1434,7 +1437,7 @@ def bind_exit_current_building(
         return _unbound("The game is not loaded, so no exit order can be given.")
     if failure := _world_interface_error(observation):
         return _unbound(failure)
-    selected = [character for character in telemetry.squad if character.selected]
+    selected = telemetry.selected_characters()
     if len(selected) != 1:
         return _unbound(
             f"{len(selected)} characters are selected; exactly one must be, so the "
@@ -1479,7 +1482,7 @@ def threat_response_is_currently_authorable(observation: Observation) -> bool:
     telemetry = observation.telemetry
     if telemetry is None:
         return False
-    selected = [member for member in telemetry.squad if member.selected]
+    selected = telemetry.selected_characters()
     if len(selected) != 1:
         return False
     probe = RespondToImmediateThreatAction(
@@ -1763,8 +1766,8 @@ class OperationDefinition:
         telemetry = observation.telemetry
         if telemetry is None or observation.telemetry_stale:
             return False
-        selected_ids = telemetry.ui.selected_character_ids
-        primary_id = telemetry.ui.selected_character_id
+        selected_ids = telemetry.selected_character_ids
+        primary_id = telemetry.primary_character_id
         if scope is RecipientScope.PRIMARY:
             return bool(primary_id) and primary_id in selected_ids
         if scope is RecipientScope.CURRENT_SELECTION:
@@ -1778,7 +1781,7 @@ class OperationDefinition:
             return True
         # EXPLICIT_RECIPIENTS names its own characters through the typed action
         # or binding, so it needs a roster rather than a particular selection.
-        return bool(telemetry.squad)
+        return bool(telemetry.roster)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1846,8 +1849,8 @@ def capture_recipient_basis(
     """Record who this operation was authored to command.
 
     Read from Kenshi's exported primary and selection, not from roster order:
-    `ui.selected_character_id` is the primary, and the first selected member of
-    `telemetry.squad` is merely the first one the exporter happened to walk.
+    `primary_character_id` is the primary, and the first selected member of
+    `telemetry.roster` is merely the first one the exporter happened to walk.
     """
 
     scope = definition.recipient_scope_for(action, observation)
@@ -1881,8 +1884,8 @@ def capture_recipient_basis(
         return None
     return AuthoredRecipientBasis.capture(
         scope,
-        primary=telemetry.ui.selected_character_id,
-        selection=telemetry.ui.selected_character_ids,
+        primary=telemetry.primary_character_id,
+        selection=telemetry.selected_character_ids,
     )
 
 
@@ -2005,15 +2008,15 @@ def _selected_squad_member(
             operator=ConditionOperator.EQUALS,
             expected=action.target_id,
             max_age_seconds=3.0,
-            required_capabilities=["squad.basic"],
+            required_capabilities=["roster.basic"],
         ),
         Condition(
             kind=ConditionKind.FIELD,
-            path=ConditionPath.TELEMETRY_UI_SELECTED_CHARACTER_COUNT,
+            path=ConditionPath.TELEMETRY_SELECTED_CHARACTER_COUNT,
             operator=ConditionOperator.EQUALS,
             expected=1,
             max_age_seconds=3.0,
-            required_capabilities=["squad.basic"],
+            required_capabilities=["roster.basic"],
         ),
     )
 
@@ -2259,7 +2262,7 @@ SELECT_SQUAD_MEMBER_EXACT_DEFINITION = OperationDefinition(
         {
             NATIVE_SQUAD_SELECTION_CAPABILITY,
             "identity.stable_handles",
-            "squad.basic",
+            "roster.basic",
         }
     ),
     capability_aliases=frozenset(),
@@ -2455,7 +2458,7 @@ RESPOND_TO_IMMEDIATE_THREAT_DEFINITION = OperationDefinition(
             "game.pause",
             "game.speed",
             "nearby.visible_entities",
-            "squad.health",
+            "roster.health",
             NATIVE_DIRECTION_CAPABILITY,
         }
     ),
@@ -2613,8 +2616,8 @@ REGROUP_WITH_SQUAD_MEMBER_DEFINITION = OperationDefinition(
             "game.pause",
             "game.speed",
             "identity.stable_handles",
-            "squad.basic",
-            "squad.health",
+            "roster.basic",
+            "roster.health",
         }
     ),
     capability_aliases=frozenset({NATIVE_SQUAD_REGROUP_CAPABILITY}),
@@ -2662,7 +2665,7 @@ MOVE_IN_DIRECTION_DEFINITION = OperationDefinition(
         "observation - they are chosen."
     ),
     allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
-    required_capabilities=frozenset({NATIVE_DIRECTION_CAPABILITY, "squad.health"}),
+    required_capabilities=frozenset({NATIVE_DIRECTION_CAPABILITY, "roster.health"}),
     capability_aliases=frozenset({NATIVE_DIRECTION_CAPABILITY}),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
@@ -2708,7 +2711,7 @@ TRAVEL_TO_MAP_DESTINATION_DEFINITION = OperationDefinition(
             "game.pause",
             "game.speed",
             "identity.stable_handles",
-            "squad.health",
+            "roster.health",
         }
     ),
     capability_aliases=frozenset({NATIVE_MAP_TRAVEL_CAPABILITY}),
@@ -2764,7 +2767,7 @@ SURVEY_LOCAL_RESOURCES_DEFINITION = OperationDefinition(
     # would have kept being admitted had the plug-in stopped implementing it.
     required_capabilities=frozenset(
         {
-            "squad.basic",
+            "roster.basic",
             "identity.stable_handles",
             NATIVE_RESOURCE_SURVEY_CAPABILITY,
         }
@@ -2815,7 +2818,7 @@ EXIT_CURRENT_BUILDING_DEFINITION = OperationDefinition(
             NATIVE_EXIT_BUILDING_CAPABILITY,
             "game.pause",
             "identity.stable_handles",
-            "squad.indoors",
+            "roster.indoors",
         }
     ),
     capability_aliases=frozenset({NATIVE_EXIT_BUILDING_CAPABILITY}),

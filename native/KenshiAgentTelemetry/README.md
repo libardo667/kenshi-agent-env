@@ -8,9 +8,9 @@ run evidence, not in a second current protocol narrative.
 ## Current protocol
 
 ```text
-telemetry protocol       1.18.0
+telemetry protocol       1.19.0
 native request schema    1.4
-loaded-world capabilities 43
+loaded-world capabilities 47
 active native commands  at most one
 ```
 
@@ -20,14 +20,18 @@ telemetry version, `NativeCommandRequest` in
 `GameplayCapabilities.json` owns the loaded-world capability vocabulary. The
 portable consistency tests and the native conformance executable compare the
 shared native-command JSON fixtures with both request implementations. The
-conformance target also pins the accepted Protocol 2.0 world-model fixtures
-without claiming that the current producer emits them.
+conformance target also reads the current 1.19 player-topology fixture and the
+accepted Protocol 2.0 world-model fixtures. The former is current producer
+shape; the latter remains a specification for bounded work and plural command
+records that the producer does not yet emit.
 
-Protocol 1.18.0 is additive over the earlier 1.x telemetry family. The accepted
-2.0 roster/platoon/plural-command design is specified but has not landed in the
-producer. Current telemetry still serializes player characters under `squad`, and
-`native_control.active_command_id` plus one native active-command record still
-limit the controller to one monitored command at a time.
+Protocol 1.19.0 makes a clean player-topology break. Player characters are
+serialized under `roster`; `platoons`, `active_platoon_id`,
+`primary_character_id`, and the complete root `selected_character_ids` set have
+separate owners. The old `squad`, per-character `selected`, and UI-owned
+selection fields are gone rather than accepted as aliases. The still-singular
+`native_control.active_command_id` and one native active-command record remain
+an explicitly separate limit.
 
 ## Hooks and telemetry
 
@@ -44,13 +48,15 @@ The plug-in installs hooks on Kenshi's own game/UI thread:
 - `ShopTrader` lifecycle hooks maintain exact shop-owner identity, and
   `GameWorld::resetGame` clears session-bound registries and acknowledgements.
 
-Loaded telemetry includes clock and location state, camera state, complete
-current selection, squad vitals/inventory/task summaries, nearby characters and
-roles, bounded world targets, discovered map destinations, dialogue and tooltip
-state, visible controls, every currently exported open inventory, and keyed
-native command acknowledgements. Stable IDs are derived from validated Kenshi
-handles plus process/session generations; names and list positions are not
-identities.
+Loaded telemetry includes clock and location state, camera state, the complete
+player roster, exact platoon membership and active platoon, exact primary and
+complete selection, roster vitals/inventory/task summaries, nearby characters
+and roles, bounded world targets, discovered map destinations, dialogue and
+tooltip state, visible controls, every currently exported open inventory, and
+keyed native command acknowledgements. Stable character IDs are derived from
+validated Kenshi handles plus process/session generations. Platoon IDs use
+Kenshi's platoon string ID under a `platoon-` namespace. Names and list
+positions are not identities.
 
 Bounded collections expose completeness or warning evidence where the model
 supports it. An empty bounded result must not be generalized beyond that stated
@@ -123,8 +129,9 @@ confidence, probes, crashes, contradictions, and withheld claims:
 
 - [context-menu orders](../../game_sources/research/context_menu_orders/conclusion.md);
 - [inventory transfer and simplified pricing](../../game_sources/research/inventory_transfer/conclusion.md);
-- [body shift](../../game_sources/research/body_shift/conclusion.md); and
-- [prospecting window](../../game_sources/research/prospecting_window/conclusion.md).
+- [body shift](../../game_sources/research/body_shift/conclusion.md);
+- [prospecting window](../../game_sources/research/prospecting_window/conclusion.md); and
+- [player topology](../../game_sources/research/player_topology/conclusion.md).
 
 Current source implements those reviewed conclusions. The packages, not this
 overview, own the reverse-engineering argument. Acceptance of any native call
@@ -141,7 +148,8 @@ maintained KenshiLib headers/libraries.
 3. Run `scripts\native_doctor.ps1` and resolve every failed check.
 4. Run `scripts\build_native.ps1`. The Release x64 build also runs
    `NativeCommandProtocolTests.exe` against `tests\fixtures\native_commands`,
-   canonical research fixtures, and `tests\fixtures\protocol_2`.
+   canonical research fixtures, `tests\fixtures\protocol_2`, and
+   `tests\fixtures\native_telemetry`.
 5. Run `scripts\stage_native.ps1 -BuiltDll <path-to-built-dll>`.
 6. After review, copy the staged `KenshiAgentTelemetry` folder into Kenshi's
    `mods` directory and enable it in the launcher.
@@ -171,7 +179,7 @@ folder component.
 - The hook, protocol, command, inventory-model, simplified-pricing, and body
   shift paths above are present in the current source and in the configured
   KenshiLib declarations they call.
-- Protocol 1.18.0 and the 43-entry loaded-world capability manifest are embedded
+- Protocol 1.19.0 and the 47-entry loaded-world capability manifest are embedded
   into the native build inputs.
 - The file-change watcher and the optional hotkey both dispatch through the same
   request parser and command handler.
@@ -182,24 +190,41 @@ folder component.
   shared command vocabulary, generated schemas, capability manifest/header
   parity, and golden fixture set.
 - A Windows native build runs the production C++ parser/serializer against the
-  same golden request fixtures and checks the 2.0 specification fixtures keep
-  their breaking roster/platoon/plural-command topology.
+  same golden request fixtures, checks the current multi-platoon telemetry
+  fixture, and checks the 2.0 specification fixtures keep their breaking
+  bounded-work/plural-command topology.
 - `scripts/check_native_provenance.py` compares protocol and capability strings
   in the installed binary and records built/installed hashes. See the current
   [checkpoint](../../docs/CHECKPOINT.md) for the measured result.
 
 ### Live-proven
 
-Named live evidence is operation-specific. Reverse-engineering conclusions and
-their exact limitations belong under `game_sources/research/`; the interaction
-proof ledger links those conclusions to operations. Each live conclusion
-depends on later engine telemetry in its named bundle, not merely on request
-delivery or an acknowledgement.
+`player-topology-20260809T161112Z` proves the current producer against built and
+installed DLL SHA-256
+`2dfee3ca27a3a2494b31386cff06e9db2ad02e38e7d3d6079fec0fb2234436bc`.
+Its later raw snapshots prove two authored nonempty platoons and linkage, Tab
+changing active independently, exact primary and complete-selection changes,
+and one full session-scoped character ID surviving a move between platoons and
+back. Changed quicksave files plus a later GameWorld session advance prove that
+load restored both platoons, membership, primary Paste, and selected `[Paste]`.
+Kenshi reset the active tab to `Nameless_0` instead of restoring saved
+`Nameless_1`; that observed result is not hidden behind a persistence claim.
+
+Other named live evidence remains operation-specific. Reverse-engineering
+conclusions and their exact limitations belong under `game_sources/research/`;
+the interaction proof ledger links those conclusions to operations. Every live
+conclusion depends on later engine telemetry in its named bundle, not merely on
+request delivery or an acknowledgement.
 
 ### Withheld and open
 
 - The plug-in does not support plural simultaneously active native command
   records.
+- Character identity is session-scoped. The topology bundle does not claim the
+  same character ID survives GameWorld reset, that an empty management row is
+  a player platoon, or that one bounded run proves arbitrary roster churn.
+- Active-platoon persistence is specifically withheld: the recorded quickload
+  restored membership, primary, and selection but reset the active tab.
 - Several group-recipient, delayed-continuation, session-reset, and retained
   order lifecycle conclusions remain unproven.
 - The native recovery close command is not a planner-visible general close

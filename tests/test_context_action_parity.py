@@ -203,12 +203,13 @@ def test_event_noise_never_hides_a_later_valid_witness(
     assert witnesses_from_run(run) == {iron_witness(run_id="noisy-menu")}
 
 
-def test_legacy_live_snapshot_is_backfilled_as_a_witness(tmp_path: Path) -> None:
-    run = tmp_path / "legacy-live-menu"
+def test_current_live_snapshot_is_backfilled_as_a_witness(tmp_path: Path) -> None:
+    run = tmp_path / "current-live-menu"
     run.mkdir()
     telemetry = {
         "identity_session_id": "session-legacy",
         "capabilities": ["identity.stable_handles", "ui.context_menu.orders"],
+        "selected_character_ids": ["entity-fish"],
         "ui": {
             "context_menu_open": True,
             "context_menu_probe": "captured",
@@ -218,9 +219,8 @@ def test_legacy_live_snapshot_is_backfilled_as_a_witness(tmp_path: Path) -> None
                 "task_type_values": [87, 26],
                 "task_type_values_complete": True,
             },
-            "selected_character_ids": ["entity-fish"],
         },
-        "squad": [{"id": "entity-fish", "name": "Fish", "selected": True}],
+        "roster": [{"id": "entity-fish", "name": "Fish"}],
         "world_targets": [
             {
                 "id": "entity-copper",
@@ -239,7 +239,7 @@ def test_legacy_live_snapshot_is_backfilled_as_a_witness(tmp_path: Path) -> None
 
     assert witnesses_from_run(run) == {
         ContextMenuWitness(
-            run_id="legacy-live-menu",
+            run_id="current-live-menu",
             identity_session_id="session-legacy",
             target_id="entity-copper",
             target_name="Copper Resource",
@@ -253,7 +253,7 @@ def test_legacy_live_snapshot_is_backfilled_as_a_witness(tmp_path: Path) -> None
     }
 
 
-def test_legacy_selected_character_menu_resolves_without_a_world_target(
+def test_selected_character_menu_resolves_without_a_world_target(
     tmp_path: Path,
 ) -> None:
     run = tmp_path / "legacy-selected-character"
@@ -261,6 +261,7 @@ def test_legacy_selected_character_menu_resolves_without_a_world_target(
     telemetry = {
         "identity_session_id": "session-selected",
         "capabilities": ["identity.stable_handles", "ui.context_menu.orders"],
+        "selected_character_ids": ["entity-fish"],
         "ui": {
             "context_menu_open": True,
             "context_menu_probe": "captured",
@@ -270,9 +271,8 @@ def test_legacy_selected_character_menu_resolves_without_a_world_target(
                 "task_type_values": [25],
                 "task_type_values_complete": True,
             },
-            "selected_character_ids": ["entity-fish"],
         },
-        "squad": [{"id": "entity-fish", "name": "Fish", "selected": True}],
+        "roster": [{"id": "entity-fish", "name": "Fish"}],
         "world_targets": [],
     }
     (run / "telemetry.context-menu.json").write_text(
@@ -283,7 +283,7 @@ def test_legacy_selected_character_menu_resolves_without_a_world_target(
     assert witness.target_kind == "squad_character"
 
 
-def test_legacy_snapshot_retains_unresolved_target_and_rejects_invalid_state(
+def test_current_snapshot_retains_unresolved_target_and_rejects_invalid_state(
     tmp_path: Path,
 ) -> None:
     run = tmp_path / "legacy-unresolved"
@@ -291,6 +291,7 @@ def test_legacy_snapshot_retains_unresolved_target_and_rejects_invalid_state(
     telemetry = {
         "identity_session_id": "session-unresolved",
         "capabilities": ["identity.stable_handles", "ui.context_menu.orders"],
+        "selected_character_ids": [],
         "ui": {
             "context_menu_open": True,
             "context_menu_probe": "captured",
@@ -300,7 +301,6 @@ def test_legacy_snapshot_retains_unresolved_target_and_rejects_invalid_state(
                 "task_type_values": [9999],
                 "task_type_values_complete": False,
             },
-            "selected_character_ids": [],
         },
     }
     (run / "telemetry.context-menu.json").write_text(

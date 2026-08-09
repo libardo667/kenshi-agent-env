@@ -91,8 +91,8 @@ class FieldConditionPath(StrEnum):
     TELEMETRY_UI_TOOLTIP_VISIBLE = "telemetry.ui.tooltip_visible"
     TELEMETRY_UI_TOOLTIP_TEXT = "telemetry.ui.tooltip_text"
     TELEMETRY_UI_CONTEXT_MENU_OPEN = "telemetry.ui.context_menu_open"
-    TELEMETRY_UI_SELECTED_CHARACTER_ID = "telemetry.ui.selected_character_id"
-    TELEMETRY_UI_SELECTED_CHARACTER_COUNT = "telemetry.ui.selected_character_count"
+    TELEMETRY_UI_SELECTED_CHARACTER_ID = "telemetry.primary_character_id"
+    TELEMETRY_SELECTED_CHARACTER_COUNT = "telemetry.selected_character_count"
     TELEMETRY_ACTIVE_SHOP_TRADER_COUNT = "telemetry.active_shop_trader_count"
     TELEMETRY_NATIVE_CONTROL_AVAILABLE = "telemetry.native_control.available"
     TELEMETRY_NATIVE_CONTROL_COMMAND_ACTIVE = "telemetry.native_control.command_active"
@@ -186,9 +186,9 @@ GAME_BINDING_TERMINALS: dict[GameBinding, BindingTerminal] = {
     ),
     # Squad selection is witnessed by who ends up selected.
     GameBinding.SELECT_ALL: BindingTerminal(
-        FieldConditionPath.TELEMETRY_UI_SELECTED_CHARACTER_COUNT,
+        FieldConditionPath.TELEMETRY_SELECTED_CHARACTER_COUNT,
         BindingWitness.CHANGED,
-        ("identity.stable_handles", "squad.basic"),
+        ("identity.stable_handles", "roster.basic"),
     ),
     GameBinding.CHARACTER_NEXT: BindingTerminal(
         FieldConditionPath.TELEMETRY_UI_SELECTED_CHARACTER_ID,
@@ -458,9 +458,9 @@ def _binding_terminal_value(
     if path is FieldConditionPath.TELEMETRY_UI_MANAGEMENT_TAB:
         return telemetry.ui.management_tab
     if path is FieldConditionPath.TELEMETRY_UI_SELECTED_CHARACTER_ID:
-        return telemetry.ui.selected_character_id
-    if path is FieldConditionPath.TELEMETRY_UI_SELECTED_CHARACTER_COUNT:
-        return len(telemetry.ui.selected_character_ids)
+        return telemetry.primary_character_id
+    if path is FieldConditionPath.TELEMETRY_SELECTED_CHARACTER_COUNT:
+        return len(telemetry.selected_character_ids)
     return None
 
 
@@ -491,7 +491,7 @@ def game_binding_success_condition(
             kind=ConditionKind.FIELD,
             path=terminal.path,
             operator=ConditionOperator.EQUALS,
-            expected=len(telemetry.squad),
+            expected=len(telemetry.roster),
             max_age_seconds=3.0,
             required_capabilities=list(terminal.required_capabilities),
         )

@@ -250,9 +250,9 @@ AFFORDANCES: tuple[Affordance, ...] = (
     Affordance(
         Interface.CHARACTER_STATS,
         Operation.INTERACT,
-        "Read exported squad skills, health, and state.",
+        "Read exported roster skills, health, and state.",
         Mechanism.NATIVE,
-        "telemetry.squad",
+        "telemetry.roster",
     ),
     Affordance(
         Interface.CHARACTER_STATS,

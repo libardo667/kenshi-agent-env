@@ -76,26 +76,25 @@ def _observation(inventories: list[OpenInventory]) -> Observation:
                 "ui.inventory",
             ],
             game=GameState(loaded=True, paused=True, speed_multiplier=1.0),
-            squad=[
+            roster=[
                 CharacterState(
                     id="entity-fish",
                     name="Fish",
-                    selected=True,
                     alive=True,
                     conscious=True,
                     down=False,
                     position=Vec3(x=0, y=0, z=0),
                 )
             ],
-            ui=UIState(
-                active_screen="inventory",
-                modal_open=True,
-                dialogue_open=False,
-                open_inventories=inventories,
-                open_inventories_complete=True,
-                selected_character_id="entity-fish",
+                ui=UIState(
+                    active_screen="inventory",
+                    modal_open=True,
+                    dialogue_open=False,
+                    open_inventories=inventories,
+                    open_inventories_complete=True,
+                ),
+                primary_character_id="entity-fish",
                 selected_character_ids=["entity-fish"],
-            ),
         ),
         telemetry_stale=False,
         telemetry_age_seconds=0.1,

@@ -339,10 +339,10 @@ class MockEnvironment(AgentEnvironment):
                 "game.time",
                 "game.money",
                 "game.location",
-                "squad.basic",
-                "squad.current_goal",
-                "squad.hunger",
-                "squad.health",
+                "roster.basic",
+                "roster.current_goal",
+                "roster.hunger",
+                "roster.health",
                 "nearby.visible_entities",
                 "ui.visible_controls",
             ],
@@ -365,8 +365,6 @@ class MockEnvironment(AgentEnvironment):
                 active_screen="world",
                 modal_open=False,
                 dialogue_open=False,
-                selected_character_id="mock:wanderer",
-                selected_character_ids=["mock:wanderer"],
                 client_width=1280,
                 client_height=720,
                 visible_controls=[
@@ -407,11 +405,12 @@ class MockEnvironment(AgentEnvironment):
                     ),
                 ],
             ),
-            squad=[
+            primary_character_id="mock:wanderer",
+            selected_character_ids=["mock:wanderer"],
+            roster=[
                 CharacterState(
                     id="mock:wanderer",
                     name="Wanderer",
-                    selected=True,
                     alive=self.world.alive,
                     conscious=self.world.conscious,
                     down=not self.world.conscious,

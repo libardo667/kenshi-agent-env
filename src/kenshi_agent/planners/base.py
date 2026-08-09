@@ -165,7 +165,7 @@ def _payload_target_ids(payload: dict[str, Any], observation: Observation) -> se
     telemetry = payload.get("telemetry")
     if isinstance(telemetry, dict):
         for field in (
-            "squad",
+            "roster",
             "nearby_entities",
             "world_targets",
             "known_map_destinations",
@@ -175,15 +175,17 @@ def _payload_target_ids(payload: dict[str, Any], observation: Observation) -> se
         if isinstance(ui, dict):
             for field in (
                 "dialogue_target_id",
-                "selected_character_id",
                 "context_inventory_target_id",
             ):
                 value = ui.get(field)
                 if isinstance(value, str):
                     candidates.add(value)
-            selected = ui.get("selected_character_ids")
-            if isinstance(selected, list):
-                candidates.update(value for value in selected if isinstance(value, str))
+        primary = telemetry.get("primary_character_id")
+        if isinstance(primary, str):
+            candidates.add(primary)
+        selected = telemetry.get("selected_character_ids")
+        if isinstance(selected, list):
+            candidates.update(value for value in selected if isinstance(value, str))
     affordances = payload.get("affordances")
     if isinstance(affordances, list):
         for affordance in affordances:

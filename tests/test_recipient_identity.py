@@ -57,7 +57,7 @@ class RecordingInput:
 
 def _observation(*, primary: str | None, selected: list[str], sequence: int = 10) -> Observation:
     roster = [
-        CharacterState(id=identity, name=identity.upper(), selected=identity in selected)
+        CharacterState(id=identity, name=identity.upper())
         for identity in (A, B, C)
     ]
     return Observation(
@@ -71,17 +71,17 @@ def _observation(*, primary: str | None, selected: list[str], sequence: int = 10
             identity_session_id="recipient-session",
             capabilities=sorted(
                 OPERATION_DEFINITIONS["perform_context_action"].required_capabilities
-                | {"game.pause", "squad.basic"}
+                | {"game.pause", "roster.basic"}
             ),
             game=GameState(loaded=True, paused=False),
+            primary_character_id=primary,
+            selected_character_ids=selected,
             ui=UIState(
                 active_screen="world",
                 modal_open=False,
                 dialogue_open=False,
-                selected_character_id=primary,
-                selected_character_ids=selected,
             ),
-            squad=roster,
+            roster=roster,
             world_targets=[
                 WorldTarget(
                     id=IRON,

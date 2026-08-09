@@ -208,11 +208,12 @@ def observation(step_index: int = 0) -> Observation:
                 elapsed_minutes=10.0,
                 location_name="The Hub",
             ),
-            squad=[
+            primary_character_id="hep",
+            selected_character_ids=["hep"],
+            roster=[
                 CharacterState(
                     id="hep",
                     name="Hep",
-                    selected=True,
                     alive=True,
                     conscious=True,
                     hunger=2.5,
@@ -479,12 +480,12 @@ def test_advisor_payload_defines_live_hunger_and_fallible_food_semantics() -> No
     payload = advisor_world_payload(current)
     semantics = payload["telemetry_semantics"]
 
-    assert payload["squad_nutrition"] == planner_nutrition_digest(current)
+    assert payload["roster_nutrition"] == planner_nutrition_digest(current)
     selected = payload["telemetry"]["selected"]
     assert selected["nutrition_reserve"] == 2.5
     assert "hunger" not in selected
     assert semantics["selected.nutrition_reserve"] == (
-        "The current reserve on the squad_nutrition scale. Use that "
+        "The current reserve on the roster_nutrition scale. Use that "
         "digest's status and thresholds to decide urgency."
     )
     assert "fallible" in semantics["selected.food_items"]

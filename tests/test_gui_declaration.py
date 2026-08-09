@@ -155,14 +155,15 @@ def test_a_partially_known_order_queue_is_never_reported_as_a_total() -> None:
             telemetry=TelemetrySnapshot(
                 sequence=1,
                 game=GameState(loaded=True, paused=True),
-                squad=[
+                roster=[
                     CharacterState(
                         id="barth",
                         name="Barth",
-                        selected=True,
                         task_state=CharacterTaskState(**task_state),
                     )
                 ],
+                primary_character_id="barth",
+                selected_character_ids=["barth"],
             ),
         )
         entries = observation.log_digest()["telemetry"]["retained_work"]

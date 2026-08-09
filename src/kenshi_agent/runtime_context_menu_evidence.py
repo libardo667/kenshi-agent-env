@@ -36,7 +36,7 @@ class ContextMenuEvidenceTracker:
             (item for item in telemetry.world_targets if item.id == menu.target_id),
             None,
         )
-        selected_character_ids = tuple(telemetry.ui.selected_character_ids)
+        selected_character_ids = tuple(telemetry.selected_character_ids)
         reviewed_actions = (
             tuple(action.value for action in target.context_actions)
             if target is not None

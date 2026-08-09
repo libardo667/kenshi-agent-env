@@ -38,7 +38,7 @@ class ReflexEngine:
             )
         if telemetry is None:
             return None
-        squad = telemetry.squad
+        squad = telemetry.roster
         if squad and all(member.alive is False for member in squad):
             return PlannerDecision(
                 intent="End the episode.",

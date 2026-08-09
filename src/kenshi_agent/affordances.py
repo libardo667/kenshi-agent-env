@@ -676,7 +676,7 @@ def _trade_window_offers(observation: Observation) -> Iterable[AffordanceOffer]:
         return
     if telemetry.ui.dialogue_open is not False:
         return
-    actor = telemetry.ui.selected_character_id
+    actor = telemetry.primary_character_id
     if actor is None:
         return
     held = {inventory.owner_id for inventory in telemetry.ui.open_inventories}
@@ -692,7 +692,7 @@ def _trade_window_offers(observation: Observation) -> Iterable[AffordanceOffer]:
     # was fine here and the membership was not.
     others: list[tuple[str, str, str]] = [
         (member.id, member.name, "squad_character")
-        for member in sorted(telemetry.squad, key=lambda member: member.id)
+        for member in sorted(telemetry.roster, key=lambda member: member.id)
         if member.id != actor
     ] + [
         (target.id, target.name, target.kind)
@@ -865,7 +865,7 @@ def _character_offers(observation: Observation) -> Iterable[AffordanceOffer]:
     if telemetry is None:
         return
     capabilities = set(telemetry.capabilities)
-    selected = next((member for member in telemetry.squad if member.selected), None)
+    selected = telemetry.primary_character()
     # Selection is native or it does not happen. There used to be a pointer
     # fallback offered whenever this was false, which meant two operations for
     # one act: one that asks Kenshi to select a character and one that clicks
@@ -876,16 +876,16 @@ def _character_offers(observation: Observation) -> Iterable[AffordanceOffer]:
         observation.control_mode is ControlMode.NATIVE_ASSISTED
         and "control.select_squad_member" in capabilities
         and "identity.stable_handles" in capabilities
-        and telemetry.ui.selected_character_id is not None
-        and telemetry.ui.selected_character_id in telemetry.ui.selected_character_ids
+        and telemetry.primary_character_id is not None
+        and telemetry.primary_character_id in telemetry.selected_character_ids
     )
-    for member in telemetry.squad if exact_selection else []:
+    for member in telemetry.roster if exact_selection else []:
         target = AffordanceTarget(
             target_id=member.id,
             label=member.name,
             kind="squad_member",
         )
-        if telemetry.ui.selected_character_ids != [member.id]:
+        if telemetry.selected_character_ids != [member.id]:
             yield _offer(
                 observation,
                 source=AffordanceSource.SQUAD,
@@ -909,7 +909,7 @@ def _character_offers(observation: Observation) -> Iterable[AffordanceOffer]:
     ):
         candidates = [
             member
-            for member in telemetry.squad
+            for member in telemetry.roster
             if member.id != selected.id
             and member.alive is True
             and member.position is not None
@@ -953,7 +953,7 @@ def _character_offers(observation: Observation) -> Iterable[AffordanceOffer]:
                     "target_id": target_member.id,
                 },
             )
-    selected_count = len([member for member in telemetry.squad if member.selected])
+    selected_count = len(telemetry.selected_character_ids)
     if selected_count == 0:
         return
     for character in telemetry.nearby_entities:
@@ -1014,7 +1014,7 @@ def _map_offers(observation: Observation) -> Iterable[AffordanceOffer]:
         <= capabilities
     ):
         return
-    selected = [member for member in telemetry.squad if member.selected]
+    selected = telemetry.selected_characters()
     if not selected:
         return
     selected_count = len(selected)
@@ -1059,16 +1059,16 @@ def _native_and_composite_offers(
     selected = next(
         (
             member
-            for member in telemetry.squad
-            if member.selected and member.id == telemetry.ui.selected_character_id
+            for member in telemetry.roster
+            if member.id == telemetry.primary_character_id
         ),
         None,
     )
 
-    primary_id = telemetry.ui.selected_character_id
-    if primary_id and primary_id in telemetry.ui.selected_character_ids:
+    primary_id = telemetry.primary_character_id
+    if primary_id and primary_id in telemetry.selected_character_ids:
         primary = next(
-            (member for member in telemetry.squad if member.id == primary_id),
+            (member for member in telemetry.roster if member.id == primary_id),
             None,
         )
         if primary is not None:

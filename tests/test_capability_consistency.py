@@ -7,7 +7,7 @@ end. The rungs are independent, and the interesting failures live in the gaps
 between them.
 
 Commit `8993b10` is the failure this file exists to catch. Protocol 0.8.1
-advertised `squad.indoors` and serialized `indoors: true`, and the native command
+advertised `roster.indoors` and serialized `indoors: true`, and the native command
 fence still rejected the matching exit as `not_indoors`. Declared, advertised,
 serialized — never accepted. The old vocabulary had no name for that state, so it
 was reported as "supported" until a live run said otherwise.

@@ -85,7 +85,7 @@ def main() -> int:
             telemetry_sequence=snapshot.sequence,
             capability_epoch=0,
         ),
-        selected_character_ids=list(snapshot.ui.selected_character_ids),
+        selected_character_ids=list(snapshot.selected_character_ids),
         target_id=args.target_id,
         context_action=args.context_action,
         destination_id=args.destination_id,

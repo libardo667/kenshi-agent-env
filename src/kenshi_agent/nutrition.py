@@ -26,7 +26,6 @@ class NutritionStatus(StrEnum):
 class NutritionMember(Protocol):
     id: str
     name: str
-    selected: bool
     hunger: float | None
 
 
@@ -42,11 +41,15 @@ def nutrition_status(reserve: float | None) -> NutritionStatus:
     return NutritionStatus.WELL_FED
 
 
-def squad_nutrition_digest(squad: Sequence[NutritionMember]) -> dict[str, Any]:
+def roster_nutrition_digest(
+    roster: Sequence[NutritionMember],
+    selected_character_ids: Sequence[str] = (),
+) -> dict[str, Any]:
     """Derive direction, empirical thresholds, and status for every member."""
 
-    if not squad:
+    if not roster:
         return {}
+    selected = set(selected_character_ids)
     return {
         "scale": {
             "direction": "counts_down_from_full_to_starving",
@@ -67,11 +70,11 @@ def squad_nutrition_digest(squad: Sequence[NutritionMember]) -> dict[str, Any]:
             {
                 "id": character.id,
                 "name": character.name,
-                "selected": character.selected,
+                "selected": character.id in selected,
                 "nutrition_reserve": character.hunger,
                 "status": nutrition_status(character.hunger).value,
             }
-            for character in squad
+            for character in roster
         ],
     }
 
@@ -90,11 +93,14 @@ def model_facing_telemetry_payload(
     if payload is None:
         return None
     projected = dict(payload)
-    if "squad" in projected:
-        projected["squad"] = [
+    if "roster" in projected:
+        projected["roster"] = [
             _model_facing_character_payload(character)
-            for character in projected["squad"]
+            for character in projected["roster"]
         ]
+    # Compact observation/advisor digests may include one derived `selected`
+    # character. It is resolved from the root primary/selection authority; it
+    # is not a second wire field.
     if projected.get("selected") is not None:
         projected["selected"] = _model_facing_character_payload(
             projected["selected"]

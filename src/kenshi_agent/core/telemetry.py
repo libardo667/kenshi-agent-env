@@ -234,7 +234,10 @@ class CharacterTaskState(StrictModel):
 class CharacterState(StrictModel):
     id: str
     name: str
-    selected: bool = False
+    # Exact player-platoon membership. Selection is intentionally absent from
+    # character rows: primary and the complete selected set have their own
+    # root-level owners on TelemetrySnapshot.
+    platoon_id: str | None = None
     alive: bool | None = None
     conscious: bool | None = None
     down: bool | None = None
@@ -277,6 +280,20 @@ class CharacterState(StrictModel):
     # character's task system was unreachable, which is a different fact from
     # holding no work.
     task_state: CharacterTaskState | None = None
+
+
+class PlatoonState(StrictModel):
+    """One player platoon and its exact observed roster membership."""
+
+    id: str
+    name: str | None = None
+    member_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def member_ids_are_unique(self) -> PlatoonState:
+        if len(self.member_ids) != len(set(self.member_ids)):
+            raise ValueError("platoon member_ids must not contain duplicates")
+        return self
 
 
 class NearbyEntity(StrictModel):
@@ -1126,14 +1143,6 @@ class UIState(StrictModel):
     # separate screens, so `active_screen` cannot express them.
     management_screen_open: bool | None = None
     management_tab: int | None = Field(default=None, ge=-1)
-    selected_character_id: str | None = None
-    selected_character_ids: list[str] = Field(default_factory=list)
-    # Selected entities Kenshi will deliver an order to but that cannot be named
-    # to the planner: no stable id, not a player character, or absent from the
-    # current squad. Empty is the normal case. A non-empty value means the
-    # command validator is comparing against more members than were authorized,
-    # which it refuses - correctly, since the extra one is a real recipient.
-    selected_character_ids_withheld: list[str] = Field(default_factory=list, max_length=64)
     # Diagnostic: each selection entry's stored handle beside the same
     # character's current handle. A `hand` carries its container, so a character
     # who changes platoon gets a new one and any selection captured before the
@@ -1465,7 +1474,7 @@ class NativeControlState(StrictModel):
 
 
 class TelemetrySnapshot(StrictModel):
-    protocol_version: str = "1.18.0"
+    protocol_version: str = "1.19.0"
     sequence: int = Field(default=0, ge=0)
     captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = "unknown"
@@ -1475,7 +1484,16 @@ class TelemetrySnapshot(StrictModel):
     camera: CameraState = Field(default_factory=CameraState)
     ui: UIState = Field(default_factory=UIState)
     native_control: NativeControlState = Field(default_factory=NativeControlState)
-    squad: list[CharacterState] = Field(default_factory=list)
+    roster: list[CharacterState] = Field(default_factory=list)
+    roster_complete: bool = True
+    platoons: list[PlatoonState] = Field(default_factory=list)
+    # Absence is not proof that no platoons exist. Producers must opt into the
+    # complete topology claim after exporting membership and the active tab.
+    platoons_complete: bool = False
+    active_platoon_id: str | None = None
+    primary_character_id: str | None = None
+    selected_character_ids: list[str] = Field(default_factory=list)
+    selected_character_ids_complete: bool = True
     # Despite the historical wire name, this is the number of lifecycle-tracked
     # ShopTrader character objects loaded in the session. It is not the number
     # of open trades and must never confer current UI authority.
@@ -1511,6 +1529,26 @@ class TelemetrySnapshot(StrictModel):
     known_map_destinations: list[KnownMapDestination] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
+    def selected_characters(self) -> list[CharacterState]:
+        """Resolve the complete selected set without consulting roster order."""
+
+        by_id = {character.id: character for character in self.roster}
+        return [by_id[item] for item in self.selected_character_ids if item in by_id]
+
+    def primary_character(self) -> CharacterState | None:
+        """Resolve Kenshi's exported primary, never the first roster member."""
+
+        if self.primary_character_id is None:
+            return None
+        return next(
+            (
+                character
+                for character in self.roster
+                if character.id == self.primary_character_id
+            ),
+            None,
+        )
+
     @field_validator("captured_at")
     @classmethod
     def captured_at_must_be_aware(cls, value: datetime) -> datetime:
@@ -1542,49 +1580,87 @@ class TelemetrySnapshot(StrictModel):
                     "game.location.identity requires location_id, location_name, "
                     "and inside_town_walls to be populated together"
                 )
-        if "identity.stable_handles" not in self.capabilities:
-            return self
-        if not self.identity_session_id:
+        stable_handles = "identity.stable_handles" in self.capabilities
+        if stable_handles and not self.identity_session_id:
             raise ValueError("identity.stable_handles requires a non-empty identity_session_id")
 
-        squad_ids = [character.id for character in self.squad]
+        roster_ids = [character.id for character in self.roster]
         nearby_ids = [entity.id for entity in self.nearby_entities]
         world_target_ids = [target.id for target in self.world_targets]
-        all_ids = squad_ids + nearby_ids + world_target_ids
-        if any(not entity_id for entity_id in all_ids):
+        if any(not entity_id for entity_id in roster_ids):
+            raise ValueError("roster IDs must be non-empty")
+        if len(roster_ids) != len(set(roster_ids)):
+            raise ValueError("roster IDs must be unique within a snapshot")
+        all_ids = roster_ids + nearby_ids + world_target_ids
+        if stable_handles and any(not entity_id for entity_id in all_ids):
             raise ValueError("stable entity IDs must be non-empty")
-        if (
-            len(squad_ids) != len(set(squad_ids))
-            or len(nearby_ids) != len(set(nearby_ids))
+        if stable_handles and (
+            len(nearby_ids) != len(set(nearby_ids))
             or len(world_target_ids) != len(set(world_target_ids))
-            or set(squad_ids) & set(nearby_ids)
+            or set(roster_ids) & set(nearby_ids)
         ):
             raise ValueError("stable entity IDs must be unique within a snapshot")
-        squad_id_set = set(squad_ids)
+        roster_id_set = set(roster_ids)
         nearby_id_set = set(nearby_ids)
-        for target in self.world_targets:
+        for target in self.world_targets if stable_handles else ():
             if target.kind == "squad_character":
-                if target.id not in squad_id_set:
+                if target.id not in roster_id_set:
                     raise ValueError(
-                        "squad_character world targets must refer to current squad IDs"
+                        "squad_character world targets must refer to current roster IDs"
                     )
-            elif target.id in squad_id_set or target.id in nearby_id_set:
+            elif target.id in roster_id_set or target.id in nearby_id_set:
                 raise ValueError("stable entity IDs must be unique within a snapshot")
 
-        selected_ids = self.ui.selected_character_ids
+        platoon_ids = [platoon.id for platoon in self.platoons]
+        if any(not platoon_id for platoon_id in platoon_ids):
+            raise ValueError("stable platoon IDs must be non-empty")
+        if len(platoon_ids) != len(set(platoon_ids)):
+            raise ValueError("stable platoon IDs must be unique within a snapshot")
+        platoon_id_set = set(platoon_ids)
+        member_owner: dict[str, str] = {}
+        for platoon in self.platoons:
+            for member_id in platoon.member_ids:
+                if member_id not in roster_id_set:
+                    raise ValueError("platoon member_ids must refer to current roster IDs")
+                if member_id in member_owner:
+                    raise ValueError("a roster member cannot belong to two platoons")
+                member_owner[member_id] = platoon.id
+        for character in self.roster:
+            if character.platoon_id is None:
+                if self.roster_complete and self.platoons_complete:
+                    raise ValueError(
+                        "complete roster and platoon topology require every roster "
+                        "member to name a platoon"
+                    )
+                continue
+            if character.platoon_id not in platoon_id_set:
+                if self.platoons_complete:
+                    raise ValueError("character platoon_id must refer to a listed platoon")
+                continue
+            if member_owner.get(character.id) != character.platoon_id:
+                raise ValueError("roster and platoon membership disagree")
+        if (
+            self.roster_complete
+            and self.platoons_complete
+            and set(member_owner) != roster_id_set
+        ):
+            raise ValueError(
+                "complete platoon membership must partition the complete roster"
+            )
+        if self.active_platoon_id is not None and self.active_platoon_id not in platoon_id_set:
+            raise ValueError("active_platoon_id must refer to a listed platoon")
+
+        selected_ids = self.selected_character_ids
         if len(selected_ids) != len(set(selected_ids)):
             raise ValueError("selected_character_ids must not contain duplicates")
-        unknown_selected = set(selected_ids) - set(squad_ids)
+        unknown_selected = set(selected_ids) - roster_id_set
         if unknown_selected:
-            raise ValueError("selected_character_ids must refer to current squad IDs")
+            raise ValueError("selected_character_ids must refer to current roster IDs")
         if (
-            self.ui.selected_character_id is not None
-            and self.ui.selected_character_id not in selected_ids
+            self.primary_character_id is not None
+            and self.primary_character_id not in selected_ids
         ):
-            raise ValueError("selected_character_id must also appear in selected_character_ids")
-        flagged_selected = {character.id for character in self.squad if character.selected}
-        if flagged_selected != set(selected_ids):
-            raise ValueError("squad selected flags must match selected_character_ids exactly")
+            raise ValueError("primary_character_id must also appear in selected_character_ids")
         for acknowledgement in self.native_control.acknowledgements:
             sequences = [
                 acknowledgement.acknowledged_at_telemetry_sequence,

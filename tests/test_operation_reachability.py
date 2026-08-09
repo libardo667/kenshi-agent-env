@@ -73,7 +73,7 @@ def _paused_observation(*, paused: bool):
             sequence=1,
             game=GameState(loaded=True, paused=paused, money=100),
             ui=UIState(active_screen="world", modal_open=False, dialogue_open=False),
-            squad=[CharacterState(id="barth", name="Barth", selected=True)],
+            roster=[CharacterState(id="barth", name="Barth")],
         ),
     )
 
@@ -126,7 +126,7 @@ def test_a_modal_cannot_strand_the_agent_in_a_stopped_world() -> None:
             sequence=1,
             game=GameState(loaded=True, paused=True, money=100),
             ui=UIState(active_screen="inventory", modal_open=True, dialogue_open=False),
-            squad=[CharacterState(id="barth", name="Barth", selected=True)],
+            roster=[CharacterState(id="barth", name="Barth")],
         ),
     )
 

@@ -1510,20 +1510,19 @@ def test_somewhere_to_go_survives_the_payload_budget() -> None:
             "control_mode": ControlMode.NATIVE_ASSISTED,
             "telemetry": TelemetrySnapshot(
                 nearby_entities=crowd,
-                squad=[
+                roster=[
                     CharacterState(
                         id="entity-selected",
                         name="Hep",
-                        selected=True,
                     )
                 ],
                 ui=UIState(
                     active_screen="world",
                     modal_open=False,
                     dialogue_open=False,
-                    selected_character_id="entity-selected",
-                    selected_character_ids=["entity-selected"],
                 ),
+                primary_character_id="entity-selected",
+                selected_character_ids=["entity-selected"],
                 capabilities=[
                     "control.move_to_character",
                     "identity.stable_handles",

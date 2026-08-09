@@ -47,7 +47,7 @@ class RecipientScope(StrEnum):
     """No character recipient."""
 
     PRIMARY = "primary"
-    """Kenshi's actual primary character, exported as `ui.selected_character_id`."""
+    """Kenshi's actual primary character, exported as `primary_character_id`."""
 
     CURRENT_SELECTION = "current_selection"
     """Every selected character at final dispatch.
@@ -278,7 +278,7 @@ class AuthoredRecipientBasis:
     """
 
     scope: RecipientScope
-    # Kenshi's exported primary - `ui.selected_character_id` - never whichever
+    # Kenshi's exported `primary_character_id` - never whichever
     # selected roster member happens to sort or arrive first.
     primary: str | None = None
     # Sorted, because selection is a set: the same two characters selected in a

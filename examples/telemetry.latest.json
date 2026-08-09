@@ -1,15 +1,19 @@
 {
-  "protocol_version": "0.1.0",
+  "protocol_version": "1.19.0",
   "sequence": 1,
-  "captured_at": "2026-07-22T14:00:05.425353Z",
+  "captured_at": "2026-08-09T12:00:00Z",
   "source": "sample",
   "capabilities": [
     "game.pause",
     "game.speed",
     "game.money",
     "game.location",
-    "squad.basic",
-    "squad.hunger"
+    "roster.basic",
+    "roster.hunger",
+    "platoons.membership",
+    "platoons.active",
+    "selection.complete",
+    "primary.character"
   ],
   "game": {
     "loaded": true,
@@ -23,57 +27,41 @@
     "location_name": "The Hub"
   },
   "camera": {
-    "position": {
-      "x": 0.0,
-      "y": 12.0,
-      "z": 0.0
-    },
-    "center": {
-      "x": 0.0,
-      "y": 0.0,
-      "z": 0.0
-    },
-    "zoom": null
+    "position": {"x": 0.0, "y": 12.0, "z": 0.0},
+    "center": {"x": 0.0, "y": 0.0, "z": 0.0}
   },
   "ui": {
-    "active_screen": null,
-    "modal_open": null,
-    "dialogue_open": null,
-    "dialogue_options": [],
-    "context_menu_open": null,
-    "selected_character_id": "squad:0",
     "client_width": 1920,
     "client_height": 1080
   },
-  "squad": [
+  "roster": [
     {
-      "id": "squad:0",
+      "id": "character:0",
       "name": "Wanderer",
-      "selected": true,
+      "platoon_id": "platoon:0",
       "alive": true,
       "conscious": true,
-      "down": null,
-      "crippled": null,
-      "getting_eaten": null,
-      "imprisoned": null,
-      "enslaved": null,
-      "in_combat": null,
-      "stealth": null,
-      "position": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-      },
+      "position": {"x": 0.0, "y": 0.0, "z": 0.0},
       "movement_speed": 18.0,
-      "hunger": 250.0,
-      "bleeding_rate": null,
+      "hunger": 2.5,
       "food_items": 1,
-      "first_aid_kits": 1,
-      "current_goal": null,
-      "body_parts": [],
-      "inventory": []
+      "first_aid_kits": 1
     }
   ],
+  "roster_complete": true,
+  "platoons": [
+    {
+      "id": "platoon:0",
+      "name": "Nameless",
+      "member_ids": ["character:0"]
+    }
+  ],
+  "platoons_complete": true,
+  "active_platoon_id": "platoon:0",
+  "primary_character_id": "character:0",
+  "selected_character_ids": ["character:0"],
+  "selected_character_ids_complete": true,
   "nearby_entities": [],
+  "world_targets": [],
   "warnings": []
 }

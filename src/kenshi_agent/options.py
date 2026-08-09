@@ -497,7 +497,7 @@ class StatefulNativeMovementOption:
             raise OptionLifecycleError(
                 "Native movement option requires a capable, confirmed paused start state."
             )
-        selected_ids = telemetry.ui.selected_character_ids
+        selected_ids = telemetry.selected_character_ids
         # Selection cardinality is the operation contract's to decide, not this
         # option's. This carried its own rule - a singleton for anything that
         # was not a character move or a map travel - which contradicted both the
@@ -529,15 +529,16 @@ class StatefulNativeMovementOption:
         if isinstance(self.action, RegroupWithSquadMemberAction):
             actors = [
                 member
-                for member in telemetry.squad
-                if member.id == self.action.actor_id and member.selected
+                for member in telemetry.roster
+                if member.id == self.action.actor_id
+                and member.id in telemetry.selected_character_ids
             ]
             squad_targets = [
-                member for member in telemetry.squad if member.id == self.action.target_id
+                member for member in telemetry.roster if member.id == self.action.target_id
             ]
             if (
                 len(actors) != 1
-                or telemetry.ui.selected_character_ids != [self.action.actor_id]
+                or telemetry.selected_character_ids != [self.action.actor_id]
                 or len(squad_targets) != 1
                 or self.action.target_id == self.action.actor_id
             ):
@@ -556,7 +557,7 @@ class StatefulNativeMovementOption:
                     "Map-travel option requires one exact currently known destination."
                 )
         if isinstance(self.action, ExitCurrentBuildingAction):
-            selected = [character for character in telemetry.squad if character.selected]
+            selected = telemetry.selected_characters()
             # Being indoors is mechanics; how many characters may be ordered
             # out is the contract's. Requiring one contradicted the
             # declared CURRENT_SELECTION scope, and Kenshi broadcasts a

@@ -203,7 +203,7 @@ namespace
     const unsigned int MAX_INVENTORY_ITEMS_PER_SECTION = 128;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "1.18.0";
+    const char* PROTOCOL_VERSION = "1.19.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -314,6 +314,8 @@ namespace
     bool g_approachVendorHotkeyWasDown = false;
     unsigned long long g_processGeneration = 0;
     unsigned long long g_sessionGeneration = 0;
+    KenshiAgentTelemetry::StableCharacterIdentityRegistry
+        g_playerCharacterIdentityRegistry;
     unsigned long long g_nativeCommandSequence = 0;
     std::string g_lastNativeCommand;
     std::string g_lastNativeCommandResult;
@@ -363,6 +365,7 @@ namespace
         ++g_sessionGeneration;
         if (g_sessionGeneration == 0)
             g_sessionGeneration = 1;
+        g_playerCharacterIdentityRegistry.Clear();
         g_trackedShopTraderCount = 0;
         g_shopTraderRegistryOverflow = false;
         g_approachVendorHotkeyWasDown = false;
@@ -508,7 +511,8 @@ namespace
         if (character == NULL || !character->isValid())
             return "";
         const hand& handle = character->getHandle();
-        return KenshiAgentTelemetry::FormatStableCharacterIdentity(
+        const std::string candidate =
+            KenshiAgentTelemetry::FormatStableCharacterIdentity(
             g_processGeneration,
             g_sessionGeneration,
             static_cast<unsigned int>(handle.type),
@@ -516,7 +520,40 @@ namespace
             handle.containerSerial,
             handle.index,
             handle.serial);
+        if (!character->isPlayerCharacter())
+            return candidate;
+        // A live management-screen drag keeps the Character object and
+        // validKey but replaces the player's handle index and serial. Preserve
+        // the first session-scoped identity for that engine object; a world
+        // reset clears the registry before any new session can reuse a pointer.
+        return g_playerCharacterIdentityRegistry.Resolve(
+            reinterpret_cast<unsigned long long>(character),
+            character->validKey,
+            candidate);
     }
+
+    std::string StablePlatoonId(ActivePlatoon* platoon)
+    {
+        if (platoon == NULL || platoon->me == NULL || !platoon->me->isValid())
+            return "";
+        const std::string engineId = platoon->me->getPlatoonStringID();
+        if (engineId.empty())
+            return "";
+        return "platoon-" + engineId;
+    }
+
+    struct PlayerPlatoonTopology
+    {
+        std::string id;
+        std::string name;
+        std::vector<std::string> memberIds;
+        ActivePlatoon* active;
+
+        PlayerPlatoonTopology()
+            : active(NULL)
+        {
+        }
+    };
 
     KenshiAgentTelemetry::RuntimeContextMenuObservation
     ObserveRuntimeContextMenu(PlayerInterface* player)
@@ -5786,19 +5823,127 @@ namespace
         const lektor<Character*>* characters = NULL;
         if (player != NULL)
             characters = &player->getAllPlayerCharacters();
-        std::set<std::string> currentSquadIds;
+        bool rosterComplete = characters != NULL;
+        bool platoonsComplete = characters != NULL;
+        std::set<std::string> rosterIds;
+        std::map<std::string, std::string> characterPlatoonIds;
+        std::map<std::string, PlayerPlatoonTopology> platoonsById;
         if (characters != NULL)
         {
             for (unsigned int index = 0; index < characters->size(); ++index)
             {
                 Character* character = (*characters)[index];
                 if (character == NULL || !character->isValid())
+                {
+                    rosterComplete = false;
+                    platoonsComplete = false;
                     continue;
+                }
                 const std::string id = StableEntityId(character);
-                if (!id.empty())
-                    currentSquadIds.insert(id);
+                if (id.empty())
+                {
+                    rosterComplete = false;
+                    platoonsComplete = false;
+                    continue;
+                }
+                rosterIds.insert(id);
+                ActivePlatoon* characterPlatoon = character->getPlatoon();
+                const std::string platoonId = StablePlatoonId(characterPlatoon);
+                if (platoonId.empty())
+                {
+                    platoonsComplete = false;
+                    continue;
+                }
+                characterPlatoonIds[id] = platoonId;
+                PlayerPlatoonTopology& topology = platoonsById[platoonId];
+                topology.id = platoonId;
+                topology.active = characterPlatoon;
+                topology.name = characterPlatoon->getName();
+                topology.memberIds.push_back(id);
             }
         }
+
+        ActivePlatoon* activePlatoon = NULL;
+        if (player != NULL)
+        {
+            RootObjectContainer* current = player->getCurrentActivePlatoon();
+            if (current != NULL &&
+                current->getType() == DataObjectContainer::TYPE_PLATOON)
+            {
+                activePlatoon = static_cast<ActivePlatoon*>(current);
+                const std::string activeId = StablePlatoonId(activePlatoon);
+                if (!activeId.empty())
+                {
+                    PlayerPlatoonTopology& topology = platoonsById[activeId];
+                    topology.id = activeId;
+                    topology.active = activePlatoon;
+                    topology.name = activePlatoon->getName();
+                }
+                else
+                {
+                    platoonsComplete = false;
+                }
+            }
+            else if (!rosterIds.empty())
+            {
+                // A loaded non-empty roster with no resolvable current platoon
+                // does not answer which tab is active. Preserve the null value,
+                // but mark the topology incomplete rather than laundering it as
+                // a known absence.
+                platoonsComplete = false;
+            }
+        }
+        for (std::map<std::string, PlayerPlatoonTopology>::iterator it =
+                 platoonsById.begin();
+             it != platoonsById.end();
+             ++it)
+        {
+            std::sort(it->second.memberIds.begin(), it->second.memberIds.end());
+        }
+
+        bool selectedCharacterIdsComplete = player != NULL;
+        std::vector<std::string> selectedCharacterIds;
+        if (player != NULL)
+        {
+            for (ogre_unordered_set<hand>::type::const_iterator it =
+                     player->selectedCharacters.begin();
+                 it != player->selectedCharacters.end();
+                 ++it)
+            {
+                Character* selectedCharacter = it->getCharacter();
+                const std::string id = StableEntityId(selectedCharacter);
+                if (id.empty() || selectedCharacter == NULL ||
+                    !selectedCharacter->isPlayerCharacter() ||
+                    rosterIds.find(id) == rosterIds.end())
+                {
+                    selectedCharacterIdsComplete = false;
+                    continue;
+                }
+                selectedCharacterIds.push_back(id);
+            }
+        }
+        std::sort(selectedCharacterIds.begin(), selectedCharacterIds.end());
+        if (std::adjacent_find(
+                selectedCharacterIds.begin(),
+                selectedCharacterIds.end()) != selectedCharacterIds.end())
+        {
+            selectedCharacterIdsComplete = false;
+            selectedCharacterIds.erase(
+                std::unique(
+                    selectedCharacterIds.begin(),
+                    selectedCharacterIds.end()),
+                selectedCharacterIds.end());
+        }
+        const std::string selectedId = StableEntityId(selected);
+        const bool primaryIsExportable =
+            !selectedId.empty() &&
+            rosterIds.find(selectedId) != rosterIds.end() &&
+            std::binary_search(
+                selectedCharacterIds.begin(),
+                selectedCharacterIds.end(),
+                selectedId);
+        if (selected != NULL && !primaryIsExportable)
+            selectedCharacterIdsComplete = false;
 
         int money = 0;
         if (selected != NULL)
@@ -6091,63 +6236,6 @@ namespace
             json << "null";
         }
         json << ",";
-        const std::string selectedId = StableEntityId(selected);
-        if (!selectedId.empty() &&
-            currentSquadIds.find(selectedId) != currentSquadIds.end() &&
-            IsSelected(player, selected->getHandle()))
-        {
-            json << "\"selected_character_id\":\""
-                 << selectedId << "\",";
-        }
-        // Two lists, because this export used to be one and the omission was
-        // invisible. Kenshi delivers an order to every member of
-        // selectedCharacters, but only recognizable squad members can be named
-        // to Python, so an unnameable member was silently dropped here while
-        // still being a recipient - and the command validator, which compares
-        // against the unfiltered set, then refused every order with no way to
-        // say what it had seen that this had not.
-        std::vector<std::string> withheldSelection;
-        json << "\"selected_character_ids\":[";
-        if (player != NULL)
-        {
-            bool firstSelected = true;
-            for (ogre_unordered_set<hand>::type::const_iterator it =
-                     player->selectedCharacters.begin();
-                 it != player->selectedCharacters.end();
-                 ++it)
-            {
-                Character* selectedCharacter = it->getCharacter();
-                const std::string id = StableEntityId(selectedCharacter);
-                if (id.empty() ||
-                    !selectedCharacter->isPlayerCharacter() ||
-                    currentSquadIds.find(id) == currentSquadIds.end())
-                {
-                    std::string withheld = id;
-                    if (withheld.empty())
-                        withheld = "unidentified";
-                    else if (selectedCharacter == NULL ||
-                             !selectedCharacter->isPlayerCharacter())
-                        withheld += " (not-player-character)";
-                    else
-                        withheld += " (absent-from-squad)";
-                    withheldSelection.push_back(withheld);
-                    continue;
-                }
-                if (!firstSelected)
-                    json << ",";
-                firstSelected = false;
-                json << "\"" << id << "\"";
-            }
-        }
-        json << "],";
-        json << "\"selected_character_ids_withheld\":[";
-        for (size_t index = 0; index < withheldSelection.size(); ++index)
-        {
-            if (index > 0)
-                json << ",";
-            json << "\"" << JsonEscape(withheldSelection[index]) << "\"";
-        }
-        json << "],";
 
         // Diagnostic: a `hand` is (type, container, containerSerial, index,
         // serial), so `container` is part of an object's identity and a
@@ -6203,6 +6291,58 @@ namespace
         json << "]";
         json << "},";
 
+        json << "\"active_platoon_id\":";
+        const std::string activePlatoonId = StablePlatoonId(activePlatoon);
+        if (!activePlatoonId.empty())
+            json << "\"" << JsonEscape(activePlatoonId) << "\"";
+        else
+            json << "null";
+        json << ",\"primary_character_id\":";
+        if (primaryIsExportable)
+            json << "\"" << JsonEscape(selectedId) << "\"";
+        else
+            json << "null";
+        json << ",\"selected_character_ids\":[";
+        for (size_t index = 0; index < selectedCharacterIds.size(); ++index)
+        {
+            if (index > 0)
+                json << ",";
+            json << "\"" << JsonEscape(selectedCharacterIds[index]) << "\"";
+        }
+        json << "],\"selected_character_ids_complete\":"
+             << JsonBool(selectedCharacterIdsComplete) << ",";
+        json << "\"platoons\":[";
+        bool firstPlatoon = true;
+        for (std::map<std::string, PlayerPlatoonTopology>::const_iterator it =
+                 platoonsById.begin();
+             it != platoonsById.end();
+             ++it)
+        {
+            if (!firstPlatoon)
+                json << ",";
+            firstPlatoon = false;
+            json << "{\"id\":\"" << JsonEscape(it->second.id) << "\",";
+            json << "\"name\":";
+            if (!it->second.name.empty())
+                json << "\"" << JsonEscape(it->second.name) << "\"";
+            else
+                json << "null";
+            json << ",\"member_ids\":[";
+            for (size_t memberIndex = 0;
+                 memberIndex < it->second.memberIds.size();
+                 ++memberIndex)
+            {
+                if (memberIndex > 0)
+                    json << ",";
+                json << "\""
+                     << JsonEscape(it->second.memberIds[memberIndex])
+                     << "\"";
+            }
+            json << "]}";
+        }
+        json << "],\"platoons_complete\":"
+             << JsonBool(platoonsComplete) << ",";
+
         json << "\"active_shop_trader_count\":";
         if (g_shopTraderRegistryReady)
             json << g_trackedShopTraderCount;
@@ -6253,7 +6393,7 @@ namespace
         }
         json << "},";
 
-        json << "\"squad\":[";
+        json << "\"roster\":[";
         if (characters != NULL)
         {
             bool first = true;
@@ -6272,8 +6412,14 @@ namespace
                 json << "{";
                 json << "\"id\":\"" << characterId << "\",";
                 json << "\"name\":\"" << JsonEscape(character->getName()) << "\",";
-                json << "\"selected\":"
-                     << JsonBool(IsSelected(player, character->getHandle())) << ",";
+                json << "\"platoon_id\":";
+                std::map<std::string, std::string>::const_iterator platoonIt =
+                    characterPlatoonIds.find(characterId);
+                if (platoonIt != characterPlatoonIds.end())
+                    json << "\"" << JsonEscape(platoonIt->second) << "\"";
+                else
+                    json << "null";
+                json << ",";
                 json << "\"alive\":" << JsonBool(!character->isDestroyed()) << ",";
                 json << "\"conscious\":" << JsonBool(!character->isUnconcious()) << ",";
                 json << "\"down\":" << JsonBool(character->isDown()) << ",";
@@ -6427,7 +6573,7 @@ namespace
                 json << "}";
             }
         }
-        json << "],";
+        json << "],\"roster_complete\":" << JsonBool(rosterComplete) << ",";
         json << "\"nearby_entities\":[";
         // Hoisted so the completeness answer outlives the scan that produced it.
         int nearbyCharacterCount = 0;
@@ -6911,7 +7057,14 @@ namespace
                  << JsonEscape(g_lastNativeCommandResult) << "\"";
         }
         json << "},";
-        json << "\"squad\":[],";
+        json << "\"active_platoon_id\":null,";
+        json << "\"primary_character_id\":null,";
+        json << "\"selected_character_ids\":[],";
+        json << "\"selected_character_ids_complete\":false,";
+        json << "\"platoons\":[],";
+        json << "\"platoons_complete\":false,";
+        json << "\"roster\":[],";
+        json << "\"roster_complete\":false,";
         json << "\"active_shop_trader_count\":null,";
         json << "\"nearby_entities\":[],";
         json << "\"prospect_survey\":null,";

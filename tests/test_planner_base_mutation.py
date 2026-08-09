@@ -40,7 +40,7 @@ def _observation() -> Observation:
         ),
         telemetry=TelemetrySnapshot(
             sequence=17,
-            squad=[
+            roster=[
                 CharacterState(id=target_id, name=f"Character {index}")
                 for index, target_id in enumerate(_TARGET_IDS, start=1)
             ],
@@ -182,14 +182,14 @@ def test_budgeted_manifest_is_the_exact_final_json_projection(
     payload = {
         "world_revision": {"telemetry_sequence": 17},
         "telemetry": {
-            "squad": [{"id": "entity-1"}, {"id": 3}, "invalid"],
+            "roster": [{"id": "entity-1"}, {"id": 3}, "invalid"],
             "nearby_entities": [{"id": "entity-2"}],
             "world_targets": [{"id": "entity-3"}],
+            "primary_character_id": "entity-5",
+            "selected_character_ids": ["entity-7", 8],
             "ui": {
                 "dialogue_target_id": "entity-4",
-                "selected_character_id": "entity-5",
                 "context_inventory_target_id": "entity-6",
-                "selected_character_ids": ["entity-7", 8],
             },
         },
         "affordances": [
@@ -347,14 +347,14 @@ def test_payload_identity_extractors_reject_malformed_and_historical_shapes() ->
     current = _observation()
     payload = {
         "telemetry": {
-            "squad": [{"id": "entity-1"}, {"id": 4}, None],
+            "roster": [{"id": "entity-1"}, {"id": 4}, None],
             "nearby_entities": [{"id": "entity-2"}],
             "world_targets": [{"id": "entity-3"}],
+            "primary_character_id": "entity-5",
+            "selected_character_ids": ["entity-7", None],
             "ui": {
                 "dialogue_target_id": "entity-4",
-                "selected_character_id": "entity-5",
                 "context_inventory_target_id": "entity-6",
-                "selected_character_ids": ["entity-7", None],
             },
         },
         "affordances": [

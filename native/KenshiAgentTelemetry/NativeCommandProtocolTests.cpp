@@ -304,6 +304,58 @@ namespace
         return 0;
     }
 
+    int TestPlayerTopologyFixture(const std::string& fixtureRoot)
+    {
+        const std::string path =
+            fixtureRoot + "/valid_player_topology.json";
+        const std::string payload = ReadFile(path);
+        if (payload.empty())
+            return Fail("could not read current player-topology fixture");
+
+        try
+        {
+            std::istringstream input(payload);
+            boost::property_tree::ptree topology;
+            boost::property_tree::read_json(input, topology);
+            const boost::property_tree::ptree& roster =
+                topology.get_child("roster");
+            boost::property_tree::ptree::const_iterator rosterIt =
+                roster.begin();
+            if (topology.get<std::string>("protocol_version") != "1.19.0" ||
+                topology.count("squad") != 0U ||
+                roster.size() != 3U ||
+                rosterIt->second.count("selected") != 0U ||
+                topology.get_child("platoons").size() != 2U ||
+                topology.get<std::string>("active_platoon_id") !=
+                    "platoon-beta" ||
+                topology.get<std::string>("primary_character_id") !=
+                    "character-beta-primary" ||
+                topology.get_child("selected_character_ids").size() != 2U ||
+                !topology.get<bool>("roster_complete") ||
+                !topology.get<bool>("platoons_complete") ||
+                !topology.get<bool>("selected_character_ids_complete"))
+            {
+                return Fail(
+                    "current player-topology fixture lost a distinct authority");
+            }
+            ++rosterIt;
+            if (rosterIt == roster.end() ||
+                rosterIt->second.get<std::string>("id") !=
+                    topology.get<std::string>("primary_character_id"))
+            {
+                return Fail(
+                    "player-topology fixture no longer proves primary is not roster order");
+            }
+        }
+        catch (const std::exception& error)
+        {
+            return Fail(
+                "could not parse current player-topology fixture: " +
+                std::string(error.what()));
+        }
+        return 0;
+    }
+
     int TestInventoryScreenSemantics()
     {
         using KenshiAgentTelemetry::IsRegisteredShopInventoryOpen;
@@ -1141,15 +1193,49 @@ namespace
         }
         return 0;
     }
+
+    int TestStableCharacterIdentityRegistryAcrossPlatoonMove()
+    {
+        KenshiAgentTelemetry::StableCharacterIdentityRegistry registry;
+        const std::string before = registry.Resolve(
+            0x12345000ULL,
+            17,
+            "entity-before-platoon-move");
+        const std::string after = registry.Resolve(
+            0x12345000ULL,
+            17,
+            "entity-after-platoon-move");
+        if (before != after)
+            return Fail("player identity changed while the live Character object remained valid");
+
+        const std::string reused = registry.Resolve(
+            0x12345000ULL,
+            18,
+            "entity-pointer-reused");
+        if (reused != "entity-pointer-reused")
+            return Fail("a reused Character address inherited the prior object's identity");
+
+        registry.Clear();
+        const std::string nextSession = registry.Resolve(
+            0x12345000ULL,
+            18,
+            "entity-next-session");
+        if (nextSession != "entity-next-session")
+            return Fail("player identity registry survived an explicit session reset");
+        return 0;
+    }
 }
 
 int main(int argc, char** argv)
 {
-    if (argc != 4)
+    if (argc != 5)
     {
         return Fail(
-            "expected native-command, research, and Protocol 2.0 fixture directories");
+            "expected native-command, research, Protocol 2.0, and current telemetry fixture directories");
     }
+    const int topologyResult = TestPlayerTopologyFixture(argv[4]);
+    if (topologyResult != 0)
+        return topologyResult;
     const int protocol2Result = TestProtocol2WorldModelFixtures(argv[3]);
     if (protocol2Result != 0)
         return protocol2Result;
@@ -1209,6 +1295,10 @@ int main(int argc, char** argv)
         TestStableCharacterIdentityAcrossContainerChanges();
     if (stableCharacterResult != 0)
         return stableCharacterResult;
+    const int stableCharacterRegistryResult =
+        TestStableCharacterIdentityRegistryAcrossPlatoonMove();
+    if (stableCharacterRegistryResult != 0)
+        return stableCharacterRegistryResult;
 
     const std::string fixtureDirectory = argv[1];
     const std::string separator =

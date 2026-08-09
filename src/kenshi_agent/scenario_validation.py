@@ -38,9 +38,9 @@ def verify_scenario_snapshot(
     required_capabilities = {
         "game.money",
         "game.time",
-        "squad.basic",
-        "squad.indoors",
-        "squad.health",
+        "roster.basic",
+        "roster.indoors",
+        "roster.health",
     }
     missing = required_capabilities - set(snapshot.capabilities)
     if missing:
@@ -49,7 +49,7 @@ def verify_scenario_snapshot(
             + ", ".join(sorted(missing))
         )
 
-    selected = [character for character in snapshot.squad if character.selected]
+    selected = snapshot.selected_characters()
     if len(selected) != 1:
         raise ScenarioFixtureError(
             "Scenario verification requires exactly one selected character."
@@ -57,11 +57,11 @@ def verify_scenario_snapshot(
     character = selected[0]
     if character.indoors is None:
         raise ScenarioFixtureError(
-            "squad.indoors is unavailable for the selected character."
+            "roster.indoors is unavailable for the selected character."
         )
     if character.in_combat is None:
         raise ScenarioFixtureError(
-            "squad.health cannot prove selected-character combat state."
+            "roster.health cannot prove selected-character combat state."
         )
     if snapshot.game.money is None:
         raise ScenarioFixtureError("game.money is unavailable.")
@@ -74,7 +74,7 @@ def verify_scenario_snapshot(
         indoors=character.indoors,
         in_combat=character.in_combat,
         money=snapshot.game.money,
-        party_size=len(snapshot.squad),
+        party_size=len(snapshot.roster),
         minute_of_day=minute_of_day,
     )
 

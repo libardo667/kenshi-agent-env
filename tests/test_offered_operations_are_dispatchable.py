@@ -76,16 +76,14 @@ def _snapshot() -> TelemetrySnapshot:
             "identity.stable_handles",
             "nearby.characters",
             "nearby.orderable_tasks",
-            "squad.basic",
+            "roster.basic",
         ],
         game=GameState(loaded=True, paused=True),
-        ui=UIState(
-            active_screen="world",
-            selected_character_id=ACTOR,
-            selected_character_ids=[ACTOR],
-        ),
-        squad=[
-            CharacterState(id=ACTOR, name="Tuner", selected=True, alive=True, conscious=True)
+        ui=UIState(active_screen="world"),
+        primary_character_id=ACTOR,
+        selected_character_ids=[ACTOR],
+        roster=[
+            CharacterState(id=ACTOR, name="Tuner", alive=True, conscious=True)
         ],
         nearby_entities=[
             NearbyEntity(

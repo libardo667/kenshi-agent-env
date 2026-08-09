@@ -524,18 +524,16 @@ def test_engage_threat_intent_owns_normal_speed_playback(tmp_path: Path) -> None
                                 "game.pause",
                                 "game.speed",
                                 "nearby.visible_entities",
-                                "squad.health",
+                                "roster.health",
                                 "control.move_in_direction",
                             ],
-                            "ui": UIState(
-                                selected_character_id="entity-bark",
-                                selected_character_ids=["entity-bark"],
-                            ),
-                            "squad": [
+                            "ui": UIState(),
+                            "primary_character_id": "entity-bark",
+                            "selected_character_ids": ["entity-bark"],
+                            "roster": [
                                 CharacterState(
                                     id="entity-bark",
                                     name="Bark",
-                                    selected=True,
                                     alive=True,
                                     conscious=True,
                                     down=False,
@@ -638,8 +636,6 @@ class NativePulseTelemetry(PulseTelemetry):
                     speed_multiplier=self.speed_multiplier,
                 ),
                 ui=UIState(
-                    selected_character_id=self.selected_character_id,
-                    selected_character_ids=self.selected_character_ids,
                     active_screen=("dialogue" if self.dialogue_target_id is not None else "world"),
                     modal_open=self.dialogue_target_id is not None,
                     dialogue_open=self.dialogue_target_id is not None,
@@ -657,12 +653,13 @@ class NativePulseTelemetry(PulseTelemetry):
                     ),
                     visible_controls_complete=True,
                 ),
+                primary_character_id=self.selected_character_id,
+                selected_character_ids=self.selected_character_ids,
                 native_control=self.native_control,
-                squad=[
+                roster=[
                     CharacterState(
                         id="entity-selected",
                         name="Wanderer",
-                        selected="entity-selected" in self.selected_character_ids,
                         indoors=self.indoors,
                         alive=True,
                         conscious=True,
@@ -672,7 +669,6 @@ class NativePulseTelemetry(PulseTelemetry):
                     CharacterState(
                         id="entity-ruka",
                         name="Ruka",
-                        selected="entity-ruka" in self.selected_character_ids,
                         alive=True,
                         conscious=False,
                         down=True,
@@ -762,7 +758,7 @@ class ResourceTransferPulseTelemetry(PulseTelemetry):
                 identity_session_id="session-resource-transfer",
                 capabilities=[
                     "identity.stable_handles",
-                    "squad.inventory",
+                    "roster.inventory",
                     "ui.context_inventory_target",
                     "ui.inventory",
                     "ui.visible_controls",
@@ -777,8 +773,6 @@ class ResourceTransferPulseTelemetry(PulseTelemetry):
                     open_inventory_windows=(2 if self.player_inventory_open else 1),
                     context_inventory_target_id="entity-copper",
                     visible_controls_complete=True,
-                    selected_character_id="entity-selected",
-                    selected_character_ids=["entity-selected"],
                     visible_controls=[
                         *(
                             []
@@ -815,13 +809,14 @@ class ResourceTransferPulseTelemetry(PulseTelemetry):
                             if self.player_inventory_open
                             else []
                         ),
-                    ],
-                ),
-                squad=[
+                        ],
+                    ),
+                primary_character_id="entity-selected",
+                selected_character_ids=["entity-selected"],
+                roster=[
                     CharacterState(
                         id="entity-selected",
                         name="Wanderer",
-                        selected=True,
                         inventory_complete=True,
                         inventory=(
                             [
@@ -1083,7 +1078,7 @@ def test_squad_member_selection_uses_exact_native_identity_without_pointer_input
         telemetry.capabilities.extend(
             [
                 "control.select_squad_member",
-                "squad.basic",
+                "roster.basic",
             ]
         )
         initial = await environment.reset()
@@ -1124,7 +1119,7 @@ def test_exact_native_selection_collapses_a_current_squad_group(
         telemetry.capabilities.extend(
             [
                 "control.select_squad_member",
-                "squad.basic",
+                "roster.basic",
             ]
         )
         telemetry.selected_character_ids = ["entity-selected", "entity-ruka"]
@@ -1859,7 +1854,7 @@ def test_direction_request_is_targetless_and_revalidates_its_own_capabilities(
         telemetry.capabilities = [
             "game.pause",
             "control.move_in_direction",
-            "squad.health",
+            "roster.health",
         ]
         environment.controls_config = environment.controls_config.model_copy(
             update={
@@ -1915,7 +1910,7 @@ def test_map_travel_issues_one_exact_order_and_establishes_five_x(
             "control.travel_to_map_destination",
             "world.known_map_destinations",
             "identity.stable_handles",
-            "squad.health",
+            "roster.health",
         ]
         telemetry.known_map_destinations = [
             KnownMapDestination(
@@ -1970,7 +1965,7 @@ def test_map_travel_carries_the_complete_selected_squad_basis(
             "control.travel_to_map_destination",
             "world.known_map_destinations",
             "identity.stable_handles",
-            "squad.health",
+            "roster.health",
         ]
         telemetry.selected_character_ids = ["entity-selected", "entity-ruka"]
         telemetry.known_map_destinations = [
@@ -2019,8 +2014,8 @@ def test_squad_regroup_issues_one_global_exact_order_and_establishes_five_x(
             "game.speed",
             "control.regroup_with_squad_member",
             "identity.stable_handles",
-            "squad.basic",
-            "squad.health",
+            "roster.basic",
+            "roster.health",
         ]
         environment.controls_config = environment.controls_config.model_copy(
             update={
@@ -2082,7 +2077,7 @@ def test_map_arrival_terminal_wins_race_with_running_confirmation(
             "control.travel_to_map_destination",
             "world.known_map_destinations",
             "identity.stable_handles",
-            "squad.health",
+            "roster.health",
         ]
         telemetry.known_map_destinations = [
             KnownMapDestination(
@@ -2145,7 +2140,7 @@ def test_building_exit_request_is_parameterless_and_requires_current_indoor_stat
             "game.pause",
             "control.exit_current_building",
             "identity.stable_handles",
-            "squad.indoors",
+            "roster.indoors",
         ]
         telemetry.indoors = True
         environment.controls_config = environment.controls_config.model_copy(
@@ -2198,7 +2193,7 @@ def test_continuous_native_movement_starts_a_paused_world_without_repausing(
             "game.pause",
             "control.exit_current_building",
             "identity.stable_handles",
-            "squad.indoors",
+            "roster.indoors",
         ]
         telemetry.indoors = True
         environment.controls_config = environment.controls_config.model_copy(
@@ -2265,7 +2260,7 @@ def test_direction_does_not_adopt_an_active_order_for_another_vector(
         telemetry.capabilities = [
             "game.pause",
             "control.move_in_direction",
-            "squad.health",
+            "roster.health",
         ]
         telemetry.sequence = 10
         active_id = "cmd-" + "a" * 32

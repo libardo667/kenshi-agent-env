@@ -143,7 +143,7 @@ def test_exact_squad_selection_can_reduce_a_current_multi_selection() -> None:
         control_mode=ControlMode.NATIVE_ASSISTED,
         telemetry=TelemetrySnapshot(
             capabilities=[
-                "squad.basic",
+                "roster.basic",
                 "ui.visible_controls",
                 "control.select_squad_member",
                 "identity.stable_handles",
@@ -154,8 +154,6 @@ def test_exact_squad_selection_can_reduce_a_current_multi_selection() -> None:
                 active_screen="world",
                 modal_open=False,
                 dialogue_open=False,
-                selected_character_id="entity-twitch",
-                selected_character_ids=["entity-nam", "entity-twitch"],
                 visible_controls=[
                     VisibleUIControl(
                         label="Nam",
@@ -170,16 +168,16 @@ def test_exact_squad_selection_can_reduce_a_current_multi_selection() -> None:
                 ],
                 visible_controls_complete=True,
             ),
-            squad=[
+            primary_character_id="entity-twitch",
+            selected_character_ids=["entity-nam", "entity-twitch"],
+            roster=[
                 CharacterState(
                     id="entity-nam",
                     name="Nam",
-                    selected=True,
                 ),
                 CharacterState(
                     id="entity-twitch",
                     name="Twitch",
-                    selected=True,
                 ),
             ],
         ),
@@ -220,12 +218,12 @@ def test_dialogue_approach_preserves_a_valid_multi_selection() -> None:
                 active_screen="world",
                 modal_open=False,
                 dialogue_open=False,
-                selected_character_id="entity-bark",
-                selected_character_ids=["entity-bark", "entity-plant"],
             ),
-            squad=[
-                CharacterState(id="entity-bark", name="Bark", selected=True),
-                CharacterState(id="entity-plant", name="Plant", selected=True),
+            primary_character_id="entity-bark",
+            selected_character_ids=["entity-bark", "entity-plant"],
+            roster=[
+                CharacterState(id="entity-bark", name="Bark"),
+                CharacterState(id="entity-plant", name="Plant"),
             ],
             nearby_entities=[
                 NearbyEntity(
@@ -270,8 +268,8 @@ def test_native_party_control_accepts_an_exact_group_basis(
                 "game.pause",
                 "game.speed",
                 "identity.stable_handles",
-                "squad.basic",
-                "squad.health",
+                "roster.basic",
+                "roster.health",
                 "world.known_map_destinations",
             ],
             game=GameState(loaded=True, paused=True, speed_multiplier=0.0),
@@ -279,19 +277,17 @@ def test_native_party_control_accepts_an_exact_group_basis(
                 active_screen="world",
                 dialogue_open=False,
                 modal_open=False,
-                selected_character_id="entity-bark",
-                selected_character_ids=["entity-bark", "entity-plant"],
             ),
-            squad=[
+            primary_character_id="entity-bark",
+            selected_character_ids=["entity-bark", "entity-plant"],
+            roster=[
                 CharacterState(
                     id="entity-bark",
                     name="Bark",
-                    selected=True,
                 ),
                 CharacterState(
                     id="entity-plant",
                     name="Plant",
-                    selected=True,
                 ),
             ],
             known_map_destinations=[
@@ -450,14 +446,12 @@ def generic_purchase_observation() -> Observation:
                 "identity.stable_handles",
                 "nearby.characters",
                 "nearby.shop_owners",
-                "squad.basic",
-                "squad.inventory",
+                "roster.basic",
+                "roster.inventory",
             ],
             game=GameState(loaded=True, paused=True, money=1000),
             ui=UIState(
                 active_screen="trade",
-                selected_character_id="player:1",
-                selected_character_ids=["player:1"],
                 tooltip_visible=True,
                 tooltip_text="Dried Meat\n[Food]\nValue: c.38",
                 tooltip_source_bounds=bounds,
@@ -483,11 +477,12 @@ def generic_purchase_observation() -> Observation:
                     ),
                 ],
             ),
-            squad=[
+            primary_character_id="player:1",
+            selected_character_ids=["player:1"],
+            roster=[
                 CharacterState(
                     id="player:1",
                     name="Hep",
-                    selected=True,
                     inventory_complete=True,
                 )
             ],
@@ -558,5 +553,4 @@ def trade_in_progress_observation() -> Observation:
             )
         }
     )
-
 

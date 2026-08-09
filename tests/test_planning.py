@@ -260,12 +260,13 @@ def rich_observation() -> Observation:
             "ui.dialogue.options",
             "ui.visible_controls",
             "ui.tooltip",
-            "squad.basic",
-            "squad.indoors",
-            "squad.hunger",
-            "squad.health",
-            "squad.inventory",
-            "squad.current_goal",
+            "roster.basic",
+            "selection.complete",
+            "roster.indoors",
+            "roster.hunger",
+            "roster.health",
+            "roster.inventory",
+            "roster.current_goal",
             "identity.stable_handles",
             "nearby.characters",
             "nearby.visible_entities",
@@ -302,9 +303,9 @@ def rich_observation() -> Observation:
                 tooltip_visible=True,
                 tooltip_text="tooltip",
                 context_menu_open=False,
-                selected_character_id="chosen",
-                selected_character_ids=["chosen", "flagged"],
             ),
+            "primary_character_id": "chosen",
+            "selected_character_ids": ["chosen", "flagged"],
             "native_control": NativeControlState(
                 available=True,
                 last_command_sequence=19,
@@ -314,12 +315,11 @@ def rich_observation() -> Observation:
                 last_target_id="mine",
             ),
             "active_shop_trader_count": 3,
-            "squad": [
-                CharacterState(id="flagged", name="Flagged", selected=True),
+            "roster": [
+                CharacterState(id="flagged", name="Flagged"),
                 CharacterState(
                     id="chosen",
                     name="Chosen",
-                    selected=True,
                     alive=True,
                     conscious=False,
                     down=True,
@@ -383,7 +383,7 @@ def test_every_field_condition_path_resolves_its_observed_scalar() -> None:
         FieldConditionPath.TELEMETRY_UI_TOOLTIP_TEXT: "tooltip",
         FieldConditionPath.TELEMETRY_UI_CONTEXT_MENU_OPEN: False,
         FieldConditionPath.TELEMETRY_UI_SELECTED_CHARACTER_ID: "chosen",
-        FieldConditionPath.TELEMETRY_UI_SELECTED_CHARACTER_COUNT: 2,
+        FieldConditionPath.TELEMETRY_SELECTED_CHARACTER_COUNT: 2,
         FieldConditionPath.TELEMETRY_ACTIVE_SHOP_TRADER_COUNT: 3,
         FieldConditionPath.TELEMETRY_NATIVE_CONTROL_AVAILABLE: True,
         FieldConditionPath.TELEMETRY_NATIVE_CONTROL_COMMAND_ACTIVE: False,
@@ -440,7 +440,12 @@ def test_selected_character_resolution_has_a_total_precedence_order() -> None:
     assert evaluate_condition(selected_name, current).result is ConditionResult.TRUE
 
     flagged = current.telemetry.model_copy(
-        update={"ui": UIState(), "squad": current.telemetry.squad}
+        update={
+            "ui": UIState(),
+            "primary_character_id": None,
+            "selected_character_ids": [],
+            "roster": current.telemetry.roster,
+        }
     )
     assert (
         evaluate_condition(
@@ -451,14 +456,16 @@ def test_selected_character_resolution_has_a_total_precedence_order() -> None:
     )
 
     # A primary Kenshi names but the roster does not contain is unresolvable.
-    # This used to fall back to the first squad member - who need not be
+    # This used to fall back to the first roster member - who need not be
     # selected in any sense - so a fact about "the selected character" was
     # answered about somebody else and reported as TRUE. Kenshi exports its
     # primary; when that primary cannot be found, the answer is unknown.
     absent_primary = current.telemetry.model_copy(
         update={
-            "ui": UIState(selected_character_id="absent"),
-            "squad": [
+            "ui": UIState(),
+            "primary_character_id": "absent",
+            "selected_character_ids": [],
+            "roster": [
                 CharacterState(
                     id="first",
                     name="First",
@@ -475,7 +482,7 @@ def test_selected_character_resolution_has_a_total_precedence_order() -> None:
         is ConditionResult.UNKNOWN
     )
 
-    empty = current.telemetry.model_copy(update={"ui": UIState(), "squad": []})
+    empty = current.telemetry.model_copy(update={"ui": UIState(), "roster": []})
     assert (
         evaluate_condition(
             selected_name,
@@ -544,18 +551,16 @@ def test_condition_operators_follow_their_truth_tables(
             "game": current.telemetry.game.model_copy(
                 update={"money": actual if isinstance(actual, int) else 4}
             ),
-            "squad": [
+            "roster": [
                 CharacterState(
                     id="selected",
                     name="Selected",
-                    selected=True,
                     current_goal=actual if isinstance(actual, str) else "Operating machine",
                 )
             ],
-            "ui": UIState(
-                selected_character_id="selected",
-                selected_character_ids=["selected"],
-            ),
+            "ui": UIState(),
+            "primary_character_id": "selected",
+            "selected_character_ids": ["selected"],
         }
     )
     path = "selected.current_goal" if isinstance(actual, str) else "telemetry.game.money"
@@ -696,17 +701,16 @@ def test_condition_evaluator_preserves_false_unknown_unavailable_and_stale() -> 
     )
 
 
-def test_exact_selection_count_requires_stable_identity_capability() -> None:
-    exact_one = field_condition("telemetry.ui.selected_character_count", 1)
-    current = observation(capabilities=["squad.basic", "identity.stable_handles"])
+def test_exact_selection_count_requires_complete_selection_capability() -> None:
+    exact_one = field_condition("telemetry.selected_character_count", 1)
+    current = observation(capabilities=["roster.basic", "selection.complete"])
     assert current.telemetry is not None
     current.telemetry = current.telemetry.model_copy(
         update={
-            "ui": UIState(
-                selected_character_id="entity-player",
-                selected_character_ids=["entity-player"],
-            ),
-            "squad": [CharacterState(id="entity-player", name="Wanderer", selected=True)],
+            "ui": UIState(),
+            "primary_character_id": "entity-player",
+            "selected_character_ids": ["entity-player"],
+            "roster": [CharacterState(id="entity-player", name="Wanderer")],
         }
     )
 
@@ -714,7 +718,7 @@ def test_exact_selection_count_requires_stable_identity_capability() -> None:
     assert (
         evaluate_condition(
             exact_one,
-            observation(capabilities=["squad.basic"]),
+            observation(capabilities=["roster.basic"]),
         ).result
         is ConditionResult.UNAVAILABLE
     )

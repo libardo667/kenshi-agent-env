@@ -24,7 +24,7 @@ from .core.advisor import AdvisorAvailability
 from .core.observation import Observation
 from .nutrition import (
     model_facing_telemetry_payload,
-    squad_nutrition_digest,
+    roster_nutrition_digest,
 )
 from .observation_budget import budget_observation_payload
 
@@ -36,10 +36,14 @@ def planner_affordance_digest(observation: Observation) -> list[dict[str, Any]]:
 
 
 def planner_nutrition_digest(observation: Observation) -> dict[str, Any]:
-    """Interpret the native nutrition reserve for the current squad."""
+    """Interpret the native nutrition reserve for the player roster."""
 
-    squad = observation.telemetry.squad if observation.telemetry is not None else []
-    return squad_nutrition_digest(squad)
+    if observation.telemetry is None:
+        return {}
+    return roster_nutrition_digest(
+        observation.telemetry.roster,
+        observation.telemetry.selected_character_ids,
+    )
 
 
 def _planner_json(value: Any) -> str:
@@ -94,7 +98,7 @@ def render_planner_payload(
     payload = observation.model_dump(mode="json", exclude={"screenshot_path"})
     payload["telemetry"] = model_facing_telemetry_payload(payload.get("telemetry"))
     payload["affordances"] = planner_affordance_digest(observation)
-    payload["squad_nutrition"] = planner_nutrition_digest(observation)
+    payload["roster_nutrition"] = planner_nutrition_digest(observation)
     payload = _project_planner_payload(payload)
     if max_chars is None and max_context_chars is None:
         return _planner_json(payload)

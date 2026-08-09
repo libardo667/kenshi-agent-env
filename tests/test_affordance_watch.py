@@ -29,19 +29,18 @@ SECOND = "char-second"
 
 def snapshot(*, selected: list[str], sequence: int = 10) -> TelemetrySnapshot:
     roster = [
-        CharacterState(id=PRIMARY, name="Bombingham", selected=PRIMARY in selected, alive=True),
-        CharacterState(id=SECOND, name="Barth", selected=SECOND in selected, alive=True),
+        CharacterState(id=PRIMARY, name="Bombingham", alive=True),
+        CharacterState(id=SECOND, name="Barth", alive=True),
     ]
     return TelemetrySnapshot(
         sequence=sequence,
         captured_at=datetime.now(UTC),
-        capabilities=["squad.basic", "game.pause"],
+        capabilities=["roster.basic", "game.pause"],
         game=GameState(loaded=True, paused=True),
-        ui=UIState(
-            selected_character_id=selected[0] if selected else None,
-            selected_character_ids=list(selected),
-        ),
-        squad=roster,
+        primary_character_id=selected[0] if selected else None,
+        selected_character_ids=list(selected),
+        ui=UIState(),
+        roster=roster,
     )
 
 
@@ -152,5 +151,4 @@ def test_empty_menu_states_that_absence_is_ambiguous() -> None:
 
     assert "NO AFFORDANCES OFFERED" in body
     assert "never modeled" in body
-
 

@@ -259,7 +259,7 @@ def verify_authored_game_start_snapshot(
         raise AuthoredStartsError(
             "Authored Game Start proof requires a native identity session."
         )
-    required = {"game.money", "squad.basic"}
+    required = {"game.money", "roster.basic"}
     missing = required - set(snapshot.capabilities)
     if missing:
         raise AuthoredStartsError(
@@ -271,8 +271,8 @@ def verify_authored_game_start_snapshot(
             f"Authored Game Start expected money {start.money}, but observed "
             f"{snapshot.game.money!r}."
         )
-    if len(snapshot.squad) != start.party_size:
+    if len(snapshot.roster) != start.party_size:
         raise AuthoredStartsError(
             f"Authored Game Start expected party size {start.party_size}, but "
-            f"observed {len(snapshot.squad)}."
+            f"observed {len(snapshot.roster)}."
         )

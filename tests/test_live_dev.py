@@ -949,7 +949,7 @@ def launch_snapshot(sequence: int, *, paused: bool) -> TelemetrySnapshot:
         captured_at=datetime.now(UTC),
         capabilities=["game.pause"],
         game=GameState(loaded=True, paused=paused),
-        squad=[CharacterState(id="entity-hep", name="Hep", selected=True)],
+        roster=[CharacterState(id="entity-hep", name="Hep")],
     )
 
 
@@ -1026,19 +1026,18 @@ def resource_inventory_snapshot(
             modal_open=open_count > 0,
             dialogue_open=False,
             open_inventory_windows=open_count,
-            context_inventory_target_id=(
-                "entity-iron" if source_open else None
+                context_inventory_target_id=(
+                    "entity-iron" if source_open else None
+                ),
+                visible_controls_complete=True,
+                visible_controls=controls,
             ),
-            visible_controls_complete=True,
-            selected_character_id="entity-hep",
+            primary_character_id="entity-hep",
             selected_character_ids=["entity-hep"],
-            visible_controls=controls,
-        ),
-        squad=[
+        roster=[
             CharacterState(
                 id="entity-hep",
                 name="Hep",
-                selected=True,
             )
         ],
         world_targets=[

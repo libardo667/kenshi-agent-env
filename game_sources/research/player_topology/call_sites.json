@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "subsystem": "player_topology",
+  "executable": {
+    "product": "Kenshi",
+    "version": "1.0.65",
+    "architecture": "x64",
+    "steam_build_id": "13871665",
+    "sha256": "a596ab4e407c67b58599c54ffb32dc1bf2b64510cdebd3fa9359ef05a576aeb1"
+  },
+  "libraries": [
+    {
+      "name": "KenshiLib",
+      "version": "0.4.0",
+      "repository_commit": "b566d74bf3d74629cc2fb632a97595b8202993f1",
+      "artifact_sha256": "d407bf18c807cd3390643227ca4dc3ee4628fedc520870eee250201c04db311d",
+      "headers_sha256": "fbfa33a283ed840e70f6f5f6675c2544df89bc18f8901b81eaa7095b466ec4c8",
+      "working_tree_state": "KenshiLib 0.4.0 checkout with locally modified library binaries; exact artifact and header hashes are authoritative"
+    }
+  ],
+  "sites": [
+    {
+      "id": "player_roster",
+      "component": "Kenshi",
+      "symbol": "PlayerInterface::getAllPlayerCharacters",
+      "rva": "0x7F1230",
+      "declared_signature": "const lektor<Character*>& PlayerInterface::getAllPlayerCharacters() const",
+      "inferred_signature_confidence": "medium",
+      "declaration_source": "KenshiLib 0.4.0 Include/kenshi/PlayerInterface.h:179",
+      "evidence": ["KenshiLib declaration and RVA", "current native roster call site"],
+      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 5825, "contains": "getAllPlayerCharacters"}]
+    },
+    {
+      "id": "character_platoon",
+      "component": "Kenshi",
+      "symbol": "Character::getPlatoon",
+      "rva": "0x7908B0",
+      "declared_signature": "ActivePlatoon* Character::getPlatoon() const",
+      "inferred_signature_confidence": "medium",
+      "declaration_source": "KenshiLib 0.4.0 Include/kenshi/Character.h:588",
+      "evidence": ["KenshiLib declaration and RVA", "current native membership call site"],
+      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 5850, "contains": "getPlatoon"}]
+    },
+    {
+      "id": "platoon_string_id",
+      "component": "Kenshi",
+      "symbol": "Platoon::getPlatoonStringID",
+      "rva": "0x384710",
+      "declared_signature": "std::string Platoon::getPlatoonStringID() const",
+      "inferred_signature_confidence": "medium",
+      "declaration_source": "KenshiLib 0.4.0 Include/kenshi/Platoon.h:138",
+      "evidence": ["KenshiLib declaration and RVA", "ActivePlatoon::me declaration", "current stable platoon ID call site"],
+      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 539, "contains": "getPlatoonStringID"}]
+    },
+    {
+      "id": "platoon_name",
+      "component": "Kenshi",
+      "symbol": "ActivePlatoon::getName",
+      "rva": "0x411980",
+      "declared_signature": "const std::string& ActivePlatoon::getName() const",
+      "inferred_signature_confidence": "medium",
+      "declaration_source": "KenshiLib 0.4.0 Include/kenshi/Platoon.h:260",
+      "evidence": ["KenshiLib declaration and RVA", "current native topology call site"],
+      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 5861, "contains": "getName"}]
+    },
+    {
+      "id": "active_platoon",
+      "component": "Kenshi",
+      "symbol": "PlayerInterface::getCurrentActivePlatoon",
+      "rva": "0x7F44B0",
+      "declared_signature": "RootObjectContainer* PlayerInterface::getCurrentActivePlatoon()",
+      "inferred_signature_confidence": "medium",
+      "declaration_source": "KenshiLib 0.4.0 Include/kenshi/PlayerInterface.h:115",
+      "evidence": ["KenshiLib declaration and RVA", "current native active-platoon call site"],
+      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 5869, "contains": "getCurrentActivePlatoon"}]
+    },
+    {
+      "id": "primary_character",
+      "component": "KenshiLib",
+      "symbol": "PlayerInterface::selectedCharacter",
+      "rva": null,
+      "declared_signature": "hand PlayerInterface::selectedCharacter",
+      "inferred_signature_confidence": "medium",
+      "declaration_source": "KenshiLib 0.4.0 Include/kenshi/PlayerInterface.h:191",
+      "evidence": ["KenshiLib member declaration", "current native primary resolution"],
+      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 5822, "contains": "selectedCharacter.getCharacter"}]
+    },
+    {
+      "id": "selected_character_set",
+      "component": "KenshiLib",
+      "symbol": "PlayerInterface::selectedCharacters",
+      "rva": null,
+      "declared_signature": "ogre_unordered_set<hand>::type PlayerInterface::selectedCharacters",
+      "inferred_signature_confidence": "medium",
+      "declaration_source": "KenshiLib 0.4.0 Include/kenshi/PlayerInterface.h:241",
+      "evidence": ["KenshiLib member declaration", "current native complete-selection walk"],
+      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 5909, "contains": "selectedCharacters.begin"}]
+    }
+  ]
+}

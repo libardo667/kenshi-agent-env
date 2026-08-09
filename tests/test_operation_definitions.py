@@ -80,7 +80,9 @@ def observation(
     controls: list[VisibleUIControl] | None = None,
     ui: UIState | None = None,
     capabilities: list[str] | None = None,
-    squad: list[CharacterState] | None = None,
+    roster: list[CharacterState] | None = None,
+    primary_character_id: str | None = None,
+    selected_character_ids: list[str] | None = None,
     stale: bool = False,
     control_mode: ControlMode = ControlMode.NATIVE_ASSISTED,
     world_targets: list[WorldTarget] | None = None,
@@ -115,8 +117,10 @@ def observation(
             capabilities=capabilities if capabilities is not None else APPROACH_CAPABILITIES,
             game=game or GameState(loaded=True, paused=True),
             ui=effective_ui,
+            primary_character_id=primary_character_id,
+            selected_character_ids=selected_character_ids or [],
             active_shop_trader_count=active_shop_trader_count,
-            squad=squad or [],
+            roster=roster or [],
             nearby_entities=entities or [],
             world_targets=world_targets or [],
         ),
@@ -157,7 +161,6 @@ def test_squad_regroup_binds_a_selected_actor_to_a_distinct_downed_squadmate() -
     actor = CharacterState(
         id="entity-bark",
         name="Bark",
-        selected=True,
         alive=True,
         conscious=True,
         down=False,
@@ -177,14 +180,14 @@ def test_squad_regroup_binds_a_selected_actor_to_a_distinct_downed_squadmate() -
             "game.pause",
             "game.speed",
             "identity.stable_handles",
-            "squad.basic",
-            "squad.health",
+            "roster.basic",
+            "roster.health",
         ],
-        squad=[actor, target],
+        roster=[actor, target],
+        primary_character_id=actor.id,
+        selected_character_ids=[actor.id],
         ui=UIState(
             active_screen="world",
-            selected_character_id=actor.id,
-            selected_character_ids=[actor.id],
         ),
     )
     action = RegroupWithSquadMemberAction(
@@ -203,7 +206,7 @@ def test_squad_regroup_binds_a_selected_actor_to_a_distinct_downed_squadmate() -
         update={
             "telemetry": state.telemetry.model_copy(
                 update={
-                    "squad": [
+                    "roster": [
                         actor,
                         target.model_copy(
                             update={"position": Vec3(x=5.0, y=0.0, z=5.0)}
@@ -220,21 +223,21 @@ def test_squad_regroup_binds_a_selected_actor_to_a_distinct_downed_squadmate() -
 
 
 def test_squad_selection_prefers_exact_native_identity_without_portrait_geometry() -> None:
-    actor = CharacterState(id="entity-bark", name="Bark", selected=True)
+    actor = CharacterState(id="entity-bark", name="Bark")
     target = CharacterState(id="entity-plant", name="Plant")
     state = observation(
         capabilities=[
             "control.select_squad_member",
             "identity.stable_handles",
-            "squad.basic",
+            "roster.basic",
         ],
-        squad=[actor, target],
+        roster=[actor, target],
+        primary_character_id=actor.id,
+        selected_character_ids=[actor.id],
         ui=UIState(
             active_screen="world",
             modal_open=False,
             dialogue_open=False,
-            selected_character_id=actor.id,
-            selected_character_ids=[actor.id],
             visible_controls=[],
         ),
     )
@@ -357,17 +360,15 @@ class TestExitCurrentBuildingBinding:
             capabilities=[
                 "control.exit_current_building",
                 "identity.stable_handles",
-                "squad.indoors",
+                "roster.indoors",
             ],
-            ui=UIState(
-                selected_character_id="entity-hep",
-                selected_character_ids=["entity-hep"],
-            ),
-            squad=[
+            primary_character_id="entity-hep",
+            selected_character_ids=["entity-hep"],
+            ui=UIState(),
+            roster=[
                 CharacterState(
                     id="entity-hep",
                     name="Hep",
-                    selected=True,
                     indoors=True,
                 )
             ],
@@ -408,15 +409,13 @@ class TestExitCurrentBuildingBinding:
 
     def test_rejects_an_outdoor_character(self) -> None:
         state = observation(
-            ui=UIState(
-                selected_character_id="entity-hep",
-                selected_character_ids=["entity-hep"],
-            ),
-            squad=[
+            primary_character_id="entity-hep",
+            selected_character_ids=["entity-hep"],
+            ui=UIState(),
+            roster=[
                 CharacterState(
                     id="entity-hep",
                     name="Hep",
-                    selected=True,
                     indoors=False,
                 )
             ],
@@ -696,19 +695,17 @@ def test_exact_known_map_destination_has_one_controller_owned_travel_contract() 
             "game.pause",
             "game.speed",
             "identity.stable_handles",
-            "squad.health",
+            "roster.health",
         ],
-        squad=[
+        roster=[
             CharacterState(
                 id="entity-selected",
                 name="Streak",
-                selected=True,
             )
         ],
-        ui=UIState(
-            selected_character_id="entity-selected",
-            selected_character_ids=["entity-selected"],
-        ),
+        primary_character_id="entity-selected",
+        selected_character_ids=["entity-selected"],
+        ui=UIState(),
     )
     assert state.telemetry is not None
     state = state.model_copy(
@@ -745,8 +742,8 @@ def test_exact_known_map_destination_has_one_controller_owned_travel_contract() 
 
 def test_exact_selection_travel_and_ordinary_movement_bind_a_current_squad_group() -> None:
     squad = [
-        CharacterState(id="entity-bark", name="Bark", selected=True),
-        CharacterState(id="entity-plant", name="Plant", selected=True),
+        CharacterState(id="entity-bark", name="Bark"),
+        CharacterState(id="entity-plant", name="Plant"),
     ]
     state = observation(
         capabilities=[
@@ -758,8 +755,8 @@ def test_exact_selection_travel_and_ordinary_movement_bind_a_current_squad_group
             "game.speed",
             "identity.stable_handles",
             "nearby.characters",
-            "squad.basic",
-            "squad.health",
+            "roster.basic",
+            "roster.health",
         ],
         entities=[
             NearbyEntity(
@@ -770,13 +767,13 @@ def test_exact_selection_travel_and_ordinary_movement_bind_a_current_squad_group
                 distance=20.0,
             )
         ],
-        squad=squad,
+        roster=squad,
+        primary_character_id="entity-bark",
+        selected_character_ids=["entity-bark", "entity-plant"],
         ui=UIState(
             active_screen="world",
             dialogue_open=False,
             modal_open=False,
-            selected_character_id="entity-bark",
-            selected_character_ids=["entity-bark", "entity-plant"],
         ),
     )
     assert state.telemetry is not None
@@ -860,19 +857,17 @@ def test_map_travel_cannot_bind_a_destination_already_reached() -> None:
             "control.travel_to_map_destination",
             "world.known_map_destinations",
             "identity.stable_handles",
-            "squad.health",
+            "roster.health",
         ],
-        squad=[
+        roster=[
             CharacterState(
                 id="entity-selected",
                 name="Streak",
-                selected=True,
             )
         ],
-        ui=UIState(
-            selected_character_id="entity-selected",
-            selected_character_ids=["entity-selected"],
-        ),
+        primary_character_id="entity-selected",
+        selected_character_ids=["entity-selected"],
+        ui=UIState(),
     )
     assert state.telemetry is not None
     state.telemetry.known_map_destinations = [
@@ -904,19 +899,17 @@ def test_map_travel_cannot_bind_the_exact_current_town_after_gate_entry() -> Non
             "game.pause",
             "game.speed",
             "identity.stable_handles",
-            "squad.health",
+            "roster.health",
         ],
-        squad=[
+        roster=[
             CharacterState(
                 id="entity-selected",
                 name="Streak",
-                selected=True,
             )
         ],
-        ui=UIState(
-            selected_character_id="entity-selected",
-            selected_character_ids=["entity-selected"],
-        ),
+        primary_character_id="entity-selected",
+        selected_character_ids=["entity-selected"],
+        ui=UIState(),
         game=GameState(
             loaded=True,
             paused=True,
@@ -984,27 +977,24 @@ def test_group_map_travel_is_not_hidden_by_a_primary_member_already_in_town() ->
             "game.pause",
             "game.speed",
             "identity.stable_handles",
-            "squad.health",
+            "roster.health",
         ],
-        squad=[
+        roster=[
             CharacterState(
                 id="entity-primary-local",
                 name="Kole",
-                selected=True,
             ),
             CharacterState(
                 id="entity-remote-groupmate",
                 name="Polly",
-                selected=True,
             ),
         ],
-        ui=UIState(
-            selected_character_id="entity-primary-local",
-            selected_character_ids=[
-                "entity-primary-local",
-                "entity-remote-groupmate",
-            ],
-        ),
+        primary_character_id="entity-primary-local",
+        selected_character_ids=[
+            "entity-primary-local",
+            "entity-remote-groupmate",
+        ],
+        ui=UIState(),
         game=GameState(
             loaded=True,
             paused=True,
@@ -1046,7 +1036,7 @@ class TestAffordancesAreAdvertised:
             "game.speed",
             "control.move_in_direction",
             "nearby.visible_entities",
-            "squad.health",
+            "roster.health",
         ]
         threatened = observation(
             entities=[
@@ -1060,11 +1050,10 @@ class TestAffordancesAreAdvertised:
                 )
             ],
             capabilities=capabilities,
-            squad=[
+            roster=[
                 CharacterState(
                     id="entity-bark",
                     name="Bark",
-                    selected=True,
                     alive=True,
                     conscious=True,
                     blood=100.0,
@@ -1072,10 +1061,9 @@ class TestAffordancesAreAdvertised:
                     position=Vec3(x=10.0, y=0.0, z=0.0),
                 )
             ],
-            ui=UIState(
-                selected_character_id="entity-bark",
-                selected_character_ids=["entity-bark"],
-            ),
+            primary_character_id="entity-bark",
+            selected_character_ids=["entity-bark"],
+            ui=UIState(),
             game=GameState(loaded=True, paused=True, speed_multiplier=1.0),
         )
 
@@ -1231,14 +1219,13 @@ class TestPurchaseUsesExportedCellFacts:
                 "ui.tooltip",
                 "ui.inventory",
                 "nearby.shop_owners",
-                "squad.basic",
-                "squad.inventory",
+                "roster.basic",
+                "roster.inventory",
             ],
-            squad=[
+            roster=[
                 CharacterState(
                     id="entity-hep",
                     name="Hep",
-                    selected=True,
                     inventory_complete=True,
                 )
             ],
@@ -1336,14 +1323,13 @@ class TestPurchaseBindingCarriesCellFacts:
                 "ui.tooltip",
                 "ui.inventory",
                 "nearby.shop_owners",
-                "squad.basic",
-                "squad.inventory",
+                "roster.basic",
+                "roster.inventory",
             ],
-            squad=[
+            roster=[
                 CharacterState(
                     id="entity-hep",
                     name="Hep",
-                    selected=True,
                     inventory_complete=True,
                 )
             ],

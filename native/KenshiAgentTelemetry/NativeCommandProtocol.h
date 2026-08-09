@@ -1,6 +1,7 @@
 #ifndef KENSHI_AGENT_NATIVE_COMMAND_PROTOCOL_H
 #define KENSHI_AGENT_NATIVE_COMMAND_PROTOCOL_H
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -129,6 +130,28 @@ namespace KenshiAgentTelemetry
         unsigned int containerSerial,
         unsigned int index,
         unsigned int serial);
+
+    class StableCharacterIdentityRegistry
+    {
+    public:
+        std::string Resolve(
+            unsigned long long objectAddress,
+            int validKey,
+            const std::string& candidateId);
+        void Clear();
+
+    private:
+        struct Entry
+        {
+            Entry();
+            Entry(int key, const std::string& value);
+
+            int validKey;
+            std::string id;
+        };
+
+        std::map<unsigned long long, Entry> entries_;
+    };
 
     bool ParseNativeCommandRequest(
         const std::string& payload,

@@ -9,7 +9,7 @@ from kenshi_agent.nutrition import (
     model_facing_telemetry_payload,
     nutrition_reserve_change,
     nutrition_status,
-    squad_nutrition_digest,
+    roster_nutrition_digest,
 )
 
 
@@ -17,7 +17,6 @@ from kenshi_agent.nutrition import (
 class Member:
     id: str
     name: str
-    selected: bool
     hunger: float | None
 
 
@@ -41,14 +40,15 @@ def test_nutrition_status_uses_the_exact_game_derived_boundaries(
     assert nutrition_status(reserve) is expected
 
 
-def test_squad_digest_covers_every_member_and_preserves_unknown() -> None:
-    assert squad_nutrition_digest([]) == {}
+def test_roster_digest_covers_every_member_and_preserves_unknown() -> None:
+    assert roster_nutrition_digest([]) == {}
 
-    digest = squad_nutrition_digest(
+    digest = roster_nutrition_digest(
         [
-            Member("hep", "Hep", True, 2.775886),
-            Member("unknown", "Unknown", False, None),
-        ]
+            Member("hep", "Hep", 2.775886),
+            Member("unknown", "Unknown", None),
+        ],
+        ["hep"],
     )
 
     assert digest == {
@@ -83,7 +83,7 @@ def test_squad_digest_covers_every_member_and_preserves_unknown() -> None:
 def test_model_facing_telemetry_replaces_both_native_character_shapes() -> None:
     source = {
         "sequence": 8,
-        "squad": [{"id": "hep", "hunger": 2.75, "alive": True}],
+        "roster": [{"id": "hep", "hunger": 2.75, "alive": True}],
         "selected": {"id": "hep", "hunger": 2.75, "alive": True},
     }
 
@@ -91,7 +91,7 @@ def test_model_facing_telemetry_replaces_both_native_character_shapes() -> None:
 
     assert projected == {
         "sequence": 8,
-        "squad": [
+        "roster": [
             {"id": "hep", "nutrition_reserve": 2.75, "alive": True}
         ],
         "selected": {
@@ -100,7 +100,7 @@ def test_model_facing_telemetry_replaces_both_native_character_shapes() -> None:
             "alive": True,
         },
     }
-    assert source["squad"][0]["hunger"] == 2.75
+    assert source["roster"][0]["hunger"] == 2.75
     assert source["selected"]["hunger"] == 2.75
     assert model_facing_telemetry_payload(None) is None
     assert model_facing_telemetry_payload({"selected": None}) == {

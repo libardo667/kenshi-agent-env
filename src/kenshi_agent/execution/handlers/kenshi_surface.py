@@ -122,7 +122,7 @@ def _observes_inventory_owner(telemetry: TelemetrySnapshot, target_id: str) -> b
     """
 
     return (
-        any(member.id == target_id for member in telemetry.squad)
+        any(member.id == target_id for member in telemetry.roster)
         or any(entity.id == target_id for entity in telemetry.nearby_entities)
         or any(world.id == target_id for world in telemetry.world_targets)
         or any(found.id == target_id for found in telemetry.discovered_objects)
@@ -173,14 +173,14 @@ def _target_only_command_error(
     """Why a target-only native command cannot be issued now, or None."""
 
     if wire_command == native_commands.NATIVE_SQUAD_SELECTION_WIRE_COMMAND:
-        matches = [member for member in telemetry.squad if member.id == target_id]
+        matches = [member for member in telemetry.roster if member.id == target_id]
         if len(matches) != 1:
             return "Native squad-selection target is absent or ambiguous at issue time."
         return None
     if wire_command == native_commands.NATIVE_SQUAD_REGROUP_WIRE_COMMAND:
         matches = [
             member
-            for member in telemetry.squad
+            for member in telemetry.roster
             if member.id == target_id and member.id not in selected_ids
         ]
         if len(matches) != 1 or matches[0].alive is not True:
@@ -525,7 +525,7 @@ class KenshiControlSurface:
                 telemetry_sequence=snapshot.sequence,
                 capability_epoch=0,
             ),
-            selected_character_ids=list(snapshot.ui.selected_character_ids),
+            selected_character_ids=list(snapshot.selected_character_ids),
             **wire_fields,  # type: ignore[arg-type]
         )
         request_path = self.telemetry_reader.path.parent / NATIVE_COMMAND_REQUEST_FILE
@@ -1258,9 +1258,7 @@ class KenshiControlSurface:
                 or acknowledgement.distance_units != 0.0
             ):
                 return None
-            selected = [
-                character for character in observation.telemetry.squad if character.selected
-            ]
+            selected = observation.telemetry.selected_characters()
             # Being indoors is mechanics; how many characters may be ordered
             # out is the contract's. Requiring one contradicted the
             # declared CURRENT_SELECTION scope, and Kenshi broadcasts a
@@ -1273,7 +1271,7 @@ class KenshiControlSurface:
             or acknowledgement.distance_units != 0.0
         ):
             return None
-        selected_ids = observation.telemetry.ui.selected_character_ids
+        selected_ids = observation.telemetry.selected_character_ids
         if len(acknowledgement.selected_character_ids) != len(selected_ids) or set(
             acknowledgement.selected_character_ids
         ) != set(selected_ids):
@@ -1287,7 +1285,7 @@ class KenshiControlSurface:
         if authored_basis is not None:
             current = AuthoredRecipientBasis.capture(
                 authored_basis.scope,
-                primary=observation.telemetry.ui.selected_character_id,
+                primary=observation.telemetry.primary_character_id,
                 selection=selected_ids,
                 explicit_recipients=authored_basis.explicit_recipients,
             )
@@ -1457,7 +1455,7 @@ class KenshiControlSurface:
         telemetry = observation.telemetry
         if not telemetry.identity_session_id:
             raise RuntimeError("Native command requires a current identity session.")
-        selected_ids = telemetry.ui.selected_character_ids
+        selected_ids = telemetry.selected_character_ids
         # Selection cardinality is the contract's to decide, and the contract
         # is resolved in the operation layer - this surface is external
         # delivery and deliberately knows nothing about definitions. What it
@@ -1480,7 +1478,7 @@ class KenshiControlSurface:
             )
         current_basis = AuthoredRecipientBasis.capture(
             authored_basis.scope,
-            primary=telemetry.ui.selected_character_id,
+            primary=telemetry.primary_character_id,
             selection=selected_ids,
             explicit_recipients=authored_basis.explicit_recipients,
         )
@@ -1491,7 +1489,7 @@ class KenshiControlSurface:
                 f"it was authored for: {'; '.join(drift)}."
             )
         if authored_basis.scope is not RecipientScope.NAMED_BODY and (
-            not selected_ids or telemetry.ui.selected_character_id not in selected_ids
+            not selected_ids or telemetry.primary_character_id not in selected_ids
         ):
             # Every order that broadcasts to the selection needs one, and needs
             # Kenshi's own primary inside it. An order that names its own
@@ -1565,7 +1563,7 @@ class KenshiControlSurface:
             # field underneath the primary.
             return None
         if wire_command == native_commands.NATIVE_EXIT_BUILDING_WIRE_COMMAND:
-            selected = [character for character in telemetry.squad if character.selected]
+            selected = telemetry.selected_characters()
             # Being indoors is mechanics; how many characters may be ordered out
             # is the contract's. Requiring one contradicted the declared
             # CURRENT_SELECTION scope, and Kenshi broadcasts a move order to the

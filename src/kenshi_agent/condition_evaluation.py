@@ -72,8 +72,8 @@ _PATH_CAPABILITY_ALTERNATIVES: dict[str, tuple[str, ...]] = {
     "telemetry.ui.tooltip_visible": ("ui.tooltip",),
     "telemetry.ui.tooltip_text": ("ui.tooltip",),
     "telemetry.ui.context_menu_open": ("ui.inventory", "ui.dialogue"),
-    "telemetry.ui.selected_character_id": ("squad.basic",),
-    "telemetry.ui.selected_character_count": ("identity.stable_handles",),
+    "telemetry.primary_character_id": ("roster.basic",),
+    "telemetry.selected_character_count": ("selection.complete",),
     "telemetry.active_shop_trader_count": ("nearby.shop_owners",),
     # These are the shared command-channel fields, so any reviewed native
     # command capability makes them authoritative. Restricting them to the
@@ -86,20 +86,20 @@ _PATH_CAPABILITY_ALTERNATIVES: dict[str, tuple[str, ...]] = {
     "telemetry.native_control.last_result": _NATIVE_CONTROL_CAPABILITIES,
     "telemetry.native_control.last_target": _NATIVE_CONTROL_CAPABILITIES,
     "telemetry.native_control.last_target_id": _NATIVE_CONTROL_CAPABILITIES,
-    "selected.alive": ("squad.basic",),
-    "selected.conscious": ("squad.basic",),
-    "selected.down": ("squad.basic",),
-    "selected.in_combat": ("squad.basic",),
-    "selected.position.x": ("squad.basic",),
-    "selected.position.y": ("squad.basic",),
-    "selected.position.z": ("squad.basic",),
-    "selected.movement_speed": ("squad.basic",),
-    "selected.indoors": ("squad.indoors",),
-    "selected.nutrition_reserve": ("squad.hunger",),
-    "selected.bleeding_rate": ("squad.health",),
-    "selected.food_items": ("squad.hunger", "squad.inventory", "squad.basic"),
-    "selected.first_aid_kits": ("squad.inventory",),
-    "selected.current_goal": ("squad.current_goal",),
+    "selected.alive": ("roster.basic",),
+    "selected.conscious": ("roster.basic",),
+    "selected.down": ("roster.basic",),
+    "selected.in_combat": ("roster.basic",),
+    "selected.position.x": ("roster.basic",),
+    "selected.position.y": ("roster.basic",),
+    "selected.position.z": ("roster.basic",),
+    "selected.movement_speed": ("roster.basic",),
+    "selected.indoors": ("roster.indoors",),
+    "selected.nutrition_reserve": ("roster.hunger",),
+    "selected.bleeding_rate": ("roster.health",),
+    "selected.food_items": ("roster.hunger", "roster.inventory", "roster.basic"),
+    "selected.first_aid_kits": ("roster.inventory",),
+    "selected.current_goal": ("roster.current_goal",),
     "target.disposition": ("nearby.characters", "nearby.visible_entities"),
     "target.distance": ("nearby.characters", "nearby.visible_entities"),
     "target.visible": ("nearby.characters", "nearby.visible_entities"),
@@ -115,10 +115,10 @@ def _selected_character(observation: Observation) -> CharacterState | None:
     telemetry = observation.telemetry
     if telemetry is None:
         return None
-    selected_id = telemetry.ui.selected_character_id
+    selected_id = telemetry.primary_character_id
     if selected_id is not None:
         selected = next(
-            (character for character in telemetry.squad if character.id == selected_id),
+            (character for character in telemetry.roster if character.id == selected_id),
             None,
         )
         if selected is not None:
@@ -126,12 +126,10 @@ def _selected_character(observation: Observation) -> CharacterState | None:
     # Without an exported primary, only an unambiguous selection can stand
     # in for one. The old fallback returned the first `selected` character
     # of several - which is roster order, not Kenshi's primary - and then,
-    # if none were selected at all, `squad[0]`, who need not be selected in
+    # if none were selected at all, `roster[0]`, who need not be selected in
     # any sense. Facts about "the selected character" were answered about
     # somebody else and reported as true.
-    selected_members = [
-        character for character in telemetry.squad if character.selected
-    ]
+    selected_members = telemetry.selected_characters()
     if len(selected_members) == 1:
         return selected_members[0]
     return None
@@ -183,8 +181,8 @@ def _resolve_field(condition: Condition, observation: Observation) -> object | N
         "telemetry.ui.tooltip_visible": telemetry.ui.tooltip_visible,
         "telemetry.ui.tooltip_text": telemetry.ui.tooltip_text,
         "telemetry.ui.context_menu_open": telemetry.ui.context_menu_open,
-        "telemetry.ui.selected_character_id": telemetry.ui.selected_character_id,
-        "telemetry.ui.selected_character_count": len(telemetry.ui.selected_character_ids),
+        "telemetry.primary_character_id": telemetry.primary_character_id,
+        "telemetry.selected_character_count": len(telemetry.selected_character_ids),
         "telemetry.active_shop_trader_count": telemetry.active_shop_trader_count,
         "telemetry.native_control.available": telemetry.native_control.available,
         "telemetry.native_control.command_active": (

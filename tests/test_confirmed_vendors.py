@@ -185,7 +185,7 @@ def test_planner_payload_surfaces_exact_dialogue_affordances() -> None:
     from kenshi_agent.core.observation import Observation
     from kenshi_agent.core.telemetry import TelemetrySnapshot
 
-    actor = CharacterState(id="entity-player", name="Player", selected=True)
+    actor = CharacterState(id="entity-player", name="Player")
     observation = Observation(
         run_id="digest-test",
         step_index=0,
@@ -199,14 +199,14 @@ def test_planner_payload_surfaces_exact_dialogue_affordances() -> None:
                 "nearby.characters",
                 "nearby.roles",
             ],
+            primary_character_id=actor.id,
+            selected_character_ids=[actor.id],
             ui=UIState(
                 active_screen="world",
                 modal_open=False,
                 dialogue_open=False,
-                selected_character_id=actor.id,
-                selected_character_ids=[actor.id],
             ),
-            squad=[actor],
+            roster=[actor],
             nearby_entities=[
                 barman(distance=26.0),
                 entity(

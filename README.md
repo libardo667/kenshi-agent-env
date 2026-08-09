@@ -34,6 +34,16 @@ The current action set covers:
   current party; and
 - using campaign memory, the fieldbook, and the read-only strategy advisor.
 
+The current 1.19 telemetry contract separately exports the complete player
+`roster`, named `platoons` and exact membership, `active_platoon_id`,
+`primary_character_id`, and the complete `selected_character_ids` set. The
+primary is never inferred from roster order. The former `squad`, per-character
+selection flag, and UI-owned selection fields are not compatibility aliases.
+The named `player-topology-20260809T161112Z` live bundle proves two authored
+nonempty platoons, tab and exact-selection changes, and save/load restoration
+of membership, primary, and selection. Kenshi reset the active tab on load, so
+the exporter reports active separately instead of claiming it persisted.
+
 Live acceptance runs have covered representative movement, trade-window opening,
 purchases, equipped-item looting, squadmate and resource-output transfers, resource
 production, human handoff, emergency stop, and a confirmed final pause. Character
@@ -54,13 +64,15 @@ There are still important limits:
 - A native recovery command can close a trade window, but general window closing is
   not a planner action.
 
-The accepted shape for the next breaking boundary is in the
+The remaining bounded-work and plural-command shape for the next breaking
+boundary is in the
 [Protocol 2.0 world-model decision](docs/PROTOCOL_2_WORLD_MODEL_DECISION.md).
 
 ## How a run works
 
-1. The native mod publishes current Kenshi state, including characters, selection,
-   nearby targets, inventories, dialogue, visible controls, and command results.
+1. The native mod publishes current Kenshi state, including roster and platoon
+   topology, active platoon, primary and complete selection, nearby targets,
+   inventories, dialogue, visible controls, and command results.
 2. The runtime captures a matching screenshot and builds the actions available from
    that state.
 3. The planner chooses one of those actions.

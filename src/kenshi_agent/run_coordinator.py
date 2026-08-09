@@ -163,7 +163,7 @@ def _retained_work_at_exit(observation: Observation | None) -> dict[str, object]
                 else None
             ),
         }
-        for character in telemetry.squad
+        for character in telemetry.roster
         if character.task_state is not None and character.task_state.has_retained_work
     ]
     stale = observation is not None and observation.telemetry_stale

@@ -462,7 +462,7 @@ def advisor_state_fingerprint(observation: Observation) -> str:
     telemetry = observation.telemetry
     selected = None
     if telemetry is not None:
-        selected = next((item for item in telemetry.squad if item.selected), None)
+        selected = telemetry.primary_character()
     payload: dict[str, Any] = {
         "objective": observation.objective,
         "money": telemetry.game.money if telemetry is not None else None,
@@ -535,10 +535,10 @@ def advisor_world_payload(observation: Observation) -> dict[str, Any]:
         "step_index": observation.step_index,
         "world_revision": observation.world_revision.model_dump(mode="json"),
         "telemetry": model_facing_telemetry_payload(digest.get("telemetry")),
-        "squad_nutrition": planner_nutrition_digest(observation),
+        "roster_nutrition": planner_nutrition_digest(observation),
         "telemetry_semantics": {
             "selected.nutrition_reserve": (
-                "The current reserve on the squad_nutrition scale. Use that "
+                "The current reserve on the roster_nutrition scale. Use that "
                 "digest's status and thresholds to decide urgency."
             ),
             "selected.food_items": (

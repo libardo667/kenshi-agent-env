@@ -1,0 +1,15 @@
+{
+  "protocol_version": "1.18.0",
+  "sequence": 418,
+  "squad": [
+    {
+      "id": "character-alpha",
+      "name": "Alpha",
+      "selected": true
+    }
+  ],
+  "ui": {
+    "selected_character_id": "character-alpha",
+    "selected_character_ids": ["character-alpha"]
+  }
+}

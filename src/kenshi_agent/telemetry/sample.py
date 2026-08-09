@@ -6,6 +6,7 @@ from ..core.telemetry import (
     CameraState,
     CharacterState,
     GameState,
+    PlatoonState,
     TelemetrySnapshot,
     UIState,
     Vec3,
@@ -22,8 +23,12 @@ def sample_snapshot() -> TelemetrySnapshot:
             "game.speed",
             "game.money",
             "game.location",
-            "squad.basic",
-            "squad.hunger",
+            "roster.basic",
+            "roster.hunger",
+            "platoons.membership",
+            "platoons.active",
+            "selection.complete",
+            "primary.character",
         ],
         game=GameState(
             loaded=True,
@@ -37,12 +42,14 @@ def sample_snapshot() -> TelemetrySnapshot:
             location_name="The Hub",
         ),
         camera=CameraState(position=Vec3(x=0, y=12, z=0), center=Vec3(x=0, y=0, z=0)),
-        ui=UIState(selected_character_id="squad:0", client_width=1920, client_height=1080),
-        squad=[
+        ui=UIState(client_width=1920, client_height=1080),
+        primary_character_id="character:0",
+        selected_character_ids=["character:0"],
+        roster=[
             CharacterState(
-                id="squad:0",
+                id="character:0",
                 name="Wanderer",
-                selected=True,
+                platoon_id="platoon:0",
                 alive=True,
                 conscious=True,
                 position=Vec3(x=0, y=0, z=0),
@@ -52,4 +59,13 @@ def sample_snapshot() -> TelemetrySnapshot:
                 first_aid_kits=1,
             )
         ],
+        platoons=[
+            PlatoonState(
+                id="platoon:0",
+                name="Nameless",
+                member_ids=["character:0"],
+            )
+        ],
+        platoons_complete=True,
+        active_platoon_id="platoon:0",
     )

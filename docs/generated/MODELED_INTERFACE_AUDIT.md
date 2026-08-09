@@ -49,7 +49,7 @@ TRADE
 CHARACTER_STATS
   GAP enter     Open the character stats window.  [none: -]
         -> No current operation opens management UI.
-  ok  interact  Read exported squad skills, health, and state.  [native: telemetry.squad]
+  ok  interact  Read exported roster skills, health, and state.  [native: telemetry.roster]
   GAP exit      Close the character stats window.  [none: -]
         -> No current operation closes management UI.
 

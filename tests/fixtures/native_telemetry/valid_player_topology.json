@@ -1,0 +1,53 @@
+{
+  "protocol_version": "1.19.0",
+  "sequence": 419,
+  "source": "KenshiAgentTelemetry",
+  "identity_session_id": "session-player-topology-fixture",
+  "capabilities": [
+    "identity.stable_handles",
+    "roster.basic",
+    "platoons.membership",
+    "platoons.active",
+    "selection.complete",
+    "primary.character"
+  ],
+  "game": {"loaded": true, "paused": true},
+  "roster": [
+    {
+      "id": "character-alpha",
+      "name": "Alpha",
+      "platoon_id": "platoon-alpha"
+    },
+    {
+      "id": "character-beta-primary",
+      "name": "Beta Primary",
+      "platoon_id": "platoon-beta"
+    },
+    {
+      "id": "character-beta-second",
+      "name": "Beta Second",
+      "platoon_id": "platoon-beta"
+    }
+  ],
+  "roster_complete": true,
+  "platoons": [
+    {
+      "id": "platoon-alpha",
+      "name": "Alpha Platoon",
+      "member_ids": ["character-alpha"]
+    },
+    {
+      "id": "platoon-beta",
+      "name": "Beta Platoon",
+      "member_ids": ["character-beta-primary", "character-beta-second"]
+    }
+  ],
+  "platoons_complete": true,
+  "active_platoon_id": "platoon-beta",
+  "primary_character_id": "character-beta-primary",
+  "selected_character_ids": [
+    "character-beta-primary",
+    "character-beta-second"
+  ],
+  "selected_character_ids_complete": true
+}

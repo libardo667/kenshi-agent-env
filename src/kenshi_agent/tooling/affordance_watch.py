@@ -164,7 +164,6 @@ def current_menu(observation: Observation) -> AffordanceMenu:
     )
 
     telemetry = observation.telemetry
-    ui = telemetry.ui if telemetry is not None else None
     return AffordanceMenu(
         telemetry_sequence=telemetry.sequence if telemetry is not None else 0,
         stale=observation.telemetry_stale,
@@ -173,12 +172,12 @@ def current_menu(observation: Observation) -> AffordanceMenu:
             telemetry.game.location_id or "" if telemetry is not None else ""
         ),
         primary_character_id=(
-            ui.selected_character_id or "" if ui is not None else ""
+            telemetry.primary_character_id or "" if telemetry is not None else ""
         ),
         selected_character_ids=(
-            tuple(ui.selected_character_ids) if ui is not None else ()
+            tuple(telemetry.selected_character_ids) if telemetry is not None else ()
         ),
-        roster_size=len(telemetry.squad) if telemetry is not None else 0,
+        roster_size=len(telemetry.roster) if telemetry is not None else 0,
         offers=tuple(rows),
         adapters_offering=tuple(offering),
         adapters_silent=tuple(silent),

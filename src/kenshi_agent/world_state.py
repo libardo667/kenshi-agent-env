@@ -122,7 +122,7 @@ _CHANGE_PRIORITY = (
     "telemetry.ui.dialogue_open",
     "telemetry.ui.dialogue_target_id",
     "telemetry.ui.open_inventory_windows",
-    "telemetry.squad",
+    "telemetry.roster",
     "telemetry.ui",
     "telemetry.game",
 )

@@ -77,13 +77,14 @@ def _snapshot(*, money: int = 20, party_size: int = 1) -> TelemetrySnapshot:
         sequence=12,
         captured_at=datetime.now(UTC),
         identity_session_id="native-session-start",
-        capabilities=["game.money", "squad.basic"],
+        capabilities=["game.money", "roster.basic"],
         game=GameState(loaded=True, paused=True, money=money),
-        squad=[
+        primary_character_id="entity-0" if party_size else None,
+        selected_character_ids=["entity-0"] if party_size else [],
+        roster=[
             CharacterState(
                 id=f"entity-{index}",
                 name=f"Wanderer {index}",
-                selected=index == 0,
             )
             for index in range(party_size)
         ],
@@ -236,7 +237,7 @@ def test_game_start_resolution_and_loaded_proof_are_exact() -> None:
 
 def test_game_start_proof_fails_closed_on_missing_capability_or_identity() -> None:
     start = _bundle().manifest.starts[0]
-    missing_capability = _snapshot().model_copy(update={"capabilities": ["squad.basic"]})
+    missing_capability = _snapshot().model_copy(update={"capabilities": ["roster.basic"]})
     missing_identity = _snapshot().model_copy(update={"identity_session_id": None})
 
     with pytest.raises(AuthoredStartsError, match="capabilities"):

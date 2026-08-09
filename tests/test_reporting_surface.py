@@ -59,11 +59,10 @@ def _observation_payload() -> dict[str, object]:
                     )
                 ],
             ),
-            squad=[
+            roster=[
                 CharacterState(
                     id="barth",
                     name="Barth",
-                    selected=True,
                     task_state=CharacterTaskState(has_player_orders=True),
                 )
             ],
@@ -125,6 +124,6 @@ def test_presence_is_measured_rather_than_truthiness() -> None:
 
 
 def test_probes_descend_into_lists() -> None:
-    payload = {"squad": [{"task_state": {"orders_count": 0}}]}
+    payload = {"roster": [{"task_state": {"orders_count": 0}}]}
 
-    assert resolve_probe(payload, "squad.task_state.orders_count")
+    assert resolve_probe(payload, "roster.task_state.orders_count")

@@ -48,7 +48,7 @@ def _observation(
     *,
     capabilities: list[str] | None = None,
     ui: UIState | None = None,
-    squad: list[CharacterState] | None = None,
+    roster: list[CharacterState] | None = None,
     nearby: list[NearbyEntity] | None = None,
     targets: list[WorldTarget] | None = None,
     active_shop_trader_count: int = 0,
@@ -70,7 +70,9 @@ def _observation(
             capabilities=capabilities or [],
             game=GameState(loaded=True, paused=True, speed_multiplier=1.0, money=1000),
             ui=ui or UIState(active_screen="world"),
-            squad=squad or [],
+            roster=roster or [],
+            primary_character_id=roster[0].id if roster else None,
+            selected_character_ids=[roster[0].id] if roster else [],
             nearby_entities=nearby or [],
             world_targets=targets or [],
             active_shop_trader_count=active_shop_trader_count,
@@ -150,7 +152,7 @@ def test_runtime_compiles_only_model_choice_and_owns_envelope_bookkeeping() -> N
 
 
 def test_context_order_compiles_through_generic_target_adapter() -> None:
-    actor = CharacterState(id="actor-1", name="Bark", selected=True)
+    actor = CharacterState(id="actor-1", name="Bark")
     target = WorldTarget(
         id="resource-1",
         name="Iron Resource",
@@ -171,10 +173,8 @@ def test_context_order_compiles_through_generic_target_adapter() -> None:
             active_screen="world",
             modal_open=False,
             dialogue_open=False,
-            selected_character_id=actor.id,
-            selected_character_ids=[actor.id],
         ),
-        squad=[actor],
+        roster=[actor],
         targets=[target],
     )
     selected = _selected(observation, "operate")

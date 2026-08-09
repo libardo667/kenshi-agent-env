@@ -304,27 +304,29 @@ def test_telemetry_changes_mark_mechanical_deltas_as_not_decision_relevant() -> 
     before = TelemetrySnapshot.model_validate(
         {
             "game": {"paused": True, "speed_multiplier": 0.0},
-            "squad": [
+            "roster": [
                 {
                     "id": "char-puhat",
                     "name": "Puhat",
                     "position": {"x": 0.0, "y": 0.0, "z": 0.0},
                 }
             ],
-            "ui": {"selected_character_id": "char-puhat"},
+            "primary_character_id": "char-puhat",
+            "selected_character_ids": ["char-puhat"],
         }
     )
     after = TelemetrySnapshot.model_validate(
         {
             "game": {"paused": False, "speed_multiplier": 1.0},
-            "squad": [
+            "roster": [
                 {
                     "id": "char-puhat",
                     "name": "Puhat",
                     "position": {"x": 0.0, "y": 0.0, "z": 50.0},
                 }
             ],
-            "ui": {"selected_character_id": "char-puhat"},
+            "primary_character_id": "char-puhat",
+            "selected_character_ids": ["char-puhat"],
         }
     )
 
@@ -351,26 +353,22 @@ def test_selection_set_change_is_progress_when_primary_character_is_unchanged() 
     swiff = "char-swiff"
     before = TelemetrySnapshot.model_validate(
         {
-            "squad": [
-                {"id": flashbox, "name": "Flashbox", "selected": True},
-                {"id": swiff, "name": "Swiff", "selected": True},
+            "roster": [
+                {"id": flashbox, "name": "Flashbox"},
+                {"id": swiff, "name": "Swiff"},
             ],
-            "ui": {
-                "selected_character_id": flashbox,
-                "selected_character_ids": [flashbox, swiff],
-            },
+            "primary_character_id": flashbox,
+            "selected_character_ids": [flashbox, swiff],
         }
     )
     after = TelemetrySnapshot.model_validate(
         {
-            "squad": [
-                {"id": flashbox, "name": "Flashbox", "selected": True},
-                {"id": swiff, "name": "Swiff", "selected": False},
+            "roster": [
+                {"id": flashbox, "name": "Flashbox"},
+                {"id": swiff, "name": "Swiff"},
             ],
-            "ui": {
-                "selected_character_id": flashbox,
-                "selected_character_ids": [flashbox],
-            },
+            "primary_character_id": flashbox,
+            "selected_character_ids": [flashbox],
         }
     )
 
@@ -396,21 +394,25 @@ def test_selection_set_change_is_progress_when_primary_character_is_unchanged() 
     assert assessment == "changed"
 
     reordered = before.model_copy(
-        update={
-            "ui": before.ui.model_copy(
-                update={"selected_character_ids": [swiff, flashbox]}
-            )
-        }
+        update={"selected_character_ids": [swiff, flashbox]}
     )
     assert OutcomeRecorder._telemetry_changes(before, reordered) == []
 
 
 def test_telemetry_changes_name_nutrition_by_its_model_facing_meaning() -> None:
     before = TelemetrySnapshot.model_validate(
-        {"squad": [{"id": "char-hep", "name": "Hep", "selected": True, "hunger": 2.8}]}
+        {
+            "roster": [{"id": "char-hep", "name": "Hep", "hunger": 2.8}],
+            "primary_character_id": "char-hep",
+            "selected_character_ids": ["char-hep"],
+        }
     )
     after = TelemetrySnapshot.model_validate(
-        {"squad": [{"id": "char-hep", "name": "Hep", "selected": True, "hunger": 2.6}]}
+        {
+            "roster": [{"id": "char-hep", "name": "Hep", "hunger": 2.6}],
+            "primary_character_id": "char-hep",
+            "selected_character_ids": ["char-hep"],
+        }
     )
 
     labels = OutcomeRecorder._telemetry_changes(before, after)

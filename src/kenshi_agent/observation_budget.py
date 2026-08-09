@@ -21,9 +21,9 @@ _TELEMETRY_COLLECTION_PATHS = (
     "telemetry.capabilities",
     "telemetry.ui.dialogue_options",
     "telemetry.ui.visible_controls",
-    "telemetry.ui.selected_character_ids",
+    "telemetry.selected_character_ids",
     "telemetry.native_control.acknowledgements",
-    "telemetry.squad",
+    "telemetry.roster",
     "telemetry.nearby_entities",
     "telemetry.world_targets",
     "telemetry.known_map_destinations",
@@ -180,15 +180,15 @@ def budget_observation_payload(
                 )
             )
 
-        retained_squad_ids = {
-            character["id"] for character in retained["telemetry"]["squad"]
+        retained_roster_ids = {
+            character["id"] for character in retained["telemetry"]["roster"]
         }
-        for character in sorted(telemetry["squad"], key=_entity_sort_key):
-            if character["id"] in retained_squad_ids:
+        for character in sorted(telemetry["roster"], key=_entity_sort_key):
+            if character["id"] in retained_roster_ids:
                 continue
             attempt(
                 _append_mutator(
-                    "telemetry.squad",
+                    "telemetry.roster",
                     character,
                 )
             )
@@ -397,15 +397,6 @@ def irreducible_payload(
     ui = telemetry["ui"]
     native = telemetry["native_control"]
     critical_acknowledgements = _critical_acknowledgements(native)
-    selected_ids = set(ui["selected_character_ids"])
-    if ui["selected_character_id"] is not None:
-        selected_ids.add(ui["selected_character_id"])
-    for acknowledgement in critical_acknowledgements:
-        selected_ids.update(acknowledgement["selected_character_ids"])
-    selected_ids.update(
-        character["id"] for character in telemetry["squad"] if character["selected"]
-    )
-
     referenced_target_ids = {
         value
         for value in (
@@ -439,12 +430,8 @@ def irreducible_payload(
             "capabilities": [],
             "ui": retained_ui,
             "native_control": retained_native,
-            "squad": sorted(
-                (
-                    deepcopy(character)
-                    for character in telemetry["squad"]
-                    if character["id"] in selected_ids
-                ),
+            "roster": sorted(
+                (deepcopy(character) for character in telemetry["roster"]),
                 key=_entity_sort_key,
             ),
             "nearby_entities": sorted(
@@ -496,7 +483,7 @@ def _current_memory_target_ids(original: JsonObject) -> set[str]:
 
     target_ids: set[str] = set()
     for collection_name in (
-        "squad",
+        "roster",
         "nearby_entities",
         "world_targets",
         "known_map_destinations",

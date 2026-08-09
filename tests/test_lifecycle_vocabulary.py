@@ -291,11 +291,10 @@ def test_the_run_report_names_retained_work_and_its_currency() -> None:
         telemetry=TelemetrySnapshot(
             sequence=77,
             game=GameState(loaded=True, paused=False),
-            squad=[
+            roster=[
                 CharacterState(
                     id="barth",
                     name="Barth",
-                    selected=True,
                     task_state=CharacterTaskState(
                         has_player_orders=True,
                         orders=[TaskEntry(task_name=MINE)],

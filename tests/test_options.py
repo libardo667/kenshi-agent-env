@@ -173,16 +173,15 @@ def _threat_observation(
                         "game.speed",
                         "control.move_in_direction",
                         "nearby.visible_entities",
-                        "squad.health",
+                        "roster.health",
                     ],
                     "game": current.telemetry.game.model_copy(
                         update={"loaded": True, "speed_multiplier": 1.0}
                     ),
-                    "squad": [
+                    "roster": [
                         CharacterState(
                             id="entity-bark",
                             name="Bark",
-                            selected=True,
                             alive=True,
                             conscious=True,
                             down=False,
@@ -191,10 +190,9 @@ def _threat_observation(
                             position=Vec3(x=10.0, y=0.0, z=0.0),
                         )
                     ],
-                    "ui": UIState(
-                        selected_character_id="entity-bark",
-                        selected_character_ids=["entity-bark"],
-                    ),
+                        "ui": UIState(),
+                        "primary_character_id": "entity-bark",
+                        "selected_character_ids": ["entity-bark"],
                     "nearby_entities": (
                         [
                             NearbyEntity(
@@ -261,8 +259,8 @@ def test_withdrawal_prefers_a_squadmate_when_reunion_also_increases_safety() -> 
         update={
             "telemetry": current.telemetry.model_copy(
                 update={
-                    "squad": [
-                        *current.telemetry.squad,
+                    "roster": [
+                        *current.telemetry.roster,
                         CharacterState(
                             id="entity-plant",
                             name="Plant",
@@ -300,8 +298,8 @@ def test_withdrawal_does_not_cross_a_hostile_to_reach_a_distant_squadmate() -> N
         update={
             "telemetry": current.telemetry.model_copy(
                 update={
-                    "squad": [
-                        *current.telemetry.squad,
+                    "roster": [
+                        *current.telemetry.roster,
                         CharacterState(
                             id="entity-plant",
                             name="Plant",

@@ -54,7 +54,7 @@ def _wiped_world() -> Observation:
             ),
             game=GameState(loaded=True, paused=True, elapsed_minutes=0.0),
             ui=UIState(active_screen="world", modal_open=False, dialogue_open=False),
-            squad=[],
+            roster=[],
             nearby_entities=[
                 NearbyEntity(
                     id=STRANGER,
@@ -78,9 +78,9 @@ def test_the_wiped_world_really_has_nobody_left() -> None:
 
     telemetry = _wiped_world().telemetry
     assert telemetry is not None
-    assert telemetry.squad == []
-    assert telemetry.ui.selected_character_ids == []
-    assert telemetry.ui.selected_character_id is None
+    assert telemetry.roster == []
+    assert telemetry.selected_character_ids == []
+    assert telemetry.primary_character_id is None
 
 
 def test_a_body_is_still_offered_when_every_character_is_dead() -> None:
@@ -107,20 +107,19 @@ def test_body_shifting_is_elective_not_restricted_to_total_loss() -> None:
         update={
             "telemetry": observation.telemetry.model_copy(
                 update={
-                    "squad": [
+                    "roster": [
                         CharacterState(
                             id=current,
                             name="Current Body",
-                            selected=True,
                             conscious=True,
                         )
                     ],
+                    "primary_character_id": current,
+                    "selected_character_ids": [current],
                     "ui": UIState(
                         active_screen="world",
                         modal_open=False,
                         dialogue_open=False,
-                        selected_character_id=current,
-                        selected_character_ids=[current],
                     ),
                 }
             )

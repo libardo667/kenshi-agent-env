@@ -631,10 +631,10 @@ def test_transfer_fixture_encodes_both_sides_of_quantity_conservation() -> None:
     ] == [("Sealed Cargo", 1, "out")]
     assert len(after.telemetry.ui.visible_controls) == 1
     assert after.telemetry.ui.visible_controls[0].role == "button"
-    assert before.telemetry.squad[0].inventory == []
+    assert before.telemetry.roster[0].inventory == []
     assert [
         (item.item_name, item.item_quantity, item.section)
-        for item in after.telemetry.squad[0].inventory
+        for item in after.telemetry.roster[0].inventory
     ] == [("Sealed Cargo", 1, "main")]
 
 

@@ -84,7 +84,7 @@ def _policy(*, allow: bool = True) -> OperationPolicy:
 
 
 def test_capability_and_selection_refusals_remain_distinct() -> None:
-    actor = CharacterState(id="actor-1", name="Bark", selected=True)
+    actor = CharacterState(id="actor-1", name="Bark")
     target = NearbyEntity(
         id="target-1",
         name="Wanderer",
@@ -105,15 +105,15 @@ def test_capability_and_selection_refusals_remain_distinct() -> None:
             "telemetry": _observation(controls=[]).telemetry.model_copy(
                 update={
                     "capabilities": capabilities,
-                    "squad": [actor],
+                    "roster": [actor],
                     "nearby_entities": [target],
-                    "ui": UIState(
-                        active_screen="world",
-                        modal_open=False,
-                        dialogue_open=False,
-                        selected_character_id=actor.id,
-                        selected_character_ids=[actor.id],
-                    ),
+                        "ui": UIState(
+                            active_screen="world",
+                            modal_open=False,
+                            dialogue_open=False,
+                        ),
+                        "primary_character_id": actor.id,
+                        "selected_character_ids": [actor.id],
                 }
             ),
         }
@@ -140,16 +140,12 @@ def test_capability_and_selection_refusals_remain_distinct() -> None:
     )
     invalid_selection = state.model_copy(
         update={
-            "telemetry": state.telemetry.model_copy(
-                update={
-                    "ui": state.telemetry.ui.model_copy(
-                        update={
-                            "selected_character_id": None,
-                            "selected_character_ids": [],
-                        }
-                    )
-                }
-            )
+                "telemetry": state.telemetry.model_copy(
+                    update={
+                        "primary_character_id": None,
+                        "selected_character_ids": [],
+                    }
+                )
         },
         deep=True,
     )
@@ -160,5 +156,3 @@ def test_capability_and_selection_refusals_remain_distinct() -> None:
     assert authority.evaluate(scheduled, invalid_selection).code is (
         AuthorizationCode.SELECTION_INVALID
     )
-
-

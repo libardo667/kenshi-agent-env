@@ -495,26 +495,24 @@ def test_exact_native_selection_terminal_completes_the_plan(tmp_path: Path) -> N
                                 *current.telemetry.capabilities,
                                 "control.select_squad_member",
                                 "identity.stable_handles",
-                                "squad.basic",
+                                "roster.basic",
                             ],
                             "game": current.telemetry.game.model_copy(update={"loaded": True}),
                             "ui": UIState(
                                 active_screen="world",
                                 dialogue_open=False,
                                 modal_open=False,
-                                selected_character_id=self.selected_id,
-                                selected_character_ids=[self.selected_id],
                             ),
-                            "squad": [
+                            "primary_character_id": self.selected_id,
+                            "selected_character_ids": [self.selected_id],
+                            "roster": [
                                 CharacterState(
                                     id="entity-bark",
                                     name="Bark",
-                                    selected=self.selected_id == "entity-bark",
                                 ),
                                 CharacterState(
                                     id="entity-plant",
                                     name="Plant",
-                                    selected=self.selected_id == "entity-plant",
                                 ),
                             ],
                         }
@@ -670,17 +668,15 @@ class ThreatResponseEnvironment(RevisionEnvironment):
                             *current.telemetry.capabilities,
                             "control.move_in_direction",
                             "nearby.visible_entities",
-                            "squad.health",
+                            "roster.health",
                         ],
-                        "ui": UIState(
-                            selected_character_id="entity-bark",
-                            selected_character_ids=["entity-bark"],
-                        ),
-                        "squad": [
+                        "ui": UIState(),
+                        "primary_character_id": "entity-bark",
+                        "selected_character_ids": ["entity-bark"],
+                        "roster": [
                             CharacterState(
                                 id="entity-bark",
                                 name="Bark",
-                                selected=True,
                                 alive=True,
                                 conscious=True,
                                 down=False,
@@ -1555,7 +1551,7 @@ def test_independent_supervisor_replans_after_confirming_a_catastrophic_pause(
                 update={
                     "telemetry": current.telemetry.model_copy(
                         update={
-                            "squad": [
+                            "roster": [
                                 CharacterState(
                                     id="entity-bark",
                                     name="Bark",
@@ -2000,20 +1996,15 @@ class NativeDirectionEnvironment(RevisionEnvironment):
                         "capabilities": [
                             *telemetry.capabilities,
                             "control.move_in_direction",
-                            "squad.health",
+                            "roster.health",
                         ],
                         "game": telemetry.game.model_copy(update={"loaded": True}),
-                        "ui": telemetry.ui.model_copy(
-                            update={
-                                "selected_character_id": "entity-hep",
-                                "selected_character_ids": ["entity-hep"],
-                            }
-                        ),
-                        "squad": [
+                        "primary_character_id": "entity-hep",
+                        "selected_character_ids": ["entity-hep"],
+                        "roster": [
                             CharacterState(
                                 id="entity-hep",
                                 name="Hep",
-                                selected=True,
                                 alive=True,
                             )
                         ],

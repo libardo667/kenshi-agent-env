@@ -39,7 +39,7 @@ SECOND = "char-hatsune"
 # into declaring less than the operation actually requires.
 NATIVE_CAPABILITIES = sorted(
     OPERATION_DEFINITIONS["perform_context_action"].required_capabilities
-    | {"game.pause", "squad.basic"}
+    | {"game.pause", "roster.basic"}
 )
 
 
@@ -65,14 +65,14 @@ def _observation(selected: list[str]) -> Observation:
                     context_actions=[ContextActionKind.OPERATE],
                 )
             ],
+            primary_character_id=primary,
+            selected_character_ids=selected,
             ui=UIState(
                 active_screen="world",
-                selected_character_id=primary,
-                selected_character_ids=selected,
             ),
-            squad=[
-                CharacterState(id=PRIMARY, name="Double", selected=PRIMARY in selected),
-                CharacterState(id=SECOND, name="Hatsune", selected=SECOND in selected),
+            roster=[
+                CharacterState(id=PRIMARY, name="Double"),
+                CharacterState(id=SECOND, name="Hatsune"),
             ],
         ),
     )
@@ -145,16 +145,16 @@ def test_a_primary_outside_the_selection_cannot_be_represented() -> None:
         TelemetrySnapshot(
             sequence=1,
             identity_session_id="sess-1",
-            capabilities=["identity.stable_handles", "squad.basic"],
+            capabilities=["identity.stable_handles", "roster.basic"],
             game=GameState(loaded=True, paused=False),
+            primary_character_id=PRIMARY,
+            selected_character_ids=[SECOND],
             ui=UIState(
                 active_screen="world",
-                selected_character_id=PRIMARY,
-                selected_character_ids=[SECOND],
             ),
-            squad=[
-                CharacterState(id=PRIMARY, name="Double", selected=False),
-                CharacterState(id=SECOND, name="Hatsune", selected=True),
+            roster=[
+                CharacterState(id=PRIMARY, name="Double"),
+                CharacterState(id=SECOND, name="Hatsune"),
             ],
         )
 

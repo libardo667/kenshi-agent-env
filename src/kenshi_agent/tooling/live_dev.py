@@ -362,10 +362,8 @@ def _safe_close_inventory_window(
 
     selected = [
         character
-        for character in snapshot.squad
-        if character.selected
-        and character.id == ui.selected_character_id
-        and character.id in ui.selected_character_ids
+        for character in snapshot.selected_characters()
+        if character.id == snapshot.primary_character_id
     ]
     if len(selected) != 1 or not selected[0].name:
         raise LaunchFailed(f"{refusal} requires one exact selected character.")
@@ -1505,7 +1503,7 @@ async def _wait_for_loaded_or_semantic_control(
             await asyncio.sleep(0.1)
             continue
         if not result.stale:
-            if result.snapshot.game.loaded and bool(result.snapshot.squad):
+            if result.snapshot.game.loaded and bool(result.snapshot.roster):
                 return True
             if _unique_visible_control(result.snapshot, labels) is not None:
                 return False
@@ -1584,7 +1582,7 @@ async def _observe_loaded_paused_health(
         if (
             result.stale
             or not snapshot.game.loaded
-            or not snapshot.squad
+            or not snapshot.roster
             or snapshot.game.paused is not True
         ):
             raise LaunchFailed(
@@ -1737,7 +1735,7 @@ async def _perform_launch(
             return (
                 not result.stale
                 and result.snapshot.game.loaded
-                and bool(result.snapshot.squad)
+                and bool(result.snapshot.roster)
             )
 
         await _wait_until(
@@ -1764,7 +1762,7 @@ async def _perform_launch(
             return (
                 not result.stale
                 and result.snapshot.game.loaded
-                and bool(result.snapshot.squad)
+                and bool(result.snapshot.roster)
                 and result.snapshot.game.paused is True
             )
 
@@ -2612,7 +2610,7 @@ def _snapshot(args: argparse.Namespace) -> int:
 
 def _telemetry_payload(result: TelemetryRead) -> dict[str, object]:
     snapshot = result.snapshot
-    selected = next((character for character in snapshot.squad if character.selected), None)
+    selected = snapshot.primary_character()
     nearest_entities = sorted(
         snapshot.nearby_entities,
         key=lambda entity: (

@@ -206,7 +206,7 @@ def _witness_from_telemetry(
         (item for item in telemetry.world_targets if item.id == menu.target_id),
         None,
     )
-    selected_character_ids = tuple(telemetry.ui.selected_character_ids)
+    selected_character_ids = tuple(telemetry.selected_character_ids)
     return ContextMenuWitness(
         run_id=run_id,
         identity_session_id=identity_session_id,

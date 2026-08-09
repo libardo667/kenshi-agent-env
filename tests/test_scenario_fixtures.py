@@ -60,7 +60,7 @@ def _snapshot(
     elapsed_minutes: float | None = 12 * 60,
     indoors: bool | None = False,
     in_combat: bool | None = False,
-    squad_size: int = 1,
+    roster_size: int = 1,
 ) -> TelemetrySnapshot:
     return TelemetrySnapshot(
         sequence=sequence,
@@ -70,9 +70,9 @@ def _snapshot(
         capabilities=[
             "game.money",
             "game.time",
-            "squad.basic",
-            "squad.indoors",
-            "squad.health",
+            "roster.basic",
+            "roster.indoors",
+            "roster.health",
         ],
         game=GameState(
             loaded=True,
@@ -80,15 +80,16 @@ def _snapshot(
             money=money,
             elapsed_minutes=elapsed_minutes,
         ),
-        squad=[
+        primary_character_id="character-0" if roster_size else None,
+        selected_character_ids=["character-0"] if roster_size else [],
+        roster=[
             CharacterState(
                 id=f"character-{index}",
                 name=f"Character {index}",
-                selected=index == 0,
                 indoors=indoors if index == 0 else False,
                 in_combat=in_combat if index == 0 else False,
             )
-            for index in range(squad_size)
+            for index in range(roster_size)
         ],
     )
 
@@ -251,9 +252,9 @@ def test_snapshot_verification_covers_all_declared_axes() -> None:
     [
         (_snapshot(money=None), "game.money"),
         (_snapshot(elapsed_minutes=None), "game.time"),
-        (_snapshot(indoors=None), "squad.indoors"),
-        (_snapshot(in_combat=None), "squad.health"),
-        (_snapshot(squad_size=0), "selected"),
+        (_snapshot(indoors=None), "roster.indoors"),
+        (_snapshot(in_combat=None), "roster.health"),
+        (_snapshot(roster_size=0), "selected"),
     ],
 )
 def test_snapshot_verification_never_turns_missing_evidence_into_a_match(

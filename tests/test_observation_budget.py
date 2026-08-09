@@ -116,7 +116,6 @@ def _oversized_observation(*, reverse_low_priority: bool = False) -> Observation
     selected = CharacterState(
         id=_SELECTED_ID,
         name="Hep",
-        selected=True,
         alive=True,
         conscious=True,
         down=False,
@@ -190,11 +189,11 @@ def _oversized_observation(*, reverse_low_priority: bool = False) -> Observation
             tooltip_visible=True,
             tooltip_text="Dried Meat — 乾燥肉 " + "t" * 1000,
             visible_controls=_maybe_reversed(controls, reverse_low_priority),
-            selected_character_id=_SELECTED_ID,
-            selected_character_ids=[_SELECTED_ID],
             client_width=1920,
             client_height=1080,
         ),
+        primary_character_id=_SELECTED_ID,
+        selected_character_ids=[_SELECTED_ID],
         native_control=NativeControlState(
             available=True,
             active_command_id=_ACTIVE_COMMAND_ID,
@@ -205,7 +204,7 @@ def _oversized_observation(*, reverse_low_priority: bool = False) -> Observation
             last_target="Barman",
             last_target_id=_TARGET_ID,
         ),
-        squad=[selected],
+        roster=[selected],
         active_shop_trader_count=1,
         nearby_entities=_maybe_reversed(
             [target, outcome_target, *unrelated],
@@ -338,7 +337,7 @@ def _assert_critical_envelope(document: dict[str, object]) -> None:
     assert isinstance(acknowledgements, list)
     assert acknowledgements == []
 
-    squad = _path(document, "telemetry.squad")
+    squad = _path(document, "telemetry.roster")
     assert isinstance(squad, list)
     assert [item["id"] for item in squad] == [_SELECTED_ID]
     nearby = _path(document, "telemetry.nearby_entities")
@@ -624,7 +623,7 @@ def test_planner_projection_removes_private_mechanics_and_conserves_gameplay_sta
     legacy = observation.model_dump(mode="json", exclude={"screenshot_path"})
     legacy["telemetry"] = model_facing_telemetry_payload(legacy.get("telemetry"))
     legacy["affordances"] = planner_affordance_digest(observation)
-    legacy["squad_nutrition"] = planner_nutrition_digest(observation)
+    legacy["roster_nutrition"] = planner_nutrition_digest(observation)
     legacy_text = json.dumps(legacy, indent=2, ensure_ascii=False)
 
     text = render_planner_payload(observation, max_chars=1_000_000)
@@ -641,7 +640,7 @@ def test_planner_projection_removes_private_mechanics_and_conserves_gameplay_sta
 
     assert observation.telemetry is not None
     for collection in (
-        "squad",
+        "roster",
         "nearby_entities",
         "world_targets",
         "known_map_destinations",
@@ -698,10 +697,10 @@ def test_semantic_reduction_conserves_every_value_when_everything_fits() -> None
         "min_y": 0.3,
         "max_y": 0.4,
     }
-    original["telemetry"]["squad"].extend(
+    original["telemetry"]["roster"].extend(
         [
-            {"id": "squad-z", "selected": False},
-            {"id": "squad-a", "selected": False},
+            {"id": "roster-z"},
+            {"id": "roster-a"},
         ]
     )
     original["memories"].extend(
@@ -779,7 +778,7 @@ def test_semantic_reduction_conserves_every_value_when_everything_fits() -> None
     assert reduced["fieldbook_projects"] == original["fieldbook_projects"]
     current_target_ids = {
         item["id"]
-        for collection_name in ("squad", "nearby_entities", "world_targets")
+        for collection_name in ("roster", "nearby_entities", "world_targets")
         for item in original["telemetry"][collection_name]
     }
     critical_memories = [
@@ -800,42 +799,18 @@ def test_semantic_reduction_conserves_every_value_when_everything_fits() -> None
         *sorted(critical_memories, key=memory_key, reverse=True),
         *sorted(optional_memories, key=memory_key, reverse=True),
     ]
-    assert reduced["telemetry"]["squad"] == [
-        *sorted(
-            (
-                item
-                for item in original["telemetry"]["squad"]
-                if item["selected"]
-                or item["id"] in original["telemetry"]["ui"]["selected_character_ids"]
-            ),
-            key=lambda item: (
-                str(item["id"]),
-                json.dumps(
-                    item,
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                    sort_keys=True,
-                ),
+    assert reduced["telemetry"]["roster"] == sorted(
+        original["telemetry"]["roster"],
+        key=lambda item: (
+            str(item["id"]),
+            json.dumps(
+                item,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
             ),
         ),
-        *sorted(
-            (
-                item
-                for item in original["telemetry"]["squad"]
-                if not item["selected"]
-                and item["id"] not in original["telemetry"]["ui"]["selected_character_ids"]
-            ),
-            key=lambda item: (
-                str(item["id"]),
-                json.dumps(
-                    item,
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                    sort_keys=True,
-                ),
-            ),
-        ),
-    ]
+    )
     referenced_world_ids = {"world-ref-a", "world-ref-z"}
 
     def world_key(item: dict[str, object]) -> tuple[float, str, str]:
@@ -947,8 +922,8 @@ def test_irreducible_selection_is_exact_ordered_and_detached() -> None:
         },
     ]
     telemetry = original["telemetry"]
-    telemetry["ui"]["selected_character_ids"] = ["selected-list"]
-    telemetry["ui"]["selected_character_id"] = "selected-single"
+    telemetry["selected_character_ids"] = ["selected-list"]
+    telemetry["primary_character_id"] = "selected-single"
     telemetry["ui"]["dialogue_target_id"] = "near-dialogue"
     telemetry["native_control"].update(
         {
@@ -983,12 +958,9 @@ def test_irreducible_selection_is_exact_ordered_and_detached() -> None:
         "selected-active-ack",
         "selected-flag",
     ]
-    telemetry["squad"] = [
-        {"id": "unselected", "selected": False},
-        *[
-            {"id": character_id, "selected": character_id == "selected-flag"}
-            for character_id in reversed(selected_ids)
-        ],
+    telemetry["roster"] = [
+        {"id": "unselected"},
+        *[{"id": character_id} for character_id in reversed(selected_ids)],
     ]
     referenced_nearby = [
         "near-dialogue",
@@ -1021,7 +993,9 @@ def test_irreducible_selection_is_exact_ordered_and_detached() -> None:
     assert [
         item["command_id"] for item in retained["telemetry"]["native_control"]["acknowledgements"]
     ] == ["cmd-active", "cmd-latest"]
-    assert [item["id"] for item in retained["telemetry"]["squad"]] == sorted(selected_ids)
+    assert [item["id"] for item in retained["telemetry"]["roster"]] == sorted(
+        ["unselected", *selected_ids]
+    )
     assert [item["id"] for item in retained["telemetry"]["nearby_entities"]] == sorted(
         referenced_nearby
     )
@@ -1067,7 +1041,7 @@ def test_target_identity_extractors_cover_each_authoritative_shape() -> None:
     payload = {
         "telemetry_stale": False,
         "telemetry": {
-            "squad": [{"id": "squad-a"}, {"name": "missing-id"}, "invalid"],
+            "roster": [{"id": "squad-a"}, {"name": "missing-id"}, "invalid"],
             "nearby_entities": [{"id": "nearby-a"}],
             "world_targets": [{"id": "world-a"}],
             "known_map_destinations": [{"id": "town-a"}],
@@ -1086,7 +1060,7 @@ def test_target_identity_extractors_cover_each_authoritative_shape() -> None:
     assert observation_budget._current_memory_target_ids(stale) == set()
     assert observation_budget._current_memory_target_ids({"telemetry": None}) == set()
     malformed_first_collection = deepcopy(payload)
-    malformed_first_collection["telemetry"]["squad"] = None
+    malformed_first_collection["telemetry"]["roster"] = None
     assert observation_budget._current_memory_target_ids(malformed_first_collection) == {
         "nearby-a",
         "world-a",

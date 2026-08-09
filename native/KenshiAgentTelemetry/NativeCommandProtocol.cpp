@@ -281,10 +281,11 @@ namespace KenshiAgentTelemetry
         unsigned int serial)
     {
         // Kenshi shifts a live character between handle containers when zones
-        // load or body state changes. The character's type/index/serial tuple
-        // remains the same; container generations describe residency, not the
-        // squad member. Keep the seven-field opaque shape while zeroing those
-        // two non-identity fields so every consumer sees one stable ID.
+        // load or body state changes. Container generations describe residency,
+        // not the person, so zero them in the candidate identity. A squad move
+        // can replace index and serial too; the live-character registry below
+        // preserves the first candidate while the same Character object and
+        // validKey remain alive.
         (void)container;
         (void)containerSerial;
         return FormatStableHandleIdentity(
@@ -295,6 +296,38 @@ namespace KenshiAgentTelemetry
             0U,
             index,
             serial);
+    }
+
+    StableCharacterIdentityRegistry::Entry::Entry()
+        : validKey(0)
+    {
+    }
+
+    StableCharacterIdentityRegistry::Entry::Entry(
+        int key,
+        const std::string& value)
+        : validKey(key), id(value)
+    {
+    }
+
+    std::string StableCharacterIdentityRegistry::Resolve(
+        unsigned long long objectAddress,
+        int validKey,
+        const std::string& candidateId)
+    {
+        if (objectAddress == 0 || candidateId.empty())
+            return candidateId;
+        std::map<unsigned long long, Entry>::iterator found =
+            entries_.find(objectAddress);
+        if (found != entries_.end() && found->second.validKey == validKey)
+            return found->second.id;
+        entries_[objectAddress] = Entry(validKey, candidateId);
+        return candidateId;
+    }
+
+    void StableCharacterIdentityRegistry::Clear()
+    {
+        entries_.clear();
     }
 
     bool ParseNativeCommandRequest(

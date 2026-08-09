@@ -815,7 +815,7 @@ def _transfer_observation(
                 "ui.visible_controls",
                 "ui.context_inventory_target",
                 "ui.inventory",
-                "squad.inventory",
+                "roster.inventory",
             ],
             game=GameState(
                 loaded=True,
@@ -830,8 +830,6 @@ def _transfer_observation(
                 open_inventory_windows=2,
                 context_inventory_target_id="entity-cargo-cache",
                 visible_controls_complete=True,
-                selected_character_id="entity-ladle",
-                selected_character_ids=["entity-ladle"],
                 visible_controls=[
                     *source_controls,
                     VisibleUIControl(
@@ -842,12 +840,13 @@ def _transfer_observation(
                     ),
                 ],
             ),
-            squad=[
+            primary_character_id="entity-ladle",
+            selected_character_ids=["entity-ladle"],
+            roster=[
                 CharacterState(
                     id="entity-ladle",
                     name="Ladle",
-                    selected=True,
-                    inventory_complete=True,
+                                        inventory_complete=True,
                     inventory=destination_inventory,
                 )
             ],

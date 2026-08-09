@@ -234,16 +234,14 @@ def test_stable_identity_snapshot_requires_consistent_selection_and_unique_ids()
     snapshot = TelemetrySnapshot(
         protocol_version="0.2.0",
         identity_session_id="session-process-1",
-        capabilities=["squad.basic", "nearby.characters", "identity.stable_handles"],
-        ui=UIState(
-            selected_character_id="entity-player",
-            selected_character_ids=["entity-player"],
-        ),
-        squad=[
+        capabilities=["roster.basic", "nearby.characters", "identity.stable_handles"],
+        primary_character_id="entity-player",
+        selected_character_ids=["entity-player"],
+        ui=UIState(),
+        roster=[
             CharacterState(
                 id="entity-player",
                 name="Wanderer",
-                selected=True,
             )
         ],
         nearby_entities=[NearbyEntity(id="entity-vendor", name="Barman", kind="character")],
@@ -252,11 +250,9 @@ def test_stable_identity_snapshot_requires_consistent_selection_and_unique_ids()
     assert snapshot.identity_session_id == "session-process-1"
 
     invalid_selection = snapshot.model_dump(mode="python")
-    invalid_selection["ui"] = UIState(
-        selected_character_id="entity-missing",
-        selected_character_ids=["entity-missing"],
-    )
-    with pytest.raises(ValidationError, match="must refer to current squad IDs"):
+    invalid_selection["primary_character_id"] = "entity-missing"
+    invalid_selection["selected_character_ids"] = ["entity-missing"]
+    with pytest.raises(ValidationError, match="must refer to current roster IDs"):
         TelemetrySnapshot.model_validate(invalid_selection)
 
     with pytest.raises(ValidationError, match="must be unique"):
@@ -264,7 +260,7 @@ def test_stable_identity_snapshot_requires_consistent_selection_and_unique_ids()
             protocol_version="0.2.0",
             identity_session_id="session-process-1",
             capabilities=["identity.stable_handles"],
-            squad=[CharacterState(id="entity-shared", name="Wanderer")],
+            roster=[CharacterState(id="entity-shared", name="Wanderer")],
             nearby_entities=[NearbyEntity(id="entity-shared", name="Barman", kind="character")],
         )
     with pytest.raises(ValidationError, match="must be unique"):
@@ -272,7 +268,7 @@ def test_stable_identity_snapshot_requires_consistent_selection_and_unique_ids()
             protocol_version="0.8.0",
             identity_session_id="session-process-1",
             capabilities=["identity.stable_handles"],
-            squad=[CharacterState(id="entity-shared", name="Wanderer")],
+            roster=[CharacterState(id="entity-shared", name="Wanderer")],
             world_targets=[
                 WorldTarget(
                     id="entity-shared",
@@ -290,7 +286,7 @@ def test_stable_identity_snapshot_requires_consistent_selection_and_unique_ids()
         protocol_version="1.9.0",
         identity_session_id="session-process-1",
         capabilities=["identity.stable_handles"],
-        squad=[CharacterState(id="entity-injured", name="Bark")],
+        roster=[CharacterState(id="entity-injured", name="Bark")],
         world_targets=[
             WorldTarget(
                 id="entity-injured",
@@ -303,7 +299,7 @@ def test_stable_identity_snapshot_requires_consistent_selection_and_unique_ids()
             )
         ],
     )
-    assert squad_context_target.world_targets[0].id == squad_context_target.squad[0].id
+    assert squad_context_target.world_targets[0].id == squad_context_target.roster[0].id
 
 
 def test_action_discriminator_parses_click() -> None:
@@ -413,7 +409,7 @@ def test_observation_planner_payload_omits_screenshot_path() -> None:
 
 
 def test_reviewed_world_target_is_an_exact_attemptable_affordance() -> None:
-    actor = CharacterState(id="entity-player", name="Player", selected=True)
+    actor = CharacterState(id="entity-player", name="Player")
     target = WorldTarget(
         id="entity-copper",
         name="Copper Resource",
@@ -439,14 +435,14 @@ def test_reviewed_world_target_is_an_exact_attemptable_affordance() -> None:
                 "identity.stable_handles",
             ],
             game=GameState(loaded=True, paused=True),
+            primary_character_id=actor.id,
+            selected_character_ids=[actor.id],
             ui=UIState(
                 active_screen="world",
                 dialogue_open=False,
                 modal_open=False,
-                selected_character_id=actor.id,
-                selected_character_ids=[actor.id],
             ),
-            squad=[actor],
+            roster=[actor],
             world_targets=[target],
         ),
     )
@@ -521,8 +517,10 @@ def _trade_observation(
                     for index, caption in enumerate(window_captions)
                 ],
             ),
-            squad=[
-                CharacterState(id="player:1", name="Hep", selected=True),
+            primary_character_id="player:1",
+            selected_character_ids=["player:1"],
+            roster=[
+                CharacterState(id="player:1", name="Hep"),
                 CharacterState(id="player:2", name="Puhat"),
             ],
             nearby_entities=[

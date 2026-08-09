@@ -1,178 +1,182 @@
-# Checkpoint: Protocol 2.0 world model is specified before production
+# Checkpoint: real player topology producer migration
 
-This checkpoint is the current boundary for the first Protocol 2.0 milestone.
-It separates the accepted wire decision from the still-1.x native producer and
-records source-proven, test-proven, live-proven, and withheld conclusions.
+This checkpoint records the current boundary after the coherent Protocol 1.19
+player-topology slice. Source-proven, test-proven, live-proven, and withheld
+conclusions are separate below.
 
-## Repository
+## Repository and authority
 
 ```text
-parent commit          70f6a657b0403b13f2ef424f455178c130c80478
+parent commit          5753bcb8ca993d46964fc35349338e1f91855bce
 integration branch     main
 starting remote        origin/main matched parent commit
 starting tree          clean
-current protocol       native producer remains 1.18.0
-specified protocol     world model 2.0.0
-request schema         remains 1.4
+producer protocol      1.19.0
+request schema         1.4
+loaded capabilities    47
 ```
 
-Recent `main` authority was inspected before editing. `70f6a65` makes
-reverse-engineering evidence first-class; `04855dc` is the prior truth audit;
-`20cbb77` pins the portable setup action; `ac9202c` owns the planner output
-contract; `965a495` requires this checkpoint to move with every goal;
-`2686719` owns the complete portable gate; and `59e5e0b` closes the reconstructed
-operation surface.
+Recent `main` authority was inspected before editing. `5753bcb` accepts the
+strict Protocol 2.0 world-model decision; `70f6a65` makes research evidence a
+checked contract; `04855dc` owns the current documentation truth audit;
+`965a495` requires this checkpoint to move with every goal; and `2686719` owns
+the complete portable gate.
 
-## Surviving authority
+Exact current producer shape is owned by `TelemetrySnapshot` in
+`src/kenshi_agent/core/telemetry.py`, native serialization in
+`native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp`, and the generated
+schema. `docs/PROTOCOL_2_WORLD_MODEL_DECISION.md` remains authority for the
+future bounded-work and plural-command breaking boundary. The new
+`game_sources/research/player_topology` package owns the inspected Kenshi
+topology claims and their limits.
 
-The accepted decision is `docs/PROTOCOL_2_WORLD_MODEL_DECISION.md`. Exact wire
-shape is owned by `Protocol2WorldModel` in
-`src/kenshi_agent/core/protocol_2.py`; the checked-in JSON Schema and generated
-reference derive from it.
+## Coherent 1.19 slice
 
-The former body-shift and interaction-scope plans moved to `docs/archive/`.
-They preserve dated reasoning and follow-on context but are no longer current
-authority. Current operation contracts still come only from
-`OperationDefinition`; operation proof remains separately recorded in
-`docs/reconstruction/interaction_proof_status.json`.
+Protocol 1.19 cleanly replaces the old player shape with:
 
-## Coherent specification slice
+- complete `roster`, where each player carries `platoon_id`;
+- explicit `platoons` with stable Kenshi string IDs, names, and member IDs;
+- separate `active_platoon_id` and `primary_character_id`;
+- one complete root `selected_character_ids` set; and
+- explicit roster, platoon, and selection completeness.
 
-Protocol 2.0 now has strict models for:
+The strict model validates membership in both directions, prevents a character
+from belonging to two platoons, requires all referenced IDs to exist, and
+requires the primary character to be selected. The producer reads primary from
+Kenshi's primary owner; roster order has no authority.
 
-- a bounded player `roster` with explicit `platoon_id` membership;
-- plural `platoons`, exact membership lists, and `active_platoon_id`;
-- separate `primary_character_id` and `selected_character_ids`;
-- ordinary orders, Jobs, permanent Jobs, Jobs-enabled state, and current
-  activity without cross-channel inference;
-- plural retained and recent-terminal controller command records with immutable
-  dispatch bases and recipient-level evidence;
-- observed but unowned Kenshi work with no fabricated command correlation;
-- complete and truncated collections, including sources whose exact total is
-  unknown.
+`TelemetrySnapshot.squad`, `CharacterState.selected`,
+`UIState.selected_character_id`, and `UIState.selected_character_ids` were
+deleted from producer, consumers, mocks, native fixtures, portable tests,
+schemas, and generated documentation. They have no alias, fallback, or dual
+reader. The still-singular native command registry is not disguised as part of
+this goal and remains a Protocol 2.0 follow-on.
 
-All 2.0 objects forbid extra fields. The protocol version is the literal
-`2.0.0`. Neither `squad` nor `active_command_id` exists in the model or generated
-schema. The invalid old-shape fixture pins their rejection.
+Live evidence found that Kenshi can change a player's handle container fields
+when moving the player between platoons. The superseded container-normalization
+assumption was removed in the same slice. The native producer now keeps the
+first player candidate identity for one live `Character*` and `validKey` pair,
+rejects pointer reuse when `validKey` changes, and clears the registry on
+GameWorld reset. That makes player IDs stable for the current identity session,
+not across sessions.
 
-This is intentionally a specification boundary. `TelemetrySnapshot` and the
-native JSON writer still implement 1.18.0 and were not adapted or given a
-fallback. The producer migration is named follow-on work, not a half-landed
-dual reader.
+Portable models, mocks, scenario fixtures, native telemetry fixtures,
+capability manifests, schemas, generated documentation, the proof ledger, and
+the current documentation all move together with this authority.
 
-## Fixtures, schemas, and generated documentation
+## Source-proven
 
-`tests/fixtures/protocol_2/valid_multiple_platoons_and_commands.json` is the
-canonical full fixture. It contains two platoons and two simultaneous retained
-commands over disjoint captured recipients even though the current UI selection
-shows only one group. It also demonstrates all four task channels and one
-pre-existing permanent Job represented as observed unowned work.
+- KenshiLib 0.4.0 `PlayerInterface.h` separately declares
+  `getAllPlayerCharacters()`, `getCurrentActivePlatoon()`,
+  `selectedCharacter`, and `selectedCharacters`.
+- KenshiLib 0.4.0 `Character.h` declares `Character::getPlatoon()`;
+  `Platoon.h` declares `ActivePlatoon::getName()` and the underlying
+  `Platoon::getPlatoonStringID()`.
+- Current native call sites consume those structures independently and discard
+  every pointer after the snapshot.
+- ForgottenGUI and `SquadManagementScreen` were inspected and rejected as
+  player-topology authority. They describe UI, not the authoritative roster,
+  membership, primary, or selection structures.
+- `game_sources/kenshi/controls.cfg` binds `change_squad=Tab`.
 
-`valid_truncated_world_model.json` distinguishes exact known totals from null
-unknown totals. Invalid fixtures cover old 1.x topology, contradictory
-membership, and impossible completeness counts.
+These declarations and calls prove the available sources and the implemented
+read path. They do not by themselves prove what Kenshi changed or persisted.
 
-Generated outputs are:
+## Test-proven
+
+- The shared 1.19 fixture preserves multiple platoons, exact bidirectional
+  membership, active platoon, primary not in roster position zero, and complete
+  multi-selection through the strict Python model and compiled C++ conformance
+  target.
+- Negative portable tests reject every removed field, dangling linkage,
+  duplicate membership, incomplete contradictions, and an unselected primary.
+- Compiled registry tests preserve one ID for the same pointer/key across a
+  candidate-handle change, reject pointer reuse with a changed key, and clear
+  the mapping on reset.
+- Capability and generation tests pin the new topology vocabulary and ensure
+  the native manifest/header, schemas, examples, and generated references move
+  with it.
+
+Fixtures and passing calls prove contracts and compiled behavior, not a changed
+game world.
+
+## Native build and installed provenance
+
+The Release x64 VS2010 SP1 build completed and its native conformance executable
+reported `Native protocol fixtures and semantics passed.` The built DLL was
+installed before the decisive live run.
 
 ```text
-schemas/protocol_2_world_model.schema.json
-docs/generated/PROTOCOL_2_WORLD_MODEL.md
+built DLL path          C:\Users\levib\AppData\Local\KenshiAgent\build\native\bin\KenshiAgentTelemetry.dll
+built DLL sha256        2dfee3ca27a3a2494b31386cff06e9db2ad02e38e7d3d6079fec0fb2234436bc
+built DLL size          413696 bytes
+installed DLL path      C:\Program Files (x86)\Steam\steamapps\common\Kenshi\mods\KenshiAgentTelemetry\KenshiAgentTelemetry.dll
+installed DLL sha256    2dfee3ca27a3a2494b31386cff06e9db2ad02e38e7d3d6079fec0fb2234436bc
+installed DLL size      413696 bytes
+conformance exe sha256  90582667c5d94adb0eee26a44cd4ff97db10ef257ec3b5474d244fd827592dc6
+conformance exe size    280576 bytes
+built equals installed  YES
+provenance chain        consistent; generated header current; 47 capabilities present
 ```
 
-The existing schema/document freshness tests include both artifacts through the
-central exporters.
+## Live-proven
+
+Exact bundle: `runs/player-topology-20260809T161112Z/manifest.json`.
+
+The ignored local bundle indexes every raw frame-plus-telemetry snapshot under
+`runs/dev-snapshots/` and records each pre-state, request, acknowledgement,
+later engine observation, and disposition separately. Its decisive evidence is:
+
+- a baseline with Paste primary despite being second in roster order;
+- a later authored world with Hep in `platoon-Nameless_0` and Paste in
+  `platoon-Nameless_1`;
+- Tab changing active platoon while primary and complete selection remained
+  independently observable;
+- exact native selection requests acknowledged and then confirmed by later
+  telemetry as primary/selection changes;
+- Paste retaining one full session-scoped ID while moved into the other
+  platoon and back under the current DLL;
+- F5 input paired with changed nonempty `quick.save`, `Nameless_0`, and
+  `Nameless_1` file hashes, rather than treating the input receipt as proof;
+- a deliberate post-save mutation to active `Nameless_0`, primary Hep,
+  selected `[Hep]`, followed by F9;
+- F9 input paired with identity-session advance 2 to 3 and later restored
+  platoon IDs, names, membership, primary Paste, and selected `[Paste]`; and
+- final sequence 1096: loaded, paused, modal-free, idle, no active native
+  command, two complete platoons, primary Paste, selected `[Paste]`.
+
+Kenshi reset the active tab to `Nameless_0` on quickload instead of restoring
+the saved `Nameless_1`. The producer reported that distinction. A returned UI
+input, getter call, or native acknowledgement was never used as proof of the
+later game state.
+
+Final live disposition: **the game remains loaded, paused, modal-free, idle,
+and has no active native command; built and installed DLL hashes match**.
+
+## Withheld and named follow-on work
+
+- **Player identity lifecycle:** character IDs are deliberately session-scoped;
+  no cross-GameWorld-reset character-ID continuity is claimed. Longer-run
+  roster mutation and pointer-reuse coverage remain follow-on work.
+- **Empty management rows:** an empty UI-created squad row had no player member
+  linkage and was not exported as a player platoon. Empty-row semantics require
+  separate evidence before adding another authority.
+- **Active persistence:** the recorded load reset active platoon; no active-tab
+  persistence claim is made.
+- **Protocol 2.0 bounded work and plural commands:** task-channel ownership,
+  plural retained commands, overlap, supersession, and registry bounds remain
+  the accepted next breaking boundary. They are not partially implemented here.
 
 ## Verification
 
-The complete portable gate ran over this candidate at `2026-08-09T14:45:01Z`
-using:
+The complete portable gate passed over this final candidate with:
 
 ```bash
 UV_CACHE_DIR=/tmp/kae-uv-cache ./dev verify-portable
 ```
 
-It passed locked dependency sync, Ruff, strict mypy across 149 source files,
-research-package validation, schema generation, documentation generation, the
-complete pytest suite, and `git diff --check`. Generated bytes were current.
-The checkpoint was then updated with that result; the same complete gate was
-rerun over the final tree.
-
-## Native and live disposition
-
-The native producer was not migrated. Its Release x64 project was rebuilt
-because the conformance executable now reads the shared Protocol 2.0 fixtures.
-The exact build command was:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/build_native.ps1
-```
-
-The native prerequisites passed, MSBuild completed, and the executable reported
-`Native protocol fixtures and semantics passed.` The build was not installed.
-
-```text
-declared producer protocol  1.18.0
-built DLL sha256            8409a28ed3f89c0d279f2d17527a95ff76002e532f2d82c8cb10be5a261df0ca
-built DLL size              384000 bytes
-installed DLL sha256        262dcc137b8f1c3a0ce2bc63ae74d362cfb209889aefa01e69427912fef37537
-installed DLL size          384000 bytes
-fixture executable sha256   c623148612a2b20c19b5f7dfd150cab884555be041c29461d5a44db50e72ffa9
-built equals installed      NO
-```
-
-No gameplay request or live run was performed. There is no run bundle,
-pre-dispatch state, acknowledgement, later engine evidence, or game-state
-disposition to record. The producer is explicitly still 1.18.0.
-
-Final native/live disposition: **fixtures compiled and passed; rebuilt DLL not
-installed; gameplay not attempted; no gameplay claim made**. A source
-declaration, fixture parse, generated schema, returned call, or
-acknowledgement would not by itself prove that Kenshi changed.
-
-## Evidence classification
-
-### Source-proven
-
-- KenshiLib 0.4.0 `PlayerInterface.h` exposes distinct roster, primary,
-  selection, and current-platoon structures.
-- KenshiLib 0.4.0 `Platoon.h` exposes active platoons and character membership.
-- KenshiLib 0.4.0 `AITaskSystem.h` exposes separate ordinary orders, Jobs,
-  permajobs, Jobs-enabled state, and current goal.
-- Current native source reads the task channels independently but serializes
-  the player collection as `squad` and controller state through singular
-  `active_command_id`; it does not implement the specified 2.0 shape.
-- The strict model, not a generated document or archived plan, owns the target
-  schema.
-
-### Test-proven
-
-- The full valid fixture parses and preserves two platoons and two simultaneous
-  retained commands.
-- The truncation fixture preserves complete, truncated-known-total, and
-  truncated-unknown-total states.
-- Invalid fixtures reject the old shape and cross-field contradictions.
-- Generated JSON Schema contains `roster`, plural controller collections, and
-  no `squad` or `active_command_id` property.
-- The compiled native conformance target reads the same valid and old-shape
-  boundary fixtures and passed; this proves fixture wiring, not Kenshi behavior.
-
-### Live-proven
-
-This slice adds no live proof. Existing live proofs remain bounded to the
-operation entries and research packages that already name their run bundles.
-
-### Withheld and named follow-on work
-
-- **Protocol 2.0 producer migration:** atomically replace producer, Python
-  consumers, mocks, replays, scenarios, capabilities, and native protocol
-  fixtures; delete 1.x names without aliases.
-- **Native plural command registry:** replace the global singleton and prove
-  simultaneous disjoint commands, stable captured recipients, supersession,
-  idempotency, and registry bounds.
-- **Platoon identity proof:** verify membership and stable identity across UI
-  tab changes and save/load.
-- **Task ownership correlation:** prove exact causal links or report observed
-  work as unowned; never clear work merely because it was observed.
-- **Live Protocol 2.0 bundle:** record built and installed DLL hashes, exact run
-  bundle, pre-dispatch state, requests, acknowledgements, later engine evidence,
-  and final dispositions before upgrading any behavior claim.
+It covers locked dependency sync, Ruff, strict mypy, research-package
+validation, schema and generated-document freshness, the complete pytest suite,
+and `git diff --check`. The statement above is valid only together with the
+successful gate output for this checkout; if the candidate changes, the gate
+must be rerun.

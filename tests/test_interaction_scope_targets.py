@@ -22,7 +22,7 @@ import pytest
 from kenshi_agent.core.telemetry import NativeControlState, TelemetrySnapshot
 from kenshi_agent.core.transport import NativeCommandRequest
 
-SLICE_2 = "Slice 2: protocol 2.0 roster, platoons, plural command records"
+SLICE_2_REMAINDER = "Slice 2 remainder: protocol 2.0 plural command records"
 SLICE_3 = "Slice 3: native captured-recipient command registry"
 SLICE_4 = "Slice 4: immutable dispatch basis at the input boundary"
 
@@ -62,7 +62,6 @@ def test_transport_holds_no_command_name_cardinality_exception_set() -> None:
     assert "requires exactly one selected character" not in source
 
 
-@pytest.mark.xfail(strict=True, reason=SLICE_2)
 def test_player_roster_is_not_serialised_under_a_squad_field() -> None:
     """Section 9.1: roster, platoons, primary, and selection are distinct."""
 
@@ -71,7 +70,7 @@ def test_player_roster_is_not_serialised_under_a_squad_field() -> None:
     assert "platoons" in TelemetrySnapshot.model_fields
 
 
-@pytest.mark.xfail(strict=True, reason=SLICE_2)
+@pytest.mark.xfail(strict=True, reason=SLICE_2_REMAINDER)
 def test_native_control_state_has_no_singular_active_command_id() -> None:
     """Section 9.4: plural command records replace the singular field."""
 

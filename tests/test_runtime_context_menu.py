@@ -65,13 +65,18 @@ def runtime_menu_observation(
                     if captured
                     else None
                 ),
-                selected_character_ids=(
-                    selected_character_ids
-                    if selected_character_ids is not None
-                    else ["entity-selected"]
-                ),
             ),
-            squad=[CharacterState(id="entity-selected", name="Tassilo", selected=True)],
+            primary_character_id=(
+                selected_character_ids[0]
+                if selected_character_ids
+                else "entity-selected"
+            ),
+            selected_character_ids=(
+                selected_character_ids
+                if selected_character_ids is not None
+                else ["entity-selected"]
+            ),
+            roster=[CharacterState(id="entity-selected", name="Tassilo")],
             world_targets=[
                 WorldTarget(
                     id=target_id,
@@ -103,10 +108,11 @@ def test_runtime_menu_orders_remain_observation_not_execution_authority() -> Non
                 # must not be rejected or promoted into ContextActionKind.
                 task_type_values=[87, 9999],
                 task_type_values_complete=True,
+                ),
             ),
+            primary_character_id="entity-selected",
             selected_character_ids=["entity-selected"],
-        ),
-        squad=[CharacterState(id="entity-selected", name="Tassilo", selected=True)],
+        roster=[CharacterState(id="entity-selected", name="Tassilo")],
         world_targets=[
             WorldTarget(
                 id=target_id,
@@ -185,14 +191,12 @@ def test_runtime_menu_evidence_classifies_an_exact_selected_character() -> None:
     observation = runtime_menu_observation(31)
     assert observation.telemetry is not None
     target_id = "entity-runtime-menu-target"
-    selected_ui = observation.telemetry.ui.model_copy(
-        update={"selected_character_ids": [target_id]}
-    )
     selected_telemetry = TelemetrySnapshot.model_validate(
         observation.telemetry.model_copy(
             update={
-                "ui": selected_ui,
-                "squad": [CharacterState(id=target_id, name="Fish", selected=True)],
+                "primary_character_id": target_id,
+                "selected_character_ids": [target_id],
+                "roster": [CharacterState(id=target_id, name="Fish")],
                 "world_targets": [],
             }
         ).model_dump()

@@ -79,21 +79,20 @@ def _world(*people: NearbyEntity) -> Observation:
                 "identity.stable_handles",
                 "nearby.characters",
                 "nearby.orderable_tasks",
-                "squad.basic",
+                "roster.basic",
             ],
             game=GameState(loaded=True, paused=True),
+            primary_character_id="char-leaf",
+            selected_character_ids=["char-leaf"],
             ui=UIState(
                 active_screen="world",
                 modal_open=False,
                 dialogue_open=False,
-                selected_character_id="char-leaf",
-                selected_character_ids=["char-leaf"],
             ),
-            squad=[
+            roster=[
                 CharacterState(
                     id="char-leaf",
                     name="LEAF",
-                    selected=True,
                     alive=True,
                     conscious=True,
                 )

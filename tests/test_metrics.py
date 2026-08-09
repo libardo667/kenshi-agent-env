@@ -271,18 +271,17 @@ def test_the_observation_digest_keeps_what_the_evaluator_reads() -> None:
             identity_session_id="session-digest",
             capabilities=["game.pause", "identity.stable_handles"],
             game=GameState(loaded=True, paused=True, money=1000),
-            ui=UIState(
-                active_screen="trade",
-                context_inventory_target_id="entity-copper",
-                visible_controls_complete=True,
-                selected_character_id="entity-hep",
+                ui=UIState(
+                    active_screen="trade",
+                    context_inventory_target_id="entity-copper",
+                    visible_controls_complete=True,
+                ),
+                primary_character_id="entity-hep",
                 selected_character_ids=["entity-hep"],
-            ),
-            squad=[
+            roster=[
                 CharacterState(
                     id="entity-hep",
                     name="Hep",
-                    selected=True,
                     inventory_complete=True,
                 )
             ],

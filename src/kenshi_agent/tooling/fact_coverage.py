@@ -62,10 +62,7 @@ class Fact:
 
 
 def _selected(snapshot: TelemetrySnapshot) -> Any:
-    return next(
-        (character for character in snapshot.squad if character.selected),
-        snapshot.squad[0] if snapshot.squad else None,
-    )
+    return snapshot.primary_character()
 
 
 def _selected_field(name: str) -> Callable[[TelemetrySnapshot], bool]:
@@ -100,28 +97,28 @@ FACTS: tuple[Fact, ...] = (
         "Whether to eat at all. The core survival loop starts here.",
         1,
         "open the character's stats window and read it",
-        lambda s: "squad.hunger" in s.capabilities,
+        lambda s: "roster.hunger" in s.capabilities,
     ),
     Fact(
         "self.inventory",
         "Whether it already owns what it is about to go buy.",
         2,
         "open the inventory window and hover each cell",
-        lambda s: "squad.inventory" in s.capabilities,
+        lambda s: "roster.inventory" in s.capabilities,
     ),
     Fact(
         "self.health",
         "Whether to heal, flee, or rest.",
         1,
         "open the character's stats window",
-        lambda s: "squad.health" in s.capabilities,
+        lambda s: "roster.health" in s.capabilities,
     ),
     Fact(
         "self.first_aid_kits",
         "Whether healing is even possible.",
         2,
         "open the inventory and identify kits",
-        lambda s: "squad.inventory" in s.capabilities,
+        lambda s: "roster.inventory" in s.capabilities,
     ),
     Fact(
         "self.current_goal",
@@ -129,7 +126,7 @@ FACTS: tuple[Fact, ...] = (
         0,
         "",
         lambda s: (
-            "squad.current_goal" in s.capabilities
+            "roster.current_goal" in s.capabilities
             and _selected_field("current_goal")(s)
         ),
     ),

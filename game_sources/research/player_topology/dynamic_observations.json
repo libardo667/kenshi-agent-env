@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "subsystem": "player_topology",
+  "observations": [
+    {
+      "id": "player_topology_portable_contract",
+      "kind": "portable_test",
+      "observed_on": "2026-08-09",
+      "kenshi_version": "No live executable loaded",
+      "executable_sha256_at_probe": null,
+      "installed_dll_sha256_at_probe": null,
+      "run_bundle": null,
+      "pre_dispatch_state": "A shared synthetic 1.19.0 snapshot contains three roster characters across two named platoons; the active platoon is beta, the primary is the second roster row, and two beta characters are selected.",
+      "request": "Validate the same fixture through the strict Python telemetry model and compiled C++ native conformance target.",
+      "acknowledgement": "The Python contract rejects the superseded squad/UI-selection shape and contradictory membership; the native target asserts distinct fields and that primary is not roster order.",
+      "later_engine_evidence": "None; the fixture does not load Kenshi.",
+      "final_disposition": "Test-proves the repository and compiled native fixture contract only.",
+      "evidence_source": "tests/test_player_topology.py, tests/fixtures/native_telemetry/valid_player_topology.json, and native/KenshiAgentTelemetry/NativeCommandProtocolTests.cpp.",
+      "remaining_uncertainty": ["Fixtures cannot prove live tab changes, live selection changes, or save/reload persistence."]
+    },
+    {
+      "id": "character_handle_changed_on_platoon_move",
+      "kind": "contradiction",
+      "observed_on": "2026-08-09",
+      "kenshi_version": "1.0.65 x64",
+      "executable_sha256_at_probe": "a596ab4e407c67b58599c54ffb32dc1bf2b64510cdebd3fa9359ef05a576aeb1",
+      "installed_dll_sha256_at_probe": "3c823127d37d63c0ae662d67cc115002425d514a57c4937c308b63c75310f163",
+      "run_bundle": "player-topology-20260809T161112Z",
+      "pre_dispatch_state": "Paste was the second member of Nameless_0 with session-scoped ID ending 3998b300.",
+      "request": "Create Nameless_1 through the advertised management control, then drag Paste into its empty row.",
+      "acknowledgement": "The pointer and drag receipts returned executed; these receipts were not treated as game-state proof.",
+      "later_engine_evidence": "The later multiplatoon_authored snapshot showed Paste in Nameless_1 with ID ending a990f200. Index and serial changed, contradicting the old assumption that zeroing handle container fields alone made a player ID stable across platoon moves.",
+      "final_disposition": "The superseded assumption was removed. The current player-only identity registry preserves the first candidate while Character pointer and validKey remain the same and clears on GameWorld reset.",
+      "evidence_source": "runs/player-topology-20260809T161112Z/manifest.json and its named dev snapshots.",
+      "remaining_uncertainty": [
+        "The contradictory snapshot used the prior DLL; correctness of the replacement is established by the separate current-DLL live probe.",
+        "No cross-session character-ID continuity is claimed."
+      ]
+    },
+    {
+      "id": "player_topology_multiplatoon_live",
+      "kind": "live_probe",
+      "observed_on": "2026-08-09",
+      "kenshi_version": "1.0.65 x64",
+      "executable_sha256_at_probe": "a596ab4e407c67b58599c54ffb32dc1bf2b64510cdebd3fa9359ef05a576aeb1",
+      "installed_dll_sha256_at_probe": "2dfee3ca27a3a2494b31386cff06e9db2ad02e38e7d3d6079fec0fb2234436bc",
+      "run_bundle": "player-topology-20260809T161112Z",
+      "pre_dispatch_state": "A loaded authored pair began in one platoon. The final save sequence began with two nonempty platoons, active Nameless_0, primary Hep, and complete selection [Hep].",
+      "request": "Use the inspected Tab binding, exact select_squad_member requests, management drags, F5, a deliberate post-save selection mutation, F9, and final recovery.",
+      "acknowledgement": "Native selection commands cmd-b906de94681f459db00b387c8c13c3eb, cmd-89fd0b2b0c404ecbba3cd56f3580015d, and cmd-b9f528943d3243cc94605e9cf74adf2c completed exact_squad_member_selected. UI receipts only prove input dispatch and are paired with later snapshots.",
+      "later_engine_evidence": "Named raw snapshots prove two memberships, Tab changing only active where appropriate, primary and complete selection changes, Paste retaining one full ID while moved to Nameless_0 and back, a changed nonempty quicksave tree, GameWorld identity session 2 to 3 on F9, and restored platoons/membership/primary/selection. Kenshi reset active to Nameless_0 on load rather than persisting saved Nameless_1.",
+      "final_disposition": "Kenshi remains loaded, paused, modal-free, idle, with no active native command. Built and installed DLL hashes match exactly.",
+      "evidence_source": "runs/player-topology-20260809T161112Z/manifest.json and the exact dev-snapshot paths it indexes.",
+      "remaining_uncertainty": [
+        "Character entity IDs are session-scoped and change their session component across GameWorld reset.",
+        "Empty management rows are not exported because player/platoon structures expose no member linkage for them.",
+        "Longer-run roster mutation and pointer-lifecycle coverage is named follow-on work, not claimed here."
+      ]
+    }
+  ]
+}

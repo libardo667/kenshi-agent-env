@@ -35,12 +35,12 @@
       "project_call_sites": [
         {
           "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
-          "line": 1532,
+          "line": 1569,
           "contains": "ProbeMenuOrders"
         },
         {
           "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
-          "line": 7147,
+          "line": 7300,
           "contains": "ContextMenu::showContextMenu"
         }
       ]
@@ -61,12 +61,12 @@
       "project_call_sites": [
         {
           "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
-          "line": 591,
+          "line": 628,
           "contains": "ContextMenuGUIShowHook"
         },
         {
           "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
-          "line": 7164,
+          "line": 7317,
           "contains": "ContextMenuGUI::show"
         }
       ]
@@ -102,7 +102,7 @@
       "project_call_sites": [
         {
           "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
-          "line": 1598,
+          "line": 1635,
           "contains": "getPlayerTaskProbability"
         }
       ]
@@ -138,7 +138,7 @@
       "project_call_sites": [
         {
           "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
-          "line": 4737,
+          "line": 4774,
           "contains": "newPlayerTaskSelectedCharacters"
         }
       ]

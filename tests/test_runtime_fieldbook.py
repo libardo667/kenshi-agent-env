@@ -224,7 +224,7 @@ def test_fieldbook_prose_cannot_change_current_telemetry_inventory(
 
         assert decorated.telemetry == telemetry_before
         assert decorated.telemetry is not None
-        assert decorated.telemetry.squad[0].inventory_complete is None
+        assert decorated.telemetry.roster[0].inventory_complete is None
         assert decorated.fieldbook_projects[0].project_id == project.project_id
         assert "999 canisters" not in decorated.model_dump_json(include={"telemetry"})
 
