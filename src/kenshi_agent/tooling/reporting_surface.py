@@ -89,7 +89,7 @@ POST_MORTEM_QUESTIONS: tuple[PostMortemQuestion, ...] = (
     PostMortemQuestion(
         question="What did the native layer actually say?",
         event_type="observation",
-        probe="telemetry.native_control",
+        probe="telemetry.controller_commands",
         why_it_matters=(
             "Command results like target_already_reached are correct refusals "
             "that the plan layer reports as failures."

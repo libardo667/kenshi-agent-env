@@ -16,7 +16,9 @@
       "later_engine_evidence": "None; portable and compiled fixtures do not load Kenshi.",
       "final_disposition": "Test-proves the repository contract only. Live layout and causal admission proof remain required.",
       "evidence_source": "tests/test_models.py, tests/test_affordances.py, tests/test_operation_definitions.py, tests/fixtures/native_commands/valid_natural_resource.json, and native/KenshiAgentTelemetry/NativeCommandProtocolTests.cpp.",
-      "remaining_uncertainty": ["Fixtures cannot prove the installed game publishes the declared set layout or changes it after an order."]
+      "remaining_uncertainty": [
+        "Fixtures cannot prove the installed game publishes the declared set layout or changes it after an order."
+      ]
     },
     {
       "id": "selected_worker_conflation",
@@ -32,7 +34,9 @@
       "later_engine_evidence": "The admission and GUI-worker routines instead use numOperatorsMax and currentOperators as the capacity and membership boundary.",
       "final_disposition": "Goal adoption and selection were deleted as resource-acceptance terminals. Only an exact selected identity in currentOperators can report resource_operator_accepted.",
       "evidence_source": "Kenshi executable admission/UI-worker disassembly and native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp.",
-      "remaining_uncertainty": ["This contradiction record is source-only; the separate resource_operator_capacity_one_live observation supplies the causal live proof."]
+      "remaining_uncertainty": [
+        "This contradiction record is source-only; the separate resource_operator_capacity_one_live observation supplies the causal live proof."
+      ]
     },
     {
       "id": "resource_operator_capacity_one_live",
@@ -52,7 +56,8 @@
         "The run does not establish cross-load continuity for session-scoped operator IDs.",
         "The output inventory remained empty, so exact nonempty output-stack export remains source- and fixture-proven in this slice.",
         "No work-progress scalar was validated."
-      ]
+      ],
+      "durable_reduced_evidence": "game_sources/research/resource_operators/live_evidence/resource-operators-20260809T201826Z.json"
     }
   ]
 }

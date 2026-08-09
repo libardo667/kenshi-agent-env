@@ -448,7 +448,7 @@
     },
     "CharacterWorkState": {
       "additionalProperties": false,
-      "description": "Independent retained-work channels and current activity.\n\nKenshi's ordinary order queue, configured Jobs, permanent Jobs, and current\ngoal have separate owners and lifetimes. None is inferred from another.\nThe controller-issued command remains separate in ``native_control``.",
+      "description": "Independent retained-work channels and current activity.\n\nKenshi's ordinary order queue, configured Jobs, permanent Jobs, and current\ngoal have separate owners and lifetimes. None is inferred from another.\nThe controller-issued command remains separate in ``controller_commands``.",
       "properties": {
         "has_player_orders": {
           "title": "Has Player Orders",
@@ -1176,25 +1176,12 @@
           "title": "Available",
           "type": "boolean"
         },
-        "active_command_id": {
-          "anyOf": [
-            {
-              "pattern": "^cmd-[0-9a-f]{32}$",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Active Command Id"
-        },
-        "acknowledgements": {
+        "commands": {
           "items": {
             "$ref": "#/$defs/NativeCommandAcknowledgement"
           },
           "maxItems": 16,
-          "title": "Acknowledgements",
+          "title": "Commands",
           "type": "array"
         },
         "last_command_sequence": {
@@ -2502,7 +2489,8 @@
   "additionalProperties": false,
   "properties": {
     "protocol_version": {
-      "default": "1.21.0",
+      "const": "2.0.0",
+      "default": "2.0.0",
       "title": "Protocol Version",
       "type": "string"
     },
@@ -2550,7 +2538,7 @@
     "ui": {
       "$ref": "#/$defs/UIState"
     },
-    "native_control": {
+    "controller_commands": {
       "$ref": "#/$defs/NativeControlState"
     },
     "roster": {

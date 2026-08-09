@@ -13,6 +13,9 @@
     "unit_proven = a deterministic test pins it; live_proven = a named run",
     "bundle shows it; unproven = declared, no proof yet; withheld = should not",
     "be offered until proven.",
+    "Protocol 2.0 is now the sole producer and consumer contract; no 1.x",
+    "compatibility reader remains. Historical live conclusions are preserved",
+    "as committed reduced evidence artifacts beside their research packages.",
     "The resource-operator bundle named below proves exact capacity and accepted",
     "identity semantics for a two-character selection against a capacity-one",
     "target. It does not generalize unrelated multi-recipient semantics.",
@@ -34,13 +37,14 @@
   "protocol_2_world_model": {
     "proof_status": "unit_proven",
     "evidence": [
-      "Protocol2WorldModel is a strict standalone 2.0 schema authority with no 1.x inheritance or aliases",
+      "Protocol2WorldModel and TelemetrySnapshot are strict 2.0 authorities with no 1.x inheritance, aliases, or compatibility reader",
+      "the native producer emits controller_commands.commands and every Python consumer treats it as plural",
       "valid fixtures express two platoons, disjoint selections, two simultaneous retained controller commands, all four Kenshi task channels, unowned work, and truncation",
       "invalid fixtures reject old squad and active_command_id topology, contradictory memberships, and contradictory completeness",
       "the Release x64 native conformance executable parses the shared full and old-shape fixtures and pins their breaking topology"
     ],
     "live_evidence": [],
-    "note": "Specification and portable-test proven only. The current 1.21 producer has landed topology, independent bounded-work vocabulary, and exact resource-operator state but not plural controller commands; no simultaneous-command behavior is claimed."
+    "note": "Source, native-conformance, and portable-test proven. The native producer may publish at most one record only until 2026-09-20, while consumers and fixtures already accept plural records. No simultaneous live-command behavior is claimed."
   },
   "player_topology": {
     "proof_status": "live_proven",
@@ -53,6 +57,7 @@
     ],
     "live_evidence": [
       "runs/player-topology-20260809T161112Z/manifest.json indexes the exact raw frame-plus-telemetry snapshots and every request, receipt, acknowledgement, later engine result, save-tree change, and final disposition",
+      "game_sources/research/player_topology/live_evidence/player-topology-20260809T161112Z.json durably preserves the decisive evidence and hashes omitted raw files",
       "built and installed DLLs both sha256 2dfee3ca27a3a2494b31386cff06e9db2ad02e38e7d3d6079fec0fb2234436bc; compiled conformance executable passed",
       "the named bundle proves two nonempty platoons, exact linkage, Tab changing active independently, primary and complete selection changes, same-session player ID stability across membership moves, and quickload restoration of topology/primary/selection",
       "final snapshot sequence 1096 is loaded, paused, modal-free, idle, and has no active native command"
@@ -72,6 +77,7 @@
     ],
     "live_evidence": [
       "runs/task-channels-20260809T172100Z/manifest.json indexes the exact request and pre-dispatch, later-engine, and final-disposition raw frame-plus-telemetry snapshots",
+      "game_sources/research/task_channels/live_evidence/task-channels-20260809T172100Z.json durably preserves the decisive evidence and hashes omitted raw files",
       "built and installed DLLs both sha256 3746e1dfd1feb9564c4a539388790b7d3f7f19e3971d965c08b223e8766b0d2f; compiled conformance executable passed",
       "later snapshot sequence 329 shows Paste retaining one ordinary OPERATE_MACHINERY order at position 0 alongside separate current activity with null position while Jobs and permanent Jobs remain complete and empty",
       "final snapshot sequence 383 is loaded, paused, modal-free, and has no active native command; the retained order and separate activity remain visible"
@@ -127,7 +133,8 @@
       "proof_status": "live_proven",
       "evidence": [
         "closure-loot-20260808 command cmd-ad044f547c894764b0506d8459545a81 paired Fish with unconscious Burn and completed as trade_window_open",
-        "closure-harvest-fixed-20260808 command cmd-1c78e8d12e4a403f83bfc3df8f3bee46 paired Fish with the Iron Resource and completed as trade_window_open"
+        "closure-harvest-fixed-20260808 command cmd-1c78e8d12e4a403f83bfc3df8f3bee46 paired Fish with the Iron Resource and completed as trade_window_open",
+        "game_sources/research/inventory_transfer/live_evidence/inventory-transfer-20260808.json durably preserves decisive request, command-result, later-state, and omitted-file hash evidence"
       ],
       "research": [
         "game_sources/research/inventory_transfer"
@@ -165,6 +172,7 @@
       "proof_status": "live_proven",
       "evidence": [
         "runs/resource-operators-20260809T201826Z/manifest.json records matching 1.21 built and installed DLL hashes, exact request, pre-state, later engine state, and final disposition",
+        "game_sources/research/resource_operators/live_evidence/resource-operators-20260809T201826Z.json durably preserves the decisive evidence and hashes omitted raw files",
         "sequence 831 selected Ribs and Hand and retained the exact ordinary order for both, while the capacity-one target's complete current_operator_ids contained only Ribs",
         "cmd-06957502b99144479744d93740f998fd completed as resource_operator_accepted only after the accepted set transition"
       ],
@@ -261,7 +269,8 @@
       "proof_status": "live_proven",
       "evidence": [
         "closure-loot-20260808 transferred Burn's equipped Katana and Halfpants (ragged) into Fish with item_transferred terminals cmd-460ee0bb31814fd98e7d7057747348f6 and cmd-2538e63cec614d87a06511aa925f4256; later open-inventory telemetry showed Burn empty and Fish holding the moved items",
-        "closure-harvest-fixed-20260808 transferred Raw Iron from the Iron Resource output slot into Fish with item_transferred terminal cmd-90f4f3ab3ea449539a64040290c7f1e3 and later inventory telemetry recorded the resource loss and Fish gain"
+        "closure-harvest-fixed-20260808 transferred Raw Iron from the Iron Resource output slot into Fish with item_transferred terminal cmd-90f4f3ab3ea449539a64040290c7f1e3 and later inventory telemetry recorded the resource loss and Fish gain",
+        "game_sources/research/inventory_transfer/live_evidence/inventory-transfer-20260808.json durably preserves decisive request, command-result, later-state, and omitted-file hash evidence"
       ],
       "research": [
         "game_sources/research/inventory_transfer"

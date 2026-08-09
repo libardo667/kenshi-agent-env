@@ -164,7 +164,7 @@ def _oversized_observation(*, reverse_low_priority: bool = False) -> Observation
     warnings = [f"Low-priority warning {index}: " + "w" * 120 for index in range(12)]
 
     telemetry = TelemetrySnapshot(
-        protocol_version="0.5.0",
+        protocol_version="2.0.0",
         sequence=42,
         captured_at=_NOW,
         source="semantic-budget-test",
@@ -194,10 +194,9 @@ def _oversized_observation(*, reverse_low_priority: bool = False) -> Observation
         ),
         primary_character_id=_SELECTED_ID,
         selected_character_ids=[_SELECTED_ID],
-        native_control=NativeControlState(
+        controller_commands=NativeControlState(
             available=True,
-            active_command_id=_ACTIVE_COMMAND_ID,
-            acknowledgements=[old_acknowledgement, active_acknowledgement],
+            commands=[old_acknowledgement, active_acknowledgement],
             last_command_sequence=38,
             last_command="approach_confirmed_vendor",
             last_result="accepted",
@@ -327,15 +326,17 @@ def _assert_critical_envelope(document: dict[str, object]) -> None:
     assert _path(document, "active_plan.active_step_id") == "approach"
     assert _path(document, "telemetry.sequence") == 42
     assert _path(document, "telemetry.game.paused") is True
-    assert _path(document, "telemetry.native_control.active_command_id") is None
-    assert _path(document, "telemetry.native_control.last_target_id") is None
+    controller_commands = _path(document, "telemetry.controller_commands")
+    assert isinstance(controller_commands, dict)
+    assert "active_command_id" not in controller_commands
+    assert _path(document, "telemetry.controller_commands.last_target_id") is None
 
-    acknowledgements = _path(
+    commands = _path(
         document,
-        "telemetry.native_control.acknowledgements",
+        "telemetry.controller_commands.commands",
     )
-    assert isinstance(acknowledgements, list)
-    assert acknowledgements == []
+    assert isinstance(commands, list)
+    assert commands == []
 
     squad = _path(document, "telemetry.roster")
     assert isinstance(squad, list)
@@ -634,8 +635,8 @@ def test_planner_projection_removes_private_mechanics_and_conserves_gameplay_sta
     assert text == json.dumps(projected, ensure_ascii=False, separators=(",", ":"))
     assert telemetry["capabilities"] == []
     assert telemetry["ui"]["visible_controls"] == []
-    assert telemetry["native_control"]["acknowledgements"] == []
-    assert telemetry["native_control"]["active_command_id"] is None
+    assert telemetry["controller_commands"]["commands"] == []
+    assert "active_command_id" not in telemetry["controller_commands"]
     assert projected["affordances"] == planner_affordance_digest(observation)
 
     assert observation.telemetry is not None
@@ -721,15 +722,14 @@ def test_semantic_reduction_conserves_every_value_when_everything_fits() -> None
             },
         ]
     )
-    original["telemetry"]["native_control"]["last_target_id"] = "world-ref-z"
+    original["telemetry"]["controller_commands"]["last_target_id"] = "world-ref-z"
     assert observation.telemetry is not None
-    source_native = observation.telemetry.native_control
-    original["telemetry"]["native_control"]["active_command_id"] = source_native.active_command_id
-    original["telemetry"]["native_control"]["acknowledgements"] = [
+    source_native = observation.telemetry.controller_commands
+    original["telemetry"]["controller_commands"]["commands"] = [
         acknowledgement.model_dump(mode="json")
-        for acknowledgement in source_native.acknowledgements
+        for acknowledgement in source_native.commands
     ]
-    active_acknowledgement = original["telemetry"]["native_control"]["acknowledgements"][-1]
+    active_acknowledgement = original["telemetry"]["controller_commands"]["commands"][-1]
     active_acknowledgement["target_id"] = "world-ref-a"
     active_acknowledgement["acknowledged_at_telemetry_sequence"] = 1
     latest_acknowledgement = deepcopy(active_acknowledgement)
@@ -740,7 +740,7 @@ def test_semantic_reduction_conserves_every_value_when_everything_fits() -> None
             "acknowledged_at_telemetry_sequence": 50,
         }
     )
-    original["telemetry"]["native_control"]["acknowledgements"].append(latest_acknowledgement)
+    original["telemetry"]["controller_commands"]["commands"].append(latest_acknowledgement)
     original["telemetry"]["world_targets"].extend(
         [
             {"id": "world-unrelated-z", "distance": 9.0},
@@ -866,7 +866,7 @@ def test_semantic_reduction_conserves_every_value_when_everything_fits() -> None
         ),
     )
     assert [
-        item["command_id"] for item in reduced["telemetry"]["native_control"]["acknowledgements"]
+        item["command_id"] for item in reduced["telemetry"]["controller_commands"]["commands"]
     ] == [_ACTIVE_COMMAND_ID, "cmd-" + "f" * 32, "cmd-" + "d" * 32]
 
 
@@ -925,25 +925,27 @@ def test_irreducible_selection_is_exact_ordered_and_detached() -> None:
     telemetry["selected_character_ids"] = ["selected-list"]
     telemetry["primary_character_id"] = "selected-single"
     telemetry["ui"]["dialogue_target_id"] = "near-dialogue"
-    telemetry["native_control"].update(
+    telemetry["controller_commands"].update(
         {
-            "active_command_id": "cmd-active",
             "last_target_id": "near-last",
-            "acknowledgements": [
+            "commands": [
                 {
                     "command_id": "cmd-latest",
+                    "status": "completed",
                     "acknowledged_at_telemetry_sequence": 5,
                     "selected_character_ids": ["selected-latest-ack"],
                     "target_id": "world-latest",
                 },
                 {
                     "command_id": "cmd-active",
+                    "status": "accepted",
                     "acknowledged_at_telemetry_sequence": 2,
                     "selected_character_ids": ["selected-active-ack"],
                     "target_id": "world-active",
                 },
                 {
                     "command_id": "cmd-old",
+                    "status": "completed",
                     "acknowledged_at_telemetry_sequence": 1,
                     "selected_character_ids": ["selected-old-ack"],
                     "target_id": "near-old",
@@ -991,7 +993,7 @@ def test_irreducible_selection_is_exact_ordered_and_detached() -> None:
         "mem-current-target",
     ]
     assert [
-        item["command_id"] for item in retained["telemetry"]["native_control"]["acknowledgements"]
+        item["command_id"] for item in retained["telemetry"]["controller_commands"]["commands"]
     ] == ["cmd-active", "cmd-latest"]
     assert [item["id"] for item in retained["telemetry"]["roster"]] == sorted(
         ["unselected", *selected_ids]
@@ -1010,7 +1012,7 @@ def test_irreducible_selection_is_exact_ordered_and_detached() -> None:
     assert retained["telemetry"]["ui"]["visible_controls"] == []
     assert "tooltip_text" not in retained["telemetry"]["ui"]
     assert "tooltip_source_bounds" not in retained["telemetry"]["ui"]
-    assert retained["telemetry"]["native_control"]["last_target_id"] == "near-last"
+    assert retained["telemetry"]["controller_commands"]["last_target_id"] == "near-last"
 
     original["recent_continuity_receipts"][-1]["status"] = "failed"
     original["telemetry"]["world_targets"][-1]["distance"] = 999.0
@@ -1205,20 +1207,22 @@ def test_budget_primitives_preserve_values_and_define_stable_priority() -> None:
         "a",
         '{"distance":2.5,"id":"a"}',
     )
-    assert observation_budget._critical_acknowledgements(
+    assert observation_budget._critical_commands(
         {
-            "active_command_id": "cmd-active",
-            "acknowledgements": [
+            "commands": [
                 {
                     "command_id": "cmd-latest",
+                    "status": "completed",
                     "acknowledged_at_telemetry_sequence": 5,
                 },
                 {
                     "command_id": "cmd-active",
+                    "status": "accepted",
                     "acknowledged_at_telemetry_sequence": 2,
                 },
                 {
                     "command_id": "cmd-old",
+                    "status": "completed",
                     "acknowledged_at_telemetry_sequence": 1,
                 },
             ],
@@ -1226,10 +1230,12 @@ def test_budget_primitives_preserve_values_and_define_stable_priority() -> None:
     ) == [
         {
             "command_id": "cmd-active",
+            "status": "accepted",
             "acknowledged_at_telemetry_sequence": 2,
         },
         {
             "command_id": "cmd-latest",
+            "status": "completed",
             "acknowledged_at_telemetry_sequence": 5,
         },
     ]

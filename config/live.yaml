@@ -108,7 +108,7 @@ telemetry:
   max_age_seconds: 3.0
   read_retries: 4
   retry_delay_seconds: 0.04
-  require_protocol_major: 1
+  require_protocol_major: 2
 
 capture:
   enabled: true
@@ -189,7 +189,7 @@ controls:
 safety:
   # The canonical live policy permits only the audited surface below. The CLI must still
   # receive --execute-live-actions plus the native-assisted and continuous-live
-  # acknowledgements before any input is sent.
+  # command records before any input is sent.
   live_actions_enabled: true
   emergency_stop_key: f12
   supervisor_enabled: true

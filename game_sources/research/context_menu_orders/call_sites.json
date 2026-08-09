@@ -36,12 +36,16 @@
         {
           "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
           "line": 1569,
-          "contains": "ProbeMenuOrders"
+          "contains": "ProbeMenuOrders",
+          "source_sha256": "bd84f4d18c8cdd31b0899235a0eab3209011957a03b3a45192c4be440828362f",
+          "enclosing_function": "bool ProbeMenuOrders"
         },
         {
           "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
           "line": 7530,
-          "contains": "ContextMenu::showContextMenu"
+          "contains": "ContextMenu::showContextMenu",
+          "source_sha256": "bd84f4d18c8cdd31b0899235a0eab3209011957a03b3a45192c4be440828362f",
+          "enclosing_function": "void startPlugin"
         }
       ]
     },
@@ -62,12 +66,16 @@
         {
           "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
           "line": 628,
-          "contains": "ContextMenuGUIShowHook"
+          "contains": "ContextMenuGUIShowHook",
+          "source_sha256": "bd84f4d18c8cdd31b0899235a0eab3209011957a03b3a45192c4be440828362f",
+          "enclosing_function": "void ContextMenuGUIShowHook"
         },
         {
           "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
           "line": 7547,
-          "contains": "ContextMenuGUI::show"
+          "contains": "ContextMenuGUI::show",
+          "source_sha256": "bd84f4d18c8cdd31b0899235a0eab3209011957a03b3a45192c4be440828362f",
+          "enclosing_function": "void startPlugin"
         }
       ]
     },
@@ -103,7 +111,9 @@
         {
           "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
           "line": 1635,
-          "contains": "getPlayerTaskProbability"
+          "contains": "getPlayerTaskProbability",
+          "source_sha256": "bd84f4d18c8cdd31b0899235a0eab3209011957a03b3a45192c4be440828362f",
+          "enclosing_function": "bool ProbeAdvertisedTasks"
         }
       ]
     },
@@ -139,7 +149,9 @@
         {
           "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
           "line": 5007,
-          "contains": "newPlayerTaskSelectedCharacters"
+          "contains": "newPlayerTaskSelectedCharacters",
+          "source_sha256": "bd84f4d18c8cdd31b0899235a0eab3209011957a03b3a45192c4be440828362f",
+          "enclosing_function": "void ProcessNativeCommandRequest"
         }
       ]
     }

@@ -411,7 +411,7 @@ class KenshiControlSurface:
             await asyncio.sleep(self.runtime_config.settle_seconds)
         observation = await self._port.observe()
         if receipt.native_acknowledgement is not None and observation.telemetry is not None:
-            latest = observation.telemetry.native_control.acknowledgement_for(
+            latest = observation.telemetry.controller_commands.command_for(
                 receipt.native_acknowledgement.command_id
             )
             if latest is not None and latest != receipt.native_acknowledgement:
@@ -1175,7 +1175,7 @@ class KenshiControlSurface:
             latest = await self._port.observe_without_capture()
             if latest.telemetry is None or latest.telemetry_stale:
                 break
-            current = latest.telemetry.native_control.acknowledgement_for(
+            current = latest.telemetry.controller_commands.command_for(
                 acknowledgement.command_id
             )
             if current is None or current.status in {
@@ -1232,32 +1232,49 @@ class KenshiControlSurface:
         observation = self.last_observation
         if observation is None or observation.telemetry is None or observation.telemetry_stale:
             return None
-        native = observation.telemetry.native_control
-        if native.active_command_id is None:
-            return None
-        acknowledgement = native.acknowledgement_for(native.active_command_id)
-        if (
-            acknowledgement is None
-            or acknowledgement.status is not NativeCommandStatus.ACCEPTED
-            or acknowledgement.command != wire_command
-            or acknowledgement.minimum_output_quantity != minimum_output_quantity
-            or acknowledgement.context_action != (context_action or "")
-        ):
-            return None
+        native = observation.telemetry.controller_commands
+        candidates = [
+            command
+            for command in native.active_commands()
+            if command.command == wire_command
+            and command.minimum_output_quantity == minimum_output_quantity
+            and command.context_action == (context_action or "")
+        ]
         if wire_command == native_commands.NATIVE_DIRECTION_WIRE_COMMAND:
-            if (
-                acknowledgement.target_id
-                or acknowledgement.bearing_degrees != bearing_degrees
-                or acknowledgement.distance_units != distance_units
-            ):
-                return None
+            candidates = [
+                command
+                for command in candidates
+                if not command.target_id
+                and command.bearing_degrees == bearing_degrees
+                and command.distance_units == distance_units
+            ]
         elif wire_command == native_commands.NATIVE_EXIT_BUILDING_WIRE_COMMAND:
-            if (
-                acknowledgement.target_id
-                or acknowledgement.bearing_degrees != 0.0
-                or acknowledgement.distance_units != 0.0
-            ):
-                return None
+            candidates = [
+                command
+                for command in candidates
+                if not command.target_id
+                and command.bearing_degrees == 0.0
+                and command.distance_units == 0.0
+            ]
+        else:
+            candidates = [
+                command
+                for command in candidates
+                if command.target_id == target_id
+                and command.bearing_degrees == 0.0
+                and command.distance_units == 0.0
+            ]
+        selected_ids = observation.telemetry.selected_character_ids
+        candidates = [
+            command
+            for command in candidates
+            if len(command.selected_character_ids) == len(selected_ids)
+            and set(command.selected_character_ids) == set(selected_ids)
+        ]
+        if len(candidates) != 1:
+            return None
+        acknowledgement = candidates[0]
+        if wire_command == native_commands.NATIVE_EXIT_BUILDING_WIRE_COMMAND:
             selected = observation.telemetry.selected_characters()
             # Being indoors is mechanics; how many characters may be ordered
             # out is the contract's. Requiring one contradicted the
@@ -1265,17 +1282,6 @@ class KenshiControlSurface:
             # move order to the whole selection.
             if not selected or any(member.indoors is not True for member in selected):
                 return None
-        elif (
-            acknowledgement.target_id != target_id
-            or acknowledgement.bearing_degrees != 0.0
-            or acknowledgement.distance_units != 0.0
-        ):
-            return None
-        selected_ids = observation.telemetry.selected_character_ids
-        if len(acknowledgement.selected_character_ids) != len(selected_ids) or set(
-            acknowledgement.selected_character_ids
-        ) != set(selected_ids):
-            return None
         # Adoption compared the live order against the *current* selection only,
         # so it was a way around the recipient check rather than a case of it:
         # an order authored for A and B could be satisfied by continuing an
@@ -1669,7 +1675,7 @@ class KenshiControlSurface:
                     raise RuntimeError(
                         "Native identity session changed while awaiting acknowledgement."
                     )
-                acknowledgement = snapshot.native_control.acknowledgement_for(request.command_id)
+                acknowledgement = snapshot.controller_commands.command_for(request.command_id)
                 if acknowledgement is not None and snapshot.sequence > basis:
                     if (
                         acknowledgement.based_on_telemetry_sequence != basis
@@ -1725,7 +1731,7 @@ class KenshiControlSurface:
         snapshot: TelemetrySnapshot,
         previous: NativeCommandAcknowledgement,
     ) -> NativeCommandAcknowledgement | None:
-        current = snapshot.native_control.acknowledgement_for(previous.command_id)
+        current = snapshot.controller_commands.command_for(previous.command_id)
         if current is None:
             return None
         identity = (
@@ -1790,7 +1796,7 @@ class KenshiControlSurface:
                 result = None
             if result is not None and not result.stale:
                 snapshot = result.snapshot
-                current = snapshot.native_control.acknowledgement_for(command_id)
+                current = snapshot.controller_commands.command_for(command_id)
                 if current is not None:
                     latest_acknowledgement = current
                 if snapshot.ui.dialogue_open and snapshot.ui.dialogue_target_id == target_id:

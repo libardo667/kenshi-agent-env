@@ -31,7 +31,7 @@ class TelemetryReader:
         max_age_seconds: float = 3.0,
         retries: int = 3,
         retry_delay_seconds: float = 0.03,
-        require_protocol_major: int = 1,
+        require_protocol_major: int = 2,
     ) -> None:
         self.path = path
         self.max_age_seconds = max_age_seconds

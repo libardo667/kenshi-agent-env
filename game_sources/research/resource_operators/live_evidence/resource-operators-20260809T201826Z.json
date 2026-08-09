@@ -1,0 +1,211 @@
+{
+  "schema_version": 1,
+  "kind": "reduced_live_evidence",
+  "run_id": "resource-operators-20260809T201826Z",
+  "source_manifest_sha256": "ce4a370948d458de197a4c02ceb2d077ab13b0ddbabf9a7501e0836275f735ec",
+  "manifest": {
+    "schema_version": 1,
+    "run_id": "resource-operators-20260809T201826Z",
+    "goal": "Live-prove that resource capacity and current accepted operators are engine-owned facts distinct from selection and queued work.",
+    "source_parent": "20beff9499311f12adc545fd5d1db16951c02afc",
+    "protocol_version": "1.21.0",
+    "binary_provenance": {
+      "built_dll": {
+        "path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\build\\native\\bin\\KenshiAgentTelemetry.dll",
+        "sha256": "91526b828e44035b0cb6de5a22b7cc5ad0c2e392b66a7b8adcbf9ae9403d8db8",
+        "size_bytes": 424448
+      },
+      "installed_dll": {
+        "path": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll",
+        "sha256": "91526b828e44035b0cb6de5a22b7cc5ad0c2e392b66a7b8adcbf9ae9403d8db8",
+        "size_bytes": 424448
+      },
+      "native_conformance_exe": {
+        "path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\build\\native\\bin\\NativeCommandProtocolTests.exe",
+        "sha256": "c57f19c8de54a083cdd9df950685d12df146e4b942fd3c0114e0dfd74c170e6f",
+        "size_bytes": 292352,
+        "result": "Native protocol fixtures and semantics passed."
+      },
+      "provenance_result": "Kenshi was safely closed before installation; process absence was confirmed; built and installed hashes match; fresh 1.21 telemetry contains world.resource_operators."
+    },
+    "snapshots": [
+      {
+        "id": "pre_dispatch",
+        "path": "runs/dev-snapshots/20260809T201826.885768Z-resource-operators-capacity-one-pre-dispatch",
+        "telemetry_sequence": 649,
+        "evidence": "Fresh paused 1.21 state had exact selected Ribs and Hand, a Small Iron Resource with operator_capacity 1, current_operator_ids empty and complete, output inventory empty and complete, and no active command. Both characters still had orders and activity for the prior capacity-three resource, proving those channels did not make either an operator of this capacity-one target."
+      },
+      {
+        "id": "later_engine_evidence",
+        "path": "runs/dev-snapshots/20260809T201958.012578Z-resource-operators-capacity-one-accepted",
+        "telemetry_sequence": 831,
+        "evidence": "After the exact two-recipient request, the target still reported capacity 1 but current_operator_ids contained only Ribs. Both Ribs and Hand had the exact ordinary OPERATE_MACHINERY order for this target; only Ribs had matching current activity. The command was completed/resource_operator_accepted at engine sequence 803."
+      },
+      {
+        "id": "final_disposition",
+        "path": "runs/dev-snapshots/20260809T202021.384144Z-resource-operators-capacity-one-final",
+        "telemetry_sequence": 878,
+        "evidence": "Loaded, paused, modal-free final state with active_command_id null. Two selected and two queued identities remained visible while the complete accepted set still contained only Ribs for capacity one."
+      }
+    ],
+    "action": {
+      "pre_dispatch_state": "Snapshot sequence 649; request authored from fresh sequence 749 in the same identity session after the world resumed.",
+      "request_path": "runs/resource-operators-20260809T201826Z/request.json",
+      "request": "cmd-06957502b99144479744d93740f998fd perform_context_action operate for selected Ribs and Hand against the exact observed capacity-one Small Iron Resource.",
+      "acknowledgement": {
+        "status": "completed",
+        "reason": "resource_operator_accepted",
+        "based_on_telemetry_sequence": 749,
+        "acknowledged_at_telemetry_sequence": 750,
+        "accepted_at_telemetry_sequence": 750,
+        "terminal_at_telemetry_sequence": 803
+      },
+      "later_engine_evidence": "Sequence 831 proves selected=[Ribs, Hand], both ordinary queues target the resource, capacity=1, and current_operator_ids=[Ribs]. Selection and queued work therefore cannot be accepted-operator evidence.",
+      "final_disposition": "Recovery completed. Sequence 878 was loaded, paused, modal-free, and active_command_id was null; exact operator state remained visible."
+    },
+    "excluded_attempt": {
+      "command_id": "cmd-a041db18732d45cdb6f33ab63b7fa1c9",
+      "target_id": "entity-3a617236cfa325e8-0000000000000002-00000000-00000816-00002b67-00000021-a70e5500",
+      "status": "rejected",
+      "reason": "target_lifetime_changed",
+      "disposition": "A different candidate had left the current bounded target set. No acceptance or gameplay claim is based on this request; the successful probe rebound to fresh telemetry and a different exact target ID."
+    },
+    "classification": {
+      "source_proven": [
+        "UseableStuff owns numOperatorsMax and currentOperators; admission and GUI-worker disassembly use the same capacity and set.",
+        "Inventory section out owns exact output stacks.",
+        "Character work channels are separate and cannot substitute for accepted membership."
+      ],
+      "test_proven": [
+        "Strict telemetry, planner binding, affordance wording, generated schema, native serialization fixture, and negative completeness/capacity tests."
+      ],
+      "live_proven": [
+        "The fresh installed 1.21 DLL exported capacity 1 and a complete empty accepted set before dispatch.",
+        "After a two-recipient request, both identities had queued ordinary work for the target but only Ribs appeared in current_operator_ids.",
+        "The native terminal waited until an exact selected identity entered currentOperators and reported resource_operator_accepted."
+      ],
+      "withheld": [
+        "No resource-specific assigned-worker list is invented when character task subjects are unresolved.",
+        "No work-progress scalar is exported from progressBarLevel, getOutput, productionState, or GUI progress without a proven natural-resource semantic and range.",
+        "Operator identities are session-scoped; no cross-load continuity is claimed."
+      ]
+    }
+  },
+  "request": {
+    "schema_version": "1.4",
+    "command_id": "cmd-06957502b99144479744d93740f998fd",
+    "command": "perform_context_action",
+    "control_mode": "native_assisted",
+    "identity_session_id": "session-3a617236cfa325e8-0000000000000002",
+    "based_on_revision": {
+      "telemetry_sequence": 749,
+      "frame_sequence": null,
+      "capability_epoch": 0,
+      "observed_at_monotonic": null
+    },
+    "selected_character_ids": [
+      "entity-3a617236cfa325e8-0000000000000002-00000001-00000000-00000000-00000001-5a3c8680",
+      "entity-3a617236cfa325e8-0000000000000002-00000001-00000000-00000000-00000002-05a569a0"
+    ],
+    "target_id": "entity-3a617236cfa325e8-0000000000000002-00000000-00000816-00002b67-00000022-63bf0080",
+    "context_action": "operate",
+    "bearing_degrees": 0.0,
+    "distance_units": 0.0,
+    "minimum_output_quantity": 1,
+    "destination_id": "",
+    "section_name": "",
+    "slot_x": 0,
+    "slot_y": 0,
+    "paused": false,
+    "speed_multiplier": 0.0,
+    "quantity": 0
+  },
+  "request_sha256": "b5c8b821cccc5a66338bb91055b9615c4aa5dfc82ba3931ce2399d05ed11a6d0",
+  "decisive_snapshots": [
+    {
+      "id": "pre_dispatch",
+      "source_path": "runs/dev-snapshots/20260809T201826.885768Z-resource-operators-capacity-one-pre-dispatch",
+      "manifest_evidence": "Fresh paused 1.21 state had exact selected Ribs and Hand, a Small Iron Resource with operator_capacity 1, current_operator_ids empty and complete, output inventory empty and complete, and no active command. Both characters still had orders and activity for the prior capacity-three resource, proving those channels did not make either an operator of this capacity-one target.",
+      "telemetry_projection": {
+        "source": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\telemetry.latest.json",
+        "roster": [],
+        "world_targets": [],
+        "ui": {}
+      },
+      "source_file_hashes": [
+        {
+          "path": "runs/dev-snapshots/20260809T201826.885768Z-resource-operators-capacity-one-pre-dispatch/live_frame_000001.png",
+          "size_bytes": 2346588,
+          "sha256": "e41d4d0c10511ce1b8ac196ba4c36cdda7cddd35d58f3a89fafe6e4f83c18df8"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T201826.885768Z-resource-operators-capacity-one-pre-dispatch/manifest.json",
+          "size_bytes": 404,
+          "sha256": "2903856473d1a571251629d9114cb01e891e3039d8aa2564b233f2bc78e4eba7"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T201826.885768Z-resource-operators-capacity-one-pre-dispatch/telemetry.json",
+          "size_bytes": 90113,
+          "sha256": "7b93116a4531dedfbe325c76f5aae9eb5710e3ab709094e29115dd654e65aa90"
+        }
+      ]
+    },
+    {
+      "id": "later_engine_evidence",
+      "source_path": "runs/dev-snapshots/20260809T201958.012578Z-resource-operators-capacity-one-accepted",
+      "manifest_evidence": "After the exact two-recipient request, the target still reported capacity 1 but current_operator_ids contained only Ribs. Both Ribs and Hand had the exact ordinary OPERATE_MACHINERY order for this target; only Ribs had matching current activity. The command was completed/resource_operator_accepted at engine sequence 803.",
+      "telemetry_projection": {
+        "source": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\telemetry.latest.json",
+        "roster": [],
+        "world_targets": [],
+        "ui": {}
+      },
+      "source_file_hashes": [
+        {
+          "path": "runs/dev-snapshots/20260809T201958.012578Z-resource-operators-capacity-one-accepted/live_frame_000001.png",
+          "size_bytes": 1851944,
+          "sha256": "7f8a7a48767cd054cea39b2e88a0d5ffc53509fce71b0495eb8759e255aea876"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T201958.012578Z-resource-operators-capacity-one-accepted/manifest.json",
+          "size_bytes": 396,
+          "sha256": "19250537dddfd93ef20196afd33e137096fc23597acb8cd98999ba0673dff01f"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T201958.012578Z-resource-operators-capacity-one-accepted/telemetry.json",
+          "size_bytes": 89108,
+          "sha256": "ab56bcf1282be5482007901137cd9ea0732be56f7ca60b9be6d58672b157058e"
+        }
+      ]
+    },
+    {
+      "id": "final_disposition",
+      "source_path": "runs/dev-snapshots/20260809T202021.384144Z-resource-operators-capacity-one-final",
+      "manifest_evidence": "Loaded, paused, modal-free final state with active_command_id null. Two selected and two queued identities remained visible while the complete accepted set still contained only Ribs for capacity one.",
+      "telemetry_projection": {
+        "source": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\telemetry.latest.json",
+        "roster": [],
+        "world_targets": [],
+        "ui": {}
+      },
+      "source_file_hashes": [
+        {
+          "path": "runs/dev-snapshots/20260809T202021.384144Z-resource-operators-capacity-one-final/live_frame_000001.png",
+          "size_bytes": 1835243,
+          "sha256": "592cebce36567468f62d4f0f62bfef101832b33b88f3818e00a3478636ea7402"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T202021.384144Z-resource-operators-capacity-one-final/manifest.json",
+          "size_bytes": 390,
+          "sha256": "d96ec02b5ae1b14b33e82c0e928c365f7d012e56f3e1f947f968989aa2a63045"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T202021.384144Z-resource-operators-capacity-one-final/telemetry.json",
+          "size_bytes": 89720,
+          "sha256": "f360a7349da314600635a6062d907e016a0e8c36088b5126f6ed4254029eab92"
+        }
+      ]
+    }
+  ],
+  "omission_policy": "Full screenshots and telemetry remain omitted; their exact paths, sizes, and SHA-256 hashes are retained beside the decisive telemetry projection."
+}

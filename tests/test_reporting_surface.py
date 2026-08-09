@@ -47,7 +47,7 @@ def _observation_payload() -> dict[str, object]:
         telemetry=TelemetrySnapshot(
             sequence=1,
             game=GameState(loaded=True, paused=True, money=4000),
-            native_control=NativeControlState(),
+            controller_commands=NativeControlState(),
             ui=UIState(
                 active_screen="trade",
                 visible_controls=[
@@ -66,7 +66,7 @@ def _observation_payload() -> dict[str, object]:
                     id="barth",
                     name="Barth",
                     work=CharacterWorkState(
-                        has_player_orders=True,
+                        has_player_orders=False,
                         ordinary_orders=TaskCollection(
                             items=[],
                             completeness=TaskCollectionCompleteness.COMPLETE,

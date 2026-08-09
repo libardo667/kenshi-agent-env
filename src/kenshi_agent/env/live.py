@@ -259,7 +259,7 @@ class LiveEnvironment(AgentEnvironment):
                     for capability in capabilities
                     if not capability.startswith("control.")
                 ],
-                "native_control": NativeControlState(),
+                "controller_commands": NativeControlState(),
             }
         )
 

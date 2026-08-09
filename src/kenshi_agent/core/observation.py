@@ -605,7 +605,7 @@ class Observation(StrictModel):
             },
             # The evaluator reconstructs native command causality from these, so
             # they are kept whole rather than counted.
-            "native_control": _json_model(telemetry.native_control),
+            "controller_commands": _json_model(telemetry.controller_commands),
             "active_shop_trader_count": telemetry.active_shop_trader_count,
             "nearby_entity_count": len(telemetry.nearby_entities),
             "dialogue_target_count": len(dialogue_targets(telemetry.nearby_entities)),

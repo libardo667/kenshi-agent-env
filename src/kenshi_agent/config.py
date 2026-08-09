@@ -215,7 +215,7 @@ class TelemetryConfig(ConfigModel):
     max_age_seconds: float = Field(default=3.0, gt=0.0, le=300.0)
     read_retries: int = Field(default=3, ge=1, le=20)
     retry_delay_seconds: float = Field(default=0.03, ge=0.0, le=2.0)
-    require_protocol_major: int = Field(default=1, ge=0, le=100)
+    require_protocol_major: int = Field(default=2, ge=0, le=100)
 
 
 class CaptureConfig(ConfigModel):

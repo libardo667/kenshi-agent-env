@@ -17,7 +17,7 @@ _NATIVE_APPROACH_CAPABILITIES = (
     "control.approach_dialogue_target",
     "control.approach_vendor",
 )
-_NATIVE_CONTROL_CAPABILITIES = (
+_CONTROLLER_COMMAND_CAPABILITIES = (
     *_NATIVE_APPROACH_CAPABILITIES,
     "control.move_to_character",
     "control.select_squad_member",
@@ -79,13 +79,13 @@ _PATH_CAPABILITY_ALTERNATIVES: dict[str, tuple[str, ...]] = {
     # command capability makes them authoritative. Restricting them to the
     # first approach command made a direction's own terminal result impossible
     # to use as a postcondition.
-    "telemetry.native_control.available": _NATIVE_CONTROL_CAPABILITIES,
-    "telemetry.native_control.command_active": _NATIVE_CONTROL_CAPABILITIES,
-    "telemetry.native_control.last_command_sequence": _NATIVE_CONTROL_CAPABILITIES,
-    "telemetry.native_control.last_command": _NATIVE_CONTROL_CAPABILITIES,
-    "telemetry.native_control.last_result": _NATIVE_CONTROL_CAPABILITIES,
-    "telemetry.native_control.last_target": _NATIVE_CONTROL_CAPABILITIES,
-    "telemetry.native_control.last_target_id": _NATIVE_CONTROL_CAPABILITIES,
+    "telemetry.controller_commands.available": _CONTROLLER_COMMAND_CAPABILITIES,
+    "telemetry.controller_commands.command_active": _CONTROLLER_COMMAND_CAPABILITIES,
+    "telemetry.controller_commands.last_command_sequence": _CONTROLLER_COMMAND_CAPABILITIES,
+    "telemetry.controller_commands.last_command": _CONTROLLER_COMMAND_CAPABILITIES,
+    "telemetry.controller_commands.last_result": _CONTROLLER_COMMAND_CAPABILITIES,
+    "telemetry.controller_commands.last_target": _CONTROLLER_COMMAND_CAPABILITIES,
+    "telemetry.controller_commands.last_target_id": _CONTROLLER_COMMAND_CAPABILITIES,
     "selected.alive": ("roster.basic",),
     "selected.conscious": ("roster.basic",),
     "selected.down": ("roster.basic",),
@@ -184,17 +184,19 @@ def _resolve_field(condition: Condition, observation: Observation) -> object | N
         "telemetry.primary_character_id": telemetry.primary_character_id,
         "telemetry.selected_character_count": len(telemetry.selected_character_ids),
         "telemetry.active_shop_trader_count": telemetry.active_shop_trader_count,
-        "telemetry.native_control.available": telemetry.native_control.available,
-        "telemetry.native_control.command_active": (
-            telemetry.native_control.active_command_id is not None
+        "telemetry.controller_commands.available": telemetry.controller_commands.available,
+        "telemetry.controller_commands.command_active": bool(
+            telemetry.controller_commands.active_commands()
         ),
-        "telemetry.native_control.last_command_sequence": (
-            telemetry.native_control.last_command_sequence
+        "telemetry.controller_commands.last_command_sequence": (
+            telemetry.controller_commands.last_command_sequence
         ),
-        "telemetry.native_control.last_command": telemetry.native_control.last_command,
-        "telemetry.native_control.last_result": telemetry.native_control.last_result,
-        "telemetry.native_control.last_target": telemetry.native_control.last_target,
-        "telemetry.native_control.last_target_id": telemetry.native_control.last_target_id,
+        "telemetry.controller_commands.last_command": telemetry.controller_commands.last_command,
+        "telemetry.controller_commands.last_result": telemetry.controller_commands.last_result,
+        "telemetry.controller_commands.last_target": telemetry.controller_commands.last_target,
+        "telemetry.controller_commands.last_target_id": (
+            telemetry.controller_commands.last_target_id
+        ),
     }
     if path in direct_paths:
         return direct_paths[path]

@@ -392,7 +392,7 @@ def test_safe_close_requires_fresh_paused_idle_telemetry() -> None:
             "modal_open": False,
             "dialogue_open": False,
         },
-        "native_control": {"active_command_id": None},
+        "controller_commands": {"commands": []},
     }
 
     _validate_safe_close_snapshot(
@@ -404,7 +404,7 @@ def test_safe_close_requires_fresh_paused_idle_telemetry() -> None:
     for path, value in (
         (("game", "loaded"), False),
         (("game", "paused"), False),
-        (("native_control", "active_command_id"), "command-active"),
+        (("controller_commands", "commands"), [{"status": "accepted"}]),
         (("ui", "modal_open"), True),
         (("ui", "dialogue_open"), True),
     ):
@@ -602,10 +602,9 @@ def test_interrupted_recovery_waits_for_paused_native_command_to_cancel() -> Non
                         modal_open=False,
                         dialogue_open=False,
                     ),
-                    "native_control": NativeControlState(
+                    "controller_commands": NativeControlState(
                         available=True,
-                        active_command_id=command_id,
-                        acknowledgements=[acknowledgement],
+                        commands=[acknowledgement],
                     )
                 }
             )
@@ -617,10 +616,10 @@ def test_interrupted_recovery_waits_for_paused_native_command_to_cancel() -> Non
                 active_snapshot(41, paused=True),
                 active_snapshot(42, paused=True),
                 active_snapshot(43, paused=True).model_copy(
-                    update={"native_control": NativeControlState(available=True)}
+                    update={"controller_commands": NativeControlState(available=True)}
                 ),
                 active_snapshot(43, paused=True).model_copy(
-                    update={"native_control": NativeControlState(available=True)}
+                    update={"controller_commands": NativeControlState(available=True)}
                 ),
             )
 

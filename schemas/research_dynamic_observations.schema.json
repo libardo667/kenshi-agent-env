@@ -66,6 +66,18 @@
           "default": null,
           "title": "Run Bundle"
         },
+        "durable_reduced_evidence": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Durable Reduced Evidence"
+        },
         "pre_dispatch_state": {
           "minLength": 1,
           "title": "Pre Dispatch State",

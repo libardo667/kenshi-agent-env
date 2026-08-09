@@ -31,11 +31,12 @@ The current action set covers:
   adopting resource work, and waiting for exact output inventory;
 - reading a local resource survey;
 - pausing, changing game speed, waiting, and stopping a run;
-- electively shifting into an eligible nearby body, including after losing the
-  current party; and
+- electively shifting into an eligible nearby body; the operation is authorable
+  with an empty roster, while live end-to-end recovery after true total party
+  loss remains unproven; and
 - using campaign memory, the fieldbook, and the read-only strategy advisor.
 
-The current 1.21 telemetry contract separately exports the complete player
+The current 2.0 telemetry contract separately exports the complete player
 `roster`, named `platoons` and exact membership, `active_platoon_id`,
 `primary_character_id`, and the complete `selected_character_ids` set. The
 primary is never inferred from roster order. The former `squad`, per-character

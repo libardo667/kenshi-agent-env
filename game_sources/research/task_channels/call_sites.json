@@ -27,8 +27,19 @@
       "declared_signature": "ActionDeque orders; lektor<Tasker*> jobs; lektor<Tasker*> permajobs; TaskMatch currentGoal",
       "inferred_signature_confidence": "medium",
       "declaration_source": "KenshiLib 0.4.0 Include/kenshi/AI/AITaskSystem.h:167-179",
-      "evidence": ["KenshiLib member declarations", "current native reads each owner separately"],
-      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 1933, "contains": "getTaskSystem"}]
+      "evidence": [
+        "KenshiLib member declarations",
+        "current native reads each owner separately"
+      ],
+      "project_call_sites": [
+        {
+          "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
+          "line": 1933,
+          "contains": "getTaskSystem",
+          "source_sha256": "bd84f4d18c8cdd31b0899235a0eab3209011957a03b3a45192c4be440828362f",
+          "enclosing_function": "void AppendCharacterWorkState"
+        }
+      ]
     },
     {
       "id": "ordinary_order_samples",
@@ -38,8 +49,34 @@
       "declared_signature": "Tasker* getFirstTask(); Tasker* getSecondTask() const; Tasker* getLastTask() const",
       "inferred_signature_confidence": "medium",
       "declaration_source": "KenshiLib 0.4.0 Include/kenshi/AI/AITaskSystem.h:68-80",
-      "evidence": ["KenshiLib declarations and RVAs", "executable addresses", "current bounded native read"],
-      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 1955, "contains": "getFirstTask"}, {"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 1958, "contains": "getSecondTask"}, {"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 1961, "contains": "getLastTask"}]
+      "evidence": [
+        "KenshiLib declarations and RVAs",
+        "executable addresses",
+        "current bounded native read"
+      ],
+      "project_call_sites": [
+        {
+          "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
+          "line": 1955,
+          "contains": "getFirstTask",
+          "source_sha256": "bd84f4d18c8cdd31b0899235a0eab3209011957a03b3a45192c4be440828362f",
+          "enclosing_function": "void AppendCharacterWorkState"
+        },
+        {
+          "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
+          "line": 1958,
+          "contains": "getSecondTask",
+          "source_sha256": "bd84f4d18c8cdd31b0899235a0eab3209011957a03b3a45192c4be440828362f",
+          "enclosing_function": "void AppendCharacterWorkState"
+        },
+        {
+          "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
+          "line": 1961,
+          "contains": "getLastTask",
+          "source_sha256": "bd84f4d18c8cdd31b0899235a0eab3209011957a03b3a45192c4be440828362f",
+          "enclosing_function": "void AppendCharacterWorkState"
+        }
+      ]
     },
     {
       "id": "jobs_enabled",
@@ -49,8 +86,19 @@
       "declared_signature": "bool OrdersReceiver::isJobsEnabled() const",
       "inferred_signature_confidence": "medium",
       "declaration_source": "KenshiLib 0.4.0 Include/kenshi/AI/AITaskSystem.h:165",
-      "evidence": ["KenshiLib declaration and RVA", "current native Jobs switch read"],
-      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 1986, "contains": "isJobsEnabled"}]
+      "evidence": [
+        "KenshiLib declaration and RVA",
+        "current native Jobs switch read"
+      ],
+      "project_call_sites": [
+        {
+          "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
+          "line": 1986,
+          "contains": "isJobsEnabled",
+          "source_sha256": "bd84f4d18c8cdd31b0899235a0eab3209011957a03b3a45192c4be440828362f",
+          "enclosing_function": "void AppendCharacterWorkState"
+        }
+      ]
     },
     {
       "id": "current_activity",
@@ -60,8 +108,19 @@
       "declared_signature": "const TaskMatch& OrdersReceiver::getCurrentGoal() const",
       "inferred_signature_confidence": "medium",
       "declaration_source": "KenshiLib 0.4.0 Include/kenshi/AI/AITaskSystem.h:144",
-      "evidence": ["KenshiLib declaration and RVA", "current native activity read"],
-      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 2011, "contains": "getCurrentGoal"}]
+      "evidence": [
+        "KenshiLib declaration and RVA",
+        "current native activity read"
+      ],
+      "project_call_sites": [
+        {
+          "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
+          "line": 2011,
+          "contains": "getCurrentGoal",
+          "source_sha256": "bd84f4d18c8cdd31b0899235a0eab3209011957a03b3a45192c4be440828362f",
+          "enclosing_function": "void AppendCharacterWorkState"
+        }
+      ]
     },
     {
       "id": "task_evidence",
@@ -71,8 +130,33 @@
       "declared_signature": "TaskType Tasker::key() const; hand Tasker::subject; const std::string& Tasker::getDescription() const",
       "inferred_signature_confidence": "medium",
       "declaration_source": "KenshiLib 0.4.0 Include/kenshi/Tasker.h:142-151",
-      "evidence": ["KenshiLib declarations and RVAs", "current native task-entry read"],
-      "project_call_sites": [{"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 1874, "contains": "task->key"}, {"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 1877, "contains": "task->subject"}, {"path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp", "line": 1885, "contains": "getDescription"}]
+      "evidence": [
+        "KenshiLib declarations and RVAs",
+        "current native task-entry read"
+      ],
+      "project_call_sites": [
+        {
+          "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
+          "line": 1874,
+          "contains": "task->key",
+          "source_sha256": "bd84f4d18c8cdd31b0899235a0eab3209011957a03b3a45192c4be440828362f",
+          "enclosing_function": "void AppendTaskEntry"
+        },
+        {
+          "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
+          "line": 1877,
+          "contains": "task->subject",
+          "source_sha256": "bd84f4d18c8cdd31b0899235a0eab3209011957a03b3a45192c4be440828362f",
+          "enclosing_function": "void AppendTaskEntry"
+        },
+        {
+          "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
+          "line": 1885,
+          "contains": "getDescription",
+          "source_sha256": "bd84f4d18c8cdd31b0899235a0eab3209011957a03b3a45192c4be440828362f",
+          "enclosing_function": "void AppendTaskEntry"
+        }
+      ]
     },
     {
       "id": "jobs_ui",
@@ -82,7 +166,11 @@
       "declared_signature": "void OrdersPanel::refreshOrders(); void OrdersPanel::moveJob(int, int); void OrdersPanel::removeJob(OrderData*)",
       "inferred_signature_confidence": "medium",
       "declaration_source": "KenshiLib 0.4.0 Include/kenshi/gui/OrdersPanel.h:21-26 and 84-113",
-      "evidence": ["ForgottenGUI declarations and RVAs", "OrderData task/index/enabled fields", "executable addresses"],
+      "evidence": [
+        "ForgottenGUI declarations and RVAs",
+        "OrderData task/index/enabled fields",
+        "executable addresses"
+      ],
       "project_call_sites": []
     }
   ]

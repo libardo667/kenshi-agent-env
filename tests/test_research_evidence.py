@@ -32,6 +32,29 @@ def test_every_research_package_has_the_complete_validated_shape() -> None:
         assert package.call_sites.subsystem == package.path.name
         assert package.observations.subsystem == package.path.name
         assert package.conclusion.subsystem == package.path.name
+        if package.conclusion.proof_status == "live_proven":
+            for probe_id in package.conclusion.live_probe_ids:
+                probe = next(
+                    item
+                    for item in package.observations.observations
+                    if item.id == probe_id
+                )
+                assert probe.durable_reduced_evidence is not None
+
+
+def test_repository_call_sites_use_stable_source_anchors_not_line_authority() -> None:
+    project_sites = [
+        project_site
+        for package in load_research_packages()
+        for site in package.call_sites.sites
+        for project_site in site.project_call_sites
+    ]
+
+    assert project_sites
+    assert all(len(site.source_sha256) == 64 for site in project_sites)
+    assert all(site.enclosing_function for site in project_sites)
+    shifted = project_sites[0].model_copy(update={"line": project_sites[0].line + 10_000})
+    assert shifted.line > project_sites[0].line
 
 
 def test_conclusions_carry_binary_abi_probe_crash_and_uncertainty_fields() -> None:

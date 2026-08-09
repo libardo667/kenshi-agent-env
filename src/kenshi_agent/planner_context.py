@@ -69,12 +69,11 @@ def _project_planner_payload(payload: dict[str, Any]) -> dict[str, Any]:
     ui = telemetry.get("ui")
     if isinstance(ui, dict) and ui.get("visible_controls") is not None:
         ui["visible_controls"] = []
-    native = telemetry.get("native_control")
+    native = telemetry.get("controller_commands")
     if isinstance(native, dict):
         native.update(
             {
-                "active_command_id": None,
-                "acknowledgements": [],
+                "commands": [],
                 "last_command_sequence": 0,
                 "last_command": None,
                 "last_result": None,

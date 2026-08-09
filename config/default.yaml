@@ -65,7 +65,7 @@ telemetry:
   max_age_seconds: 3.0
   read_retries: 3
   retry_delay_seconds: 0.03
-  require_protocol_major: 1
+  require_protocol_major: 2
 
 capture:
   enabled: true

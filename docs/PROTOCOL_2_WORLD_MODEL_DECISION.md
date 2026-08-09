@@ -1,6 +1,6 @@
 # Protocol 2.0 world model
 
-Status: **accepted specification; 1.21 topology, bounded-work, and resource-operator vocabulary landed, plural command migration not started**
+Status: **current protocol; producer and all repository consumers cut over atomically**
 
 Protocol: `2.0.0`
 
@@ -10,14 +10,13 @@ Generated schema: `schemas/protocol_2_world_model.schema.json`
 
 ## Decision
 
-Protocol 2.0 remains a breaking transition for plural controller causality. Its
-topology and bounded-work vocabulary have landed as clean breaks in the current
-1.21 producer: the player collection is `roster`, never `squad`; platoons,
-active, primary, and selection are distinct; and ordinary orders, Jobs,
-permanent Jobs, and activity have separate owners. Controller causality is still
-the future `controller_commands`, partitioned into plural `retained_commands`
-and `recent_terminal_commands`; current 1.21 still has the singular
-`native_control.active_command_id` and does not claim 2.0 compatibility.
+Protocol 2.0 is the current breaking wire contract. The player collection is
+`roster`, never `squad`; platoons, active, primary, and selection are distinct;
+ordinary orders, Jobs, permanent Jobs, and activity have separate owners; and
+controller causality is exposed only through plural `controller_commands`.
+The operational telemetry collection is `controller_commands.commands`. The
+producer-independent full world model further partitions retained and recent
+terminal records where bounded-history reasoning needs that distinction.
 
 The root world-model shape is:
 
@@ -99,11 +98,10 @@ alias or dual-read path. Independently, the 1.21 model also rejects the removed
   active-platoon and character-platoon APIs.
 - KenshiLib 0.4.0 `AITaskSystem.h` separately declares `orders`, `jobs`,
   `permajobs`, `isJobsEnabled()`, and `getCurrentGoal()`.
-- Current native source now emits 1.21 `roster`, platoons, active, primary,
+- Current native source emits 2.0 `roster`, platoons, active, primary,
   complete selection, and the four independent work channels from those
-  distinct structures. It still emits singular
-  `native_control.active_command_id`; plural controller records remain the 2.0
-  migration target.
+  distinct structures. It emits only plural `controller_commands.commands`;
+  `active_command_id` is absent.
 - `game_sources/research/player_topology` records the inspected KenshiLib,
   ForgottenGUI, current native call sites, portable contract, and live-proof
   boundary for the landed topology vocabulary.
@@ -121,7 +119,7 @@ alias or dual-read path. Independently, the 1.21 model also rejects the removed
   and the old 1.x `squad` / `active_command_id` shape.
 - The Release x64 native conformance executable parses the same full and old
   fixtures and pins their two-platoon/two-command versus 1.x topology.
-- The current 1.21 shared native fixture separately pins roster/platoon
+- The current 2.0 shared native fixture separately pins roster/platoon
   membership, active, primary-not-roster-order, complete selection, one retained
   ordinary order beside current activity with empty Jobs, and removal of the
   superseded authorities.
@@ -131,9 +129,9 @@ alias or dual-read path. Independently, the 1.21 model also rejects the removed
 
 ### Live-proven
 
-The full Protocol 2.0 plural-command specification has not had a live producer
-run. Its already-landed 1.21 topology, bounded-work vocabulary, and exact
-resource-operator state have.
+The Protocol 2.0 producer has not had a supervised live run. The preceding
+1.19-1.21 topology, bounded-work vocabulary, and exact resource-operator state
+have durable reduced evidence artifacts under their research packages.
 `player-topology-20260809T161112Z`, using matching built and installed DLL
 SHA-256 `2dfee3ca27a3a2494b31386cff06e9db2ad02e38e7d3d6079fec0fb2234436bc`,
 proves two authored nonempty platoons and linkage, active-tab changes, primary
@@ -162,9 +160,10 @@ queued work into accepted operation.
 
 ### Withheld and named follow-on work
 
-- **Native plural command registry:** populate more than one retained record,
-  preserve disjoint recipient work, prove overlap behavior, and remove the
-  current global singleton.
+- **Native plural command registry, deadline 2026-09-20:** populate more than one
+  retained record, preserve disjoint recipient work, prove overlap behavior,
+  and remove the current global singleton. Until that date the native producer
+  emits at most one record, but no consumer may assume that cardinality.
 - **Platoon lifecycle follow-on:** retain worthwhile longer-run roster mutation,
   pointer-reuse, and empty-management-row questions as named work rather than
   broadening the proven topology slice. Character identity remains explicitly

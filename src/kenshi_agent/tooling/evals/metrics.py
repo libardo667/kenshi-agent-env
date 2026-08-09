@@ -178,7 +178,7 @@ class LogMetrics:
     command_mismatches: int = 0
     command_receipts: int = 0
     command_receipts_with_post_revision: int = 0
-    native_command_acknowledgements: int = 0
+    native_command_records: int = 0
     native_commands_accepted: int = 0
     native_commands_completed: int = 0
     native_commands_rejected: int = 0
@@ -232,7 +232,7 @@ def _json_lines(path: Path) -> list[str]:
 def evaluate_log(path: Path) -> LogMetrics:
     decision_planner_latencies: list[float] = []
     strategic_planner_latencies: list[float] = []
-    native_acknowledgements: dict[str, dict[str, object]] = {}
+    native_commands: dict[str, dict[str, object]] = {}
     dialogue_approaches_by_target: dict[str, int] = {}
     transitions: dict[str, int] = {}
     fieldbook_transitions: dict[str, int] = {}
@@ -246,7 +246,7 @@ def evaluate_log(path: Path) -> LogMetrics:
         command_id = candidate.get("command_id")
         if not isinstance(command_id, str):
             return
-        native_acknowledgements[command_id] = candidate
+        native_commands[command_id] = candidate
 
     values: _MetricValues = {
         "control_mode": None,
@@ -405,11 +405,11 @@ def evaluate_log(path: Path) -> LogMetrics:
                 values["stale_observations"] += 1
             telemetry = payload.get("telemetry")
             if isinstance(telemetry, dict):
-                native_control = telemetry.get("native_control")
-                if isinstance(native_control, dict):
-                    acknowledgements = native_control.get("acknowledgements")
-                    if isinstance(acknowledgements, list):
-                        for acknowledgement in acknowledgements:
+                controller_commands = telemetry.get("controller_commands")
+                if isinstance(controller_commands, dict):
+                    commands = controller_commands.get("commands")
+                    if isinstance(commands, list):
+                        for acknowledgement in commands:
                             retain_native_acknowledgement(acknowledgement)
         elif event_type == "continuity_receipt":
             status = payload.get("status")
@@ -647,7 +647,7 @@ def evaluate_log(path: Path) -> LogMetrics:
         else None
     )
     native_ack_lags: list[float] = []
-    for acknowledgement in native_acknowledgements.values():
+    for acknowledgement in native_commands.values():
         status = acknowledgement.get("status")
         if status in {"accepted", "completed", "cancelled"}:
             values["native_commands_accepted"] += 1
@@ -661,7 +661,7 @@ def evaluate_log(path: Path) -> LogMetrics:
         acknowledged = acknowledgement.get("acknowledged_at_telemetry_sequence")
         if isinstance(basis, int) and isinstance(acknowledged, int):
             native_ack_lags.append(float(acknowledged - basis))
-    native_command_acknowledgement_count = len(native_acknowledgements)
+    native_command_acknowledgement_count = len(native_commands)
     native_completion_percentage = (
         100.0 * values["native_commands_completed"] / values["native_commands_accepted"]
         if values["native_commands_accepted"]
@@ -692,7 +692,7 @@ def evaluate_log(path: Path) -> LogMetrics:
             fieldbook_lifecycle_transitions=dict(
                 sorted(fieldbook_transitions.items())
             ),
-            native_command_acknowledgements=native_command_acknowledgement_count,
+            native_command_records=native_command_acknowledgement_count,
             actions_per_strategic_planner_call=actions_per_call,
             receipts_with_post_command_revision_percentage=(causal_receipt_percentage),
             mean_native_ack_sequence_lag=mean_native_ack_sequence_lag,
@@ -713,7 +713,7 @@ def evaluate_log(path: Path) -> LogMetrics:
         fieldbook_lifecycle_transitions=dict(
             sorted(fieldbook_transitions.items())
         ),
-        native_command_acknowledgements=native_command_acknowledgement_count,
+        native_command_records=native_command_acknowledgement_count,
         mean_planner_latency_seconds=fmean(ordered),
         p50_planner_latency_seconds=median(ordered),
         p95_planner_latency_seconds=ordered[p95_index],

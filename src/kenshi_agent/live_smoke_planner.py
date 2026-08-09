@@ -48,7 +48,7 @@ def pause_handoff_step(
             ),
             Condition(
                 kind=ConditionKind.FIELD,
-                path=ConditionPath.TELEMETRY_NATIVE_CONTROL_COMMAND_ACTIVE,
+                path=ConditionPath.TELEMETRY_CONTROLLER_COMMANDS_COMMAND_ACTIVE,
                 operator=ConditionOperator.EQUALS,
                 expected=False,
                 max_age_seconds=3.0,
@@ -77,7 +77,7 @@ def stop_handoff_step(*, step_id: str = "finish-smoke") -> PlanStep:
             ),
             Condition(
                 kind=ConditionKind.FIELD,
-                path=ConditionPath.TELEMETRY_NATIVE_CONTROL_COMMAND_ACTIVE,
+                path=ConditionPath.TELEMETRY_CONTROLLER_COMMANDS_COMMAND_ACTIVE,
                 operator=ConditionOperator.EQUALS,
                 expected=False,
                 max_age_seconds=3.0,
@@ -94,7 +94,7 @@ def stop_handoff_step(*, step_id: str = "finish-smoke") -> PlanStep:
             ),
             Condition(
                 kind=ConditionKind.FIELD,
-                path=ConditionPath.TELEMETRY_NATIVE_CONTROL_COMMAND_ACTIVE,
+                path=ConditionPath.TELEMETRY_CONTROLLER_COMMANDS_COMMAND_ACTIVE,
                 operator=ConditionOperator.EQUALS,
                 expected=False,
                 max_age_seconds=3.0,

@@ -7,6 +7,7 @@ the reverse-engineering argument.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -63,6 +64,10 @@ class LibraryIdentity(StrictModel):
 
 class RepositoryCallSite(StrictModel):
     path: str = Field(min_length=1)
+    source_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
+    enclosing_function: str = Field(min_length=1)
+    # Informational only. Stable function and expression anchors plus the exact
+    # source blob own validation, so unrelated insertions do not create churn.
     line: int = Field(gt=0)
     contains: str = Field(min_length=1)
 
@@ -105,6 +110,7 @@ class DynamicObservation(StrictModel):
         default=None, pattern=r"^[0-9a-f]{64}$"
     )
     run_bundle: str | None = None
+    durable_reduced_evidence: str | None = None
     pre_dispatch_state: str = Field(min_length=1)
     request: str = Field(min_length=1)
     acknowledgement: str = Field(min_length=1)
@@ -164,15 +170,25 @@ def _validate_repository_call_site(site: RepositoryCallSite) -> str | None:
     path = ROOT / site.path
     if not path.is_file():
         return f"call site path does not exist: {site.path}"
-    lines = path.read_text(encoding="utf-8").splitlines()
-    if site.line > len(lines):
-        return f"call site line is past EOF: {site.path}:{site.line}"
-    start = max(0, site.line - 4)
-    end = min(len(lines), site.line + 3)
-    if not any(site.contains in line for line in lines[start:end]):
+    raw = path.read_bytes()
+    source_sha256 = hashlib.sha256(raw).hexdigest()
+    if source_sha256 != site.source_sha256:
         return (
-            f"call site anchor {site.contains!r} is absent near "
-            f"{site.path}:{site.line}"
+            f"call site source blob changed: {site.path} has {source_sha256}, "
+            f"expected {site.source_sha256}"
+        )
+    source = raw.decode("utf-8")
+    function_index = source.find(site.enclosing_function)
+    if function_index < 0:
+        return (
+            f"call site enclosing function {site.enclosing_function!r} is absent "
+            f"from {site.path}"
+        )
+    contains_index = source.find(site.contains, function_index)
+    if contains_index < 0:
+        return (
+            f"call site expression {site.contains!r} is absent after "
+            f"{site.enclosing_function!r} in {site.path}"
         )
     return None
 
@@ -228,9 +244,20 @@ def load_research_package(path: Path) -> ResearchPackage:
         raise ValueError(f"{path}: live_proven conclusion has no live probe")
     if conclusion.proof_status == "live_proven":
         for identifier in conclusion.live_probe_ids:
-            if observations_by_id[identifier].run_bundle is None:
+            observation = observations_by_id[identifier]
+            if observation.run_bundle is None:
                 raise ValueError(
                     f"{path}: live_proven probe {identifier} has no exact run bundle"
+                )
+            if observation.durable_reduced_evidence is None:
+                raise ValueError(
+                    f"{path}: live_proven probe {identifier} has no durable reduced evidence"
+                )
+            durable_path = ROOT / observation.durable_reduced_evidence
+            if not durable_path.is_file():
+                raise ValueError(
+                    f"{path}: durable reduced evidence does not exist: "
+                    f"{observation.durable_reduced_evidence}"
                 )
     for heading in PROOF_SECTION_HEADINGS:
         if heading not in body:

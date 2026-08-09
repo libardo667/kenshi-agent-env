@@ -22,12 +22,16 @@ from kenshi_agent.core.planning import (
 )
 from kenshi_agent.core.telemetry import (
     CharacterState,
+    CharacterWorkState,
     ContextActionKind,
     Disposition,
     GameState,
     KnownMapDestination,
     NearbyEntity,
     NormalizedPointerBounds,
+    TaskCollection,
+    TaskCollectionCompleteness,
+    TaskEntry,
     TelemetrySnapshot,
     UIState,
     Vec3,
@@ -66,6 +70,49 @@ def test_nearby_entity_visibility_is_unknown_until_observed() -> None:
     assert entity.camera_bearing_degrees is None
     assert entity.screen_position is None
     assert entity.shop_inventory_owner is None
+
+
+@pytest.mark.parametrize(
+    ("has_player_orders", "items"),
+    [
+        (True, []),
+        (
+            False,
+            [
+                TaskEntry(
+                    task_value=87,
+                    task_name="OPERATE_MACHINERY",
+                    subject_id=None,
+                    description=None,
+                    position=0,
+                )
+            ],
+        ),
+    ],
+)
+def test_complete_ordinary_orders_must_match_the_direct_predicate(
+    has_player_orders: bool,
+    items: list[TaskEntry],
+) -> None:
+    empty = TaskCollection(
+        items=[],
+        completeness=TaskCollectionCompleteness.COMPLETE,
+        known_total=0,
+    )
+
+    with pytest.raises(ValidationError, match="has_player_orders must agree"):
+        CharacterWorkState(
+            has_player_orders=has_player_orders,
+            ordinary_orders=TaskCollection(
+                items=items,
+                completeness=TaskCollectionCompleteness.COMPLETE,
+                known_total=len(items),
+            ),
+            jobs_enabled=False,
+            jobs=empty,
+            permanent_jobs=empty,
+            current_activity=None,
+        )
 
 
 def test_known_map_destination_is_a_first_class_observed_identity() -> None:
@@ -232,7 +279,7 @@ def test_visible_ui_control_exposes_resolution_independent_center() -> None:
 
 def test_stable_identity_snapshot_requires_consistent_selection_and_unique_ids() -> None:
     snapshot = TelemetrySnapshot(
-        protocol_version="0.2.0",
+        protocol_version="2.0.0",
         identity_session_id="session-process-1",
         capabilities=["roster.basic", "nearby.characters", "identity.stable_handles"],
         primary_character_id="entity-player",
@@ -257,7 +304,7 @@ def test_stable_identity_snapshot_requires_consistent_selection_and_unique_ids()
 
     with pytest.raises(ValidationError, match="must be unique"):
         TelemetrySnapshot(
-            protocol_version="0.2.0",
+            protocol_version="2.0.0",
             identity_session_id="session-process-1",
             capabilities=["identity.stable_handles"],
             roster=[CharacterState(id="entity-shared", name="Wanderer")],
@@ -265,7 +312,7 @@ def test_stable_identity_snapshot_requires_consistent_selection_and_unique_ids()
         )
     with pytest.raises(ValidationError, match="must be unique"):
         TelemetrySnapshot(
-            protocol_version="0.8.0",
+            protocol_version="2.0.0",
             identity_session_id="session-process-1",
             capabilities=["identity.stable_handles"],
             roster=[CharacterState(id="entity-shared", name="Wanderer")],
@@ -283,7 +330,7 @@ def test_stable_identity_snapshot_requires_consistent_selection_and_unique_ids()
         )
 
     squad_context_target = TelemetrySnapshot(
-        protocol_version="1.9.0",
+        protocol_version="2.0.0",
         identity_session_id="session-process-1",
         capabilities=["identity.stable_handles"],
         roster=[CharacterState(id="entity-injured", name="Bark")],
@@ -430,7 +477,7 @@ def test_reviewed_world_target_is_an_exact_attemptable_affordance() -> None:
         mode="mock",
         control_mode=ControlMode.NATIVE_ASSISTED,
         telemetry=TelemetrySnapshot(
-            protocol_version="1.0.0",
+            protocol_version="2.0.0",
             identity_session_id="resource-affordance-test",
             capabilities=[
                 "world.context_targets",

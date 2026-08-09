@@ -254,7 +254,7 @@ def validate_future_plan_patch(
         )
         has_command_terminal = any(
             condition.kind is ConditionKind.FIELD
-            and condition.path == "telemetry.native_control.command_active"
+            and condition.path == "telemetry.controller_commands.command_active"
             and condition.operator is ConditionOperator.EQUALS
             and condition.expected is False
             for condition in pause_step.success_conditions

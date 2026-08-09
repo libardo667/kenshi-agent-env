@@ -589,18 +589,13 @@ class StatefulNativeMovementOption:
                 raise OptionLifecycleError(
                     "Context-action option requires one exact currently actionable world target."
                 )
-        active_id = telemetry.native_control.active_command_id
-        active = (
-            telemetry.native_control.acknowledgement_for(active_id)
-            if active_id is not None
-            else None
-        )
-        if (
-            active is not None
-            and active.status is NativeCommandStatus.ACCEPTED
-            and self._matches_identity(active)
-        ):
-            self.native_command_id = active.command_id
+        matching_active = [
+            command
+            for command in telemetry.controller_commands.active_commands()
+            if self._matches_identity(command)
+        ]
+        if len(matching_active) == 1:
+            self.native_command_id = matching_active[0].command_id
         self.status = OptionStatus.PREPARED
         self.reason = "Native movement start state is capable and the selection is exact."
         return self._poll_result()
@@ -791,7 +786,7 @@ class StatefulNativeMovementOption:
             return None
         observation = self.latest_observation
         if observation is not None and observation.telemetry is not None:
-            acknowledgement = observation.telemetry.native_control.acknowledgement_for(
+            acknowledgement = observation.telemetry.controller_commands.command_for(
                 self.native_command_id
             )
             if acknowledgement is not None:

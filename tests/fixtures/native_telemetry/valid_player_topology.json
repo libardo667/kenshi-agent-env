@@ -1,5 +1,5 @@
 {
-  "protocol_version": "1.21.0",
+  "protocol_version": "2.0.0",
   "sequence": 419,
   "source": "KenshiAgentTelemetry",
   "identity_session_id": "session-player-topology-fixture",
@@ -13,6 +13,11 @@
     "roster.work_channels"
   ],
   "game": {"loaded": true, "paused": true},
+  "controller_commands": {
+    "available": true,
+    "commands": [],
+    "last_command_sequence": 0
+  },
   "roster": [
     {
       "id": "character-alpha",

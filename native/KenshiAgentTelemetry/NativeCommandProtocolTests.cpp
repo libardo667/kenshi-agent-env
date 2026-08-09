@@ -325,8 +325,10 @@ namespace
                 rosterIt->second.get_child("work");
             const boost::property_tree::ptree& ordinaryOrders =
                 work.get_child("ordinary_orders");
-            if (topology.get<std::string>("protocol_version") != "1.21.0" ||
+            if (topology.get<std::string>("protocol_version") != "2.0.0" ||
                 topology.count("squad") != 0U ||
+                topology.count("native_control") != 0U ||
+                topology.get_child("controller_commands.commands").size() != 0U ||
                 roster.size() != 3U ||
                 rosterIt->second.count("selected") != 0U ||
                 rosterIt->second.count("task_state") != 0U ||

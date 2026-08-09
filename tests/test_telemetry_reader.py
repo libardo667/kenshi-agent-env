@@ -28,9 +28,11 @@ def test_stale_snapshot_is_marked(tmp_path: Path) -> None:
 
 def test_invalid_protocol_raises(tmp_path: Path) -> None:
     path = tmp_path / "telemetry.json"
-    write_snapshot_atomic(path, TelemetrySnapshot(protocol_version="1.0.0"))
+    payload = TelemetrySnapshot().model_dump(mode="json")
+    payload["protocol_version"] = "1.0.0"
+    path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(TelemetryReadError):
-        TelemetryReader(path, require_protocol_major=0, retries=1).read()
+        TelemetryReader(path, retries=1).read()
 
 
 def test_protocol_mismatch_precedes_removed_field_validation(tmp_path: Path) -> None:
@@ -54,7 +56,7 @@ def test_protocol_mismatch_precedes_removed_field_validation(tmp_path: Path) -> 
 
     with pytest.raises(
         TelemetryReadError,
-        match="Telemetry protocol major 0 does not match required major 1",
+        match="Telemetry protocol major 0 does not match required major 2",
     ):
         TelemetryReader(path, retries=1).read()
 
@@ -125,7 +127,7 @@ def test_reader_accepts_native_nearby_character_and_ui_signals(tmp_path: Path) -
         }
     ]
     payload["active_shop_trader_count"] = 1
-    payload["native_control"] = {
+    payload["controller_commands"] = {
         "available": True,
         "last_command_sequence": 2,
         "last_command": "approach_confirmed_vendor",
@@ -145,8 +147,8 @@ def test_reader_accepts_native_nearby_character_and_ui_signals(tmp_path: Path) -
     assert result.snapshot.nearby_entities[0].shop_inventory_owner is True
     assert result.snapshot.nearby_entities[0].is_squad_leader is True
     assert result.snapshot.active_shop_trader_count == 1
-    assert result.snapshot.native_control.last_result == "issued"
-    assert result.snapshot.native_control.last_target == "Bar Trader"
+    assert result.snapshot.controller_commands.last_result == "issued"
+    assert result.snapshot.controller_commands.last_target == "Bar Trader"
     assert result.snapshot.nearby_entities[0].position is not None
     assert result.snapshot.nearby_entities[0].position.x == -100.0
     assert result.snapshot.nearby_entities[0].camera_bearing_degrees == -18.5

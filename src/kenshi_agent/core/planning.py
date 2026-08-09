@@ -94,15 +94,15 @@ class FieldConditionPath(StrEnum):
     TELEMETRY_UI_SELECTED_CHARACTER_ID = "telemetry.primary_character_id"
     TELEMETRY_SELECTED_CHARACTER_COUNT = "telemetry.selected_character_count"
     TELEMETRY_ACTIVE_SHOP_TRADER_COUNT = "telemetry.active_shop_trader_count"
-    TELEMETRY_NATIVE_CONTROL_AVAILABLE = "telemetry.native_control.available"
-    TELEMETRY_NATIVE_CONTROL_COMMAND_ACTIVE = "telemetry.native_control.command_active"
-    TELEMETRY_NATIVE_CONTROL_LAST_COMMAND_SEQUENCE = (
-        "telemetry.native_control.last_command_sequence"
+    TELEMETRY_CONTROLLER_COMMANDS_AVAILABLE = "telemetry.controller_commands.available"
+    TELEMETRY_CONTROLLER_COMMANDS_COMMAND_ACTIVE = "telemetry.controller_commands.command_active"
+    TELEMETRY_CONTROLLER_COMMANDS_LAST_COMMAND_SEQUENCE = (
+        "telemetry.controller_commands.last_command_sequence"
     )
-    TELEMETRY_NATIVE_CONTROL_LAST_COMMAND = "telemetry.native_control.last_command"
-    TELEMETRY_NATIVE_CONTROL_LAST_RESULT = "telemetry.native_control.last_result"
-    TELEMETRY_NATIVE_CONTROL_LAST_TARGET = "telemetry.native_control.last_target"
-    TELEMETRY_NATIVE_CONTROL_LAST_TARGET_ID = "telemetry.native_control.last_target_id"
+    TELEMETRY_CONTROLLER_COMMANDS_LAST_COMMAND = "telemetry.controller_commands.last_command"
+    TELEMETRY_CONTROLLER_COMMANDS_LAST_RESULT = "telemetry.controller_commands.last_result"
+    TELEMETRY_CONTROLLER_COMMANDS_LAST_TARGET = "telemetry.controller_commands.last_target"
+    TELEMETRY_CONTROLLER_COMMANDS_LAST_TARGET_ID = "telemetry.controller_commands.last_target_id"
     SELECTED_ALIVE = "selected.alive"
     SELECTED_CONSCIOUS = "selected.conscious"
     SELECTED_DOWN = "selected.down"

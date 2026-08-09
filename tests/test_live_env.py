@@ -75,7 +75,7 @@ class PulseTelemetry:
         self.auto_pause_after_reads = auto_pause_after_reads
         self.stale = stale
         self.capabilities: list[str] = []
-        self.native_control = NativeControlState()
+        self.controller_commands = NativeControlState()
         self.path = Path("telemetry.json")
         self.max_age_seconds = 3.0
         self.elapsed_minutes = 0.0
@@ -99,7 +99,7 @@ class PulseTelemetry:
                     speed_multiplier=self.speed_multiplier,
                     elapsed_minutes=self.elapsed_minutes,
                 ),
-                native_control=self.native_control,
+                controller_commands=self.controller_commands,
             ),
             age_seconds=0.0,
             stale=self.stale,
@@ -626,7 +626,7 @@ class NativePulseTelemetry(PulseTelemetry):
         self.sequence += 1
         return TelemetryRead(
             snapshot=TelemetrySnapshot(
-                protocol_version="0.3.0",
+                protocol_version="2.0.0",
                 sequence=self.sequence,
                 captured_at=datetime.now(UTC),
                 identity_session_id="session-native-test",
@@ -656,7 +656,7 @@ class NativePulseTelemetry(PulseTelemetry):
                 ),
                 primary_character_id=self.selected_character_id,
                 selected_character_ids=self.selected_character_ids,
-                native_control=self.native_control,
+                controller_commands=self.controller_commands,
                 roster=[
                     CharacterState(
                         id="entity-selected",
@@ -757,7 +757,7 @@ class ResourceTransferPulseTelemetry(PulseTelemetry):
         )
         return TelemetryRead(
             snapshot=TelemetrySnapshot(
-                protocol_version="1.1.0",
+                protocol_version="2.0.0",
                 sequence=self.sequence,
                 captured_at=datetime.now(UTC),
                 identity_session_id="session-resource-transfer",
@@ -916,9 +916,9 @@ class NativeAckController(PulseController):
             self.telemetry.paused = pending.paused
         else:
             self.telemetry.paused = False
-        self.telemetry.native_control = NativeControlState(
+        self.telemetry.controller_commands = NativeControlState(
             available=True,
-            acknowledgements=[
+            commands=[
                 NativeCommandAcknowledgement(
                     command_id=pending.command_id,
                     command=pending.command,
@@ -961,9 +961,9 @@ class NativeAckController(PulseController):
                 }
                 else None
             )
-            self.telemetry.native_control = NativeControlState(
+            self.telemetry.controller_commands = NativeControlState(
                 available=True,
-                acknowledgements=[
+                commands=[
                     NativeCommandAcknowledgement(
                         command_id=(self.acknowledgement_command_id or request.command_id),
                         command=request.command,
@@ -1001,9 +1001,9 @@ class NativeAckController(PulseController):
             assert basis is not None
             acknowledgement_sequence = max(self.telemetry.sequence + 1, basis + 2)
             self.telemetry.paused = True
-            self.telemetry.native_control = NativeControlState(
+            self.telemetry.controller_commands = NativeControlState(
                 available=True,
-                acknowledgements=[
+                commands=[
                     NativeCommandAcknowledgement(
                         command_id=request.command_id,
                         command=request.command,
@@ -1453,7 +1453,7 @@ class ControlTelemetry(PulseTelemetry):
                 capabilities=self.capabilities,
                 game=GameState(loaded=True, paused=self.paused),
                 ui=UIState(visible_controls=self.controls),
-                native_control=self.native_control,
+                controller_commands=self.controller_commands,
             ),
             age_seconds=0.0,
             stale=False,
@@ -1508,10 +1508,9 @@ def test_semantic_approach_adopts_an_already_active_order_for_the_same_target(
         telemetry.sequence = 10
         # An accepted order toward this exact target is already active.
         active_id = "cmd-" + "b" * 32
-        telemetry.native_control = NativeControlState(
+        telemetry.controller_commands = NativeControlState(
             available=True,
-            active_command_id=active_id,
-            acknowledgements=[
+            commands=[
                 NativeCommandAcknowledgement(
                     command_id=active_id,
                     command="approach_confirmed_vendor",
@@ -2269,10 +2268,9 @@ def test_direction_does_not_adopt_an_active_order_for_another_vector(
         ]
         telemetry.sequence = 10
         active_id = "cmd-" + "a" * 32
-        telemetry.native_control = NativeControlState(
+        telemetry.controller_commands = NativeControlState(
             available=True,
-            active_command_id=active_id,
-            acknowledgements=[
+            commands=[
                 NativeCommandAcknowledgement(
                     command_id=active_id,
                     command="move_in_direction",

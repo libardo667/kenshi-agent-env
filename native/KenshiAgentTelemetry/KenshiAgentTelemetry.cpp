@@ -204,7 +204,7 @@ namespace
     const unsigned int MAX_RESOURCE_OUTPUT_ITEMS = 128;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "1.21.0";
+    const char* PROTOCOL_VERSION = "2.0.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -731,6 +731,24 @@ namespace
                 return static_cast<int>(index);
         }
         return -1;
+    }
+
+    const NativeCommandAcknowledgement* PublishedNativeCommandRecord()
+    {
+        // Protocol 2.0 is plural from its first frame. Until the captured-
+        // recipient registry replaces g_activeNativeCommand, the producer can
+        // truthfully publish only the one active record or, while idle, the
+        // latest terminal record. This producer-side cardinality limit must be
+        // deleted by 2026-09-20; consumers must never depend on it.
+        if (g_activeNativeCommand.active)
+        {
+            const int index =
+                FindNativeAcknowledgement(g_activeNativeCommand.commandId);
+            return index >= 0 ? &g_nativeAcknowledgements[index] : NULL;
+        }
+        if (g_nativeAcknowledgementCount == 0)
+            return NULL;
+        return &g_nativeAcknowledgements[g_nativeAcknowledgementCount - 1];
     }
 
     NativeCommandAcknowledgement& AddNativeAcknowledgement(
@@ -6580,25 +6598,13 @@ namespace
             json << "null";
         json << ",";
 
-        json << "\"native_control\":{";
+        json << "\"controller_commands\":{";
         json << "\"available\":true,";
-        if (g_activeNativeCommand.active)
-        {
-            json << "\"active_command_id\":\""
-                 << JsonEscape(g_activeNativeCommand.commandId)
-                 << "\",";
-        }
-        json << "\"acknowledgements\":[";
-        for (unsigned int index = 0;
-             index < g_nativeAcknowledgementCount;
-             ++index)
-        {
-            if (index > 0)
-                json << ",";
-            const NativeCommandAcknowledgement& acknowledgement =
-                g_nativeAcknowledgements[index];
-            json << SerializeNativeCommandAcknowledgement(acknowledgement);
-        }
+        json << "\"commands\":[";
+        const NativeCommandAcknowledgement* publishedCommand =
+            PublishedNativeCommandRecord();
+        if (publishedCommand != NULL)
+            json << SerializeNativeCommandAcknowledgement(*publishedCommand);
         json << "],";
         json << "\"last_command_sequence\":" << g_nativeCommandSequence;
         if (!g_lastNativeCommand.empty())
@@ -7259,21 +7265,16 @@ namespace
         json << ",\"context_inventory_target_id\":null";
         json << "},";
         // The real block, not a placeholder. The menu accepts commands now,
-        // so reporting `available: false` with no acknowledgements here would
+        // so reporting `available: false` with no command records here would
         // hide both the capability and every verdict it produces -- a command
         // could be pressed and nothing would say whether it was.
-        json << "\"native_control\":{";
+        json << "\"controller_commands\":{";
         json << "\"available\":true,";
-        json << "\"acknowledgements\":[";
-        for (unsigned int index = 0;
-             index < g_nativeAcknowledgementCount;
-             ++index)
-        {
-            if (index > 0)
-                json << ",";
-            json << SerializeNativeCommandAcknowledgement(
-                g_nativeAcknowledgements[index]);
-        }
+        json << "\"commands\":[";
+        const NativeCommandAcknowledgement* publishedCommand =
+            PublishedNativeCommandRecord();
+        if (publishedCommand != NULL)
+            json << SerializeNativeCommandAcknowledgement(*publishedCommand);
         json << "],";
         json << "\"last_command_sequence\":" << g_nativeCommandSequence;
         if (!g_lastNativeCommand.empty())
@@ -7444,7 +7445,7 @@ namespace
     // One menu press, from the main menu, with no world yet.
     //
     // The in-game path processes commands from `PlayerInterface::update`, which
-    // does not run here -- which is why `native_control.available` read false on
+    // does not run here -- which is why `controller_commands.available` read false on
     // the title screen and every launch had to be clicked.
     void ProcessTitleScreenCommandRequest(TitleScreen* titleScreen)
     {

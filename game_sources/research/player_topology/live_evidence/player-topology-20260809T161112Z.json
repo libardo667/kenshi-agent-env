@@ -1,0 +1,668 @@
+{
+  "schema_version": 1,
+  "kind": "reduced_live_evidence",
+  "run_id": "player-topology-20260809T161112Z",
+  "source_manifest_sha256": "ff61829f67f124129aff6f8c0cab419439be4988aaf27e165fac9f8c24069f4a",
+  "manifest": {
+    "schema_version": 1,
+    "run_id": "player-topology-20260809T161112Z",
+    "goal": "Export and live-prove distinct roster, platoon membership, active platoon, primary character, and complete selection topology.",
+    "source_parent": "5753bcb8ca993d46964fc35349338e1f91855bce",
+    "protocol_version": "1.19.0",
+    "binary_provenance": {
+      "built_dll": {
+        "path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\build\\native\\bin\\KenshiAgentTelemetry.dll",
+        "sha256": "2dfee3ca27a3a2494b31386cff06e9db2ad02e38e7d3d6079fec0fb2234436bc",
+        "size_bytes": 413696
+      },
+      "installed_dll": {
+        "path": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll",
+        "sha256": "2dfee3ca27a3a2494b31386cff06e9db2ad02e38e7d3d6079fec0fb2234436bc",
+        "size_bytes": 413696
+      },
+      "native_conformance_exe": {
+        "path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\build\\native\\bin\\NativeCommandProtocolTests.exe",
+        "sha256": "90582667c5d94adb0eee26a44cd4ff97db10ef257ec3b5474d244fd827592dc6",
+        "size_bytes": 280576,
+        "result": "Native protocol fixtures and semantics passed."
+      },
+      "provenance_result": "chain consistent YES; 47 declared capabilities present; generated header current"
+    },
+    "snapshots": [
+      {
+        "id": "loaded_one_platoon_baseline",
+        "path": "runs/dev-snapshots/20260809T161112.316592Z-topology-loaded-baseline",
+        "evidence": "Hep and Paste existed in Nameless_0; both selected; Paste primary despite being second in roster order."
+      },
+      {
+        "id": "management_before_add",
+        "path": "runs/dev-snapshots/20260809T161408.900557Z-topology-management-before-add",
+        "evidence": "Observed SQUADS UI, one 2/20 row, and advertised ADD SQUAD control."
+      },
+      {
+        "id": "management_after_add",
+        "path": "runs/dev-snapshots/20260809T161445.707262Z-topology-management-after-add",
+        "evidence": "Later frame showed an empty Nameless_1 row; raw player topology still correctly exported one nonempty platoon."
+      },
+      {
+        "id": "multiplatoon_authored",
+        "path": "runs/dev-snapshots/20260809T161552.058259Z-topology-multiplatoon-authored",
+        "evidence": "Later engine state showed Hep in Nameless_0 and Paste in Nameless_1. It also contradicted the prior character-handle stability assumption and triggered the registry fix."
+      },
+      {
+        "id": "post_relaunch_loaded",
+        "path": "runs/dev-snapshots/20260809T162444.517008Z-topology-post-relaunch-loaded",
+        "evidence": "The first quicksave restored two named platoons and membership across process restart."
+      },
+      {
+        "id": "tab_to_second",
+        "path": "runs/dev-snapshots/20260809T162520.232464Z-topology-after-tab-to-second",
+        "evidence": "After Tab, active changed Nameless_0 to Nameless_1 while primary Paste and the complete two-character selection remained distinct."
+      },
+      {
+        "id": "select_hep",
+        "path": "runs/dev-snapshots/20260809T162552.297401Z-topology-after-select-hep",
+        "evidence": "Later than native acknowledgement cmd-b906de94681f459db00b387c8c13c3eb: active Nameless_0, primary Hep, selected [Hep], selection complete."
+      },
+      {
+        "id": "identity_before_move",
+        "path": "runs/dev-snapshots/20260809T162635.081535Z-topology-identity-before-move",
+        "evidence": "Pre-move Paste ID ended a990f200 and membership was Nameless_1."
+      },
+      {
+        "id": "identity_after_move_first",
+        "path": "runs/dev-snapshots/20260809T162714.701375Z-topology-identity-after-move-first",
+        "evidence": "After moving Paste to Nameless_0, Paste retained the exact same full session-scoped ID ending a990f200."
+      },
+      {
+        "id": "identity_restored_second",
+        "path": "runs/dev-snapshots/20260809T162812.785980Z-topology-identity-restored-second",
+        "evidence": "After moving Paste back to Nameless_1, the same full session-scoped ID ending a990f200 remained."
+      },
+      {
+        "id": "final_tab",
+        "path": "runs/dev-snapshots/20260809T162915.781593Z-topology-final-after-tab",
+        "evidence": "Final sequence Tab changed active Nameless_0 to Nameless_1 without changing primary Hep or selected [Hep]."
+      },
+      {
+        "id": "final_before_save",
+        "path": "runs/dev-snapshots/20260809T162949.914050Z-topology-final-before-save",
+        "evidence": "Later than acknowledgement cmd-89fd0b2b0c404ecbba3cd56f3580015d: active Nameless_1, primary Paste, selected [Paste], selection complete."
+      },
+      {
+        "id": "final_after_save",
+        "path": "runs/dev-snapshots/20260809T163048.002989Z-topology-final-after-save",
+        "evidence": "Post-save engine state paired with changed quicksave files."
+      },
+      {
+        "id": "mutated_before_load",
+        "path": "runs/dev-snapshots/20260809T163123.691121Z-topology-final-mutated-before-load",
+        "evidence": "Deliberate post-save mutation: active Nameless_0, primary Hep, selected [Hep], selection complete."
+      },
+      {
+        "id": "quickload_later_engine_state",
+        "path": "runs/dev-snapshots/20260809T163203.330907Z-topology-final-quickload-transition",
+        "evidence": "F9 advanced identity session 2 to 3; both platoons and membership reappeared; primary and selected Paste were restored. Kenshi reset active to Nameless_0 rather than persisting saved Nameless_1."
+      },
+      {
+        "id": "final_disposition",
+        "path": "runs/dev-snapshots/20260809T163316.354260Z-topology-final-disposition-paused",
+        "evidence": "Sequence 1096: loaded, paused, modal_open false, active_command_id null, two complete platoons, primary Paste, selected [Paste]."
+      }
+    ],
+    "actions": [
+      {
+        "action": "click advertised ADD SQUAD",
+        "pre_state": "management_before_add",
+        "request": "activate unique visible control label ADD SQUAD",
+        "acknowledgement": "diagnostic click helper returned true; this only proves input dispatch",
+        "later_engine_evidence": "management_after_add frame showed an empty Nameless_1 row",
+        "disposition": "UI row created; no second player platoon claimed until a member moved"
+      },
+      {
+        "action": "drag Paste into Nameless_1",
+        "request": "normalized pointer 0.346,0.260; left drag delta 0,170 in 16 steps",
+        "acknowledgement": "move and drag receipts executed true; 1 and 18 primitives",
+        "later_engine_evidence": "multiplatoon_authored",
+        "disposition": "completed; two nonempty player platoons exported"
+      },
+      {
+        "action": "Tab to Nameless_1",
+        "source_authority": "game_sources/kenshi/controls.cfg change_squad=Tab",
+        "pre_state": "post_relaunch_loaded active Nameless_0",
+        "request": "KeyAction tab hold_seconds 0.12 at 2026-08-09T16:25:10.249652Z",
+        "acknowledgement": "interface receipt executed true; no Kenshi acknowledgement exists for the UI binding",
+        "later_engine_evidence": "tab_to_second active Nameless_1",
+        "disposition": "completed"
+      },
+      {
+        "action": "select Hep exactly",
+        "pre_state": "tab_to_second primary Paste selected [Hep, Paste]",
+        "request": "cmd-b906de94681f459db00b387c8c13c3eb select_squad_member target Hep",
+        "acknowledgement": "completed exact_squad_member_selected at telemetry sequence 188",
+        "later_engine_evidence": "select_hep primary Hep selected [Hep] complete",
+        "disposition": "completed"
+      },
+      {
+        "action": "move Paste to Nameless_0 and back",
+        "pre_state": "identity_before_move full ID entity-eafea6a9b9679d01-0000000000000002-00000001-00000000-00000000-00000001-a990f200",
+        "request": "two UI drags with executed primitive receipts",
+        "acknowledgement": "interface receipts only; no Kenshi acknowledgement exists for management drag",
+        "later_engine_evidence": "identity_after_move_first and identity_restored_second retain the exact same full ID",
+        "disposition": "completed; same-session player ID stable across both membership changes"
+      },
+      {
+        "action": "final Tab then select Paste",
+        "pre_state": "active Nameless_0 primary Hep selected [Hep]",
+        "request": "Tab receipt then cmd-89fd0b2b0c404ecbba3cd56f3580015d targeting Paste",
+        "acknowledgement": "select command completed exact_squad_member_selected at telemetry sequence 663",
+        "later_engine_evidence": "final_before_save active Nameless_1 primary Paste selected [Paste] complete",
+        "disposition": "completed"
+      },
+      {
+        "action": "quicksave",
+        "pre_state": {
+          "snapshot": "final_before_save",
+          "quick_save_sha256": "57b01238f5bc3d62657ac11aa807e81e72fb3dba53131abb82977f06645889b9",
+          "nameless_0_sha256": "360382fab4cb47a5c2a7ebcb4445d4a74a1fc66c07904fa02e83fb451bf6b015",
+          "nameless_1_sha256": "a964d2884d54c467fed6378bca71918ae8ade7dbeddfc8171f68ea6bed063b55"
+        },
+        "request": "KeyAction f5 hold_seconds 0.12 at 2026-08-09T16:30:24.841846Z",
+        "acknowledgement": "interface receipt executed true; not treated as save proof",
+        "later_engine_evidence": {
+          "quick_save_sha256": "22df685729d5e4b585f0dd47d4e449b199fa834e57e8936b18c132ced8ebc030",
+          "quick_save_mtime": "2026-08-09T09:30:25.271080600-07:00",
+          "nameless_0_sha256": "d6bbe8655f31a7e04bd4a28a1cf702bb4654e95ef759bfcbfd2ea18ebba66669",
+          "nameless_1_sha256": "d64fb45e842051be5fa94d799246b332249f6671e675e445cb7bab55e282443d"
+        },
+        "disposition": "completed; exact quicksave tree changed and quick.save remained nonempty"
+      },
+      {
+        "action": "mutate then quickload",
+        "pre_state": "mutated_before_load active Nameless_0 primary Hep selected [Hep] in identity session 2",
+        "request": "KeyAction f9 hold_seconds 0.12 at 2026-08-09T16:31:50.137410Z",
+        "acknowledgement": "interface receipt executed true; not treated as load proof",
+        "later_engine_evidence": "quickload_later_engine_state identity session 3, both platoons and membership, primary Paste selected [Paste] complete",
+        "disposition": "completed; saved topology/primary/selection restored; active tab reset to Nameless_0"
+      },
+      {
+        "action": "final recovery",
+        "request": "./dev recover",
+        "acknowledgement": "Recovery complete: Kenshi is paused with no unresolved modal. The display lease was already released.",
+        "later_engine_evidence": "final_disposition",
+        "disposition": "Kenshi left loaded, paused, modal-free, idle, with no active native command"
+      }
+    ],
+    "classification": {
+      "source_proven": [
+        "KenshiLib player roster, Character::getPlatoon, Platoon::getPlatoonStringID, ActivePlatoon::getName, PlayerInterface::getCurrentActivePlatoon, selectedCharacter, and selectedCharacters are separate owners.",
+        "ForgottenGUI is not used as topology authority.",
+        "controls.cfg binds change_squad to Tab."
+      ],
+      "test_proven": [
+        "Strict topology validation, superseded-shape rejection, compiled shared fixture, primary-not-roster-order fixture, and player identity registry behavior."
+      ],
+      "live_proven": [
+        "Two nonempty player platoons, linkage, active tab changes, primary changes, complete selection changes, same-session character ID stability across platoon moves, changed quicksave tree, quickload session boundary, restored membership/primary/selection, and paused final disposition."
+      ],
+      "withheld": [
+        "Character entity IDs are session-scoped and intentionally change prefix across a GameWorld reset; no cross-session character-ID continuity is claimed.",
+        "Kenshi did not persist the active platoon tab through this quickload; the exporter truthfully reported the reset to Nameless_0.",
+        "Empty management rows are not exported as player platoons because the inspected player/platoon structures contained no active member linkage for them."
+      ]
+    }
+  },
+  "request": null,
+  "request_sha256": null,
+  "decisive_snapshots": [
+    {
+      "id": "loaded_one_platoon_baseline",
+      "source_path": "runs/dev-snapshots/20260809T161112.316592Z-topology-loaded-baseline",
+      "manifest_evidence": "Hep and Paste existed in Nameless_0; both selected; Paste primary despite being second in roster order.",
+      "telemetry_projection": {
+        "source": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\telemetry.latest.json",
+        "roster": [],
+        "world_targets": [],
+        "ui": {}
+      },
+      "source_file_hashes": [
+        {
+          "path": "runs/dev-snapshots/20260809T161112.316592Z-topology-loaded-baseline/live_frame_000001.png",
+          "size_bytes": 2242659,
+          "sha256": "9e35dd41951d584c5f9ed5f6264b9ea4c6801789217f57b575f1416e4f17fba2"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T161112.316592Z-topology-loaded-baseline/manifest.json",
+          "size_bytes": 364,
+          "sha256": "b062b4641eb4b410f71725ffdb8c0ec25fcfcad69a61e00e64419902dfa5bb95"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T161112.316592Z-topology-loaded-baseline/telemetry.json",
+          "size_bytes": 104961,
+          "sha256": "95ac4b6629e70216c66dc06c37e40cce9a2ba67180310dfd35cbf25da3d262d8"
+        }
+      ]
+    },
+    {
+      "id": "management_before_add",
+      "source_path": "runs/dev-snapshots/20260809T161408.900557Z-topology-management-before-add",
+      "manifest_evidence": "Observed SQUADS UI, one 2/20 row, and advertised ADD SQUAD control.",
+      "telemetry_projection": {
+        "source": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\telemetry.latest.json",
+        "roster": [],
+        "world_targets": [],
+        "ui": {}
+      },
+      "source_file_hashes": [
+        {
+          "path": "runs/dev-snapshots/20260809T161408.900557Z-topology-management-before-add/live_frame_000001.png",
+          "size_bytes": 1698770,
+          "sha256": "39ad12adb7e2049f6d4f1da5d1f46144ede206790ab30d9b47f0e8705c417d64"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T161408.900557Z-topology-management-before-add/manifest.json",
+          "size_bytes": 376,
+          "sha256": "b98f871c34f826a1c29095df705382e0c972e64152bd517a6b9aa355f283a6f0"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T161408.900557Z-topology-management-before-add/telemetry.json",
+          "size_bytes": 110727,
+          "sha256": "0d06f85a4ce9ce6cdd708f93ad13d01e9305d97e8f937efe274984fec971ea7b"
+        }
+      ]
+    },
+    {
+      "id": "management_after_add",
+      "source_path": "runs/dev-snapshots/20260809T161445.707262Z-topology-management-after-add",
+      "manifest_evidence": "Later frame showed an empty Nameless_1 row; raw player topology still correctly exported one nonempty platoon.",
+      "telemetry_projection": {
+        "source": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\telemetry.latest.json",
+        "roster": [],
+        "world_targets": [],
+        "ui": {}
+      },
+      "source_file_hashes": [
+        {
+          "path": "runs/dev-snapshots/20260809T161445.707262Z-topology-management-after-add/live_frame_000001.png",
+          "size_bytes": 1715145,
+          "sha256": "605fbc339cc6f5bcef5e958f91124eeba98a39e40584f58908a892b6182ee5dc"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T161445.707262Z-topology-management-after-add/manifest.json",
+          "size_bytes": 374,
+          "sha256": "9b505af45f81bd598ff7b3d8956db3c78cb2c6ba77d825c1f311c2a4198bc83e"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T161445.707262Z-topology-management-after-add/telemetry.json",
+          "size_bytes": 112011,
+          "sha256": "a7400a6aa2b083c838fd073421ed91b2327e96ca28461d5c7c40baf8e28d9a0a"
+        }
+      ]
+    },
+    {
+      "id": "multiplatoon_authored",
+      "source_path": "runs/dev-snapshots/20260809T161552.058259Z-topology-multiplatoon-authored",
+      "manifest_evidence": "Later engine state showed Hep in Nameless_0 and Paste in Nameless_1. It also contradicted the prior character-handle stability assumption and triggered the registry fix.",
+      "telemetry_projection": {
+        "source": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\telemetry.latest.json",
+        "roster": [],
+        "world_targets": [],
+        "ui": {}
+      },
+      "source_file_hashes": [
+        {
+          "path": "runs/dev-snapshots/20260809T161552.058259Z-topology-multiplatoon-authored/live_frame_000001.png",
+          "size_bytes": 1713000,
+          "sha256": "dc6cc178e8b9bae4c51a5d84d270d678278f9c532779d670e10895b06800203f"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T161552.058259Z-topology-multiplatoon-authored/manifest.json",
+          "size_bytes": 376,
+          "sha256": "7ee89d51ea1a351b9198724652589bfb492cf411c9e9ca3cea2a08617403946c"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T161552.058259Z-topology-multiplatoon-authored/telemetry.json",
+          "size_bytes": 111462,
+          "sha256": "57dc8ad8203e57df686f145e637c469743708fe50f4d95d590927254330abbaf"
+        }
+      ]
+    },
+    {
+      "id": "post_relaunch_loaded",
+      "source_path": "runs/dev-snapshots/20260809T162444.517008Z-topology-post-relaunch-loaded",
+      "manifest_evidence": "The first quicksave restored two named platoons and membership across process restart.",
+      "telemetry_projection": {
+        "source": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\telemetry.latest.json",
+        "roster": [],
+        "world_targets": [],
+        "ui": {}
+      },
+      "source_file_hashes": [
+        {
+          "path": "runs/dev-snapshots/20260809T162444.517008Z-topology-post-relaunch-loaded/live_frame_000001.png",
+          "size_bytes": 2223503,
+          "sha256": "e22c0985effdc263cebcca0d4dab49476078099a1164e6bff040890fc4f5eebd"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T162444.517008Z-topology-post-relaunch-loaded/manifest.json",
+          "size_bytes": 373,
+          "sha256": "6eba716ba439e34239f4f4af9bcfa6e54d0312fa65853fbd2c133f6185166ce7"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T162444.517008Z-topology-post-relaunch-loaded/telemetry.json",
+          "size_bytes": 105480,
+          "sha256": "be8304d1f9d7a90cf40229d51436e96abade972502cbc8ce30cd20190a5c949c"
+        }
+      ]
+    },
+    {
+      "id": "tab_to_second",
+      "source_path": "runs/dev-snapshots/20260809T162520.232464Z-topology-after-tab-to-second",
+      "manifest_evidence": "After Tab, active changed Nameless_0 to Nameless_1 while primary Paste and the complete two-character selection remained distinct.",
+      "telemetry_projection": {
+        "source": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\telemetry.latest.json",
+        "roster": [],
+        "world_targets": [],
+        "ui": {}
+      },
+      "source_file_hashes": [
+        {
+          "path": "runs/dev-snapshots/20260809T162520.232464Z-topology-after-tab-to-second/live_frame_000001.png",
+          "size_bytes": 2225051,
+          "sha256": "08ecfa136be754d819820a0ff95fe57a567cf664e402cea31520eb76ccfd6b86"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T162520.232464Z-topology-after-tab-to-second/manifest.json",
+          "size_bytes": 372,
+          "sha256": "fd8a73257d1a81d67159bb9d6a86e04a22e947edcbb5b7974e964e492844f9de"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T162520.232464Z-topology-after-tab-to-second/telemetry.json",
+          "size_bytes": 105483,
+          "sha256": "baedea817deab190846415fff259c2ba69314a20274307fb79fe3976961ff3bc"
+        }
+      ]
+    },
+    {
+      "id": "select_hep",
+      "source_path": "runs/dev-snapshots/20260809T162552.297401Z-topology-after-select-hep",
+      "manifest_evidence": "Later than native acknowledgement cmd-b906de94681f459db00b387c8c13c3eb: active Nameless_0, primary Hep, selected [Hep], selection complete.",
+      "telemetry_projection": {
+        "source": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\telemetry.latest.json",
+        "roster": [],
+        "world_targets": [],
+        "ui": {}
+      },
+      "source_file_hashes": [
+        {
+          "path": "runs/dev-snapshots/20260809T162552.297401Z-topology-after-select-hep/live_frame_000001.png",
+          "size_bytes": 2223589,
+          "sha256": "ccb2bc5f6be4a6f2dfa849fde82a073ed8ee33528ac870d946808866521c6726"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T162552.297401Z-topology-after-select-hep/manifest.json",
+          "size_bytes": 366,
+          "sha256": "aab47778ce367654579ab401169ac427759508486f795f58aefdb16629de1565"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T162552.297401Z-topology-after-select-hep/telemetry.json",
+          "size_bytes": 108417,
+          "sha256": "503b9c0a9ea2766c4aeb70954c628f06ed5492779d23f150a1da30912336f86c"
+        }
+      ]
+    },
+    {
+      "id": "identity_before_move",
+      "source_path": "runs/dev-snapshots/20260809T162635.081535Z-topology-identity-before-move",
+      "manifest_evidence": "Pre-move Paste ID ended a990f200 and membership was Nameless_1.",
+      "telemetry_projection": {
+        "source": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\telemetry.latest.json",
+        "roster": [],
+        "world_targets": [],
+        "ui": {}
+      },
+      "source_file_hashes": [
+        {
+          "path": "runs/dev-snapshots/20260809T162635.081535Z-topology-identity-before-move/live_frame_000001.png",
+          "size_bytes": 1711828,
+          "sha256": "49d0f007bfa1da7db267315d3c8d019a8440c2155dd91e37930bd16257ad7065"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T162635.081535Z-topology-identity-before-move/manifest.json",
+          "size_bytes": 374,
+          "sha256": "854713024483abf1ad9f821724df3196d4d2da6dd56211d7cbde1e8168b7c42a"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T162635.081535Z-topology-identity-before-move/telemetry.json",
+          "size_bytes": 121497,
+          "sha256": "011620e6cd7dc2c9c6fbf799e95fffa97f331a9ca506d1005f48b729c81c9c28"
+        }
+      ]
+    },
+    {
+      "id": "identity_after_move_first",
+      "source_path": "runs/dev-snapshots/20260809T162714.701375Z-topology-identity-after-move-first",
+      "manifest_evidence": "After moving Paste to Nameless_0, Paste retained the exact same full session-scoped ID ending a990f200.",
+      "telemetry_projection": {
+        "source": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\telemetry.latest.json",
+        "roster": [],
+        "world_targets": [],
+        "ui": {}
+      },
+      "source_file_hashes": [
+        {
+          "path": "runs/dev-snapshots/20260809T162714.701375Z-topology-identity-after-move-first/live_frame_000001.png",
+          "size_bytes": 1714407,
+          "sha256": "10b3e222cc236cc363aeb964e0ede0518b0520f55443c6cc9afb3251a4074293"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T162714.701375Z-topology-identity-after-move-first/manifest.json",
+          "size_bytes": 384,
+          "sha256": "11e14455f9a0b163f5d402eec75c01bd5313c1ef3eaa48bb9befa4212858c4b8"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T162714.701375Z-topology-identity-after-move-first/telemetry.json",
+          "size_bytes": 120300,
+          "sha256": "507f4f8c888d7813cd1a2acbded4250ac607137810cb4d022ccd76d71b6f1073"
+        }
+      ]
+    },
+    {
+      "id": "identity_restored_second",
+      "source_path": "runs/dev-snapshots/20260809T162812.785980Z-topology-identity-restored-second",
+      "manifest_evidence": "After moving Paste back to Nameless_1, the same full session-scoped ID ending a990f200 remained.",
+      "telemetry_projection": {
+        "source": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\telemetry.latest.json",
+        "roster": [],
+        "world_targets": [],
+        "ui": {}
+      },
+      "source_file_hashes": [
+        {
+          "path": "runs/dev-snapshots/20260809T162812.785980Z-topology-identity-restored-second/live_frame_000001.png",
+          "size_bytes": 1714224,
+          "sha256": "afcf07d7d27c9ed7ccb480449c06e0cb2a69e8ad24c2cece6affbf8a544092e6"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T162812.785980Z-topology-identity-restored-second/manifest.json",
+          "size_bytes": 382,
+          "sha256": "e89de4e964c72612075e375727e1ea060af0235555734ce7eb26f23b82bbf9e6"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T162812.785980Z-topology-identity-restored-second/telemetry.json",
+          "size_bytes": 119169,
+          "sha256": "28df042d81c12e86bf677b8da45096b377e9ff67f218c9e950e37db53759dd80"
+        }
+      ]
+    },
+    {
+      "id": "final_tab",
+      "source_path": "runs/dev-snapshots/20260809T162915.781593Z-topology-final-after-tab",
+      "manifest_evidence": "Final sequence Tab changed active Nameless_0 to Nameless_1 without changing primary Hep or selected [Hep].",
+      "telemetry_projection": {
+        "source": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\telemetry.latest.json",
+        "roster": [],
+        "world_targets": [],
+        "ui": {}
+      },
+      "source_file_hashes": [
+        {
+          "path": "runs/dev-snapshots/20260809T162915.781593Z-topology-final-after-tab/live_frame_000001.png",
+          "size_bytes": 2213045,
+          "sha256": "e773aa7ce6ff13ca031ebf463ff02e35dc2cdc334a371d65344dcf665a9e3ed7"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T162915.781593Z-topology-final-after-tab/manifest.json",
+          "size_bytes": 364,
+          "sha256": "e962f4e3fe76af93ba7ba9248512ed2e4235e9e6d059f94ea9734688397d278f"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T162915.781593Z-topology-final-after-tab/telemetry.json",
+          "size_bytes": 107290,
+          "sha256": "b3c7e8ecc5690671221eca6c897b2af9993a073cca95f19cc6f316bfea8a82de"
+        }
+      ]
+    },
+    {
+      "id": "final_before_save",
+      "source_path": "runs/dev-snapshots/20260809T162949.914050Z-topology-final-before-save",
+      "manifest_evidence": "Later than acknowledgement cmd-89fd0b2b0c404ecbba3cd56f3580015d: active Nameless_1, primary Paste, selected [Paste], selection complete.",
+      "telemetry_projection": {
+        "source": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\telemetry.latest.json",
+        "roster": [],
+        "world_targets": [],
+        "ui": {}
+      },
+      "source_file_hashes": [
+        {
+          "path": "runs/dev-snapshots/20260809T162949.914050Z-topology-final-before-save/live_frame_000001.png",
+          "size_bytes": 2213865,
+          "sha256": "5f635527f30ed17fd97715b6a79239bf372f7a77ad9b5262be99b27a8b21a73b"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T162949.914050Z-topology-final-before-save/manifest.json",
+          "size_bytes": 368,
+          "sha256": "8aee5114e8bdbbafcca2a3af9f64a18269b25fc18460d1c84098055855c9b525"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T162949.914050Z-topology-final-before-save/telemetry.json",
+          "size_bytes": 108454,
+          "sha256": "64fb930da84d1d48f8daa68377f2cfbba9f6e099274d552295cc880644f69f15"
+        }
+      ]
+    },
+    {
+      "id": "final_after_save",
+      "source_path": "runs/dev-snapshots/20260809T163048.002989Z-topology-final-after-save",
+      "manifest_evidence": "Post-save engine state paired with changed quicksave files.",
+      "telemetry_projection": {
+        "source": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\telemetry.latest.json",
+        "roster": [],
+        "world_targets": [],
+        "ui": {}
+      },
+      "source_file_hashes": [
+        {
+          "path": "runs/dev-snapshots/20260809T163048.002989Z-topology-final-after-save/live_frame_000001.png",
+          "size_bytes": 2213865,
+          "sha256": "5f635527f30ed17fd97715b6a79239bf372f7a77ad9b5262be99b27a8b21a73b"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T163048.002989Z-topology-final-after-save/manifest.json",
+          "size_bytes": 366,
+          "sha256": "54383e0c5efd9cb48dcfbeeb59df9cc4f5eab16c467be3f933335307fe24020b"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T163048.002989Z-topology-final-after-save/telemetry.json",
+          "size_bytes": 108454,
+          "sha256": "4d116fbdfab20e3fa9679a92052485fc40f5e247e776bf070b91575a00602b72"
+        }
+      ]
+    },
+    {
+      "id": "mutated_before_load",
+      "source_path": "runs/dev-snapshots/20260809T163123.691121Z-topology-final-mutated-before-load",
+      "manifest_evidence": "Deliberate post-save mutation: active Nameless_0, primary Hep, selected [Hep], selection complete.",
+      "telemetry_projection": {
+        "source": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\telemetry.latest.json",
+        "roster": [],
+        "world_targets": [],
+        "ui": {}
+      },
+      "source_file_hashes": [
+        {
+          "path": "runs/dev-snapshots/20260809T163123.691121Z-topology-final-mutated-before-load/live_frame_000001.png",
+          "size_bytes": 2212737,
+          "sha256": "6bf7d788210733a20a7fb7a784c421c1ef74bb28e31a783fe56e58e4c616f676"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T163123.691121Z-topology-final-mutated-before-load/manifest.json",
+          "size_bytes": 384,
+          "sha256": "c2955687bf170e3a8e4e6e2f7869ea4cea6842842c34440cfe6eac63544ceada"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T163123.691121Z-topology-final-mutated-before-load/telemetry.json",
+          "size_bytes": 109170,
+          "sha256": "697328ec31f68668c88a7026f2526cfb6a6abf67a51e432544bcf51d8d88a3e9"
+        }
+      ]
+    },
+    {
+      "id": "quickload_later_engine_state",
+      "source_path": "runs/dev-snapshots/20260809T163203.330907Z-topology-final-quickload-transition",
+      "manifest_evidence": "F9 advanced identity session 2 to 3; both platoons and membership reappeared; primary and selected Paste were restored. Kenshi reset active to Nameless_0 rather than persisting saved Nameless_1.",
+      "telemetry_projection": {
+        "source": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\telemetry.latest.json",
+        "roster": [],
+        "world_targets": [],
+        "ui": {}
+      },
+      "source_file_hashes": [
+        {
+          "path": "runs/dev-snapshots/20260809T163203.330907Z-topology-final-quickload-transition/live_frame_000001.png",
+          "size_bytes": 2245000,
+          "sha256": "6b99c2f081ffe9969cf792277a8a280d12e1e5eeb34fe82e846af72d27826e54"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T163203.330907Z-topology-final-quickload-transition/manifest.json",
+          "size_bytes": 386,
+          "sha256": "0de7e5cbd05863cdf48b8bf8c3c8a678bc71220fc9e1658410eca258b2637ee1"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T163203.330907Z-topology-final-quickload-transition/telemetry.json",
+          "size_bytes": 105657,
+          "sha256": "5ae42857da59314414b1094cde761a77d83ca98675409a6804c83ab3e8d5c13d"
+        }
+      ]
+    },
+    {
+      "id": "final_disposition",
+      "source_path": "runs/dev-snapshots/20260809T163316.354260Z-topology-final-disposition-paused",
+      "manifest_evidence": "Sequence 1096: loaded, paused, modal_open false, active_command_id null, two complete platoons, primary Paste, selected [Paste].",
+      "telemetry_projection": {
+        "source": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\telemetry.latest.json",
+        "roster": [],
+        "world_targets": [],
+        "ui": {}
+      },
+      "source_file_hashes": [
+        {
+          "path": "runs/dev-snapshots/20260809T163316.354260Z-topology-final-disposition-paused/live_frame_000001.png",
+          "size_bytes": 2214809,
+          "sha256": "b6ab10257e7ee7c14078f54ee28fe7a77942175d094387443bbfd5733721a076"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T163316.354260Z-topology-final-disposition-paused/manifest.json",
+          "size_bytes": 383,
+          "sha256": "cd031256e6b70df33bec5932b138e77f9a584de7073c925f7b4e97dab9ee0579"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T163316.354260Z-topology-final-disposition-paused/telemetry.json",
+          "size_bytes": 105832,
+          "sha256": "f8c6fc194cb5da3c84f8f4967a7751feab83325295d9c14765be9874e69548c8"
+        }
+      ]
+    }
+  ],
+  "omission_policy": "Full screenshots and telemetry remain omitted; their exact paths, sizes, and SHA-256 hashes are retained beside the decisive telemetry projection."
+}

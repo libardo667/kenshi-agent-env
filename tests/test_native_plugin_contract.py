@@ -118,7 +118,7 @@ def test_native_plugin_requires_causal_exact_target_command_requests() -> None:
     assert "target_lifetime_changed" in source
     assert "target_role_invalid" in source
     assert "exact_dialogue_target_open" in source
-    assert "acknowledgements" in source
+    assert "commands" in source
     assert "MAX_NATIVE_ACKNOWLEDGEMENTS = 16" in source
     assert "MonitorActiveNativeCommand" in source
     monitor = source[source.index("void MonitorActiveNativeCommand") :]

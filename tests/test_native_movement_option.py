@@ -146,13 +146,8 @@ def observation(
             primary_character_id=SELECTED_ID,
             selected_character_ids=[SELECTED_ID],
             roster=[CharacterState(id=SELECTED_ID, name="Hep")],
-            native_control=NativeControlState(
-                active_command_id=(
-                    ack.command_id
-                    if ack is not None and ack.status is NativeCommandStatus.ACCEPTED
-                    else None
-                ),
-                acknowledgements=[ack] if ack is not None else [],
+            controller_commands=NativeControlState(
+                commands=[ack] if ack is not None else [],
             ),
         ),
         telemetry_age_seconds=0.0,
@@ -221,13 +216,8 @@ def map_travel_observation(
                     distance=1250.0,
                 )
             ],
-            native_control=NativeControlState(
-                active_command_id=(
-                    ack.command_id
-                    if ack is not None and ack.status is NativeCommandStatus.ACCEPTED
-                    else None
-                ),
-                acknowledgements=[ack] if ack is not None else [],
+            controller_commands=NativeControlState(
+                commands=[ack] if ack is not None else [],
             ),
         ),
         telemetry_age_seconds=0.0,
@@ -311,13 +301,8 @@ def squad_regroup_observation(
                     position=Vec3(x=1000.0, y=0.0, z=500.0),
                 ),
             ],
-            native_control=NativeControlState(
-                active_command_id=(
-                    ack.command_id
-                    if ack is not None and ack.status is NativeCommandStatus.ACCEPTED
-                    else None
-                ),
-                acknowledgements=[ack] if ack is not None else [],
+            controller_commands=NativeControlState(
+                commands=[ack] if ack is not None else [],
             ),
         ),
         telemetry_age_seconds=0.0,
@@ -413,13 +398,8 @@ def character_observation(
                 if target_present
                 else []
             ),
-            native_control=NativeControlState(
-                active_command_id=(
-                    ack.command_id
-                    if ack is not None and ack.status is NativeCommandStatus.ACCEPTED
-                    else None
-                ),
-                acknowledgements=[ack] if ack is not None else [],
+            controller_commands=NativeControlState(
+                commands=[ack] if ack is not None else [],
             ),
         ),
         telemetry_age_seconds=0.0,
@@ -433,7 +413,7 @@ def update(obs: Observation) -> StoreUpdate:
         delta=StateDelta(
             before_revision=None,
             after_revision=obs.world_revision,
-            changed_paths=("telemetry.native_control",),
+            changed_paths=("telemetry.controller_commands",),
         ),
     )
 
@@ -498,13 +478,8 @@ def exit_observation(
                     indoors=indoors,
                 )
             ],
-            native_control=NativeControlState(
-                active_command_id=(
-                    ack.command_id
-                    if ack is not None and ack.status is NativeCommandStatus.ACCEPTED
-                    else None
-                ),
-                acknowledgements=[ack] if ack is not None else [],
+            controller_commands=NativeControlState(
+                commands=[ack] if ack is not None else [],
             ),
         ),
         telemetry_age_seconds=0.0,
@@ -577,13 +552,8 @@ def context_observation(
                     default_task="operate_machinery",
                 )
             ],
-            native_control=NativeControlState(
-                active_command_id=(
-                    ack.command_id
-                    if ack is not None and ack.status is NativeCommandStatus.ACCEPTED
-                    else None
-                ),
-                acknowledgements=[ack] if ack is not None else [],
+            controller_commands=NativeControlState(
+                commands=[ack] if ack is not None else [],
             ),
         ),
         telemetry_age_seconds=0.0,
@@ -636,13 +606,8 @@ def production_observation(
                         "world.context_targets",
                     ],
                     "roster": [selected],
-                    "native_control": NativeControlState(
-                        active_command_id=(
-                            ack.command_id
-                            if ack is not None and ack.status is NativeCommandStatus.ACCEPTED
-                            else None
-                        ),
-                        acknowledgements=[ack] if ack is not None else [],
+                    "controller_commands": NativeControlState(
+                        commands=[ack] if ack is not None else [],
                     ),
                 }
             )
@@ -1431,7 +1396,7 @@ def test_building_exit_option_rejects_an_outdoor_start() -> None:
         raise AssertionError("outdoor building-exit start was accepted")
 
 
-def test_direction_option_rejects_acknowledgement_for_other_vector() -> None:
+def test_direction_option_rejects_command_for_other_vector() -> None:
     async def scenario() -> None:
         movement = option()
         movement.prepare(observation(1))

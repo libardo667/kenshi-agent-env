@@ -19,10 +19,14 @@ import typing
 
 import pytest
 
-from kenshi_agent.core.telemetry import NativeControlState, TelemetrySnapshot
+from kenshi_agent.core.telemetry import (
+    NativeCommandAcknowledgement,
+    NativeCommandStatus,
+    NativeControlState,
+    TelemetrySnapshot,
+)
 from kenshi_agent.core.transport import NativeCommandRequest
 
-SLICE_2_REMAINDER = "Slice 2 remainder: protocol 2.0 plural command records"
 SLICE_3 = "Slice 3: native captured-recipient command registry"
 SLICE_4 = "Slice 4: immutable dispatch basis at the input boundary"
 
@@ -70,14 +74,12 @@ def test_player_roster_is_not_serialised_under_a_squad_field() -> None:
     assert "platoons" in TelemetrySnapshot.model_fields
 
 
-@pytest.mark.xfail(strict=True, reason=SLICE_2_REMAINDER)
 def test_native_control_state_has_no_singular_active_command_id() -> None:
     """Section 9.4: plural command records replace the singular field."""
 
     assert "active_command_id" not in NativeControlState.model_fields
 
 
-@pytest.mark.xfail(strict=True, reason=SLICE_3)
 def test_two_disjoint_recipient_commands_can_be_retained_at_once() -> None:
     """Section 13.1: A/B travel and C mining coexist as retained orders.
 
@@ -90,27 +92,38 @@ def test_two_disjoint_recipient_commands_can_be_retained_at_once() -> None:
     records = getattr(NativeControlState, "model_fields", {}).get("commands")
     assert records is not None
 
-    state = NativeControlState.model_validate(
-        {
-            "available": True,
-            "commands": [
-                {
-                    "command_id": "cmd-" + "a" * 32,
-                    "recipient_character_ids": ["char-a", "char-b"],
-                    "status": "accepted",
-                },
-                {
-                    "command_id": "cmd-" + "b" * 32,
-                    "recipient_character_ids": ["char-c"],
-                    "status": "accepted",
-                },
-            ],
-        }
-    )
-    retained = state.commands  # type: ignore[attr-defined]
+    retained = NativeControlState(
+        available=True,
+        commands=[
+            NativeCommandAcknowledgement(
+                command_id="cmd-" + "a" * 32,
+                command="move_in_direction",
+                status=NativeCommandStatus.ACCEPTED,
+                reason="issued",
+                bearing_degrees=0.0,
+                distance_units=100.0,
+                selected_character_ids=["char-a", "char-b"],
+                based_on_telemetry_sequence=10,
+                acknowledged_at_telemetry_sequence=11,
+                accepted_at_telemetry_sequence=11,
+            ),
+            NativeCommandAcknowledgement(
+                command_id="cmd-" + "b" * 32,
+                command="move_in_direction",
+                status=NativeCommandStatus.ACCEPTED,
+                reason="issued",
+                bearing_degrees=90.0,
+                distance_units=100.0,
+                selected_character_ids=["char-c"],
+                based_on_telemetry_sequence=12,
+                acknowledged_at_telemetry_sequence=13,
+                accepted_at_telemetry_sequence=13,
+            ),
+        ],
+    ).active_commands()
 
     assert len(retained) == 2
-    first, second = (set(record.recipient_character_ids) for record in retained)
+    first, second = (set(record.selected_character_ids) for record in retained)
     assert not first & second
 
 

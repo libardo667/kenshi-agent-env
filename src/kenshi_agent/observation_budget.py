@@ -22,7 +22,7 @@ _TELEMETRY_COLLECTION_PATHS = (
     "telemetry.ui.dialogue_options",
     "telemetry.ui.visible_controls",
     "telemetry.selected_character_ids",
-    "telemetry.native_control.acknowledgements",
+    "telemetry.controller_commands.commands",
     "telemetry.roster",
     "telemetry.nearby_entities",
     "telemetry.world_targets",
@@ -119,20 +119,20 @@ def budget_observation_payload(
 
     telemetry = original.get("telemetry")
     if isinstance(telemetry, dict):
-        native = telemetry["native_control"]
+        native = telemetry["controller_commands"]
         retained_acknowledgement_ids = {
             item["command_id"]
-            for item in retained["telemetry"]["native_control"]["acknowledgements"]
+            for item in retained["telemetry"]["controller_commands"]["commands"]
         }
         for acknowledgement in sorted(
-            native["acknowledgements"],
+            native["commands"],
             key=_acknowledgement_sort_key,
         ):
             if acknowledgement["command_id"] in retained_acknowledgement_ids:
                 continue
             attempt(
                 _append_mutator(
-                    "telemetry.native_control.acknowledgements",
+                    "telemetry.controller_commands.commands",
                     acknowledgement,
                 )
             )
@@ -395,14 +395,14 @@ def irreducible_payload(
         return retained
 
     ui = telemetry["ui"]
-    native = telemetry["native_control"]
-    critical_acknowledgements = _critical_acknowledgements(native)
+    native = telemetry["controller_commands"]
+    critical_commands = _critical_commands(native)
     referenced_target_ids = {
         value
         for value in (
             ui["dialogue_target_id"],
             native["last_target_id"],
-            *(item["target_id"] for item in critical_acknowledgements),
+            *(item["target_id"] for item in critical_commands),
         )
         if value is not None
     }
@@ -421,7 +421,7 @@ def irreducible_payload(
     retained_ui["visible_controls"] = None if ui["visible_controls"] is None else []
 
     retained_native = deepcopy(native)
-    retained_native["acknowledgements"] = critical_acknowledgements
+    retained_native["commands"] = critical_commands
 
     retained["telemetry"] = deepcopy(telemetry)
     del retained["telemetry"]["camera"]
@@ -429,7 +429,7 @@ def irreducible_payload(
         {
             "capabilities": [],
             "ui": retained_ui,
-            "native_control": retained_native,
+            "controller_commands": retained_native,
             "roster": sorted(
                 (deepcopy(character) for character in telemetry["roster"]),
                 key=_entity_sort_key,
@@ -512,19 +512,22 @@ def _memory_sort_key(memory: JsonObject) -> tuple[float, str, str]:
     )
 
 
-def _critical_acknowledgements(native: JsonObject) -> list[JsonObject]:
-    acknowledgements = native["acknowledgements"]
-    if not acknowledgements:
+def _critical_commands(native: JsonObject) -> list[JsonObject]:
+    commands = native["commands"]
+    if not commands:
         return []
 
     critical_ids: set[str] = set()
-    if native["active_command_id"] is not None:
-        critical_ids.add(native["active_command_id"])
-    critical_ids.add(max(acknowledgements, key=_acknowledgement_sort_key)["command_id"])
+    critical_ids.update(
+        command["command_id"]
+        for command in commands
+        if command["status"] == "accepted"
+    )
+    critical_ids.add(max(commands, key=_acknowledgement_sort_key)["command_id"])
     return sorted(
         (
             deepcopy(item)
-            for item in acknowledgements
+            for item in commands
             if item["command_id"] in critical_ids
         ),
         key=_acknowledgement_sort_key,

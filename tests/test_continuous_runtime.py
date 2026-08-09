@@ -1972,13 +1972,8 @@ class NativeDirectionEnvironment(RevisionEnvironment):
             if self.command is not None
             else None
         )
-        native_control = NativeControlState(
-            active_command_id=(
-                self.command.command_id
-                if self.command is not None and not self.completed and not self.cancelled
-                else None
-            ),
-            acknowledgements=([acknowledgement] if acknowledgement is not None else []),
+        controller_commands = NativeControlState(
+            commands=([acknowledgement] if acknowledgement is not None else []),
             last_command_sequence=1 if acknowledgement is not None else 0,
             last_command=("move_in_direction" if acknowledgement is not None else None),
             last_result=(
@@ -2008,7 +2003,7 @@ class NativeDirectionEnvironment(RevisionEnvironment):
                                 alive=True,
                             )
                         ],
-                        "native_control": native_control,
+                        "controller_commands": controller_commands,
                     }
                 )
             },
@@ -2114,7 +2109,7 @@ def test_targetless_direction_is_owned_until_its_native_arrival(
                             ],
                             success_conditions=[
                                 condition(
-                                    "telemetry.native_control.last_result",
+                                    "telemetry.controller_commands.last_result",
                                     NATIVE_WALK_DESTINATION_REACHED_RESULT,
                                     "control.move_in_direction",
                                 )
@@ -2227,7 +2222,7 @@ def test_interruptible_native_move_applies_a_pause_handoff_before_replanning(
                             ],
                             success_conditions=[
                                 condition(
-                                    "telemetry.native_control.last_result",
+                                    "telemetry.controller_commands.last_result",
                                     NATIVE_WALK_DESTINATION_REACHED_RESULT,
                                     "control.move_in_direction",
                                 )
@@ -2283,7 +2278,7 @@ def test_interruptible_native_move_applies_a_pause_handoff_before_replanning(
                                     "game.pause",
                                 ),
                                 condition(
-                                    "telemetry.native_control.command_active",
+                                    "telemetry.controller_commands.command_active",
                                     False,
                                     "control.move_in_direction",
                                 ),
@@ -2393,7 +2388,7 @@ def test_native_move_timeout_pauses_before_the_planner_can_run_again(
                             ],
                             success_conditions=[
                                 condition(
-                                    "telemetry.native_control.last_result",
+                                    "telemetry.controller_commands.last_result",
                                     NATIVE_WALK_DESTINATION_REACHED_RESULT,
                                     "control.move_in_direction",
                                 )

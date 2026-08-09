@@ -1,0 +1,38 @@
+{
+  "protocol": "2.0.0",
+  "cutover_date": "2026-08-09",
+  "parent_commit": "1d53e57e787309975e75b710eba96b22d1feb12d",
+  "temporary_native_single_record_deadline": "2026-09-20",
+  "old_dll": {
+    "protocol": "1.21.0",
+    "path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260809-protocol-2-cutover\\pre-2.0\\KenshiAgentTelemetry.dll",
+    "sha256": "91526b828e44035b0cb6de5a22b7cc5ad0c2e392b66a7b8adcbf9ae9403d8db8",
+    "size_bytes": 424448
+  },
+  "new_dll": {
+    "protocol": "2.0.0",
+    "built_path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\build\\native\\bin\\KenshiAgentTelemetry.dll",
+    "backup_path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260809-protocol-2-cutover\\protocol-2.0\\KenshiAgentTelemetry.dll",
+    "installed_path": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll",
+    "sha256": "ac96f7e6b41edcff17f8c007ab7dc41b639ccbba82ea96aee7318b41ceb9bf1d",
+    "size_bytes": 423936,
+    "built_backup_installed_equal": true
+  },
+  "native_conformance": {
+    "path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\build\\native\\bin\\NativeCommandProtocolTests.exe",
+    "sha256": "ed0a916277e235ca07db2691d8a48f32f49e75b3951cbd30672cf2f90bc63048",
+    "size_bytes": 292352,
+    "result": "Native protocol fixtures and semantics passed."
+  },
+  "commands": {
+    "build": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build_native.ps1",
+    "install_2_0": "Copy-Item -LiteralPath 'C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\build\\native\\bin\\KenshiAgentTelemetry.dll' -Destination 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll' -Force",
+    "reinstall_2_0_backup": "Copy-Item -LiteralPath 'C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260809-protocol-2-cutover\\protocol-2.0\\KenshiAgentTelemetry.dll' -Destination 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll' -Force",
+    "rollback_1_21": "Copy-Item -LiteralPath 'C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260809-protocol-2-cutover\\pre-2.0\\KenshiAgentTelemetry.dll' -Destination 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll' -Force"
+  },
+  "proof_boundary": {
+    "source_and_test": "Protocol 2.0 strict model, producer shape, plural consumers, fixtures, schemas, generated docs, and native conformance.",
+    "installed": "The built 2.0 DLL and installed DLL hashes match while Kenshi was not running.",
+    "live": "No fresh game-process load or end-to-end Protocol 2.0 command run is claimed by this cutover."
+  }
+}

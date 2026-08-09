@@ -225,7 +225,7 @@ def test_native_acknowledgement_requires_causal_sequences_for_each_status() -> N
         )
 
 
-def test_native_control_lookup_is_command_id_specific() -> None:
+def test_controller_commands_lookup_is_command_id_specific() -> None:
     acknowledgement = NativeCommandAcknowledgement(
         command_id=COMMAND_ID,
         command="approach_confirmed_vendor",
@@ -237,10 +237,10 @@ def test_native_control_lookup_is_command_id_specific() -> None:
         acknowledged_at_telemetry_sequence=8,
         accepted_at_telemetry_sequence=8,
     )
-    state = NativeControlState(acknowledgements=[acknowledgement])
+    state = NativeControlState(commands=[acknowledgement])
 
-    assert state.acknowledgement_for(COMMAND_ID) == acknowledgement
-    assert state.acknowledgement_for("cmd-ffffffffffffffffffffffffffffffff") is None
+    assert state.command_for(COMMAND_ID) == acknowledgement
+    assert state.command_for("cmd-ffffffffffffffffffffffffffffffff") is None
 
 
 def test_native_request_writer_atomically_replaces_one_bounded_json_file(

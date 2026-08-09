@@ -53,8 +53,8 @@ def test_evaluate_log_counts_events(tmp_path: Path) -> None:
             "payload": {
                 "telemetry_stale": True,
                 "telemetry": {
-                    "native_control": {
-                        "acknowledgements": [
+                    "controller_commands": {
+                        "commands": [
                             {
                                 "command_id": ("cmd-0123456789abcdef0123456789abcdef"),
                                 "status": "completed",
@@ -150,7 +150,7 @@ def test_evaluate_log_counts_events(tmp_path: Path) -> None:
     assert metrics.options_failed == 0
     assert metrics.options_cancelled == 0
     assert metrics.option_success_percentage == 100.0
-    assert metrics.native_command_acknowledgements == 2
+    assert metrics.native_command_records == 2
     assert metrics.native_commands_accepted == 1
     assert metrics.native_commands_completed == 1
     assert metrics.native_commands_rejected == 1
@@ -285,9 +285,9 @@ def test_the_observation_digest_keeps_what_the_evaluator_reads() -> None:
                     inventory_complete=True,
                 )
             ],
-            native_control=NativeControlState(
+            controller_commands=NativeControlState(
                 available=True,
-                acknowledgements=[
+                commands=[
                     NativeCommandAcknowledgement(
                         command_id=command_id,
                         command="approach_confirmed_vendor",
@@ -309,8 +309,8 @@ def test_the_observation_digest_keeps_what_the_evaluator_reads() -> None:
 
     # Exactly the fields metrics.py reads off an observation.
     assert digest["telemetry_stale"] is True
-    acknowledgements = digest["telemetry"]["native_control"]["acknowledgements"]
-    assert [item["command_id"] for item in acknowledgements] == [command_id]
+    commands = digest["telemetry"]["controller_commands"]["commands"]
+    assert [item["command_id"] for item in commands] == [command_id]
 
     # Enough to orient a human reading the log.
     assert digest["telemetry"]["ui"]["active_screen"] == "trade"
@@ -414,8 +414,8 @@ def test_evaluate_log_conserves_every_recognized_event_into_exact_metrics(
             "payload": {
                 "telemetry_stale": True,
                 "telemetry": {
-                    "native_control": {
-                        "acknowledgements": [
+                    "controller_commands": {
+                        "commands": [
                             {
                                 "command_id": command_1,
                                 "status": "completed",
@@ -701,7 +701,7 @@ def test_evaluate_log_conserves_every_recognized_event_into_exact_metrics(
         command_mismatches=11,
         command_receipts=2,
         command_receipts_with_post_revision=1,
-        native_command_acknowledgements=3,
+        native_command_records=3,
         native_commands_accepted=2,
         native_commands_completed=1,
         native_commands_rejected=1,
@@ -998,7 +998,7 @@ def test_missing_primitive_count_is_zero_and_native_terminal_statuses_accumulate
     metrics = evaluate_log(path)
 
     assert metrics.primitive_actions == 0
-    assert metrics.native_command_acknowledgements == 6
+    assert metrics.native_command_records == 6
     assert metrics.native_commands_accepted == 4
     assert metrics.native_commands_completed == 2
     assert metrics.native_commands_rejected == 2
@@ -1042,8 +1042,8 @@ def test_no_latency_return_preserves_every_derived_metric_and_transition(
             "event_type": "observation",
             "payload": {
                 "telemetry": {
-                    "native_control": {
-                        "acknowledgements": [
+                    "controller_commands": {
+                        "commands": [
                             {
                                 "command_id": "cmd-" + "c" * 32,
                                 "status": "cancelled",
@@ -1084,7 +1084,7 @@ def test_no_latency_return_preserves_every_derived_metric_and_transition(
 
     assert metrics.memory_lifecycle_transitions == {"reinforce": 2}
     assert metrics.receipts_with_post_command_revision_percentage == 50.0
-    assert metrics.native_command_acknowledgements == 3
+    assert metrics.native_command_records == 3
     assert metrics.native_commands_accepted == 3
     assert metrics.native_commands_completed == 1
     assert metrics.native_commands_cancelled == 1

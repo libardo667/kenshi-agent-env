@@ -175,6 +175,16 @@
           "title": "Path",
           "type": "string"
         },
+        "source_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Sha256",
+          "type": "string"
+        },
+        "enclosing_function": {
+          "minLength": 1,
+          "title": "Enclosing Function",
+          "type": "string"
+        },
         "line": {
           "exclusiveMinimum": 0,
           "title": "Line",
@@ -188,6 +198,8 @@
       },
       "required": [
         "path",
+        "source_sha256",
+        "enclosing_function",
         "line",
         "contains"
       ],

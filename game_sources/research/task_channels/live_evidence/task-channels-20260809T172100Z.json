@@ -1,0 +1,203 @@
+{
+  "schema_version": 1,
+  "kind": "reduced_live_evidence",
+  "run_id": "task-channels-20260809T172100Z",
+  "source_manifest_sha256": "3d970305672c88bc0ed749c4255215602dfeb44f6a5e8a0181c134c15e91451a",
+  "manifest": {
+    "schema_version": 1,
+    "run_id": "task-channels-20260809T172100Z",
+    "goal": "Live-prove a retained ordinary order alongside current activity without fabricating a configured Job or permanent Job.",
+    "source_parent": "89457e06a47038ebc58e808f03ceb3d8703611de",
+    "protocol_version": "1.20.0",
+    "binary_provenance": {
+      "built_dll": {
+        "path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\build\\native\\bin\\KenshiAgentTelemetry.dll",
+        "sha256": "3746e1dfd1feb9564c4a539388790b7d3f7f19e3971d965c08b223e8766b0d2f",
+        "size_bytes": 414208
+      },
+      "installed_dll": {
+        "path": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll",
+        "sha256": "3746e1dfd1feb9564c4a539388790b7d3f7f19e3971d965c08b223e8766b0d2f",
+        "size_bytes": 414208
+      },
+      "native_conformance_exe": {
+        "path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\build\\native\\bin\\NativeCommandProtocolTests.exe",
+        "sha256": "08c960a8b4e0049f4bc42857157922736a8ce500e6dcaabbf51ae16c4f028a95",
+        "size_bytes": 284160,
+        "result": "Native protocol fixtures and semantics passed."
+      },
+      "provenance_result": "chain consistent YES; protocol 1.20.0 present; 48 declared capabilities present; generated header current"
+    },
+    "snapshots": [
+      {
+        "id": "pre_dispatch",
+        "path": "runs/dev-snapshots/20260809T172100.539288Z-task-channels-pre-dispatch",
+        "telemetry_sequence": 184,
+        "evidence": "Fresh 1.20 loaded and paused state: selected and primary Paste; Paste and Hep had complete empty ordinary orders, Jobs, and permanent Jobs, with null current activity; one exact Iron Resource advertised operate."
+      },
+      {
+        "id": "later_engine_evidence",
+        "path": "runs/dev-snapshots/20260809T172213.562147Z-task-channels-retained-order-and-activity",
+        "telemetry_sequence": 329,
+        "evidence": "Forty-nine sequences after acknowledgement: Paste ordinary_orders contained one exact OPERATE_MACHINERY at position 0 while current_activity independently contained OPERATE_MACHINERY with null position; Jobs and permanent Jobs remained complete and empty."
+      },
+      {
+        "id": "final_disposition",
+        "path": "runs/dev-snapshots/20260809T172240.393151Z-task-channels-final-disposition",
+        "telemetry_sequence": 383,
+        "evidence": "Loaded, paused, modal-free world with no active native command. The retained ordinary order and separate current activity were still present; Jobs and permanent Jobs remained complete and empty."
+      }
+    ],
+    "action": {
+      "pre_dispatch_state": "pre_dispatch snapshot sequence 184; the request was authored from fresh telemetry sequence 279 in the same identity session and exact selected-recipient/target basis",
+      "request_path": "runs/task-channels-20260809T172100Z/request.json",
+      "request": "cmd-536652d87c7b42e59187dc55c2278963 perform_context_action operate for selected Paste against the exact observed Iron Resource",
+      "transport_note": "The diagnostic helper wrote the request, then its optional WSL hotkey path raised Win32InputController is available only on Windows. The native file-change watcher independently processed the request; no hotkey acknowledgement is claimed.",
+      "acknowledgement": {
+        "status": "completed",
+        "reason": "context_task_started",
+        "based_on_telemetry_sequence": 279,
+        "acknowledged_at_telemetry_sequence": 280,
+        "accepted_at_telemetry_sequence": 280,
+        "terminal_at_telemetry_sequence": 280
+      },
+      "later_engine_evidence": "Snapshot sequence 329 persisted the ordinary order and separate current activity while both Job channels were empty; this later state, not the returning call or acknowledgement, is the live proof.",
+      "final_disposition": "Recovery completed. Snapshot sequence 383 was loaded, paused, modal-free, with active_command_id null. Retained work was deliberately left visible rather than erased before the final evidence frame."
+    },
+    "classification": {
+      "source_proven": [
+        "KenshiLib separately owns orders, jobs, permajobs, the Jobs-enabled flag, and currentGoal.",
+        "ActionDeque exposes first, second, and last accessors plus empty and one-item predicates, but no total-size accessor.",
+        "ForgottenGUI's OrdersPanel supports configured indexed Jobs but does not own ordinary orders or current activity."
+      ],
+      "test_proven": [
+        "Strict model, schema, shared native fixture, compiled conformance target, superseded-shape rejection, explicit unknown facts, and unattributed monitoring behavior."
+      ],
+      "live_proven": [
+        "One retained ordinary OPERATE_MACHINERY order and one separate current OPERATE_MACHINERY activity coexisted for Paste while Jobs and permanent Jobs were complete and empty.",
+        "The current activity position remained null instead of borrowing ordinary queue position 0."
+      ],
+      "withheld": [
+        "The matching ordinary task and activity names do not by themselves establish controller ownership; the run proves separate engine channels, not a general ownership correlator.",
+        "No live multi-entry ordinary queue was authored, so unknown totals and sampled tail positions remain source- and test-proven only.",
+        "No unknown target was observed in this live run; null target preservation remains source- and test-proven only."
+      ]
+    }
+  },
+  "request": {
+    "schema_version": "1.4",
+    "command_id": "cmd-536652d87c7b42e59187dc55c2278963",
+    "command": "perform_context_action",
+    "control_mode": "native_assisted",
+    "identity_session_id": "session-9fc18a8a8ec4d96a-0000000000000002",
+    "based_on_revision": {
+      "telemetry_sequence": 279,
+      "frame_sequence": null,
+      "capability_epoch": 0,
+      "observed_at_monotonic": 22181.066387799
+    },
+    "selected_character_ids": [
+      "entity-9fc18a8a8ec4d96a-0000000000000002-00000001-00000000-00000000-00000001-edab4e00"
+    ],
+    "target_id": "entity-9fc18a8a8ec4d96a-0000000000000002-00000000-00000816-00002b67-00000050-a96f6b00",
+    "context_action": "operate",
+    "bearing_degrees": 0.0,
+    "distance_units": 0.0,
+    "minimum_output_quantity": 1,
+    "destination_id": "",
+    "section_name": "",
+    "slot_x": 0,
+    "slot_y": 0,
+    "paused": false,
+    "speed_multiplier": 0.0,
+    "quantity": 0
+  },
+  "request_sha256": "b6d52a769178459c83562698d1957ae8e4db3f06b177a2d0f06f5da4dc0267c2",
+  "decisive_snapshots": [
+    {
+      "id": "pre_dispatch",
+      "source_path": "runs/dev-snapshots/20260809T172100.539288Z-task-channels-pre-dispatch",
+      "manifest_evidence": "Fresh 1.20 loaded and paused state: selected and primary Paste; Paste and Hep had complete empty ordinary orders, Jobs, and permanent Jobs, with null current activity; one exact Iron Resource advertised operate.",
+      "telemetry_projection": {
+        "source": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\telemetry.latest.json",
+        "roster": [],
+        "world_targets": [],
+        "ui": {}
+      },
+      "source_file_hashes": [
+        {
+          "path": "runs/dev-snapshots/20260809T172100.539288Z-task-channels-pre-dispatch/live_frame_000001.png",
+          "size_bytes": 2217340,
+          "sha256": "31c822cba6d1b7a37667fd5bb68deb3f5169bd41edaad12b57df0210eb4e54a0"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T172100.539288Z-task-channels-pre-dispatch/manifest.json",
+          "size_bytes": 368,
+          "sha256": "e50220ae106bab0c8c9cbf7e88c0296692f37f62d2bc073019e937d500f35a8d"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T172100.539288Z-task-channels-pre-dispatch/telemetry.json",
+          "size_bytes": 105781,
+          "sha256": "424731450dbf555b82396ae588199003e3e3dffcc5282ad37eb4514bc9f29b84"
+        }
+      ]
+    },
+    {
+      "id": "later_engine_evidence",
+      "source_path": "runs/dev-snapshots/20260809T172213.562147Z-task-channels-retained-order-and-activity",
+      "manifest_evidence": "Forty-nine sequences after acknowledgement: Paste ordinary_orders contained one exact OPERATE_MACHINERY at position 0 while current_activity independently contained OPERATE_MACHINERY with null position; Jobs and permanent Jobs remained complete and empty.",
+      "telemetry_projection": {
+        "source": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\telemetry.latest.json",
+        "roster": [],
+        "world_targets": [],
+        "ui": {}
+      },
+      "source_file_hashes": [
+        {
+          "path": "runs/dev-snapshots/20260809T172213.562147Z-task-channels-retained-order-and-activity/live_frame_000001.png",
+          "size_bytes": 2089321,
+          "sha256": "d9bdf13707b657c00a9c3a9a458f8f750a4a9699f81db86749553873a601a170"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T172213.562147Z-task-channels-retained-order-and-activity/manifest.json",
+          "size_bytes": 398,
+          "sha256": "53a3235bc521a10b8e3faeb6c9c3568685a72c685357724d31cd5017c9defcfe"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T172213.562147Z-task-channels-retained-order-and-activity/telemetry.json",
+          "size_bytes": 107428,
+          "sha256": "c4daab84f2ce9460afed9a2b5a1ce582a191ec3ad0632d0b78a69a877c171509"
+        }
+      ]
+    },
+    {
+      "id": "final_disposition",
+      "source_path": "runs/dev-snapshots/20260809T172240.393151Z-task-channels-final-disposition",
+      "manifest_evidence": "Loaded, paused, modal-free world with no active native command. The retained ordinary order and separate current activity were still present; Jobs and permanent Jobs remained complete and empty.",
+      "telemetry_projection": {
+        "source": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\telemetry.latest.json",
+        "roster": [],
+        "world_targets": [],
+        "ui": {}
+      },
+      "source_file_hashes": [
+        {
+          "path": "runs/dev-snapshots/20260809T172240.393151Z-task-channels-final-disposition/live_frame_000001.png",
+          "size_bytes": 2089321,
+          "sha256": "d9bdf13707b657c00a9c3a9a458f8f750a4a9699f81db86749553873a601a170"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T172240.393151Z-task-channels-final-disposition/manifest.json",
+          "size_bytes": 378,
+          "sha256": "8144efbac18d8404c9b100478538a66ee92aea83d821bd936da2475193231f88"
+        },
+        {
+          "path": "runs/dev-snapshots/20260809T172240.393151Z-task-channels-final-disposition/telemetry.json",
+          "size_bytes": 107428,
+          "sha256": "12c0bf3a58806017d65e2815bd53190a2b5ad30349199209d3eed610ee460300"
+        }
+      ]
+    }
+  ],
+  "omission_policy": "Full screenshots and telemetry remain omitted; their exact paths, sizes, and SHA-256 hashes are retained beside the decisive telemetry projection."
+}

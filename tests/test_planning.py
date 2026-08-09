@@ -169,7 +169,7 @@ def interruption_pause_step(
                 required_capabilities=["game.pause"],
             ),
             field_condition(
-                "telemetry.native_control.command_active",
+                "telemetry.controller_commands.command_active",
                 False,
             ),
         ],
@@ -306,7 +306,7 @@ def rich_observation() -> Observation:
             ),
             "primary_character_id": "chosen",
             "selected_character_ids": ["chosen", "flagged"],
-            "native_control": NativeControlState(
+            "controller_commands": NativeControlState(
                 available=True,
                 last_command_sequence=19,
                 last_command="perform_context_action",
@@ -385,13 +385,13 @@ def test_every_field_condition_path_resolves_its_observed_scalar() -> None:
         FieldConditionPath.TELEMETRY_UI_SELECTED_CHARACTER_ID: "chosen",
         FieldConditionPath.TELEMETRY_SELECTED_CHARACTER_COUNT: 2,
         FieldConditionPath.TELEMETRY_ACTIVE_SHOP_TRADER_COUNT: 3,
-        FieldConditionPath.TELEMETRY_NATIVE_CONTROL_AVAILABLE: True,
-        FieldConditionPath.TELEMETRY_NATIVE_CONTROL_COMMAND_ACTIVE: False,
-        FieldConditionPath.TELEMETRY_NATIVE_CONTROL_LAST_COMMAND_SEQUENCE: 19,
-        FieldConditionPath.TELEMETRY_NATIVE_CONTROL_LAST_COMMAND: ("perform_context_action"),
-        FieldConditionPath.TELEMETRY_NATIVE_CONTROL_LAST_RESULT: "completed",
-        FieldConditionPath.TELEMETRY_NATIVE_CONTROL_LAST_TARGET: "Copper Resource",
-        FieldConditionPath.TELEMETRY_NATIVE_CONTROL_LAST_TARGET_ID: "mine",
+        FieldConditionPath.TELEMETRY_CONTROLLER_COMMANDS_AVAILABLE: True,
+        FieldConditionPath.TELEMETRY_CONTROLLER_COMMANDS_COMMAND_ACTIVE: False,
+        FieldConditionPath.TELEMETRY_CONTROLLER_COMMANDS_LAST_COMMAND_SEQUENCE: 19,
+        FieldConditionPath.TELEMETRY_CONTROLLER_COMMANDS_LAST_COMMAND: ("perform_context_action"),
+        FieldConditionPath.TELEMETRY_CONTROLLER_COMMANDS_LAST_RESULT: "completed",
+        FieldConditionPath.TELEMETRY_CONTROLLER_COMMANDS_LAST_TARGET: "Copper Resource",
+        FieldConditionPath.TELEMETRY_CONTROLLER_COMMANDS_LAST_TARGET_ID: "mine",
         FieldConditionPath.SELECTED_ALIVE: True,
         FieldConditionPath.SELECTED_CONSCIOUS: False,
         FieldConditionPath.SELECTED_DOWN: True,
@@ -1543,7 +1543,7 @@ def test_interrupt_patch_requires_every_fact_in_the_pause_handoff() -> None:
         update={
             "success_conditions": [
                 field_condition("telemetry.game.speed_multiplier", True),
-                field_condition("telemetry.native_control.command_active", False),
+                field_condition("telemetry.controller_commands.command_active", False),
             ]
         }
     )

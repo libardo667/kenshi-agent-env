@@ -1,0 +1,1270 @@
+{
+  "schema_version": 1,
+  "kind": "reduced_live_evidence",
+  "conclusion": "inventory_transfer",
+  "runs": [
+    {
+      "run_id": "closure-loot-20260808",
+      "command_ids": [
+        "cmd-2538e63cec614d87a06511aa925f4256",
+        "cmd-460ee0bb31814fd98e7d7057747348f6"
+      ],
+      "events_file": {
+        "path": "runs/closure-loot-20260808/events.jsonl",
+        "size_bytes": 1919035,
+        "sha256": "1685cde14ea6af6e56688441a214029793cc69b046bd36412865bfcdbcf6df3f"
+      },
+      "request_acknowledgement_and_disposition_events": [
+        {
+          "event_type": "plan_step_started",
+          "run_id": "closure-loot-20260808",
+          "step_index": 1,
+          "timestamp": "2026-08-08T19:41:51.823556+00:00",
+          "payload": {
+            "plan_id": "plan-pc-2",
+            "plan_version": 1,
+            "step_id": "step-1",
+            "world_revision": {
+              "telemetry_sequence": 1504,
+              "frame_sequence": 2,
+              "capability_epoch": 1,
+              "observed_at_monotonic": 133691.984
+            },
+            "control_mode": "native_assisted",
+            "reason": "Bound operation was authorized and reserved execution budgets.",
+            "evidence": {
+              "action_start_revision": {
+                "telemetry_sequence": 1504,
+                "frame_sequence": 2,
+                "capability_epoch": 1,
+                "observed_at_monotonic": 133691.984
+              },
+              "operation_id": "cmd-460ee0bb31814fd98e7d7057747348f6",
+              "handler_key": "resources.transfer_item",
+              "remaining_actions_before_commit": 0,
+              "completion_owner": "controller_terminal",
+              "completion_conditions": []
+            }
+          }
+        },
+        {
+          "event_type": "input_boundary_revalidated",
+          "run_id": "closure-loot-20260808",
+          "step_index": 1,
+          "timestamp": "2026-08-08T19:41:53.478740+00:00",
+          "payload": {
+            "plan_id": "plan-pc-2",
+            "plan_version": 1,
+            "step_id": "step-1",
+            "world_revision": {
+              "telemetry_sequence": 1504,
+              "frame_sequence": 2,
+              "capability_epoch": 1,
+              "observed_at_monotonic": 133691.984
+            },
+            "control_mode": "native_assisted",
+            "reason": "Assumptions, preconditions, failure conditions, control mode, and input authority still hold on the latest canonical revision inside the input lease.",
+            "evidence": {
+              "command_id": "cmd-460ee0bb31814fd98e7d7057747348f6",
+              "decision": "revalidated",
+              "lease_wait_seconds": 0.0,
+              "validated_revision": {
+                "telemetry_sequence": 1504,
+                "frame_sequence": 2,
+                "capability_epoch": 1,
+                "observed_at_monotonic": 133691.984
+              },
+              "boundary_revision": {
+                "telemetry_sequence": 1504,
+                "frame_sequence": null,
+                "capability_epoch": 1,
+                "observed_at_monotonic": 133692.078
+              }
+            }
+          }
+        },
+        {
+          "event_type": "action_receipt",
+          "run_id": "closure-loot-20260808",
+          "step_index": 1,
+          "timestamp": "2026-08-08T19:41:53.522650+00:00",
+          "payload": {
+            "action": {
+              "kind": "transfer_item",
+              "source_owner_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000001-37c709c0",
+              "destination_owner_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000002-91c43c00",
+              "section_name": "back",
+              "slot_x": 0,
+              "slot_y": 0,
+              "item_name": "Katana"
+            },
+            "control_mode": "native_assisted",
+            "command_id": "cmd-460ee0bb31814fd98e7d7057747348f6",
+            "started_after_revision": {
+              "telemetry_sequence": 1504,
+              "frame_sequence": 2,
+              "capability_epoch": 1,
+              "observed_at_monotonic": 133691.984
+            },
+            "completed_at_revision": {
+              "telemetry_sequence": 1506,
+              "frame_sequence": 3,
+              "capability_epoch": 1,
+              "observed_at_monotonic": 133693.734
+            },
+            "causal_revision_advanced": true,
+            "native_acknowledgement": {
+              "command_id": "cmd-460ee0bb31814fd98e7d7057747348f6",
+              "command": "transfer_item",
+              "status": "completed",
+              "reason": "item_transferred",
+              "target_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000001-37c709c0",
+              "context_action": "",
+              "bearing_degrees": 0.0,
+              "distance_units": 0.0,
+              "minimum_output_quantity": 1,
+              "destination_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000002-91c43c00",
+              "section_name": "back",
+              "slot_x": 0,
+              "slot_y": 0,
+              "selected_character_ids": [
+                "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000001-daeefe00",
+                "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000002-91c43c00"
+              ],
+              "based_on_telemetry_sequence": 1504,
+              "acknowledged_at_telemetry_sequence": 1505,
+              "accepted_at_telemetry_sequence": 1505,
+              "terminal_at_telemetry_sequence": 1505
+            },
+            "input_boundary": {
+              "decision": "revalidated",
+              "code": "allowed",
+              "reason": "Assumptions, preconditions, failure conditions, control mode, and input authority still hold on the latest canonical revision inside the input lease.",
+              "lease_wait_seconds": 0.0,
+              "plan_id": "plan-pc-2",
+              "plan_version": 1,
+              "step_id": "step-1",
+              "validated_revision": {
+                "telemetry_sequence": 1504,
+                "frame_sequence": 2,
+                "capability_epoch": 1,
+                "observed_at_monotonic": 133691.984
+              },
+              "boundary_revision": {
+                "telemetry_sequence": 1504,
+                "frame_sequence": null,
+                "capability_epoch": 1,
+                "observed_at_monotonic": 133692.078
+              },
+              "evaluations": [
+                {
+                  "condition": {
+                    "kind": "telemetry_fresh",
+                    "operator": "equals",
+                    "expected": true,
+                    "max_age_seconds": 3.0
+                  },
+                  "result": "true",
+                  "actual": true,
+                  "reason": "Observed True; expected equals True."
+                },
+                {
+                  "condition": {
+                    "kind": "telemetry_fresh",
+                    "operator": "equals",
+                    "expected": true,
+                    "max_age_seconds": 3.0
+                  },
+                  "result": "true",
+                  "actual": true,
+                  "reason": "Observed True; expected equals True."
+                }
+              ]
+            },
+            "calibration": null,
+            "semantic": {
+              "action_kind": "transfer_item",
+              "contract_version": "1.0",
+              "target_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000001-37c709c0",
+              "resolved_label": "Katana to entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000002-91c43c00",
+              "resolved_role": null,
+              "resolved_bounds": null,
+              "source_revision": {
+                "telemetry_sequence": 1504,
+                "frame_sequence": 2,
+                "capability_epoch": 1,
+                "observed_at_monotonic": 133691.984
+              },
+              "option_id": null,
+              "revalidation": "Re-proved both inventories open and the named item still in its slot, then let Kenshi adjudicate the transfer and report its own verdict.",
+              "quicksave": null
+            },
+            "advisor": null,
+            "accepted": true,
+            "executed": true,
+            "dry_run": false,
+            "started_at": "2026-08-08T19:41:51.824554Z",
+            "finished_at": "2026-08-08T19:41:52.264313Z",
+            "primitive_actions": 6,
+            "message": "Input sent to the Kenshi window. Native acknowledgement 'completed' for cmd-460ee0bb31814fd98e7d7057747348f6: item_transferred.",
+            "error_type": null
+          }
+        },
+        {
+          "event_type": "action_outcome",
+          "run_id": "closure-loot-20260808",
+          "step_index": 1,
+          "timestamp": "2026-08-08T19:41:53.803371+00:00",
+          "payload": {
+            "outcome_id": "ao-2",
+            "run_id": "closure-loot-20260808",
+            "plan_id": "plan-pc-2",
+            "plan_version": 1,
+            "step_id": "step-1",
+            "command_id": "cmd-460ee0bb31814fd98e7d7057747348f6",
+            "step_index": 1,
+            "intent": "Execute plan plan-pc-2 step step-1.",
+            "action": {
+              "kind": "transfer_item",
+              "source_owner_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000001-37c709c0",
+              "destination_owner_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000002-91c43c00",
+              "section_name": "back",
+              "slot_x": 0,
+              "slot_y": 0,
+              "item_name": "Katana"
+            },
+            "executed": true,
+            "receipt_message": "Input sent to the Kenshi window. Native acknowledgement 'completed' for cmd-460ee0bb31814fd98e7d7057747348f6: item_transferred.",
+            "assessment": "no_op",
+            "causal_revision_advanced": true,
+            "controller_verified": false,
+            "semantic_status": "completed",
+            "target_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000001-37c709c0",
+            "feedback": "No material visual or tracked telemetry change followed this action. Treat it as a no-op in the observed state and do not repeat it without new evidence.",
+            "started_after_revision": {
+              "telemetry_sequence": 1504,
+              "frame_sequence": 2,
+              "capability_epoch": 1,
+              "observed_at_monotonic": 133691.984
+            },
+            "completed_at_revision": {
+              "telemetry_sequence": 1506,
+              "frame_sequence": 3,
+              "capability_epoch": 1,
+              "observed_at_monotonic": 133693.734
+            },
+            "recorded_at": "2026-08-08T19:41:53.803371Z",
+            "visual_change_fraction": 0.005979938271604938,
+            "telemetry_changes": [],
+            "selected_character_name": "Fish",
+            "position_before": {
+              "x": -51008.4,
+              "y": 1624.552,
+              "z": 3855.853
+            },
+            "position_after": {
+              "x": -51008.4,
+              "y": 1624.552,
+              "z": 3855.853
+            },
+            "identity_session_id": "session-6145ee0033ca2b77-0000000000000002",
+            "retry_state_fingerprint": null
+          }
+        },
+        {
+          "event_type": "plan_step_started",
+          "run_id": "closure-loot-20260808",
+          "step_index": 2,
+          "timestamp": "2026-08-08T19:41:57.302501+00:00",
+          "payload": {
+            "plan_id": "plan-pc-3",
+            "plan_version": 1,
+            "step_id": "step-1",
+            "world_revision": {
+              "telemetry_sequence": 1515,
+              "frame_sequence": 3,
+              "capability_epoch": 1,
+              "observed_at_monotonic": 133697.484
+            },
+            "control_mode": "native_assisted",
+            "reason": "Bound operation was authorized and reserved execution budgets.",
+            "evidence": {
+              "action_start_revision": {
+                "telemetry_sequence": 1515,
+                "frame_sequence": 3,
+                "capability_epoch": 1,
+                "observed_at_monotonic": 133697.484
+              },
+              "operation_id": "cmd-2538e63cec614d87a06511aa925f4256",
+              "handler_key": "resources.transfer_item",
+              "remaining_actions_before_commit": 0,
+              "completion_owner": "controller_terminal",
+              "completion_conditions": []
+            }
+          }
+        },
+        {
+          "event_type": "input_boundary_revalidated",
+          "run_id": "closure-loot-20260808",
+          "step_index": 2,
+          "timestamp": "2026-08-08T19:41:58.922740+00:00",
+          "payload": {
+            "plan_id": "plan-pc-3",
+            "plan_version": 1,
+            "step_id": "step-1",
+            "world_revision": {
+              "telemetry_sequence": 1515,
+              "frame_sequence": 3,
+              "capability_epoch": 1,
+              "observed_at_monotonic": 133697.484
+            },
+            "control_mode": "native_assisted",
+            "reason": "Assumptions, preconditions, failure conditions, control mode, and input authority still hold on the latest canonical revision inside the input lease.",
+            "evidence": {
+              "command_id": "cmd-2538e63cec614d87a06511aa925f4256",
+              "decision": "revalidated",
+              "lease_wait_seconds": 0.0,
+              "validated_revision": {
+                "telemetry_sequence": 1515,
+                "frame_sequence": 3,
+                "capability_epoch": 1,
+                "observed_at_monotonic": 133697.484
+              },
+              "boundary_revision": {
+                "telemetry_sequence": 1515,
+                "frame_sequence": null,
+                "capability_epoch": 1,
+                "observed_at_monotonic": 133697.562
+              }
+            }
+          }
+        },
+        {
+          "event_type": "action_receipt",
+          "run_id": "closure-loot-20260808",
+          "step_index": 2,
+          "timestamp": "2026-08-08T19:41:58.960502+00:00",
+          "payload": {
+            "action": {
+              "kind": "transfer_item",
+              "source_owner_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000001-37c709c0",
+              "destination_owner_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000002-91c43c00",
+              "section_name": "legs",
+              "slot_x": 0,
+              "slot_y": 0,
+              "item_name": "Halfpants (ragged)"
+            },
+            "control_mode": "native_assisted",
+            "command_id": "cmd-2538e63cec614d87a06511aa925f4256",
+            "started_after_revision": {
+              "telemetry_sequence": 1515,
+              "frame_sequence": 3,
+              "capability_epoch": 1,
+              "observed_at_monotonic": 133697.484
+            },
+            "completed_at_revision": {
+              "telemetry_sequence": 1517,
+              "frame_sequence": 4,
+              "capability_epoch": 1,
+              "observed_at_monotonic": 133699.171
+            },
+            "causal_revision_advanced": true,
+            "native_acknowledgement": {
+              "command_id": "cmd-2538e63cec614d87a06511aa925f4256",
+              "command": "transfer_item",
+              "status": "completed",
+              "reason": "item_transferred",
+              "target_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000001-37c709c0",
+              "context_action": "",
+              "bearing_degrees": 0.0,
+              "distance_units": 0.0,
+              "minimum_output_quantity": 1,
+              "destination_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000002-91c43c00",
+              "section_name": "legs",
+              "slot_x": 0,
+              "slot_y": 0,
+              "selected_character_ids": [
+                "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000001-daeefe00",
+                "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000002-91c43c00"
+              ],
+              "based_on_telemetry_sequence": 1515,
+              "acknowledged_at_telemetry_sequence": 1516,
+              "accepted_at_telemetry_sequence": 1516,
+              "terminal_at_telemetry_sequence": 1516
+            },
+            "input_boundary": {
+              "decision": "revalidated",
+              "code": "allowed",
+              "reason": "Assumptions, preconditions, failure conditions, control mode, and input authority still hold on the latest canonical revision inside the input lease.",
+              "lease_wait_seconds": 0.0,
+              "plan_id": "plan-pc-3",
+              "plan_version": 1,
+              "step_id": "step-1",
+              "validated_revision": {
+                "telemetry_sequence": 1515,
+                "frame_sequence": 3,
+                "capability_epoch": 1,
+                "observed_at_monotonic": 133697.484
+              },
+              "boundary_revision": {
+                "telemetry_sequence": 1515,
+                "frame_sequence": null,
+                "capability_epoch": 1,
+                "observed_at_monotonic": 133697.562
+              },
+              "evaluations": [
+                {
+                  "condition": {
+                    "kind": "telemetry_fresh",
+                    "operator": "equals",
+                    "expected": true,
+                    "max_age_seconds": 3.0
+                  },
+                  "result": "true",
+                  "actual": true,
+                  "reason": "Observed True; expected equals True."
+                },
+                {
+                  "condition": {
+                    "kind": "telemetry_fresh",
+                    "operator": "equals",
+                    "expected": true,
+                    "max_age_seconds": 3.0
+                  },
+                  "result": "true",
+                  "actual": true,
+                  "reason": "Observed True; expected equals True."
+                }
+              ]
+            },
+            "calibration": null,
+            "semantic": {
+              "action_kind": "transfer_item",
+              "contract_version": "1.0",
+              "target_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000001-37c709c0",
+              "resolved_label": "Halfpants (ragged) to entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000002-91c43c00",
+              "resolved_role": null,
+              "resolved_bounds": null,
+              "source_revision": {
+                "telemetry_sequence": 1515,
+                "frame_sequence": 3,
+                "capability_epoch": 1,
+                "observed_at_monotonic": 133697.484
+              },
+              "option_id": null,
+              "revalidation": "Re-proved both inventories open and the named item still in its slot, then let Kenshi adjudicate the transfer and report its own verdict.",
+              "quicksave": null
+            },
+            "advisor": null,
+            "accepted": true,
+            "executed": true,
+            "dry_run": false,
+            "started_at": "2026-08-08T19:41:57.303503Z",
+            "finished_at": "2026-08-08T19:41:57.618503Z",
+            "primitive_actions": 6,
+            "message": "Input sent to the Kenshi window. Native acknowledgement 'completed' for cmd-2538e63cec614d87a06511aa925f4256: item_transferred.",
+            "error_type": null
+          }
+        },
+        {
+          "event_type": "action_outcome",
+          "run_id": "closure-loot-20260808",
+          "step_index": 2,
+          "timestamp": "2026-08-08T19:41:59.211444+00:00",
+          "payload": {
+            "outcome_id": "ao-3",
+            "run_id": "closure-loot-20260808",
+            "plan_id": "plan-pc-3",
+            "plan_version": 1,
+            "step_id": "step-1",
+            "command_id": "cmd-2538e63cec614d87a06511aa925f4256",
+            "step_index": 2,
+            "intent": "Execute plan plan-pc-3 step step-1.",
+            "action": {
+              "kind": "transfer_item",
+              "source_owner_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000001-37c709c0",
+              "destination_owner_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000002-91c43c00",
+              "section_name": "legs",
+              "slot_x": 0,
+              "slot_y": 0,
+              "item_name": "Halfpants (ragged)"
+            },
+            "executed": true,
+            "receipt_message": "Input sent to the Kenshi window. Native acknowledgement 'completed' for cmd-2538e63cec614d87a06511aa925f4256: item_transferred.",
+            "assessment": "changed",
+            "causal_revision_advanced": true,
+            "controller_verified": true,
+            "semantic_status": "completed",
+            "target_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000001-37c709c0",
+            "feedback": "The action produced an observed change. Use the listed telemetry deltas and current screenshot to judge whether it advanced the objective.",
+            "started_after_revision": {
+              "telemetry_sequence": 1515,
+              "frame_sequence": 3,
+              "capability_epoch": 1,
+              "observed_at_monotonic": 133697.484
+            },
+            "completed_at_revision": {
+              "telemetry_sequence": 1517,
+              "frame_sequence": 4,
+              "capability_epoch": 1,
+              "observed_at_monotonic": 133699.171
+            },
+            "recorded_at": "2026-08-08T19:41:59.211444Z",
+            "visual_change_fraction": 0.009645061728395061,
+            "telemetry_changes": [
+              "money: 16105 -> 16055"
+            ],
+            "selected_character_name": "Fish",
+            "position_before": {
+              "x": -51008.4,
+              "y": 1624.552,
+              "z": 3855.853
+            },
+            "position_after": {
+              "x": -51008.4,
+              "y": 1624.552,
+              "z": 3855.853
+            },
+            "identity_session_id": "session-6145ee0033ca2b77-0000000000000002",
+            "retry_state_fingerprint": null
+          }
+        }
+      ],
+      "decisive_telemetry_projections": [
+        {
+          "timestamp": "2026-08-08T19:41:52.258313+00:00",
+          "world_revision": {
+            "telemetry_sequence": 1505,
+            "frame_sequence": 2,
+            "capability_epoch": 1,
+            "observed_at_monotonic": 133692.484
+          },
+          "game": {
+            "loaded": true,
+            "paused": true,
+            "money": 16105,
+            "elapsed_minutes": 2178.379,
+            "location_name": "The Hub",
+            "location_id": "entity-6145ee0033ca2b77-0000000000000002-0000000d-00000002-0dd89d20-00000000-00000000",
+            "inside_town_walls": true
+          },
+          "ui": {
+            "active_screen": "trade",
+            "modal_open": true,
+            "dialogue_open": false,
+            "open_inventory_windows": 2,
+            "item_cells": [
+              {
+                "label": "Halfpants (ragged)",
+                "window": "BURN",
+                "section": "legs",
+                "item_name": "Halfpants (ragged)",
+                "item_base_value": 50,
+                "item_sell_value": 12,
+                "item_quantity": 1,
+                "selected_inventory_accepts_item": true
+              },
+              {
+                "label": "Holed Sabre",
+                "window": "FISH",
+                "section": "back",
+                "item_name": "Holed Sabre",
+                "item_base_value": 2164,
+                "item_sell_value": 541,
+                "item_quantity": 1,
+                "selected_inventory_accepts_item": true
+              },
+              {
+                "label": "Katana",
+                "window": "FISH",
+                "section": "hip",
+                "item_name": "Katana",
+                "item_base_value": 1131,
+                "item_sell_value": 282,
+                "item_quantity": 1,
+                "selected_inventory_accepts_item": true
+              },
+              {
+                "label": "Rag Loincloth",
+                "window": "FISH",
+                "section": "legs",
+                "item_name": "Rag Loincloth",
+                "item_base_value": 50,
+                "item_sell_value": 12,
+                "item_quantity": 1,
+                "selected_inventory_accepts_item": true
+              },
+              {
+                "label": "Iron Club",
+                "window": "FISH",
+                "section": "main",
+                "item_name": "Iron Club",
+                "item_base_value": 180,
+                "item_sell_value": 45,
+                "item_quantity": 1,
+                "selected_inventory_accepts_item": true
+              }
+            ],
+            "open_inventories": [
+              {
+                "owner_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000001-37c709c0",
+                "owner_name": "Burn",
+                "owner_kind": "character",
+                "player_owned": false,
+                "money": 0,
+                "item_count": 1,
+                "sections": [
+                  "legs"
+                ]
+              },
+              {
+                "owner_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000002-91c43c00",
+                "owner_name": "Fish",
+                "owner_kind": "character",
+                "player_owned": true,
+                "money": 16105,
+                "item_count": 4,
+                "sections": [
+                  "hip",
+                  "back",
+                  "legs",
+                  "main"
+                ]
+              }
+            ],
+            "open_inventories_complete": true
+          },
+          "native_command_records": [
+            {
+              "command_id": "cmd-460ee0bb31814fd98e7d7057747348f6",
+              "command": "transfer_item",
+              "status": "completed",
+              "reason": "item_transferred",
+              "target_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000001-37c709c0",
+              "context_action": "",
+              "bearing_degrees": 0.0,
+              "distance_units": 0.0,
+              "minimum_output_quantity": 1,
+              "destination_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000002-91c43c00",
+              "section_name": "back",
+              "slot_x": 0,
+              "slot_y": 0,
+              "selected_character_ids": [
+                "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000001-daeefe00",
+                "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000002-91c43c00"
+              ],
+              "based_on_telemetry_sequence": 1504,
+              "acknowledged_at_telemetry_sequence": 1505,
+              "accepted_at_telemetry_sequence": 1505,
+              "terminal_at_telemetry_sequence": 1505
+            }
+          ]
+        },
+        {
+          "timestamp": "2026-08-08T19:41:57.690213+00:00",
+          "world_revision": {
+            "telemetry_sequence": 1516,
+            "frame_sequence": 3,
+            "capability_epoch": 1,
+            "observed_at_monotonic": 133697.921
+          },
+          "game": {
+            "loaded": true,
+            "paused": true,
+            "money": 16055,
+            "elapsed_minutes": 2178.379,
+            "location_name": "The Hub",
+            "location_id": "entity-6145ee0033ca2b77-0000000000000002-0000000d-00000002-0dd89d20-00000000-00000000",
+            "inside_town_walls": true
+          },
+          "ui": {
+            "active_screen": "trade",
+            "modal_open": true,
+            "dialogue_open": false,
+            "open_inventory_windows": 2,
+            "item_cells": [
+              {
+                "label": "Holed Sabre",
+                "window": "FISH",
+                "section": "back",
+                "item_name": "Holed Sabre",
+                "item_base_value": 2164,
+                "item_sell_value": 541,
+                "item_quantity": 1,
+                "selected_inventory_accepts_item": true
+              },
+              {
+                "label": "Katana",
+                "window": "FISH",
+                "section": "hip",
+                "item_name": "Katana",
+                "item_base_value": 1131,
+                "item_sell_value": 282,
+                "item_quantity": 1,
+                "selected_inventory_accepts_item": true
+              },
+              {
+                "label": "Rag Loincloth",
+                "window": "FISH",
+                "section": "legs",
+                "item_name": "Rag Loincloth",
+                "item_base_value": 50,
+                "item_sell_value": 12,
+                "item_quantity": 1,
+                "selected_inventory_accepts_item": true
+              },
+              {
+                "label": "Iron Club",
+                "window": "FISH",
+                "section": "main",
+                "item_name": "Iron Club",
+                "item_base_value": 180,
+                "item_sell_value": 45,
+                "item_quantity": 1,
+                "selected_inventory_accepts_item": true
+              },
+              {
+                "label": "Halfpants (ragged)",
+                "window": "FISH",
+                "section": "main",
+                "item_name": "Halfpants (ragged)",
+                "item_base_value": 50,
+                "item_sell_value": 12,
+                "item_quantity": 1,
+                "selected_inventory_accepts_item": true
+              }
+            ],
+            "open_inventories": [
+              {
+                "owner_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000001-37c709c0",
+                "owner_name": "Burn",
+                "owner_kind": "character",
+                "player_owned": false,
+                "money": 50,
+                "item_count": 0,
+                "sections": []
+              },
+              {
+                "owner_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000002-91c43c00",
+                "owner_name": "Fish",
+                "owner_kind": "character",
+                "player_owned": true,
+                "money": 16055,
+                "item_count": 5,
+                "sections": [
+                  "hip",
+                  "back",
+                  "legs",
+                  "main"
+                ]
+              }
+            ],
+            "open_inventories_complete": true
+          },
+          "native_command_records": [
+            {
+              "command_id": "cmd-460ee0bb31814fd98e7d7057747348f6",
+              "command": "transfer_item",
+              "status": "completed",
+              "reason": "item_transferred",
+              "target_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000001-37c709c0",
+              "context_action": "",
+              "bearing_degrees": 0.0,
+              "distance_units": 0.0,
+              "minimum_output_quantity": 1,
+              "destination_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000002-91c43c00",
+              "section_name": "back",
+              "slot_x": 0,
+              "slot_y": 0,
+              "selected_character_ids": [
+                "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000001-daeefe00",
+                "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000002-91c43c00"
+              ],
+              "based_on_telemetry_sequence": 1504,
+              "acknowledged_at_telemetry_sequence": 1505,
+              "accepted_at_telemetry_sequence": 1505,
+              "terminal_at_telemetry_sequence": 1505
+            },
+            {
+              "command_id": "cmd-2538e63cec614d87a06511aa925f4256",
+              "command": "transfer_item",
+              "status": "completed",
+              "reason": "item_transferred",
+              "target_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000001-37c709c0",
+              "context_action": "",
+              "bearing_degrees": 0.0,
+              "distance_units": 0.0,
+              "minimum_output_quantity": 1,
+              "destination_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000002-91c43c00",
+              "section_name": "legs",
+              "slot_x": 0,
+              "slot_y": 0,
+              "selected_character_ids": [
+                "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000001-daeefe00",
+                "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000002-91c43c00"
+              ],
+              "based_on_telemetry_sequence": 1515,
+              "acknowledged_at_telemetry_sequence": 1516,
+              "accepted_at_telemetry_sequence": 1516,
+              "terminal_at_telemetry_sequence": 1516
+            }
+          ]
+        }
+      ],
+      "omitted_frame_hashes": [
+        {
+          "path": "runs/closure-loot-20260808/frames/live_frame_000001.png",
+          "size_bytes": 2500078,
+          "sha256": "b61305917eb0abf47f25033b74e728f3625c2ba42e3640bb5071533655a1fd6e"
+        },
+        {
+          "path": "runs/closure-loot-20260808/frames/live_frame_000002.png",
+          "size_bytes": 1805486,
+          "sha256": "2f6548cb93fd12137ad691f08ad6a9499e23489e75dc4245edffdfad7b90a214"
+        },
+        {
+          "path": "runs/closure-loot-20260808/frames/live_frame_000003.png",
+          "size_bytes": 1805003,
+          "sha256": "25b1a7071825ddc2fdeda9cbd12b41aefbece8fb64f6bc87ca6030d9dbe7e6d6"
+        },
+        {
+          "path": "runs/closure-loot-20260808/frames/live_frame_000004.png",
+          "size_bytes": 1807517,
+          "sha256": "269b3c8308b5522571d5fb1a17a358c43468dcd8ddedd77a3b948f027eeb9a24"
+        }
+      ]
+    },
+    {
+      "run_id": "closure-harvest-fixed-20260808",
+      "command_ids": [
+        "cmd-90f4f3ab3ea449539a64040290c7f1e3"
+      ],
+      "events_file": {
+        "path": "runs/closure-harvest-fixed-20260808/events.jsonl",
+        "size_bytes": 9539562,
+        "sha256": "9673c8e25d81681fc58495ba5868307f02f980f77e611813f3e1806a7a247b73"
+      },
+      "request_acknowledgement_and_disposition_events": [
+        {
+          "event_type": "plan_step_started",
+          "run_id": "closure-harvest-fixed-20260808",
+          "step_index": 2,
+          "timestamp": "2026-08-08T19:52:11.751373+00:00",
+          "payload": {
+            "plan_id": "plan-pc-3",
+            "plan_version": 1,
+            "step_id": "step-1",
+            "world_revision": {
+              "telemetry_sequence": 2739,
+              "frame_sequence": 3,
+              "capability_epoch": 1,
+              "observed_at_monotonic": 134311.687
+            },
+            "control_mode": "native_assisted",
+            "reason": "Bound operation was authorized and reserved execution budgets.",
+            "evidence": {
+              "action_start_revision": {
+                "telemetry_sequence": 2739,
+                "frame_sequence": 3,
+                "capability_epoch": 1,
+                "observed_at_monotonic": 134311.687
+              },
+              "operation_id": "cmd-90f4f3ab3ea449539a64040290c7f1e3",
+              "handler_key": "resources.transfer_item",
+              "remaining_actions_before_commit": 0,
+              "completion_owner": "controller_terminal",
+              "completion_conditions": []
+            }
+          }
+        },
+        {
+          "event_type": "input_boundary_revalidated",
+          "run_id": "closure-harvest-fixed-20260808",
+          "step_index": 2,
+          "timestamp": "2026-08-08T19:52:13.424162+00:00",
+          "payload": {
+            "plan_id": "plan-pc-3",
+            "plan_version": 1,
+            "step_id": "step-1",
+            "world_revision": {
+              "telemetry_sequence": 2739,
+              "frame_sequence": 3,
+              "capability_epoch": 1,
+              "observed_at_monotonic": 134311.687
+            },
+            "control_mode": "native_assisted",
+            "reason": "Assumptions, preconditions, failure conditions, control mode, and input authority still hold on the latest canonical revision inside the input lease.",
+            "evidence": {
+              "command_id": "cmd-90f4f3ab3ea449539a64040290c7f1e3",
+              "decision": "revalidated",
+              "lease_wait_seconds": 0.0,
+              "validated_revision": {
+                "telemetry_sequence": 2739,
+                "frame_sequence": 3,
+                "capability_epoch": 1,
+                "observed_at_monotonic": 134311.687
+              },
+              "boundary_revision": {
+                "telemetry_sequence": 2740,
+                "frame_sequence": null,
+                "capability_epoch": 1,
+                "observed_at_monotonic": 134312.0
+              }
+            }
+          }
+        },
+        {
+          "event_type": "action_receipt",
+          "run_id": "closure-harvest-fixed-20260808",
+          "step_index": 2,
+          "timestamp": "2026-08-08T19:52:13.487487+00:00",
+          "payload": {
+            "action": {
+              "kind": "transfer_item",
+              "source_owner_id": "entity-6145ee0033ca2b77-0000000000000002-00000000-00000816-00002b67-00000028-1f25fbe0",
+              "destination_owner_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000002-91c43c00",
+              "section_name": "out",
+              "slot_x": 0,
+              "slot_y": 0,
+              "item_name": "Raw Iron"
+            },
+            "control_mode": "native_assisted",
+            "command_id": "cmd-90f4f3ab3ea449539a64040290c7f1e3",
+            "started_after_revision": {
+              "telemetry_sequence": 2739,
+              "frame_sequence": 3,
+              "capability_epoch": 1,
+              "observed_at_monotonic": 134311.687
+            },
+            "completed_at_revision": {
+              "telemetry_sequence": 2742,
+              "frame_sequence": 4,
+              "capability_epoch": 1,
+              "observed_at_monotonic": 134313.671
+            },
+            "causal_revision_advanced": true,
+            "native_acknowledgement": {
+              "command_id": "cmd-90f4f3ab3ea449539a64040290c7f1e3",
+              "command": "transfer_item",
+              "status": "completed",
+              "reason": "item_transferred",
+              "target_id": "entity-6145ee0033ca2b77-0000000000000002-00000000-00000816-00002b67-00000028-1f25fbe0",
+              "context_action": "",
+              "bearing_degrees": 0.0,
+              "distance_units": 0.0,
+              "minimum_output_quantity": 1,
+              "destination_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000002-91c43c00",
+              "section_name": "out",
+              "slot_x": 0,
+              "slot_y": 0,
+              "selected_character_ids": [
+                "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000001-daeefe00",
+                "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000002-91c43c00"
+              ],
+              "based_on_telemetry_sequence": 2740,
+              "acknowledged_at_telemetry_sequence": 2741,
+              "accepted_at_telemetry_sequence": 2741,
+              "terminal_at_telemetry_sequence": 2741
+            },
+            "input_boundary": {
+              "decision": "revalidated",
+              "code": "allowed",
+              "reason": "Assumptions, preconditions, failure conditions, control mode, and input authority still hold on the latest canonical revision inside the input lease.",
+              "lease_wait_seconds": 0.0,
+              "plan_id": "plan-pc-3",
+              "plan_version": 1,
+              "step_id": "step-1",
+              "validated_revision": {
+                "telemetry_sequence": 2739,
+                "frame_sequence": 3,
+                "capability_epoch": 1,
+                "observed_at_monotonic": 134311.687
+              },
+              "boundary_revision": {
+                "telemetry_sequence": 2740,
+                "frame_sequence": null,
+                "capability_epoch": 1,
+                "observed_at_monotonic": 134312.0
+              },
+              "evaluations": [
+                {
+                  "condition": {
+                    "kind": "telemetry_fresh",
+                    "operator": "equals",
+                    "expected": true,
+                    "max_age_seconds": 3.0
+                  },
+                  "result": "true",
+                  "actual": true,
+                  "reason": "Observed True; expected equals True."
+                },
+                {
+                  "condition": {
+                    "kind": "telemetry_fresh",
+                    "operator": "equals",
+                    "expected": true,
+                    "max_age_seconds": 3.0
+                  },
+                  "result": "true",
+                  "actual": true,
+                  "reason": "Observed True; expected equals True."
+                }
+              ]
+            },
+            "calibration": null,
+            "semantic": {
+              "action_kind": "transfer_item",
+              "contract_version": "1.0",
+              "target_id": "entity-6145ee0033ca2b77-0000000000000002-00000000-00000816-00002b67-00000028-1f25fbe0",
+              "resolved_label": "Raw Iron to entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000002-91c43c00",
+              "resolved_role": null,
+              "resolved_bounds": null,
+              "source_revision": {
+                "telemetry_sequence": 2739,
+                "frame_sequence": 3,
+                "capability_epoch": 1,
+                "observed_at_monotonic": 134311.687
+              },
+              "option_id": null,
+              "revalidation": "Re-proved both inventories open and the named item still in its slot, then let Kenshi adjudicate the transfer and report its own verdict.",
+              "quicksave": null
+            },
+            "advisor": null,
+            "accepted": true,
+            "executed": true,
+            "dry_run": false,
+            "started_at": "2026-08-08T19:52:11.752373Z",
+            "finished_at": "2026-08-08T19:52:12.190381Z",
+            "primitive_actions": 6,
+            "message": "Input sent to the Kenshi window. Native acknowledgement 'completed' for cmd-90f4f3ab3ea449539a64040290c7f1e3: item_transferred.",
+            "error_type": null
+          }
+        },
+        {
+          "event_type": "action_outcome",
+          "run_id": "closure-harvest-fixed-20260808",
+          "step_index": 2,
+          "timestamp": "2026-08-08T19:52:13.784979+00:00",
+          "payload": {
+            "outcome_id": "ao-3",
+            "run_id": "closure-harvest-fixed-20260808",
+            "plan_id": "plan-pc-3",
+            "plan_version": 1,
+            "step_id": "step-1",
+            "command_id": "cmd-90f4f3ab3ea449539a64040290c7f1e3",
+            "step_index": 2,
+            "intent": "Execute plan plan-pc-3 step step-1.",
+            "action": {
+              "kind": "transfer_item",
+              "source_owner_id": "entity-6145ee0033ca2b77-0000000000000002-00000000-00000816-00002b67-00000028-1f25fbe0",
+              "destination_owner_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000002-91c43c00",
+              "section_name": "out",
+              "slot_x": 0,
+              "slot_y": 0,
+              "item_name": "Raw Iron"
+            },
+            "executed": true,
+            "receipt_message": "Input sent to the Kenshi window. Native acknowledgement 'completed' for cmd-90f4f3ab3ea449539a64040290c7f1e3: item_transferred.",
+            "assessment": "changed",
+            "causal_revision_advanced": true,
+            "controller_verified": true,
+            "semantic_status": "completed",
+            "target_id": "entity-6145ee0033ca2b77-0000000000000002-00000000-00000816-00002b67-00000028-1f25fbe0",
+            "feedback": "The action produced an observed change. Use the listed telemetry deltas and current screenshot to judge whether it advanced the objective.",
+            "started_after_revision": {
+              "telemetry_sequence": 2739,
+              "frame_sequence": 3,
+              "capability_epoch": 1,
+              "observed_at_monotonic": 134311.687
+            },
+            "completed_at_revision": {
+              "telemetry_sequence": 2742,
+              "frame_sequence": 4,
+              "capability_epoch": 1,
+              "observed_at_monotonic": 134313.671
+            },
+            "recorded_at": "2026-08-08T19:52:13.784979Z",
+            "visual_change_fraction": 0.02642746913580247,
+            "telemetry_changes": [],
+            "selected_character_name": "Fish",
+            "position_before": {
+              "x": -49437.0,
+              "y": 1662.703,
+              "z": 3643.733
+            },
+            "position_after": {
+              "x": -49437.0,
+              "y": 1662.703,
+              "z": 3643.733
+            },
+            "identity_session_id": "session-6145ee0033ca2b77-0000000000000002",
+            "retry_state_fingerprint": null
+          }
+        }
+      ],
+      "decisive_telemetry_projections": [
+        {
+          "timestamp": "2026-08-08T19:52:12.286983+00:00",
+          "world_revision": {
+            "telemetry_sequence": 2741,
+            "frame_sequence": 3,
+            "capability_epoch": 1,
+            "observed_at_monotonic": 134312.5
+          },
+          "game": {
+            "loaded": true,
+            "paused": false,
+            "money": 16055,
+            "elapsed_minutes": 2264.877,
+            "location_name": "The Hub",
+            "location_id": "entity-6145ee0033ca2b77-0000000000000002-0000000d-00000002-0dd89d20-00000000-00000000",
+            "inside_town_walls": false
+          },
+          "ui": {
+            "active_screen": "trade",
+            "modal_open": true,
+            "dialogue_open": false,
+            "open_inventory_windows": 2,
+            "item_cells": [
+              {
+                "label": "Holed Sabre",
+                "window": "FISH",
+                "section": "back",
+                "item_name": "Holed Sabre",
+                "item_base_value": 2164,
+                "item_sell_value": 541,
+                "item_quantity": 1,
+                "selected_inventory_accepts_item": true
+              },
+              {
+                "label": "Katana",
+                "window": "FISH",
+                "section": "hip",
+                "item_name": "Katana",
+                "item_base_value": 1131,
+                "item_sell_value": 282,
+                "item_quantity": 1,
+                "selected_inventory_accepts_item": true
+              },
+              {
+                "label": "Rag Loincloth",
+                "window": "FISH",
+                "section": "legs",
+                "item_name": "Rag Loincloth",
+                "item_base_value": 50,
+                "item_sell_value": 12,
+                "item_quantity": 1,
+                "selected_inventory_accepts_item": true
+              },
+              {
+                "label": "Iron Club",
+                "window": "FISH",
+                "section": "main",
+                "item_name": "Iron Club",
+                "item_base_value": 180,
+                "item_sell_value": 45,
+                "item_quantity": 1,
+                "selected_inventory_accepts_item": true
+              },
+              {
+                "label": "Halfpants (ragged)",
+                "window": "FISH",
+                "section": "main",
+                "item_name": "Halfpants (ragged)",
+                "item_base_value": 50,
+                "item_sell_value": 12,
+                "item_quantity": 1,
+                "selected_inventory_accepts_item": true
+              },
+              {
+                "label": "Raw Iron",
+                "window": "FISH",
+                "section": "main",
+                "item_name": "Raw Iron",
+                "item_base_value": 88,
+                "item_sell_value": 88,
+                "item_quantity": 1,
+                "selected_inventory_accepts_item": true
+              }
+            ],
+            "open_inventories": [
+              {
+                "owner_id": "entity-6145ee0033ca2b77-0000000000000002-00000000-00000816-00002b67-00000028-1f25fbe0",
+                "owner_name": "Iron Resource",
+                "owner_kind": "building",
+                "player_owned": false,
+                "money": 16055,
+                "item_count": 0,
+                "sections": []
+              },
+              {
+                "owner_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000002-91c43c00",
+                "owner_name": "Fish",
+                "owner_kind": "character",
+                "player_owned": true,
+                "money": 16055,
+                "item_count": 6,
+                "sections": [
+                  "hip",
+                  "back",
+                  "legs",
+                  "main"
+                ]
+              }
+            ],
+            "open_inventories_complete": true
+          },
+          "native_command_records": [
+            {
+              "command_id": "cmd-90f4f3ab3ea449539a64040290c7f1e3",
+              "command": "transfer_item",
+              "status": "completed",
+              "reason": "item_transferred",
+              "target_id": "entity-6145ee0033ca2b77-0000000000000002-00000000-00000816-00002b67-00000028-1f25fbe0",
+              "context_action": "",
+              "bearing_degrees": 0.0,
+              "distance_units": 0.0,
+              "minimum_output_quantity": 1,
+              "destination_id": "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000002-91c43c00",
+              "section_name": "out",
+              "slot_x": 0,
+              "slot_y": 0,
+              "selected_character_ids": [
+                "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000001-daeefe00",
+                "entity-6145ee0033ca2b77-0000000000000002-00000001-00000000-00000000-00000002-91c43c00"
+              ],
+              "based_on_telemetry_sequence": 2740,
+              "acknowledged_at_telemetry_sequence": 2741,
+              "accepted_at_telemetry_sequence": 2741,
+              "terminal_at_telemetry_sequence": 2741
+            }
+          ]
+        }
+      ],
+      "omitted_frame_hashes": [
+        {
+          "path": "runs/closure-harvest-fixed-20260808/frames/live_frame_000001.png",
+          "size_bytes": 2281136,
+          "sha256": "35a62ec0eb45aacc8d4f44423ac9c90d9c1415d9cf0d228d8b9fa3c603b89b65"
+        },
+        {
+          "path": "runs/closure-harvest-fixed-20260808/frames/live_frame_000002.png",
+          "size_bytes": 2294083,
+          "sha256": "e15c15df156fe196cf55e4dc27da76b9aa7624cdeb2e9e19d553a1b50948774c"
+        },
+        {
+          "path": "runs/closure-harvest-fixed-20260808/frames/live_frame_000003.png",
+          "size_bytes": 2040185,
+          "sha256": "0eb95b1fdf558b8352c1d50665d5398ddb77bfc00c90047983548b34bc66e769"
+        },
+        {
+          "path": "runs/closure-harvest-fixed-20260808/frames/live_frame_000004.png",
+          "size_bytes": 2039206,
+          "sha256": "bc355a5891dc7603daa6ea9d0e794987d705045abff21179471190b5e75a4b93"
+        }
+      ]
+    }
+  ],
+  "binary_provenance": "withheld: these historical bundles did not record exact built and installed DLL hashes",
+  "omission_policy": "The full JSONL and screenshots are omitted; exact hashes are retained with the command-correlated receipts, outcomes, and decisive telemetry projections."
+}

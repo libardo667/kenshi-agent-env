@@ -298,12 +298,18 @@ def _validate_safe_close_snapshot(
 
     game = payload.get("game")
     ui = payload.get("ui")
-    native_control = payload.get("native_control")
+    controller_commands = payload.get("controller_commands")
     if not isinstance(game, dict) or not isinstance(ui, dict):
         raise LaunchFailed("Safe close requires game and UI telemetry.")
-    if not isinstance(native_control, dict):
+    if not isinstance(controller_commands, dict):
         raise LaunchFailed("Safe close requires native-control telemetry.")
-    if native_control.get("active_command_id") not in (None, ""):
+    commands = controller_commands.get("commands")
+    if not isinstance(commands, list):
+        raise LaunchFailed("Safe close requires plural controller-command telemetry.")
+    if any(
+        isinstance(command, dict) and command.get("status") == "accepted"
+        for command in commands
+    ):
         raise LaunchFailed("Safe close refuses while a native command is active.")
     if game.get("loaded") is True and game.get("paused") is True:
         if ui.get("modal_open") is not False or ui.get("dialogue_open") is not False:
@@ -345,7 +351,7 @@ def _safe_close_inventory_window(
         or ui.dialogue_open is not False
     ):
         raise LaunchFailed(f"{refusal} requires a paused inventory modal.")
-    if snapshot.native_control.active_command_id is not None:
+    if snapshot.controller_commands.active_commands():
         raise LaunchFailed("Safe close refuses while a native command is active.")
     if ui.active_screen not in {"inventory", "trade"}:
         raise LaunchFailed(f"{refusal} does not recognize this screen.")
@@ -521,7 +527,7 @@ async def _dismiss_safe_close_inventories(
                 and candidate.snapshot.sequence > in_lease.snapshot.sequence
                 and candidate.snapshot.game.loaded is True
                 and candidate.snapshot.game.paused is True
-                and candidate.snapshot.native_control.active_command_id is None
+                and not candidate.snapshot.controller_commands.active_commands()
                 and candidate.snapshot.ui.dialogue_open is False
                 and candidate.snapshot.ui.open_inventory_windows is not None
                 and candidate.snapshot.ui.open_inventory_windows < open_count
@@ -2096,16 +2102,19 @@ async def _recover_kenshi_safe_state(
     current = telemetry.read()
     if current.stale:
         raise LaunchFailed("Interrupted recovery requires fresh telemetry.")
-    active_command_id = current.snapshot.native_control.active_command_id
+    active_command_ids = {
+        command.command_id
+        for command in current.snapshot.controller_commands.active_commands()
+    }
     if (
         current.snapshot.game.loaded is True
         and current.snapshot.game.paused is True
-        and active_command_id is not None
+        and active_command_ids
     ):
-        current = await _wait_for_paused_native_command_terminal(
+        current = await _wait_for_paused_native_commands_terminal(
             telemetry,
             current,
-            command_id=active_command_id,
+            command_ids=active_command_ids,
             timeout_seconds=timeout_seconds,
         )
     if (
@@ -2125,14 +2134,14 @@ async def _recover_kenshi_safe_state(
     )
 
 
-async def _wait_for_paused_native_command_terminal(
+async def _wait_for_paused_native_commands_terminal(
     telemetry: TelemetryReader,
     current: TelemetryRead,
     *,
-    command_id: str,
+    command_ids: set[str],
     timeout_seconds: float,
 ) -> TelemetryRead:
-    """Wait for the plug-in to causally cancel one command after a safety pause."""
+    """Wait for the plug-in to causally cancel known commands after a safety pause."""
 
     initial_sequence = current.snapshot.sequence
     deadline = time.monotonic() + timeout_seconds
@@ -2142,13 +2151,16 @@ async def _wait_for_paused_native_command_terminal(
             and current.snapshot.sequence > initial_sequence
             and current.snapshot.game.loaded is True
             and current.snapshot.game.paused is True
-            and current.snapshot.native_control.active_command_id is None
+            and not current.snapshot.controller_commands.active_commands()
         ):
             return current
-        active_command_id = current.snapshot.native_control.active_command_id
-        if active_command_id not in {None, command_id}:
+        active_command_ids = {
+            command.command_id
+            for command in current.snapshot.controller_commands.active_commands()
+        }
+        if not active_command_ids <= command_ids:
             raise LaunchFailed(
-                "Interrupted recovery observed a different native command after "
+                "Interrupted recovery observed different native commands after "
                 "the safety pause."
             )
         if (
@@ -2163,7 +2175,7 @@ async def _wait_for_paused_native_command_terminal(
         if remaining <= 0:
             raise LaunchFailed(
                 "Interrupted recovery timed out waiting for the paused native "
-                "command to reach a terminal acknowledgement."
+                "commands to reach terminal acknowledgements."
             )
         await asyncio.sleep(min(0.05, remaining))
         try:
@@ -2661,7 +2673,7 @@ def _telemetry_payload(result: TelemetryRead) -> dict[str, object]:
             }
             for inventory in snapshot.ui.open_inventories
         ],
-        "native_control": snapshot.native_control.model_dump(mode="json"),
+        "controller_commands": snapshot.controller_commands.model_dump(mode="json"),
         "selected": selected.model_dump(mode="json") if selected else None,
         "nearby_entity_count": len(snapshot.nearby_entities),
         "nearest_nearby_entities": [
@@ -3109,7 +3121,7 @@ def _choose_run_path(
         raise LaunchFailed(
             "Kenshi is running without a loaded world; run './dev recover'."
         )
-    if snapshot.native_control.active_command_id is not None:
+    if snapshot.controller_commands.active_commands():
         raise LaunchFailed(
             "Kenshi has an unresolved native command; run './dev recover'."
         )

@@ -8,12 +8,20 @@ The six-file boundary is deliberate:
 - `static_evidence.md` records declarations, executable inspection, and source
   facts without turning them into runtime claims;
 - `call_sites.json` pins symbols, RVAs, inferred signatures, confidence, and
-  repository call sites to exact binary and library fingerprints;
+  repository call sites to exact binary, library, and source-blob
+  fingerprints. Repository line numbers are informational; the enclosing
+  function and contained expression are the stable call-site anchors;
 - `dynamic_observations.json` keeps live probes, crashes, contradictions, and
   tests as separate observations, including missing evidence explicitly;
 - `abi_notes.md` records calling convention, layout, ownership, and hook risks;
 - `conclusion.md` is the reviewed disposition with separate source-proven,
   test-proven, live-proven, and withheld sections.
+
+A `live_proven` package also commits one reduced artifact under
+`live_evidence/`. It retains the run manifest, exact decisive telemetry,
+request and acknowledgement evidence, final disposition, and SHA-256 hashes of
+omitted raw files. The ignored workstation run remains useful, but is not the
+only durable authority.
 
 Run `python scripts/check_research_evidence.py` after editing. The full
 `./dev verify-portable` gate runs the same validator, regenerates

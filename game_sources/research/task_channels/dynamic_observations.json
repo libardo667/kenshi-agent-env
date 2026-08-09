@@ -16,7 +16,9 @@
       "later_engine_evidence": "None; portable and compiled fixtures do not load Kenshi.",
       "final_disposition": "Test-proves the repository contract only. Live proof remains required.",
       "evidence_source": "tests/test_task_channels.py, tests/fixtures/native_telemetry/valid_player_topology.json, and native/KenshiAgentTelemetry/NativeCommandProtocolTests.cpp.",
-      "remaining_uncertainty": ["Fixtures cannot prove that the installed game publishes the retained order and activity together."]
+      "remaining_uncertainty": [
+        "Fixtures cannot prove that the installed game publishes the retained order and activity together."
+      ]
     },
     {
       "id": "task_name_ownership_conflation",
@@ -32,7 +34,9 @@
       "later_engine_evidence": "Source inspection shows no command-to-task causal link in the current singular telemetry shape.",
       "final_disposition": "The inference was deleted. Fresh ordinary work without an exact causal link is observed_unattributed_work; Jobs, permanent Jobs, and activity are not order-disposition evidence.",
       "evidence_source": "src/kenshi_agent/execution/monitoring.py, src/kenshi_agent/core/lifecycle.py, and tests/test_task_channels.py.",
-      "remaining_uncertainty": ["Exact controller ownership correlation remains Protocol 2.0 plural-command work."]
+      "remaining_uncertainty": [
+        "Exact controller ownership correlation remains Protocol 2.0 plural-command work."
+      ]
     },
     {
       "id": "task_channels_live_retained_order_and_activity",
@@ -52,7 +56,8 @@
         "Matching task identity and target do not establish a general controller-ownership correlator.",
         "No live multi-entry ordinary queue was authored.",
         "No invalid or targetless live task subject was observed."
-      ]
+      ],
+      "durable_reduced_evidence": "game_sources/research/task_channels/live_evidence/task-channels-20260809T172100Z.json"
     }
   ]
 }

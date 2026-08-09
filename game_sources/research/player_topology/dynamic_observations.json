@@ -16,7 +16,9 @@
       "later_engine_evidence": "None; the fixture does not load Kenshi.",
       "final_disposition": "Test-proves the repository and compiled native fixture contract only.",
       "evidence_source": "tests/test_player_topology.py, tests/fixtures/native_telemetry/valid_player_topology.json, and native/KenshiAgentTelemetry/NativeCommandProtocolTests.cpp.",
-      "remaining_uncertainty": ["Fixtures cannot prove live tab changes, live selection changes, or save/reload persistence."]
+      "remaining_uncertainty": [
+        "Fixtures cannot prove live tab changes, live selection changes, or save/reload persistence."
+      ]
     },
     {
       "id": "character_handle_changed_on_platoon_move",
@@ -55,7 +57,8 @@
         "Character entity IDs are session-scoped and change their session component across GameWorld reset.",
         "Empty management rows are not exported because player/platoon structures expose no member linkage for them.",
         "Longer-run roster mutation and pointer-lifecycle coverage is named follow-on work, not claimed here."
-      ]
+      ],
+      "durable_reduced_evidence": "game_sources/research/player_topology/live_evidence/player-topology-20260809T161112Z.json"
     }
   ]
 }

@@ -2,11 +2,118 @@
   "schema_version": 1,
   "subsystem": "inventory_transfer",
   "observations": [
-    {"id": "equipped_body_loot", "kind": "live_probe", "observed_on": "2026-08-08", "kenshi_version": "1.0.65 x64", "executable_sha256_at_probe": null, "installed_dll_sha256_at_probe": null, "run_bundle": "closure-loot-20260808", "pre_dispatch_state": "At telemetry sequence 1493, the exact Burn and Fish inventories were open. Burn held equipped Katana and Halfpants (ragged); Fish held three other items and had room.", "request": "Commands cmd-460ee0bb31814fd98e7d7057747348f6 and cmd-2538e63cec614d87a06511aa925f4256 requested exact section-and-slot transfers from Burn to Fish.", "acknowledgement": "Each command completed with reason item_transferred in the named bundle.", "later_engine_evidence": "Later open-inventory telemetry showed Burn empty and Fish holding both moved items.", "final_disposition": "Durably live-proven for inventory-model movement of these two equipped items only.", "evidence_source": "runs/closure-loot-20260808/events.jsonl and its frames.", "remaining_uncertainty": ["The bundle did not record built and installed DLL hashes.", "This does not prove shop economics, theft adjudication, or every equipped slot."]},
-    {"id": "resource_output_transfer", "kind": "live_probe", "observed_on": "2026-08-08", "kenshi_version": "1.0.65 x64", "executable_sha256_at_probe": null, "installed_dll_sha256_at_probe": null, "run_bundle": "closure-harvest-fixed-20260808", "pre_dispatch_state": "The exact Iron Resource output inventory and Fish inventory were open after resource_output_ready; Raw Iron occupied the advertised source slot.", "request": "Command cmd-90f4f3ab3ea449539a64040290c7f1e3 requested the exact Raw Iron transfer into Fish.", "acknowledgement": "The command completed with reason item_transferred.", "later_engine_evidence": "Later inventory telemetry recorded Raw Iron leaving the resource output and appearing in Fish's inventory.", "final_disposition": "Durably live-proven for this resource-output movement only.", "evidence_source": "runs/closure-harvest-fixed-20260808/events.jsonl and its frames.", "remaining_uncertainty": ["The bundle did not record built and installed DLL hashes.", "Other owner kinds and quantities remain unproven."]},
-    {"id": "gui_autotrade_abi_mismatch", "kind": "contradiction", "observed_on": "2026-08-08", "kenshi_version": "1.0.65 x64", "executable_sha256_at_probe": null, "installed_dll_sha256_at_probe": null, "run_bundle": null, "pre_dispatch_state": "Three separate sessions covered equipped loot, shop stock, and a plain carried-item give.", "request": "Call InventoryGUI::RClickAutoTrade out of band using the KenshiLib-declared signature.", "acknowledgement": "No successful acknowledgement; every call crashed.", "later_engine_evidence": "The fault address and inspected prologue contradicted the declared parameter shape, and GUI mouse state was not established for an out-of-band call.", "final_disposition": "The framework authority and call were deleted; model-level movement plus explicit simplified pricing replaced them.", "evidence_source": "Current source rationale and repository commits 773ee67 and d1d5dcc; exact three run bundles and dumps are not retained here.", "remaining_uncertainty": ["The complete shipped RClickAutoTrade signature is still unknown.", "No dump-backed parameter recovery is claimed."]},
-    {"id": "autotrade_three_crashes", "kind": "crash", "observed_on": "2026-08-08", "kenshi_version": "1.0.65 x64", "executable_sha256_at_probe": null, "installed_dll_sha256_at_probe": null, "run_bundle": null, "pre_dispatch_state": "Equipped loot, shop stock, and same-party carried-item transfer were each attempted in separate loaded sessions.", "request": "Invoke InventoryGUI::RClickAutoTrade outside its GUI event path.", "acknowledgement": "None; all three sessions terminated.", "later_engine_evidence": "No later engine state survived each crash.", "final_disposition": "No further live signature guessing; the call site and its framework authority were deleted.", "evidence_source": "Retained current-source rationale; exact bundle names and dump manifests are missing.", "remaining_uncertainty": ["Exact crash bundles, installed DLL hashes, and faulting instruction records are missing."]},
-    {"id": "partial_add_false_return", "kind": "contradiction", "observed_on": "2026-08-08", "kenshi_version": "1.0.65 x64", "executable_sha256_at_probe": null, "installed_dll_sha256_at_probe": null, "run_bundle": null, "pre_dispatch_state": "A buyer attempted stack transfers with limited destination behavior.", "request": "Move Building Material and Iron Plates through Inventory::tryAddItem.", "acknowledgement": "The engine call returned false and the old controller reported destination_refused_item.", "later_engine_evidence": "Later destination counts showed two Building Material and one Iron Plates had moved without a charge.", "final_disposition": "Current source measures stranded destination gain, charges it, and reports item_partly_transferred.", "evidence_source": "Repository commit cd1913d and retained current-source rationale; exact run bundle is missing.", "remaining_uncertainty": ["The precise tryAddItem partial-placement contract is not recovered."]},
-    {"id": "inventory_portable_contract", "kind": "portable_test", "observed_on": "2026-08-09", "kenshi_version": "No live executable loaded", "executable_sha256_at_probe": null, "installed_dll_sha256_at_probe": null, "run_bundle": null, "pre_dispatch_state": "Synthetic paired inventories and request fixtures.", "request": "Validate exact owner, section, slot, quantity, request schema, offer construction, and source ratchets.", "acknowledgement": "Synthetic acknowledgements only.", "later_engine_evidence": "None.", "final_disposition": "Test-proves repository and wire behavior only.", "evidence_source": "tests/test_item_transfer_offers.py, tests/test_native_protocol_fixtures.py, and native protocol fixtures.", "remaining_uncertainty": ["Fixtures cannot validate the Kenshi ABI or live conservation."]}
+    {
+      "id": "equipped_body_loot",
+      "kind": "live_probe",
+      "observed_on": "2026-08-08",
+      "kenshi_version": "1.0.65 x64",
+      "executable_sha256_at_probe": null,
+      "installed_dll_sha256_at_probe": null,
+      "run_bundle": "closure-loot-20260808",
+      "pre_dispatch_state": "At telemetry sequence 1493, the exact Burn and Fish inventories were open. Burn held equipped Katana and Halfpants (ragged); Fish held three other items and had room.",
+      "request": "Commands cmd-460ee0bb31814fd98e7d7057747348f6 and cmd-2538e63cec614d87a06511aa925f4256 requested exact section-and-slot transfers from Burn to Fish.",
+      "acknowledgement": "Each command completed with reason item_transferred in the named bundle.",
+      "later_engine_evidence": "Later open-inventory telemetry showed Burn empty and Fish holding both moved items.",
+      "final_disposition": "Durably live-proven for inventory-model movement of these two equipped items only.",
+      "evidence_source": "runs/closure-loot-20260808/events.jsonl and its frames.",
+      "remaining_uncertainty": [
+        "The bundle did not record built and installed DLL hashes.",
+        "This does not prove shop economics, theft adjudication, or every equipped slot."
+      ],
+      "durable_reduced_evidence": "game_sources/research/inventory_transfer/live_evidence/inventory-transfer-20260808.json"
+    },
+    {
+      "id": "resource_output_transfer",
+      "kind": "live_probe",
+      "observed_on": "2026-08-08",
+      "kenshi_version": "1.0.65 x64",
+      "executable_sha256_at_probe": null,
+      "installed_dll_sha256_at_probe": null,
+      "run_bundle": "closure-harvest-fixed-20260808",
+      "pre_dispatch_state": "The exact Iron Resource output inventory and Fish inventory were open after resource_output_ready; Raw Iron occupied the advertised source slot.",
+      "request": "Command cmd-90f4f3ab3ea449539a64040290c7f1e3 requested the exact Raw Iron transfer into Fish.",
+      "acknowledgement": "The command completed with reason item_transferred.",
+      "later_engine_evidence": "Later inventory telemetry recorded Raw Iron leaving the resource output and appearing in Fish's inventory.",
+      "final_disposition": "Durably live-proven for this resource-output movement only.",
+      "evidence_source": "runs/closure-harvest-fixed-20260808/events.jsonl and its frames.",
+      "remaining_uncertainty": [
+        "The bundle did not record built and installed DLL hashes.",
+        "Other owner kinds and quantities remain unproven."
+      ],
+      "durable_reduced_evidence": "game_sources/research/inventory_transfer/live_evidence/inventory-transfer-20260808.json"
+    },
+    {
+      "id": "gui_autotrade_abi_mismatch",
+      "kind": "contradiction",
+      "observed_on": "2026-08-08",
+      "kenshi_version": "1.0.65 x64",
+      "executable_sha256_at_probe": null,
+      "installed_dll_sha256_at_probe": null,
+      "run_bundle": null,
+      "pre_dispatch_state": "Three separate sessions covered equipped loot, shop stock, and a plain carried-item give.",
+      "request": "Call InventoryGUI::RClickAutoTrade out of band using the KenshiLib-declared signature.",
+      "acknowledgement": "No successful acknowledgement; every call crashed.",
+      "later_engine_evidence": "The fault address and inspected prologue contradicted the declared parameter shape, and GUI mouse state was not established for an out-of-band call.",
+      "final_disposition": "The framework authority and call were deleted; model-level movement plus explicit simplified pricing replaced them.",
+      "evidence_source": "Current source rationale and repository commits 773ee67 and d1d5dcc; exact three run bundles and dumps are not retained here.",
+      "remaining_uncertainty": [
+        "The complete shipped RClickAutoTrade signature is still unknown.",
+        "No dump-backed parameter recovery is claimed."
+      ]
+    },
+    {
+      "id": "autotrade_three_crashes",
+      "kind": "crash",
+      "observed_on": "2026-08-08",
+      "kenshi_version": "1.0.65 x64",
+      "executable_sha256_at_probe": null,
+      "installed_dll_sha256_at_probe": null,
+      "run_bundle": null,
+      "pre_dispatch_state": "Equipped loot, shop stock, and same-party carried-item transfer were each attempted in separate loaded sessions.",
+      "request": "Invoke InventoryGUI::RClickAutoTrade outside its GUI event path.",
+      "acknowledgement": "None; all three sessions terminated.",
+      "later_engine_evidence": "No later engine state survived each crash.",
+      "final_disposition": "No further live signature guessing; the call site and its framework authority were deleted.",
+      "evidence_source": "Retained current-source rationale; exact bundle names and dump manifests are missing.",
+      "remaining_uncertainty": [
+        "Exact crash bundles, installed DLL hashes, and faulting instruction records are missing."
+      ]
+    },
+    {
+      "id": "partial_add_false_return",
+      "kind": "contradiction",
+      "observed_on": "2026-08-08",
+      "kenshi_version": "1.0.65 x64",
+      "executable_sha256_at_probe": null,
+      "installed_dll_sha256_at_probe": null,
+      "run_bundle": null,
+      "pre_dispatch_state": "A buyer attempted stack transfers with limited destination behavior.",
+      "request": "Move Building Material and Iron Plates through Inventory::tryAddItem.",
+      "acknowledgement": "The engine call returned false and the old controller reported destination_refused_item.",
+      "later_engine_evidence": "Later destination counts showed two Building Material and one Iron Plates had moved without a charge.",
+      "final_disposition": "Current source measures stranded destination gain, charges it, and reports item_partly_transferred.",
+      "evidence_source": "Repository commit cd1913d and retained current-source rationale; exact run bundle is missing.",
+      "remaining_uncertainty": [
+        "The precise tryAddItem partial-placement contract is not recovered."
+      ]
+    },
+    {
+      "id": "inventory_portable_contract",
+      "kind": "portable_test",
+      "observed_on": "2026-08-09",
+      "kenshi_version": "No live executable loaded",
+      "executable_sha256_at_probe": null,
+      "installed_dll_sha256_at_probe": null,
+      "run_bundle": null,
+      "pre_dispatch_state": "Synthetic paired inventories and request fixtures.",
+      "request": "Validate exact owner, section, slot, quantity, request schema, offer construction, and source ratchets.",
+      "acknowledgement": "Synthetic acknowledgements only.",
+      "later_engine_evidence": "None.",
+      "final_disposition": "Test-proves repository and wire behavior only.",
+      "evidence_source": "tests/test_item_transfer_offers.py, tests/test_native_protocol_fixtures.py, and native protocol fixtures.",
+      "remaining_uncertainty": [
+        "Fixtures cannot validate the Kenshi ABI or live conservation."
+      ]
+    }
   ]
 }

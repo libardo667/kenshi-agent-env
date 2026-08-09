@@ -221,7 +221,7 @@ class CharacterWorkState(StrictModel):
 
     Kenshi's ordinary order queue, configured Jobs, permanent Jobs, and current
     goal have separate owners and lifetimes. None is inferred from another.
-    The controller-issued command remains separate in ``native_control``.
+    The controller-issued command remains separate in ``controller_commands``.
     """
 
     has_player_orders: bool
@@ -230,6 +230,18 @@ class CharacterWorkState(StrictModel):
     jobs: TaskCollection
     permanent_jobs: TaskCollection
     current_activity: TaskEntry | None
+
+    @model_validator(mode="after")
+    def direct_order_predicate_matches_complete_collection(self) -> CharacterWorkState:
+        """Reject contradictions only where complete enumeration proves them."""
+
+        if self.ordinary_orders.completeness is TaskCollectionCompleteness.COMPLETE:
+            has_enumerated_orders = bool(self.ordinary_orders.items)
+            if self.has_player_orders != has_enumerated_orders:
+                raise ValueError(
+                    "has_player_orders must agree with a complete ordinary_orders collection"
+                )
+        return self
 
     @property
     def has_retained_work(self) -> bool:
@@ -1423,7 +1435,7 @@ class NativeCommandAcknowledgement(StrictModel):
     section_name: str = Field(default="", max_length=80)
     slot_x: int = Field(default=0, ge=0)
     slot_y: int = Field(default=0, ge=0)
-    # Body-shift acknowledgements truthfully echo an empty selection after
+    # Body-shift commands truthfully echo an empty selection after
     # total loss because the target names its own recipient. Wire-shape
     # validation below still requires a selection for selection-addressed
     # commands.
@@ -1489,11 +1501,7 @@ class NativeCommandAcknowledgement(StrictModel):
 
 class NativeControlState(StrictModel):
     available: bool = False
-    active_command_id: str | None = Field(
-        default=None,
-        pattern=r"^cmd-[0-9a-f]{32}$",
-    )
-    acknowledgements: list[NativeCommandAcknowledgement] = Field(
+    commands: list[NativeCommandAcknowledgement] = Field(
         default_factory=list,
         max_length=16,
     )
@@ -1504,33 +1512,37 @@ class NativeControlState(StrictModel):
     last_target_id: str | None = None
 
     @model_validator(mode="after")
-    def acknowledgement_ids_are_unique(self) -> NativeControlState:
-        command_ids = [ack.command_id for ack in self.acknowledgements]
+    def command_ids_are_unique(self) -> NativeControlState:
+        command_ids = [command.command_id for command in self.commands]
         if len(command_ids) != len(set(command_ids)):
-            raise ValueError("native acknowledgement command IDs must be unique")
-        if (
-            self.active_command_id is not None
-            and self.acknowledgement_for(self.active_command_id) is None
-        ):
-            raise ValueError("active native command must have an acknowledgement")
+            raise ValueError("native command record IDs must be unique")
         return self
 
-    def acknowledgement_for(
+    def command_for(
         self,
         command_id: str,
     ) -> NativeCommandAcknowledgement | None:
         return next(
             (
-                acknowledgement
-                for acknowledgement in self.acknowledgements
-                if acknowledgement.command_id == command_id
+                command
+                for command in self.commands
+                if command.command_id == command_id
             ),
             None,
         )
 
+    def active_commands(self) -> tuple[NativeCommandAcknowledgement, ...]:
+        """Return every retained command without inventing a singleton owner."""
+
+        return tuple(
+            command
+            for command in self.commands
+            if command.status is NativeCommandStatus.ACCEPTED
+        )
+
 
 class TelemetrySnapshot(StrictModel):
-    protocol_version: str = "1.21.0"
+    protocol_version: Literal["2.0.0"] = "2.0.0"
     sequence: int = Field(default=0, ge=0)
     captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = "unknown"
@@ -1539,7 +1551,7 @@ class TelemetrySnapshot(StrictModel):
     game: GameState = Field(default_factory=GameState)
     camera: CameraState = Field(default_factory=CameraState)
     ui: UIState = Field(default_factory=UIState)
-    native_control: NativeControlState = Field(default_factory=NativeControlState)
+    controller_commands: NativeControlState = Field(default_factory=NativeControlState)
     roster: list[CharacterState] = Field(default_factory=list)
     roster_complete: bool = True
     platoons: list[PlatoonState] = Field(default_factory=list)
@@ -1717,7 +1729,7 @@ class TelemetrySnapshot(StrictModel):
             and self.primary_character_id not in selected_ids
         ):
             raise ValueError("primary_character_id must also appear in selected_character_ids")
-        for acknowledgement in self.native_control.acknowledgements:
+        for acknowledgement in self.controller_commands.commands:
             sequences = [
                 acknowledgement.acknowledged_at_telemetry_sequence,
                 acknowledgement.accepted_at_telemetry_sequence,

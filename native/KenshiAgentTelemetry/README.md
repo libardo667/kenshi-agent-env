@@ -8,10 +8,10 @@ run evidence, not in a second current protocol narrative.
 ## Current protocol
 
 ```text
-telemetry protocol       1.21.0
+telemetry protocol       2.0.0
 native request schema    1.4
 loaded-world capabilities 49
-active native commands  at most one
+controller command records emitted by native at most one until 2026-09-20
 ```
 
 The source declarations are authoritative. `KenshiAgentTelemetry.cpp` owns the
@@ -20,12 +20,10 @@ telemetry version, `NativeCommandRequest` in
 `GameplayCapabilities.json` owns the loaded-world capability vocabulary. The
 portable consistency tests and the native conformance executable compare the
 shared native-command JSON fixtures with both request implementations. The
-conformance target also reads the current 1.21 player-topology/work fixture and the
-accepted Protocol 2.0 world-model fixtures. The former is current producer
-shape; the latter remains a specification for plural command records that the
-producer does not yet emit.
+conformance target also reads the current 2.0 player-topology/work fixture and
+the full Protocol 2.0 world-model fixtures.
 
-Protocol 1.21.0 retains the clean player-topology break introduced by 1.19 and
+Protocol 2.0.0 retains the clean player-topology break introduced by 1.19 and
 the independent work channels introduced by 1.20. Player characters are
 serialized under `roster`; `platoons`, `active_platoon_id`,
 `primary_character_id`, and the complete root `selected_character_ids` set have
@@ -34,9 +32,12 @@ selection fields are gone rather than accepted as aliases. Each character's
 `work` object independently exports `ordinary_orders`, `jobs`,
 `permanent_jobs`, and `current_activity`. The old `task_state`, flattened
 count/completeness fields, and cross-channel task-name ownership inference are
-gone rather than retained as fallbacks. The still-singular
-`native_control.active_command_id` and one native active-command record remain
-an explicitly separate limit.
+gone rather than retained as fallbacks. `controller_commands.commands` is
+plural and the old `native_control`, `active_command_id`, and
+`acknowledgements` wire names are rejected. The native producer temporarily
+publishes at most one record from its current global owner; that cardinality
+limit expires on 2026-09-20, and every consumer already treats the field as a
+collection.
 
 ## Hooks and telemetry
 
@@ -51,14 +52,14 @@ telemetry after the original update returns.
   crashes, and withheld conclusions live in the
   [context-menu research object](../../game_sources/research/context_menu_orders/conclusion.md).
 - `ShopTrader` lifecycle hooks maintain exact shop-owner identity, and
-  `GameWorld::resetGame` clears session-bound registries and acknowledgements.
+  `GameWorld::resetGame` clears session-bound registries and command records.
 
 Loaded telemetry includes clock and location state, camera state, the complete
 player roster, exact platoon membership and active platoon, exact primary and
 complete selection, roster vitals/inventory/task summaries, nearby characters
 and roles, bounded world targets, discovered map destinations, dialogue and
 tooltip state, visible controls, every currently exported open inventory, and
-keyed native command acknowledgements. Stable character IDs are derived from
+keyed controller command records. Stable character IDs are derived from
 validated Kenshi handles plus process/session generations. Platoon IDs use
 Kenshi's platoon string ID under a `platoon-` namespace. Names and list
 positions are not identities.
@@ -203,7 +204,7 @@ folder component.
 - The hook, protocol, command, inventory-model, simplified-pricing, and body
   shift paths above are present in the current source and in the configured
   KenshiLib declarations they call.
-- Protocol 1.21.0 and the 49-entry loaded-world capability manifest are embedded
+- Protocol 2.0.0 and the 49-entry loaded-world capability manifest are embedded
   into the native build inputs.
 - The file-change watcher and the optional hotkey both dispatch through the same
   request parser and command handler.
