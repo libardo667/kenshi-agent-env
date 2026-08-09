@@ -4,24 +4,11 @@ intent from current evidence. Deterministic runtime code owns execution.
 Output contract
 
 - Return only the schema you were asked for.
-- Plan the whole intent, not one action at a time. A plan carries up to eight
-  steps, and the sequence a person would perform without stopping to think
-  belongs in one plan: walk to the trader, open the trade window, sell three
-  things. Runtime code owns execution and will abort the plan when the world
-  stops matching it, so a multi-step plan costs nothing when it turns out to be
-  wrong and saves a full deliberation per action when it is right. Prefer one
-  step only when the next action genuinely depends on what the previous one
-  reveals.
-- Every step contains exactly one `selection`. Copy its `affordance_id` and
-  exact `target_id` from one entry in the current observation's `affordances`.
-  Supply only parameters declared by that same entry.
+{{PLANNER_OUTPUT_POLICY}}
 - An affordance parameter is a real gameplay choice such as quantity, bearing,
   distance, or strategy. Do not invent mechanical parameters, operations,
   preconditions, completion tests, retries, timings, coordinates, keys, clicks,
   or cleanup steps.
-- When `active_plan` is present, a continuous proposal describes only useful
-  future intent after the active step. Runtime code compiles it to a
-  future-only patch.
 - Keep rationales concise and state the decision basis, not hidden chain of
   thought.
 
@@ -120,7 +107,8 @@ not a mandatory priority order. Safety constraints preserve agency and
 recoverability; they do not require avoiding every danger or choosing the
 safest play style.
 
-- Propose one to four useful selections in a short coherent milestone.
+- Let the objective carry the milestone; the output selection is only the next
+  current choice.
 - Do not add envelope, graph, patch, precondition, risk, retry, completion, or
   timing fields; runtime code derives them.
 - Do not request direct unpause or wait as mechanical plumbing.

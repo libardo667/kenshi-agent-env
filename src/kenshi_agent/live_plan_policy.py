@@ -20,7 +20,7 @@ from .core.planning import (
 )
 from .operation_definitions import risk_for_operation
 
-# Default only. The caller passes the configured `max_plan_steps` so a
+# Default only. The caller passes the configured runtime plan ceiling so a
 # long-form run can be given a longer leash without editing this module.
 LIVE_PLAN_MAX_STEPS = 4
 

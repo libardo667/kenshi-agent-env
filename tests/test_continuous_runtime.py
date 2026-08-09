@@ -462,7 +462,7 @@ def runtime_for(
         memory_limit=0 if memory is None else 12,
         minimum_memory_salience=0.0,
         planning_config=PlanningConfig(
-            max_plan_steps=4,
+            max_runtime_plan_steps=4,
             max_actions_per_plan=8,
             max_plan_wall_seconds=30.0,
             max_plan_game_seconds=12.0,

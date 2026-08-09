@@ -7,18 +7,18 @@ the native artifact currently installed, and the behavior that remains unproven.
 ## Repository
 
 ```text
-parent commit          2686719fb9051b8d4109c6309d560665112fa1ed
+parent commit          965a4952b0ad204ee8daf2abbce5101f2853bb95
 integration branch     main
-remote state           matched origin/main
+remote state           main was one commit ahead of origin/main
 tree state             clean before this slice
 supported Python       CPython 3.11, 3.12, 3.13, and 3.14
 package constraint     >=3.11,<3.15
 native protocol        1.18.0
 ```
 
-Commit `2686719` established the reproducible Python range, portable matrix, unified
-local gate, generated-artifact ownership, and native/proof boundary recorded below.
-This follow-on makes the checkpoint itself a tested part of every future goal.
+Commit `965a495` made this checkpoint a tested part of every future goal. This
+follow-on gives the hosted playing model one current-affordance output contract and
+separates that policy from the multi-step ceiling for runtime-authored envelopes.
 
 The checkpoint revision is the commit containing this file. Its literal hash cannot
 be embedded without changing itself, so the repository block records its parent.
@@ -71,6 +71,17 @@ source contract. They do not prove that any command changed live game state.
 
 ### Source-proven
 
+- `PlannerOutputPolicy.current_affordances_per_deliberation` is a typed literal and
+  owns the Pydantic bounds, schema description and example shape, injected prompt
+  text, per-call request, token allowance, and compiler cardinality diagnostic.
+- The prompt template contains one injection marker and no independent numeric
+  output rule. Both hosted adapters use the shared renderer and request builder.
+- `compile_hosted_plan_proposal` no longer converts a current choice into a future
+  `PlanPatch`; it rejects planning against `active_plan`, and both canonical configs
+  disable concurrent option planning.
+- `max_runtime_plan_steps` now names the distinct internal-envelope bound. The
+  superseded `max_plan_steps` planner-looking configuration and constructor arguments
+  are absent.
 - `pyproject.toml` and `uv.lock` reject Python before 3.11 and at or after 3.15.
 - `./dev verify-portable` is a portable-only branch in the WSL entrypoint. It does not
   locate Windows Python, start a transport, synthesize input, or touch Kenshi.
@@ -85,6 +96,11 @@ source contract. They do not prove that any command changed live game state.
 
 ### Test-proven
 
+- A structural test compares the typed policy with the schema min/max, generated
+  schema example, rendered prompt, request text, and exact compiler rejection. It
+  also proves that configuration cannot select another cardinality.
+- Hosted-adapter tests prove an active-plan response cannot reserve a future
+  affordance, while a broad objective remains valid beside the current selection.
 - The full portable gate passes independently under every declared Python version.
 - The test suite renders schemas and generated documents into temporary directories,
   compares their exact file sets and bytes with the checkout, and checks the generated
@@ -98,7 +114,9 @@ source contract. They do not prove that any command changed live game state.
 
 ### Live-proven
 
-This slice adds no live-game proof. The latest durable gameplay evidence remains the
+This slice adds no live-game proof and makes no new claim about Kenshi behavior. The
+planner contract is source- and portable-test-proven only. The latest durable
+gameplay evidence remains the
 named bundles already classified in
 `docs/reconstruction/interaction_proof_status.json`:
 
@@ -114,6 +132,12 @@ request returning or an acknowledgement alone.
 
 ### Withheld and surviving limitations
 
+- No native source, command fixture, protocol, built DLL, installed DLL, or live run
+  changed. Native request/acknowledgement/later-engine evidence is therefore not
+  applicable to this portable planner-contract slice.
+- A runtime-authored or scripted plan may still contain multiple steps under
+  `max_runtime_plan_steps`; that is deliberately not permission for the hosted
+  playing model to select more than the current affordance.
 - Python 3.15 and later are unsupported until added to both the package range and the
   passing portable matrix. Python 3.10 and earlier remain unsupported.
 - GitHub-hosted runs prove the portable Linux surface. They do not prove Windows live

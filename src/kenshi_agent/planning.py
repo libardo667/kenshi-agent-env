@@ -68,7 +68,7 @@ def validate_plan(
         errors.extend(
             live_plan_policy_errors(
                 plan,
-                max_steps=config.max_plan_steps,
+                max_steps=config.max_runtime_plan_steps,
             )
         )
     if plan.control_mode != observation.control_mode:
@@ -97,10 +97,10 @@ def validate_plan(
             "plan game-time budget cannot be enforced "  # mutation: diagnostic-only
             "from this observation"
         )
-    if len(plan.steps) > config.max_plan_steps:
+    if len(plan.steps) > config.max_runtime_plan_steps:
         errors.append(
             f"plan has {len(plan.steps)} steps; "  # mutation: diagnostic-only
-            f"maximum is {config.max_plan_steps}"
+            f"maximum is {config.max_runtime_plan_steps}"
         )
     if plan.max_actions > config.max_actions_per_plan:
         errors.append(

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from kenshi_agent.affordances import offered_affordances, selection_for
-from kenshi_agent.config import PlanningConfig
+from kenshi_agent.config import PLANNER_OUTPUT_POLICY, PlannerOutputPolicy, PlanningConfig
 from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.operation import (
     ControlMode,
@@ -22,6 +24,11 @@ from kenshi_agent.core.telemetry import (
     WorldTarget,
 )
 from kenshi_agent.core.world import WorldStateRevision
+from kenshi_agent.planners.base import (
+    PLANNER_OUTPUT_POLICY_MARKER,
+    planner_request_text,
+    render_planner_instructions,
+)
 from kenshi_agent.planners.plan_proposal import (
     PlanProposal,
     compile_plan_proposal,
@@ -117,7 +124,7 @@ def test_runtime_compiles_only_model_choice_and_owns_envelope_bookkeeping() -> N
         observation=observation,
         context_id="pc-7",
         planning=PlanningConfig(
-            max_plan_steps=4,
+            max_runtime_plan_steps=4,
             max_actions_per_plan=8,
             max_plan_wall_seconds=90,
             max_plan_game_seconds=600,
@@ -292,18 +299,21 @@ def test_compiler_rejects_more_than_one_choice_even_when_runtime_plan_ceiling_is
     observation = _observation()
     step = {"selection": _selected(observation, "observe")}
     proposal = {"objective": "Too long.", "steps": [step, step]}
-    with pytest.raises(ValueError, match="one current affordance"):
+    with pytest.raises(ValueError, match=PLANNER_OUTPUT_POLICY.cardinality_phrase):
         compile_plan_proposal(
             proposal,
             observation=observation,
             context_id="pc-limit",
-            planning=PlanningConfig(max_plan_steps=4, max_actions_per_plan=8),
+            planning=PlanningConfig(max_runtime_plan_steps=4, max_actions_per_plan=8),
         )
 
 
 def test_hosted_plan_schema_has_one_selection_contract_and_no_action_union() -> None:
     schema = PlanProposal.model_json_schema()
-    assert schema["properties"]["steps"]["maxItems"] == 1
+    assert (
+        schema["properties"]["steps"]["maxItems"]
+        == PLANNER_OUTPUT_POLICY.current_affordances_per_deliberation
+    )
     step = schema["$defs"]["ProposedPlanStep"]
     assert set(step["properties"]) == {"selection"}
     selection = schema["$defs"]["AffordanceSelection"]
@@ -316,6 +326,53 @@ def test_hosted_plan_schema_has_one_selection_contract_and_no_action_union() -> 
     assert set(selection["properties"]) == {"semantic", "target_id", "parameters"}
     assert "affordance_id" not in selection["properties"]
     assert "anyOf" not in step["properties"]["selection"]
+
+
+def test_typed_output_policy_structurally_owns_every_hosted_surface() -> None:
+    """Prompt, schema, compiler, example, and config cannot drift independently."""
+
+    policy = PLANNER_OUTPUT_POLICY
+    assert PlanningConfig().planner_output_policy == policy
+    with pytest.raises(ValidationError):
+        PlannerOutputPolicy(current_affordances_per_deliberation=2)  # type: ignore[arg-type]
+    with pytest.raises(ValidationError):
+        policy.current_affordances_per_deliberation = 2  # type: ignore[misc]
+
+    schema = PlanProposal.model_json_schema()
+    steps = schema["properties"]["steps"]
+    expected = policy.current_affordances_per_deliberation
+    assert steps["minItems"] == steps["maxItems"] == expected
+    assert steps["description"] == policy.schema_description
+    assert len(steps["examples"][0]) == expected
+
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "prompts" / "planner_system.md").read_text(encoding="utf-8")
+    assert template.count(PLANNER_OUTPUT_POLICY_MARKER) == 1
+    rendered = render_planner_instructions(template, policy)
+    assert PLANNER_OUTPUT_POLICY_MARKER not in rendered
+    assert policy.cardinality_phrase in rendered
+    assert policy.request_text in planner_request_text(PlanProposal, policy)
+    for superseded in (
+        "up to eight",
+        "one to four useful selections",
+        "Copy its `affordance_id`",
+        "future-only patch",
+    ):
+        assert superseded not in rendered
+
+    observation = _observation()
+    selected = {"selection": _selected(observation, "observe")}
+    with pytest.raises(ValueError) as captured:
+        compile_plan_proposal(
+            {
+                "objective": "Keep the objective broad without reserving its future.",
+                "steps": [selected, selected],
+            },
+            observation=observation,
+            context_id="pc-policy-drift",
+            planning=PlanningConfig(),
+        )
+    assert str(captured.value) == policy.cardinality_error(2)
 
 
 @pytest.mark.parametrize(

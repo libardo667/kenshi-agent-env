@@ -92,14 +92,12 @@ def _build_planner(config: AppConfig, args: argparse.Namespace) -> Planner:
         return OpenAIPlanner(
             config.planner,
             config.paths.prompt_file,
-            max_plan_steps=config.planning.max_plan_steps,
             planning=config.planning,
         )
     if kind == "openrouter":
         return OpenRouterPlanner(
             config.planner,
             config.paths.prompt_file,
-            max_plan_steps=config.planning.max_plan_steps,
             planning=config.planning,
         )
     raise SystemExit(f"Unsupported planner kind: {kind}")

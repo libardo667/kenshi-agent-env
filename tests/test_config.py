@@ -22,10 +22,10 @@ def test_default_config_loads_and_resolves_paths(monkeypatch: pytest.MonkeyPatch
     assert config.mode == "mock"
     assert config.control.mode == ControlMode.INTERFACE_ONLY
     assert not config.control.native_assisted_actions_enabled
-    assert config.planning.max_plan_steps == 4
+    assert config.planning.max_runtime_plan_steps == 4
     assert config.planning.max_actions_per_plan == 8
     assert config.planning.max_native_assisted_actions_per_plan == 0
-    assert config.planning.concurrent_option_planning_enabled
+    assert not config.planning.concurrent_option_planning_enabled
     assert config.planning.concurrent_option_planning_delay_seconds == 20.0
     assert config.memory.retrieval_policy is MemoryRetrievalPolicy.DETERMINISTIC
     assert config.safety.supervisor_enabled
@@ -222,6 +222,7 @@ def test_canonical_live_config_uses_an_explicit_reasoning_route(
     assert config.planner.reasoning_effort == "low"
     assert config.planner.openrouter_require_parameters
     assert config.planner.include_screenshot
+    assert not config.planning.concurrent_option_planning_enabled
 
 
 @pytest.mark.parametrize(

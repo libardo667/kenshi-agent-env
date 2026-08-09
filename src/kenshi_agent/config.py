@@ -52,7 +52,49 @@ class ControlConfig(ConfigModel):
     native_assisted_actions_enabled: bool = False
 
 
+class PlannerOutputPolicy(ConfigModel):
+    """The one hosted-model gameplay cardinality contract."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    current_affordances_per_deliberation: Literal[1] = 1
+
+    @property
+    def cardinality_phrase(self) -> str:
+        count = self.current_affordances_per_deliberation
+        word = {1: "one"}[count]
+        return f"exactly {word} current affordance per deliberation"
+
+    @property
+    def schema_description(self) -> str:
+        return (
+            f"Choose {self.cardinality_phrase}. The objective may describe a "
+            "broader goal, but this list cannot reserve or pre-bind later "
+            "affordances; the runtime observes again before the next choice."
+        )
+
+    @property
+    def request_text(self) -> str:
+        return (
+            f"State a useful objective and choose {self.cardinality_phrase}. "
+            "The runtime will observe again before asking for another choice."
+        )
+
+    def cardinality_error(self, actual: int) -> str:
+        return (
+            f"PlanProposal must choose {self.cardinality_phrase}; received "
+            f"{actual}. The objective may be broader, but future affordances "
+            "must wait for a fresh observation."
+        )
+
+
+PLANNER_OUTPUT_POLICY = PlannerOutputPolicy()
+
+
 class PlanningConfig(ConfigModel):
+    planner_output_policy: PlannerOutputPolicy = Field(
+        default_factory=PlannerOutputPolicy,
+    )
     observation_pump_enabled: bool = True
     # Arrival/threat radii for the contracted semantic approach. The monitored
     # option is not optional for that action, so these are thresholds, not a
@@ -63,7 +105,9 @@ class PlanningConfig(ConfigModel):
     # game running continuously, a per-plan game-time budget measures thinking
     # rather than acting.
     require_paused_between_actions: bool = True
-    concurrent_option_planning_enabled: bool = True
+    # A playing-model choice is current-state-bound. Planning future choices
+    # while an option is still running would turn it into a pre-bound patch.
+    concurrent_option_planning_enabled: bool = False
     concurrent_option_planning_delay_seconds: float = Field(
         default=20.0,
         ge=0.0,
@@ -75,7 +119,9 @@ class PlanningConfig(ConfigModel):
     event_journal_limit: int = Field(default=256, ge=16, le=8192)
     subscriber_queue_limit: int = Field(default=32, ge=2, le=1024)
     max_delta_paths: int = Field(default=128, ge=16, le=2048)
-    max_plan_steps: int = Field(default=4, ge=1, le=8)
+    # Runtime-authored envelopes (heuristics, fixtures, and composite control)
+    # may contain several steps. This is not a hosted planner output allowance.
+    max_runtime_plan_steps: int = Field(default=4, ge=1, le=8)
     max_actions_per_plan: int = Field(default=8, ge=1, le=16)
     max_plan_wall_seconds: float = Field(default=30.0, gt=0.0, le=600.0)
     max_plan_game_seconds: float = Field(default=12.0, gt=0.0, le=3600.0)

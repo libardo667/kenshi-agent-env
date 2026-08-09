@@ -1,9 +1,10 @@
-"""Compile exact hosted affordance selections into runtime-owned execution.
+"""Compile the policy-bounded hosted choice into runtime-owned execution.
 
-The model chooses an objective and ordered current affordances. It does not
-author operation kinds, causal revision fences, graph bookkeeping, retries,
-timeouts, idempotency, risk, completion, or cleanup. Those are mechanical facts
-already owned by the runtime.
+The model may state a broader objective, but it chooses only the current
+affordance for this deliberation. It does not author future selections,
+operation kinds, causal revision fences, graph bookkeeping, retries, timeouts,
+idempotency, risk, completion, or cleanup. Those are mechanical facts already
+owned by the runtime.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from ..affordances import (
     bind_affordance,
     bound_affordance,
 )
-from ..config import PlanningConfig
+from ..config import PLANNER_OUTPUT_POLICY, PlanningConfig
 from ..core.base import StrictModel
 from ..core.continuity import (
     AppendFieldbookEntryOperation,
@@ -52,7 +53,6 @@ from ..core.observation import Observation
 from ..core.planning import (
     Condition,
     PlanEnvelope,
-    PlanPatch,
     PlanStep,
     RiskBudget,
 )
@@ -101,10 +101,36 @@ class FieldbookProposal(StrictModel):
 
 
 class PlanProposal(StrictModel):
-    """One hosted choice; deterministic code observes again before another."""
+    """A hosted choice; deterministic code observes again before another."""
 
-    objective: str = Field(min_length=1, max_length=1000)
-    steps: list[ProposedPlanStep] = Field(min_length=1, max_length=1)
+    objective: str = Field(
+        min_length=1,
+        max_length=1000,
+        description=(
+            "The broader gameplay goal this current choice advances. It may "
+            "span later deliberations without naming their affordances."
+        ),
+        examples=["Establish a reliable food supply."],
+    )
+    steps: list[ProposedPlanStep] = Field(
+        min_length=PLANNER_OUTPUT_POLICY.current_affordances_per_deliberation,
+        max_length=PLANNER_OUTPUT_POLICY.current_affordances_per_deliberation,
+        description=PLANNER_OUTPUT_POLICY.schema_description,
+        examples=[
+            [
+                {
+                    "selection": {
+                        "semantic": "observe",
+                        "target_id": None,
+                        "parameters": [],
+                    }
+                }
+                for _ in range(
+                    PLANNER_OUTPUT_POLICY.current_affordances_per_deliberation
+                )
+            ]
+        ],
+    )
     continuity_operations: list[ContinuityProposal] = Field(
         default_factory=list,
         max_length=6,
@@ -129,14 +155,8 @@ class CompiledPlanProposal:
 
 
 @dataclass(frozen=True, slots=True)
-class CompiledPlanPatchProposal:
-    patch: PlanPatch
-    rejected_sidecars: tuple[RejectedProposalSidecar, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
 class CompiledHostedPlanProposal:
-    output: PlanEnvelope | PlanPatch
+    output: PlanEnvelope
     rejected_sidecars: tuple[RejectedProposalSidecar, ...] = ()
 
 
@@ -408,20 +428,10 @@ def compile_plan_proposal(
         raise ValueError(  # mutation: diagnostic-only
             "PlanProposal steps must be a non-empty list"
         )
-    if len(raw_steps) != 1:
+    expected_choices = planning.planner_output_policy.current_affordances_per_deliberation
+    if len(raw_steps) != expected_choices:
         raise ValueError(  # mutation: diagnostic-only
-            "PlanProposal must choose one current affordance; the runtime observes "
-            "again before asking for another choice"
-        )
-    if len(raw_steps) > planning.max_plan_steps:
-        raise ValueError(  # mutation: diagnostic-only
-            f"PlanProposal has {len(raw_steps)} actions; runtime permits "
-            f"{planning.max_plan_steps}"
-        )
-    if len(raw_steps) > planning.max_actions_per_plan:
-        raise ValueError(  # mutation: diagnostic-only
-            f"PlanProposal has {len(raw_steps)} actions; runtime action ceiling is "
-            f"{planning.max_actions_per_plan}"
+            planning.planner_output_policy.cardinality_error(len(raw_steps))
         )
 
     proposals = [_proposal_step(raw) for raw in raw_steps]
@@ -490,71 +500,6 @@ def compile_plan_proposal(
     )
 
 
-def compile_plan_patch_proposal(
-    document: object,
-    *,
-    observation: Observation,
-    context_id: str,
-    planning: PlanningConfig,
-) -> CompiledPlanPatchProposal:
-    """Compile future intent without asking the model to edit a live plan graph."""
-
-    active = observation.active_plan
-    if active is None:
-        raise ValueError("A future plan proposal requires an active plan context")
-    compiled = compile_plan_proposal(
-        document,
-        observation=observation,
-        context_id=context_id,
-        planning=planning,
-    )
-    reserved_ids = {active.active_step_id, *active.completed_step_ids}
-    step_ids: dict[str, str] = {}
-    next_suffix = 1
-    for step in compiled.plan.steps:
-        candidate = f"future-{context_id}-{next_suffix}"
-        while candidate in reserved_ids:
-            next_suffix += 1
-            candidate = f"future-{context_id}-{next_suffix}"
-        step_ids[step.step_id] = candidate
-        reserved_ids.add(candidate)
-        next_suffix += 1
-    future_steps = [
-        step.model_copy(
-            update={
-                "step_id": step_ids[step.step_id],
-                "on_success": (
-                    step_ids[step.on_success]
-                    if step.on_success is not None
-                    else None
-                ),
-                "on_failure": (
-                    step_ids[step.on_failure]
-                    if step.on_failure is not None
-                    else None
-                ),
-            },
-            deep=True,
-        )
-        for step in compiled.plan.steps
-    ]
-    patch = PlanPatch(
-        schema_version="1.0",
-        plan_id=active.plan_id,
-        based_on_plan_version=active.plan_version,
-        based_on_revision=observation.world_revision,
-        interrupt_active_step_id=None,
-        replace_future_steps=future_steps,
-        rationale=compiled.plan.objective,
-        continuity_operations=compiled.plan.continuity_operations,
-        fieldbook_operations=compiled.plan.fieldbook_operations,
-    )
-    return CompiledPlanPatchProposal(
-        patch=patch,
-        rejected_sidecars=compiled.rejected_sidecars,
-    )
-
-
 def compile_hosted_plan_proposal(
     document: object,
     *,
@@ -562,26 +507,20 @@ def compile_hosted_plan_proposal(
     context_id: str,
     planning: PlanningConfig,
 ) -> CompiledHostedPlanProposal:
-    """Compile the same small model surface for fresh and concurrent planning."""
+    """Compile a fresh choice; hosted output never reserves a future affordance."""
 
-    if observation.active_plan is None:
-        compiled = compile_plan_proposal(
-            document,
-            observation=observation,
-            context_id=context_id,
-            planning=planning,
+    if observation.active_plan is not None:
+        raise ValueError(
+            "Hosted planning cannot pre-bind a future affordance while a plan is "
+            "active; observe again after the current affordance completes."
         )
-        return CompiledHostedPlanProposal(
-            output=compiled.plan,
-            rejected_sidecars=compiled.rejected_sidecars,
-        )
-    compiled_patch = compile_plan_patch_proposal(
+    compiled = compile_plan_proposal(
         document,
         observation=observation,
         context_id=context_id,
         planning=planning,
     )
     return CompiledHostedPlanProposal(
-        output=compiled_patch.patch,
-        rejected_sidecars=compiled_patch.rejected_sidecars,
+        output=compiled.plan,
+        rejected_sidecars=compiled.rejected_sidecars,
     )

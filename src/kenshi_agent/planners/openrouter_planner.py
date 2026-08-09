@@ -29,7 +29,9 @@ from .base import (
     PreparedPlannerInput,
     hosted_proposal_model,
     output_token_budget,
+    planner_request_text,
     prepared_budgeted_input,
+    render_planner_instructions,
     validate_planner_prompt_budget,
 )
 from .context_capacity import (
@@ -38,7 +40,7 @@ from .context_capacity import (
     hosted_context_envelope,
     resolve_openrouter_model_capacity,
 )
-from .plan_proposal import PlanProposal, compile_hosted_plan_proposal
+from .plan_proposal import compile_hosted_plan_proposal
 from .schema_dialect import projected_response_format
 
 # Phrases providers use when the request was fine but the schema was not. They
@@ -118,17 +120,6 @@ def _contains_screenshot(value: object) -> bool:
     return any(_contains_screenshot(item) for item in value.values())
 
 
-def _planner_request_text(output_model: type[BaseModel]) -> str:
-    if output_model is PlanProposal:
-        request = (
-            "Choose one short objective and exactly one current affordance selection. "
-            "The runtime will observe again after it completes. "
-        )
-    else:
-        request = "Choose exactly one current affordance from this observation. "
-    return request + f"Return the {output_model.__name__} schema only.\n\n"
-
-
 def _observe_selection(observation: Observation) -> dict[str, Any]:
     offer = next(
         offer
@@ -189,7 +180,8 @@ def _aggregate_diagnostics(
 class OpenRouterPlanner(Planner):
     """Vision planner using OpenRouter's OpenAI-compatible Chat API."""
 
-    max_plan_steps: int = 4
+    def _planning_config(self) -> PlanningConfig:
+        return getattr(self, "planning", PlanningConfig())
 
     _last_call_diagnostics: HostedPlannerCallDiagnostics | None = None
     _last_sent_messages: list[dict[str, Any]] | None = None
@@ -199,7 +191,6 @@ class OpenRouterPlanner(Planner):
         config: PlannerConfig,
         prompt_file: Path,
         *,
-        max_plan_steps: int = 4,
         planning: PlanningConfig | None = None,
     ) -> None:
         try:
@@ -213,10 +204,12 @@ class OpenRouterPlanner(Planner):
         if not api_key:
             raise RuntimeError("OPENROUTER_API_KEY is required for the OpenRouter planner.")
         self.config = config
-        self.instructions = prompt_file.read_text(encoding="utf-8")
+        self.planning = planning or PlanningConfig()
+        self.instructions = render_planner_instructions(
+            prompt_file.read_text(encoding="utf-8"),
+            self.planning.planner_output_policy,
+        )
         self.client: Any = AsyncOpenAI(api_key=api_key, base_url=config.openrouter_base_url)
-        self.max_plan_steps = max_plan_steps
-        self.planning = planning or PlanningConfig(max_plan_steps=max_plan_steps)
         self._model_capacity = resolve_openrouter_model_capacity(
             base_url=config.openrouter_base_url,
             model=config.openrouter_model,
@@ -239,8 +232,7 @@ class OpenRouterPlanner(Planner):
         system_text = self.instructions
         output_tokens = output_token_budget(
             self.config,
-            observation,
-            max_plan_steps=self.max_plan_steps,
+            output_policy=self._planning_config().planner_output_policy,
         )
         capacity = getattr(
             self,
@@ -266,7 +258,10 @@ class OpenRouterPlanner(Planner):
             output_tokens=output_tokens,
             system_text=system_text,
             schema_text=schema_text,
-            request_text=_planner_request_text(response_model),
+            request_text=planner_request_text(
+                response_model,
+                self._planning_config().planner_output_policy,
+            ),
             screenshot_included=(
                 self.config.include_screenshot
                 and observation.screenshot_path is not None
@@ -324,7 +319,10 @@ class OpenRouterPlanner(Planner):
             {
                 "type": "text",
                 "text": (
-                    _planner_request_text(response_model)
+                    planner_request_text(
+                        response_model,
+                        self._planning_config().planner_output_policy,
+                    )
                     + prepared.payload
                 ),
             }
@@ -350,8 +348,7 @@ class OpenRouterPlanner(Planner):
         extra: dict[str, Any] = {}
         extra["max_tokens"] = output_token_budget(
             self.config,
-            observation,
-            max_plan_steps=self.max_plan_steps,
+            output_policy=self._planning_config().planner_output_policy,
         )
         extra["temperature"] = self.config.temperature
 
@@ -473,7 +470,7 @@ class OpenRouterPlanner(Planner):
         planning = getattr(
             self,
             "planning",
-            PlanningConfig(max_plan_steps=self.max_plan_steps),
+            PlanningConfig(),
         )
         try:
             document = json.loads(_json_body(combined_response))

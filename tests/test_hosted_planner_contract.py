@@ -14,7 +14,7 @@ from kenshi_agent.affordances import (
     offered_affordances,
     selection_for,
 )
-from kenshi_agent.config import PlannerConfig
+from kenshi_agent.config import PLANNER_OUTPUT_POLICY, PlannerConfig, PlanningConfig
 from kenshi_agent.core.continuity import (
     ContinuityOperationStatus,
     ContinuityOrigin,
@@ -30,7 +30,6 @@ from kenshi_agent.core.operation import (
 from kenshi_agent.core.planning import (
     ActivePlanContext,
     PlanEnvelope,
-    PlanPatch,
 )
 from kenshi_agent.core.telemetry import (
     CharacterState,
@@ -450,7 +449,7 @@ def test_context_envelope_rejects_zero_room_after_static_reservations() -> None:
         )
 
 
-def test_hosted_output_model_switches_to_future_only_patch_for_active_plan() -> None:
+def test_hosted_output_model_is_one_fresh_choice_schema() -> None:
     assert hosted_proposal_model(observation()) is PlanProposal
     assert (
         hosted_proposal_model(
@@ -468,7 +467,7 @@ def test_hosted_output_model_switches_to_future_only_patch_for_active_plan() -> 
     )
 
 
-def test_output_token_budget_tracks_structured_response_complexity() -> None:
+def test_output_token_budget_tracks_the_typed_output_policy() -> None:
     """Continuous hosted play reserves output for exactly one fresh choice.
 
     Runtime-owned options may be long, but neither their duration nor an active
@@ -477,47 +476,10 @@ def test_output_token_budget_tracks_structured_response_complexity() -> None:
 
     config = PlannerConfig()
 
-    # Every hosted turn is one choice, so every turn gets the one-choice budget.
-    assert output_token_budget(config, observation(), max_plan_steps=4) == 6144
-
-    # Screen and legacy runtime plan ceilings do not enlarge the hosted schema.
-    for screen in ("trade", "dialogue", "world"):
-        assert output_token_budget(config, observation(screen=screen), max_plan_steps=8) == 6144
-
-    # Defensive active-plan calls receive the same one-choice budget.
-    assert (
-        output_token_budget(
-            config,
-            observation(
-                active_plan=ActivePlanContext(
-                    plan_id="active-plan",
-                    plan_version=1,
-                    objective="Patch only the future.",
-                    active_step_id="move",
-                    remaining_actions=2,
-                )
-            ),
-            max_plan_steps=4,
-        )
-        == 6144
-    )
-    # Even a plan reporting no remaining actions has the same bounded shape.
-    assert (
-        output_token_budget(
-            config,
-            observation(
-                active_plan=ActivePlanContext(
-                    plan_id="active-plan",
-                    plan_version=1,
-                    objective="Repair the empty future.",
-                    active_step_id="move",
-                    remaining_actions=0,
-                )
-            ),
-            max_plan_steps=4,
-        )
-        == 6144
-    )
+    assert output_token_budget(
+        config,
+        output_policy=PLANNER_OUTPUT_POLICY,
+    ) == 6144
 
 
 def test_openai_request_receives_the_computed_output_token_limit() -> None:
@@ -540,7 +502,7 @@ def test_openai_request_receives_the_computed_output_token_limit() -> None:
     )
     planner.instructions = "Return the requested schema."
     planner.client = SimpleNamespace(responses=responses)
-    planner.max_plan_steps = 4
+    planner.planning = PlanningConfig()
 
     oversized = observation().model_copy(
         update={"events": ["nested Unicode 食料 " + "x" * 500 for _ in range(20)]}
@@ -558,7 +520,7 @@ def test_openai_request_receives_the_computed_output_token_limit() -> None:
     assert "observation_budget" not in parsed_payload
 
 
-def test_openai_active_plan_also_authors_a_simple_future_proposal() -> None:
+def test_openai_cannot_prebind_a_future_affordance() -> None:
     proposal = PlanProposal(
         objective="Stop after the active option finishes.",
         steps=[_proposal_step()],
@@ -580,7 +542,7 @@ def test_openai_active_plan_also_authors_a_simple_future_proposal() -> None:
     )
     planner.instructions = "Return the requested schema."
     planner.client = SimpleNamespace(responses=responses)
-    planner.max_plan_steps = 4
+    planner.planning = PlanningConfig()
     current = observation(
         active_plan=ActivePlanContext(
             plan_id="active-plan",
@@ -591,13 +553,10 @@ def test_openai_active_plan_also_authors_a_simple_future_proposal() -> None:
         )
     )
 
-    result = asyncio.run(planner.decide(current))
+    with pytest.raises(ValueError, match="cannot pre-bind a future affordance"):
+        asyncio.run(planner.decide(current))
 
     assert responses.kwargs["text_format"] is PlanProposal
-    assert isinstance(result, PlanPatch)
-    assert result.plan_id == "active-plan"
-    assert result.based_on_plan_version == 2
-    assert result.interrupt_active_step_id is None
 
 
 def test_openrouter_request_receives_the_same_valid_budgeted_json() -> None:
@@ -703,7 +662,7 @@ def test_openrouter_request_carries_its_configured_generation_contract() -> None
     assert diagnostics.cache_write_tokens == 0
 
 
-def test_defensive_active_plan_model_can_only_author_one_future_choice() -> None:
+def test_openrouter_cannot_prebind_a_future_affordance() -> None:
     current = observation(
         active_plan=ActivePlanContext(
             plan_id="active-plan",
@@ -741,19 +700,10 @@ def test_defensive_active_plan_model_can_only_author_one_future_choice() -> None
         chat=SimpleNamespace(completions=completion),
     )
 
-    result = asyncio.run(planner.decide(current))
+    with pytest.raises(ValueError, match="cannot pre-bind a future affordance"):
+        asyncio.run(planner.decide(current))
 
-    assert isinstance(result, PlanPatch)
     assert completion.kwargs["response_format"]["json_schema"]["name"] == "PlanProposal"
-    assert result.plan_id == "active-plan"
-    assert result.based_on_plan_version == 3
-    assert result.based_on_revision == current.world_revision
-    assert result.interrupt_active_step_id is None
-    replacement_ids = [step.step_id for step in result.replace_future_steps]
-    assert set(replacement_ids).isdisjoint({"future-pc-1-1", "future-pc-1-2"})
-    assert len(replacement_ids) == 1
-    assert result.replace_future_steps[0].on_success is None
-    assert result.rationale == "Take a fresh look after the active option."
 
 
 def test_openrouter_keeps_gameplay_when_one_proposed_memory_is_invalid() -> None:
@@ -906,7 +856,7 @@ def test_openai_rejects_an_unadvertised_action_after_sdk_parsing() -> None:
     planner.config = PlannerConfig(include_screenshot=False)
     planner.instructions = "Return the requested schema."
     planner.client = SimpleNamespace(responses=ParsedUnavailableAction())
-    planner.max_plan_steps = 4
+    planner.planning = PlanningConfig()
 
     with pytest.raises(ValueError, match="no current choice is named"):
         asyncio.run(planner.decide(current))
@@ -1168,7 +1118,7 @@ def test_hosted_manifests_name_only_memories_in_the_final_budgeted_json() -> Non
             context_window_tokens=52_000,
         )
         planner.instructions = "Return the requested schema."
-        planner.max_plan_steps = 4
+        planner.planning = PlanningConfig()
 
         prepared = planner.prepare_input(oversized, context_id="pc-1")
 

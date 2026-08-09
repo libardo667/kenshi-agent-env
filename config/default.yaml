@@ -7,7 +7,7 @@ control:
 
 planning:
   observation_pump_enabled: true
-  concurrent_option_planning_enabled: true
+  concurrent_option_planning_enabled: false
   concurrent_option_planning_delay_seconds: 20
   observation_pump_seconds: 0.1
   state_history_limit: 128
@@ -15,7 +15,7 @@ planning:
   event_journal_limit: 256
   subscriber_queue_limit: 32
   max_delta_paths: 128
-  max_plan_steps: 4
+  max_runtime_plan_steps: 4
   max_actions_per_plan: 8
   max_plan_wall_seconds: 30
   max_plan_game_seconds: 12

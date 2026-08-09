@@ -18,36 +18,29 @@ from .base import (
     PreparedPlannerInput,
     hosted_proposal_model,
     output_token_budget,
+    planner_request_text,
     prepared_budgeted_input,
+    render_planner_instructions,
 )
 from .context_capacity import (
     HostedModelCapacity,
     conservative_text_token_estimate,
     hosted_context_envelope,
 )
-from .plan_proposal import PlanProposal, compile_hosted_plan_proposal
-
-
-def _planner_request_text(output_model: type[BaseModel]) -> str:
-    if output_model is PlanProposal:
-        request = (
-            "Choose one short objective and exactly one current affordance selection. "
-            "The runtime will observe again after it completes. "
-        )
-    else:
-        request = "Choose exactly one current affordance from this observation. "
-    return request + f"Return the {output_model.__name__} schema only.\n\n"
+from .plan_proposal import compile_hosted_plan_proposal
 
 
 class OpenAIPlanner(Planner):
     """Optional vision planner using the OpenAI Responses API and Pydantic output."""
+
+    def _planning_config(self) -> PlanningConfig:
+        return getattr(self, "planning", PlanningConfig())
 
     def __init__(
         self,
         config: PlannerConfig,
         prompt_file: Path,
         *,
-        max_plan_steps: int = 4,
         planning: PlanningConfig | None = None,
     ) -> None:
         try:
@@ -57,10 +50,12 @@ class OpenAIPlanner(Planner):
                 "The OpenAI planner requires the optional dependency: pip install -e '.[openai]'"
             ) from exc
         self.config = config
-        self.instructions = prompt_file.read_text(encoding="utf-8")
+        self.planning = planning or PlanningConfig()
+        self.instructions = render_planner_instructions(
+            prompt_file.read_text(encoding="utf-8"),
+            self.planning.planner_output_policy,
+        )
         self.client: Any = AsyncOpenAI()
-        self.max_plan_steps = max_plan_steps
-        self.planning = planning or PlanningConfig(max_plan_steps=max_plan_steps)
 
     def prepare_input(
         self,
@@ -89,12 +84,14 @@ class OpenAIPlanner(Planner):
             capacity,
             output_tokens=output_token_budget(
                 self.config,
-                observation,
-                max_plan_steps=self.max_plan_steps,
+                output_policy=self._planning_config().planner_output_policy,
             ),
             system_text=system_text,
             schema_text=json.dumps(response_model.model_json_schema()),
-            request_text=_planner_request_text(response_model),
+            request_text=planner_request_text(
+                response_model,
+                self._planning_config().planner_output_policy,
+            ),
             screenshot_included=(
                 self.config.include_screenshot
                 and observation.screenshot_path is not None
@@ -141,7 +138,10 @@ class OpenAIPlanner(Planner):
             {
                 "type": "input_text",
                 "text": (
-                    _planner_request_text(response_model)
+                    planner_request_text(
+                        response_model,
+                        self._planning_config().planner_output_policy,
+                    )
                     + prepared.payload
                 ),
             }
@@ -167,8 +167,7 @@ class OpenAIPlanner(Planner):
                 reasoning={"effort": self.config.reasoning_effort},
                 max_output_tokens=output_token_budget(
                     self.config,
-                    observation,
-                    max_plan_steps=self.max_plan_steps,
+                    output_policy=self._planning_config().planner_output_policy,
                 ),
             )
         parsed = response.output_parsed
@@ -188,7 +187,7 @@ class OpenAIPlanner(Planner):
             planning=getattr(
                 self,
                 "planning",
-                PlanningConfig(max_plan_steps=self.max_plan_steps),
+                PlanningConfig(),
             ),
         ).output
         return output

@@ -346,7 +346,7 @@ def test_foreground_world_action_runs_while_advisor_is_still_thinking(
             minimum_memory_salience=0.0,
             planning_config=PlanningConfig(
                 observation_pump_enabled=False,
-                max_plan_steps=2,
+                max_runtime_plan_steps=2,
                 max_actions_per_plan=2,
             ),
         )
@@ -414,7 +414,7 @@ def test_run_end_cancels_a_pending_advisor_without_leaving_session_state(
             minimum_memory_salience=0.0,
             planning_config=PlanningConfig(
                 observation_pump_enabled=False,
-                max_plan_steps=2,
+                max_runtime_plan_steps=2,
                 max_actions_per_plan=2,
             ),
         )
@@ -729,7 +729,7 @@ def test_continuous_runtime_never_dispatches_consult_to_the_environment(
             minimum_memory_salience=0.0,
             planning_config=PlanningConfig(
                 observation_pump_enabled=False,
-                max_plan_steps=2,
+                max_runtime_plan_steps=2,
                 max_actions_per_plan=2,
             ),
         )

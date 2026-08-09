@@ -20,6 +20,16 @@
     "rather than demonstrated. close_trade_window is separately live-proven as a",
     "native recovery command, not a registry-backed gameplay operation."
   ],
+  "planner_output_contract": {
+    "proof_status": "unit_proven",
+    "evidence": [
+      "PlannerOutputPolicy is the typed singleton-cardinality owner used by PlanProposal schema bounds, generated prompt language, request text, token budgeting, and compiler diagnostics",
+      "tests/test_plan_proposal.py structurally compares the policy with the schema, schema example, rendered prompt, request, and exact compiler rejection",
+      "both canonical configs disable concurrent option planning, and compile_hosted_plan_proposal rejects active-plan output instead of converting it into a future PlanPatch"
+    ],
+    "live_evidence": [],
+    "note": "Source and portable-test proven only. No Kenshi behavior, native command dispatch, or live game-state change is claimed by this planner contract."
+  },
   "entries": [
     {
       "operation_kind": "approach_dialogue_target",

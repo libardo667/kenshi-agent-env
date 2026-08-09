@@ -355,15 +355,31 @@
     }
   },
   "additionalProperties": false,
-  "description": "One hosted choice; deterministic code observes again before another.",
+  "description": "A hosted choice; deterministic code observes again before another.",
   "properties": {
     "objective": {
+      "description": "The broader gameplay goal this current choice advances. It may span later deliberations without naming their affordances.",
+      "examples": [
+        "Establish a reliable food supply."
+      ],
       "maxLength": 1000,
       "minLength": 1,
       "title": "Objective",
       "type": "string"
     },
     "steps": {
+      "description": "Choose exactly one current affordance per deliberation. The objective may describe a broader goal, but this list cannot reserve or pre-bind later affordances; the runtime observes again before the next choice.",
+      "examples": [
+        [
+          {
+            "selection": {
+              "parameters": [],
+              "semantic": "observe",
+              "target_id": null
+            }
+          }
+        ]
+      ],
       "items": {
         "$ref": "#/$defs/ProposedPlanStep"
       },

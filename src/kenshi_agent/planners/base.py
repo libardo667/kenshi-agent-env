@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from ..config import PlannerConfig
+from ..config import PlannerConfig, PlannerOutputPolicy
 from ..core.observation import Observation
 from ..core.planner_context import (
     AuthoredPlannerContext,
@@ -23,6 +23,46 @@ HostedPlannerFailureCategory = Literal[
 ]
 PLANNER_SYSTEM_CHARACTER_BUDGET = 12_000
 PLANNER_STATIC_PREFIX_CHARACTER_BUDGET = 50_000
+PLANNER_OUTPUT_POLICY_MARKER = "{{PLANNER_OUTPUT_POLICY}}"
+
+
+def planner_output_policy_language(policy: PlannerOutputPolicy) -> str:
+    """Render every model-facing cardinality statement from the typed owner."""
+
+    return "\n".join(
+        (
+            f"- State a broader gameplay objective, then choose {policy.cardinality_phrase}.",
+            "- Put that choice in `steps`. Copy its `semantic`, exact "
+            "`target_id` when present, and only parameters declared by the same "
+            "current offer. Never emit the runtime-only `affordance_id`.",
+            "- Do not queue later selections or reserve an affordance for a later "
+            "step. The runtime observes again before the next deliberation.",
+            "- Example: an objective may be `Establish a reliable food supply` while "
+            "the current selection is `observe`; later selections wait for "
+            "later observations.",
+        )
+    )
+
+
+def render_planner_instructions(template: str, policy: PlannerOutputPolicy) -> str:
+    """Inject the output policy once; a prompt cannot carry a hand-written copy."""
+
+    occurrences = template.count(PLANNER_OUTPUT_POLICY_MARKER)
+    if occurrences != 1:
+        raise ValueError(
+            "planner prompt must contain exactly one output-policy marker; "
+            f"found {occurrences}"
+        )
+    return template.replace(
+        PLANNER_OUTPUT_POLICY_MARKER,
+        planner_output_policy_language(policy),
+    )
+
+
+def planner_request_text(output_model: type[PlanProposal], policy: PlannerOutputPolicy) -> str:
+    """Build the per-call request from the same policy as prompt and schema."""
+
+    return f"{policy.request_text} Return the {output_model.__name__} schema only.\n\n"
 
 
 def hosted_proposal_model(observation: Observation) -> HostedProposalModel:
@@ -54,15 +94,12 @@ def validate_planner_prompt_budget(
 
 def output_token_budget(
     config: PlannerConfig,
-    observation: Observation,
     *,
-    max_plan_steps: int,
+    output_policy: PlannerOutputPolicy,
 ) -> int:
-    del max_plan_steps, observation
-    # Hosted play chooses one current affordance, then receives a fresh
-    # observation. Runtime-owned options may run for minutes, but their
-    # duration does not enlarge the model's response contract.
-    expected_steps = 1
+    # Runtime-owned options may run for minutes, but their duration does not
+    # enlarge the hosted model's response contract.
+    expected_steps = output_policy.current_affordances_per_deliberation
     return min(
         config.max_output_tokens_ceiling,
         config.max_output_tokens_base

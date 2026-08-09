@@ -944,7 +944,7 @@ def test_plan_policy_rejects_excessive_horizon_budget_and_stale_basis() -> None:
         validate_plan(
             plan,
             current,
-            PlanningConfig(max_plan_steps=1),
+            PlanningConfig(max_runtime_plan_steps=1),
         )
 
     with pytest.raises(PlanValidationError, match="max_actions"):
@@ -1017,7 +1017,7 @@ def test_plan_validation_fails_closed_for_every_outer_authority_boundary() -> No
         (
             valid_plan,
             valid_observation,
-            PlanningConfig(max_plan_steps=1),
+            PlanningConfig(max_runtime_plan_steps=1),
         ),
         (
             valid_plan.model_copy(update={"max_actions": 3}),
@@ -1148,7 +1148,7 @@ def test_plan_validation_accepts_every_configured_boundary_at_equality() -> None
         plan,
         current,
         PlanningConfig(
-            max_plan_steps=len(plan.steps),
+            max_runtime_plan_steps=len(plan.steps),
             max_actions_per_plan=plan.max_actions,
             max_plan_wall_seconds=plan.max_wall_seconds,
             max_plan_game_seconds=plan.max_game_seconds,
