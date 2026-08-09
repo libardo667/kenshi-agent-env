@@ -1,48 +1,77 @@
 # Kenshi Agent Environment
 
-A bounded agent runtime that plays Kenshi through current telemetry, screenshots,
-runtime-generated affordances and a small reviewed native command bridge. Synthesized
-Windows input remains only in host startup, recovery, and the controller's narrow
-safety fallbacks; planner-visible gameplay operations are coordinate-independent.
+Kenshi Agent Environment lets a language model play a supervised game of Kenshi.
 
-The playing model does not write key sequences, click coordinates, native calls, or
-retry loops. It chooses one exact affordance offered from the current observation;
-the runtime rebinds that choice, authorizes it against fresh evidence, performs it
-through one operation handler, and records one causal outcome.
+A native mod reads the game state and performs gameplay actions. The Python runtime
+captures screenshots, builds a list of actions that are valid right now, asks the
+model to choose from that list, checks the choice against fresh game state, and
+records what happened.
 
-This is experimental, supervised software—not a claim of broad Kenshi competence.
-The proven live surface includes squad selection and movement, dialogue approach,
+The model does not write key presses, screen coordinates, native commands, or retry
+loops. Gameplay actions offered to the model go through the native mod and do not use
+mouse coordinates. Python currently sends a short hotkey after publishing most
+native command requests; Windows input is also used to start and recover the game and
+for host-safety operations.
+
+This is experimental software for supervised runs with disposable saves. It is not
+a general-purpose Kenshi bot.
+
+## What works today
+
+The current action set covers:
+
+- selecting characters and issuing movement, regroup, building-exit, and map-travel
+  orders;
+- approaching people and issuing character orders that Kenshi itself reports as
+  available;
+- opening trade, looting, squadmate, and resource inventories;
+- buying, selling, looting, collecting resource output, and moving items between
+  open inventories through Kenshi's own inventory code;
+- starting or adopting resource work and waiting for output;
+- reading a local resource survey;
+- pausing, changing game speed, waiting, and stopping a run;
+- shifting into an eligible nearby body after losing the current party; and
+- using campaign memory, the fieldbook, and the read-only strategy advisor.
+
+Live acceptance runs have covered representative movement and character orders,
 trade-window opening, purchases, equipped-item looting, squadmate and resource-output
-transfers through the unified inventory route, bounded resource production, native
-playback control, human handoff, emergency stop, and a telemetry-confirmed final
-pause. The native recovery protocol can also close a trade window that this surface
-opens; that inverse remains recovery tooling rather than a planner-visible gameplay
-operation.
+transfers, resource production, body shifting, human handoff, emergency stop, and a
+confirmed final pause. The exact evidence for each operation is recorded in
+[the proof ledger](docs/reconstruction/interaction_proof_status.json).
 
-## Current architecture
+There are still important limits:
 
-The repository completed a staged architectural reconstruction on 2026-08-04. Its
-surviving ownership model is deliberately small:
+- The mod currently tracks only one active command. It cannot yet track separate
+  commands for different groups at the same time.
+- Some group behavior is still unproven, including group dialogue participation,
+  mixed-building exits, threat-response scope, and delayed map-travel continuation
+  after changing selection.
+- Many controls visible in Kenshi are intentionally not offered to the model. The old
+  pointer-based gameplay handlers were removed instead of being kept as a fallback.
+- A native recovery command can close a trade window, but general window closing is
+  not a planner action.
 
-- Affordance adapters decide what the playing model may choose now.
-- Operation definitions own prerequisites, risk, identity, and terminal contracts.
-- One handler owns the mechanics of each private operation.
-- `OperationAuthority` revalidates exact current authority at the input boundary.
-- `RunCoordinator` owns observe → plan → execute → record sequencing.
-- Independent owners handle safety preemption, human control, outcomes, continuity,
-  and final safe state.
-- Live, mock, and replay environments meet the same execution boundary through
-  different external adapters.
-
-Read [ARCHITECTURE.md](ARCHITECTURE.md) for the implemented design. The completed
-[reconstruction plan](docs/ARCHITECTURE_RECONSTRUCTION.md) explains the ownership
-changes and their stage gates; the
-[Stage 8 acceptance report](docs/reconstruction/stage_8_acceptance.md) records the
-portable, native, and supervised-live evidence. The active authority for current
-work is the
+The active work to fix the group-order model is described in the
 [interaction scope and order lifecycle plan](docs/KENSHI_INTERACTION_SCOPE_ORDER_LIFECYCLE_PLAN.md).
 
-## Portable quick start
+## How a run works
+
+1. The native mod publishes current Kenshi state, including characters, selection,
+   nearby targets, inventories, dialogue, visible controls, and command results.
+2. The runtime captures a matching screenshot and builds the actions available from
+   that state.
+3. The planner chooses one of those actions.
+4. The runtime reads fresh state and refuses the action if its target, selection, or
+   other requirements changed.
+5. The native mod performs the action and reports whether Kenshi accepted it and what
+   happened afterward.
+6. The runtime writes the observation, decision, command, and result to the run log.
+   A live run finishes by returning control and confirming that the game is paused.
+
+Mock and replay runs use the same planner and operation path without controlling a
+live game.
+
+## Try the mock environment
 
 Python 3.11 or newer and [uv](https://docs.astral.sh/uv/) are recommended.
 
@@ -52,52 +81,38 @@ uv run kenshi-agent doctor --config config/default.yaml
 uv run kenshi-agent run --config config/default.yaml --mode mock --steps 8
 ```
 
-The default configuration uses the deterministic mock adapter and heuristic planner.
-It does not send Windows or Kenshi input. Run evidence is written beneath `runs/`.
+The default config uses a seeded mock world and the built-in heuristic planner. It
+does not send input to Windows or Kenshi. Run files are written under `runs/`.
 
-The principal portable checks are:
+## Set up live Kenshi
 
-```bash
-uv run pytest -q
-uv run ruff check .
-uv run mypy src
-uv run python scripts/export_schemas.py
-uv run python scripts/export_docs.py
-```
+The supported live setup currently runs Kenshi on Windows from this repository under
+WSL. It expects:
 
-Generated files under `schemas/` and `docs/generated/` come from current models and
-registries. Do not edit them by hand.
-
-## Live Kenshi setup
-
-Live operation currently targets Kenshi on Windows from the repository under WSL.
-It expects:
-
-- an owned Windows installation of Kenshi through Steam;
+- Kenshi installed through Steam;
 - RE_Kenshi and the `KenshiAgentTelemetry` native mod;
-- Python 3.11 or newer on Windows for the input/capture process;
-- the display, graphics, memory, and launcher prerequisites enforced by
-  `config/live.yaml`; and
-- an API key for the configured hosted planner in a local `.env` file.
+- Python 3.11 or newer on Windows for the live host process;
+- the display, graphics, and memory setup checked by `config/live.yaml`; and
+- an OpenRouter API key for the default live planner, or credentials for another
+  configured planner.
 
-Start with the checked-in environment template:
+Copy the environment template and add the credentials you use:
 
 ```bash
 cp .env.example .env
 ```
 
-From Windows PowerShell, install the editable live runtime used by `./dev`:
+From Windows PowerShell, install the editable live runtime:
 
 ```powershell
 .\scripts\bootstrap_live_windows.ps1 -WithOpenAI
 ```
 
-Native build, conformance, staging, and installation instructions are in the
-[plug-in README](native/KenshiAgentTelemetry/README.md). The native bridge is not an
-arbitrary game API: it accepts a fixed protocol of reviewed, exact player-order
-operations and publishes keyed causal acknowledgements.
+Build and install the native mod by following its
+[setup instructions](native/KenshiAgentTelemetry/README.md). The mod is the main
+gameplay control interface as well as the source of live telemetry.
 
-Once the host and plug-in are prepared:
+Then prepare and check the host:
 
 ```bash
 ./dev scenario install-starts
@@ -106,15 +121,13 @@ Once the host and plug-in are prepared:
 ./dev launch --title
 ```
 
-`./dev doctor` is read-only. Launch refuses to continue when its exact Steam,
-graphics, display, memory, telemetry, or start-state requirements are not proven.
+`./dev doctor` only checks the system; it does not send input. `./dev launch` stops if
+the required Steam login, graphics profile, display, memory, telemetry, or requested
+start state cannot be confirmed.
 
-## Running live
+## Run the agent live
 
-`./dev run` is the supported live entrypoint. It can use a verified authored start,
-an immutable scenario fixture, or an already-loaded unambiguous world.
-
-Begin with planning only:
+`./dev run` is the normal live entrypoint. Start with a planning-only run:
 
 ```bash
 ./dev run \
@@ -125,75 +138,109 @@ Begin with planning only:
   --control plan-only
 ```
 
-The control choices are literal:
+`plan-only` reads the game and calls the planner but sends no gameplay actions.
 
-- `plan-only` sends no gameplay actions.
-- `live` performs the reviewed native-assisted operation surface after the explicit
-  live-control acknowledgements and desktop handoff.
+To let the agent act, use a disposable save and choose `live`:
 
-For an executing run, use a disposable save and choose `live` explicitly. F12 is the
-emergency stop. Human input causes a visible handoff; the independent supervisor can
-also preempt a run. If a run or terminal is interrupted, use:
+```bash
+./dev run \
+  --game-start kae-03-broke-pair \
+  --objective 'Find useful work and improve their situation.' \
+  --campaign first-pair-run \
+  --steps 12 \
+  --control live
+```
+
+The live path asks for explicit confirmation before taking desktop control. Press
+F12 for an emergency stop. Ordinary human input hands control back to the operator.
+
+If a run or terminal is interrupted, use:
 
 ```bash
 ./dev recover
 ```
 
-That command restores a safely paused state and releases stranded display ownership.
-Use `./dev stop` to pause and close Kenshi through the supported path.
+This pauses Kenshi and releases display ownership. Use `./dev stop` to pause and close
+the game through the supported path.
 
-The complete generated command reference is
-[docs/generated/DEV_CLI.md](docs/generated/DEV_CLI.md).
+For an interactive terminal launcher, run `./dev tui`. Other useful read-only tools
+are:
 
-## Evidence and continuity
-
-Each run has an append-only bundle under `runs/<run-id>/`. `events.jsonl` records
-observations, planner delivery, affordance binding, operation lifecycle, receipts,
-outcomes, preemption, and finalization. A receipt distinguishes acceptance, progress,
-completion, cancellation, and failure; a sent input is not treated as proof that the
-game changed.
-
-Durable memory and fieldbook records are campaign-scoped in SQLite. Pass an explicit
-`--campaign` for a save lineage that should retain continuity. A fresh campaign has no
-authority to retrieve claims from older runs. The public `kenshi-agent memory` and
-`kenshi-agent fieldbook` commands inspect those stores read-only.
-
-Scenario labels are also evidence-bound. Tooling can restore and attest an immutable
-fixture, while runtime validation checks the attestation against fresh telemetry. A
-manual label alone is never promoted into a proven start state.
-
-## Repository map
-
-```text
-src/kenshi_agent/core/       Dependency-leaf types and evidence vocabularies
-src/kenshi_agent/execution/  Execution kernel and operation-handler families
-src/kenshi_agent/env/        Live, mock, and replay environment adapters
-src/kenshi_agent/tooling/    Development CLI, scenarios, audits, and exporters
-native/                      KenshiLib telemetry and reviewed command bridge
-config/                      Canonical mock and live policies
-prompts/                     Playing-model and memory prompts
-knowledge/                   Advisor corpus and imported reference material
-scenarios/                   Authored starts and fixture metadata
-schemas/                     Generated external schemas
-docs/generated/              Generated operation and interface reports
-tests/                       Portable behavior, authority, and fitness tests
-runs/                        Local run evidence; ignored by git
+```bash
+./dev telemetry --watch
+./dev affordances --watch
+./dev snapshot --label before-test
 ```
 
-## Scope and safety
+See the [generated `./dev` command reference](docs/generated/DEV_CLI.md) for every
+option.
 
-The system preserves exact identity, telemetry freshness, input ownership, native
-command causality, independent preemption, and final-state confirmation. Those are
-epistemic guarantees: they constrain what the software may claim, not merely how it
-is organized.
+## Run records and campaign memory
 
-Live gameplay still has ordinary in-game consequences. Use disposable saves, keep
-unrelated secret-bearing windows off the captured display, and remain available for
-supervised acceptance runs. Mock evidence, replay evidence, and live persistent-world
-evidence are intentionally kept distinct.
+Every run gets a directory under `runs/<run-id>/`. Its `events.jsonl` file records
+observations, planner choices, action binding, native commands, monitor state,
+results, safety events, and finalization. Sending a command is not treated as proof
+that the game changed; later telemetry supplies that proof when it is available.
+
+Campaign memory and fieldbook entries are stored in SQLite. Pass `--campaign` when
+runs belong to the same ongoing save. Runs without the same campaign name cannot read
+each other's saved claims. The `kenshi-agent memory` and `kenshi-agent fieldbook`
+commands inspect those records without changing them.
+
+Scenario fixtures are also checked against current telemetry. Naming a scenario or
+save is not enough by itself to claim that the expected world is loaded.
+
+## Development checks
+
+Run the portable checks from the repository root:
+
+```bash
+uv run pytest -q
+uv run ruff check .
+uv run mypy src
+uv run python scripts/export_schemas.py
+uv run python scripts/export_docs.py
+```
+
+Files under `schemas/` and `docs/generated/` are generated from the current models
+and registries. Do not edit them by hand.
+
+Useful current references:
+
+- [operation definitions](docs/generated/OPERATION_DEFINITIONS.md)
+- [interaction catalog](docs/generated/INTERACTION_CATALOG.md)
+- [proof ledger](docs/reconstruction/interaction_proof_status.json)
+- [native mod and protocol](native/KenshiAgentTelemetry/README.md)
+- [current reconstruction plan](docs/KENSHI_INTERACTION_SCOPE_ORDER_LIFECYCLE_PLAN.md)
+
+The older [architecture reconstruction plan](docs/ARCHITECTURE_RECONSTRUCTION.md) and
+[Stage 8 acceptance report](docs/reconstruction/stage_8_acceptance.md) explain how the
+previous internal architecture was replaced. They are historical records, not the
+current work plan.
+
+## Repository layout
+
+```text
+src/kenshi_agent/          Python runtime, planning, actions, and tools
+native/                    Kenshi native mod and command protocol
+config/                    Mock and live configuration
+prompts/                   Planner and memory prompts
+knowledge/                 Strategy reference material
+scenarios/                 Authored starts and saved fixtures
+schemas/                   Generated data schemas
+docs/generated/            Generated action and interface reports
+tests/                     Portable tests
+runs/                      Local run logs; ignored by Git
+```
+
+## Safety
+
+Use disposable saves and stay present during live runs. Keep unrelated private
+windows off the captured display. Mock runs, replay runs, and live Kenshi runs provide
+different kinds of evidence and are not treated as interchangeable.
 
 ## License
 
-GPL-3.0-or-later. The native plug-in links against GPL-licensed KenshiLib. Kenshi is
-owned by Lo-Fi Games; this unofficial project contains no Kenshi game assets or game
+GPL-3.0-or-later. The native mod links against GPL-licensed KenshiLib. Kenshi is owned
+by Lo-Fi Games. This unofficial project does not include Kenshi game assets or game
 binaries.
