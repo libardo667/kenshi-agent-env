@@ -57,6 +57,7 @@ namespace KenshiAgentTelemetry
             "control.produce_resource_output",
             "control.open_trade_window",
             "control.close_active_interface",
+            "control.select_dialogue_option",
             "control.transfer_item",
             "control.shift_into_body",
             "control.perform_character_order",

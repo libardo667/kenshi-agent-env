@@ -69,6 +69,7 @@ class ReplayOperationPort:
     produce_resource_output = _execute
     regroup_with_squad_member = _execute
     respond_to_immediate_threat = _execute
+    select_dialogue_option = _execute
     select_squad_member_exact = _execute
     set_speed = _execute
     travel_to_map_destination = _execute

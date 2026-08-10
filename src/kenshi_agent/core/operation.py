@@ -380,6 +380,21 @@ class CloseActiveInterfaceAction(StrictModel):
     kind: Literal["close_active_interface"] = "close_active_interface"
 
 
+class SelectDialogueOptionAction(StrictModel):
+    """Choose one exact reply from the currently open conversation.
+
+    The index is not trusted alone: the dialogue target and exact rendered
+    caption travel with it, so a reply list that changes between observation
+    and dispatch fails closed instead of selecting whatever moved into the old
+    row.
+    """
+
+    kind: Literal["select_dialogue_option"] = "select_dialogue_option"
+    dialogue_target_id: str = Field(min_length=1, max_length=200)
+    option_index: int = Field(ge=0, le=63)
+    option_text: str = Field(min_length=1, max_length=500)
+
+
 class TransferItemAction(StrictModel):
     """Move one item between two open inventories, whatever owns them.
 
@@ -785,6 +800,7 @@ AtomicRuntimeOperation: TypeAlias = (
     | SurveyLocalResourcesAction
     | OpenTradeWindowAction
     | CloseActiveInterfaceAction
+    | SelectDialogueOptionAction
     | TransferItemAction
 )
 """Reusable atomic game/UI operations materialized from affordances."""
@@ -827,6 +843,7 @@ SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
         "produce_resource_output",
         "open_trade_window",
         "close_active_interface",
+        "select_dialogue_option",
         "transfer_item",
         "respond_to_immediate_threat",
         "regroup_with_squad_member",

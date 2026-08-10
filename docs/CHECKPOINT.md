@@ -1,22 +1,21 @@
-# Checkpoint: native safety cleanup and long-run readiness
+# Checkpoint: native dialogue affordances and long-run readiness
 
-This slice makes healthy loaded-session pause and blocking-interface cleanup
-fully native. Safety handoff, environment close, `./dev stop`, and `./dev
-recover` now require exact native terminal acknowledgements and causally later
-engine state. Keyboard pause and the crash-reporter hotkey survive only at the
-degraded boundary where no fresh native identity exists; production cleanup no
-longer guesses window geometry or drives a pointer.
+This slice builds on native pause, blocking-interface cleanup, and the timed
+Prospecting lifecycle by making every current dialogue reply an exact native
+affordance. The planner now sees a plural ordered reply surface and can select
+one only through the current dialogue target, zero-based index, and exact
+caption. No pointer, click, cursor movement, or key is involved.
 
 ## Repository and authority
 
 ```text
-parent commit          17812916988d2c6abb1a33cd7c57916364fc90fc
+parent commit          078d74e142340a448f530efd4695431c4a5c8146
 integration branch     main
 starting remote        origin/main at 1d53e57e787309975e75b710eba96b22d1feb12d
 starting tree          clean
 producer protocol      2.0.0
-request schema         1.5
-declared capabilities  51 loaded-world + 4 title-screen
+request schema         1.6
+declared capabilities  52 loaded-world + 4 title-screen
 ```
 
 The current authorities are `native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp`,
@@ -64,7 +63,7 @@ producer-side exception must be deleted by the deadline.
   `game_start_id`; Continue carries neither. All title requests have an empty
   recipient selection.
 - `SaveManager::load` and `SaveManager::newGame` own exact transitions.
-  Continue invokes Kenshi's title handler directly. The request schema is 1.5
+  Continue invokes Kenshi's title handler directly. The request schema is 1.6
   in Python, C++, fixtures, schema output, and the diagnostic dispatcher.
 - A title transition changes identity sessions. Its exact acknowledgement is
   preserved across `GameWorld::resetGame`, becomes terminal as
@@ -104,6 +103,28 @@ fallback.
 - Physical pause remains available only when telemetry cannot supply a fresh
   native identity. That is an explicit degraded/emergency boundary, not a
   compatibility reader or an ordinary production path.
+
+## Native dialogue-affordance contract
+
+- Protocol 1.6 adds `select_dialogue_option` with an exact dialogue target,
+  zero-based reply index, and untruncated caption. Every other command must
+  retain the strict `-1` / empty defaults for those two wire fields.
+- The planner receives one `reply_N` affordance for every caption in the
+  complete current ordered list. Native return-to-world remains available at
+  the same time; opening dialogue no longer traps the agent between closing and
+  reopening it.
+- Binding, input-boundary revalidation, and game-thread dispatch independently
+  require the same open target, in-range index, and exact caption. A reordered,
+  replaced, missing, stale, or overlong option fails closed before selection.
+- Native dispatch calls the public `Dialogue::replyClicked(int)` once. It is
+  terminal only after a later game update proves `dialogue_closed`,
+  `dialogue_target_changed`, or `dialogue_options_changed`.
+- The earlier `PLAYER_TALK_TO` false negative is also closed: context actions
+  expecting `PLAYER_TALK_TO` may terminate on the exact later dialogue target,
+  even after the transient task goal has already cleared.
+- Mock and replay ports implement the same operation surface. Strict fixtures,
+  generated schemas/docs, registry reachability, and capability-to-wire mapping
+  all include the command; there is no click or compatibility fallback.
 
 ## Evidence lanes
 
@@ -175,6 +196,26 @@ requires both descriptions to fit the bound, and rejects either ID appearing
 in either description. This is test-proven soak readiness, not evidence of a
 completed long run; a fresh 120-turn attempt remains required.
 
+The bounded native dialogue regression is
+`protocol-2-native-dialogue-regression-20260810-r1`. The exact-load fixture was
+attested and the Mercenary Captain conversation exposed three plural reply
+affordances plus native return-to-world. Command
+`cmd-c533cd40cb084f2c989a009a409c78af` selected exact index 0 / “I'm looking to
+hire some bodyguards” with zero primitives and completed only when the complete
+list changed to one-day, two-day, and decline terms. Command
+`cmd-b81386a9cdad4ac0b399201b4179ccc4` then selected exact “1 day [c.2,000]”
+with zero primitives. Later engine state changed money from c.20,000 to
+c.18,000, closed dialogue, returned to the world, and frame 5 rendered “Paid
+c.2000”. This proves exact native selection, payment, and closure; it does not
+prove the duration or conduct of the hired mercenaries.
+
+The capability proof passed before the run was deliberately interrupted.
+Automatic cleanup timed out because an unrelated mining command was already in
+flight; a separate supported `./dev stop --timeout 30` then reported `Kenshi
+closed from a fresh paused idle state.` The committed reduced artifact records
+both the successful dialogue chain and that cleanup caveat at
+`game_sources/research/dialogue_options/live_evidence/mercenary-hiring-dialogue-20260810.json`.
+
 ## DLL artifacts and exact reinstall commands
 
 ```text
@@ -238,6 +279,35 @@ Rollback specifically to the preserved pre-fix DLL:
 
 ```powershell
 Copy-Item -LiteralPath 'C:\Users\levib\AppData\Local\KenshiAgent\backups\native\20260810-prospecting-render-closure\pre-fix\KenshiAgentTelemetry.dll' -Destination 'C:\Program Files (x86)\Steam\steamapps\common\Kenshi\mods\KenshiAgentTelemetry\KenshiAgentTelemetry.dll' -Force
+```
+
+The installed Protocol 1.6 dialogue-affordance candidate and its immediate
+pre-dialogue rollback are preserved separately:
+
+```text
+pre-dialogue DLL sha256  aecc380c672eeeda9203227cbe483ac5313736e3d5a52d8d9e681b6075aa00c1
+pre-dialogue DLL size    430080
+pre-dialogue PDB sha256  077052e0574f4d6bc885db0af878e08e7512acc74d4065b69b6aff12b7524545
+pre-dialogue PDB size    11127808
+dialogue DLL sha256      033cf6e489816644f5310eb38d90ffc4e625e4812f8ed41d79aac05d58e4dfdd
+dialogue DLL size        435712
+dialogue PDB sha256      9976a2e536e838ecc635ed2b29504b38fd9f686475530ab185c1c5ddaa2fd4d6
+dialogue PDB size        11127808
+installed parity         YES
+conformance exe sha256   88e5535518c2633355dcea17d050f95313e4c6106664ee73c2a3172a149f1f37
+conformance exe size     317440
+```
+
+Reinstall the live-proven dialogue-affordance DLL:
+
+```powershell
+Copy-Item -LiteralPath 'C:\Users\levib\AppData\Local\KenshiAgent\backups\native\20260810-dialogue-affordances\replacement\KenshiAgentTelemetry.dll' -Destination 'C:\Program Files (x86)\Steam\steamapps\common\Kenshi\mods\KenshiAgentTelemetry\KenshiAgentTelemetry.dll' -Force
+```
+
+Rollback exactly to the preserved pre-dialogue DLL:
+
+```powershell
+Copy-Item -LiteralPath 'C:\Users\levib\AppData\Local\KenshiAgent\backups\native\20260810-dialogue-affordances\pre-dialogue\KenshiAgentTelemetry.dll' -Destination 'C:\Program Files (x86)\Steam\steamapps\common\Kenshi\mods\KenshiAgentTelemetry\KenshiAgentTelemetry.dll' -Force
 ```
 
 ## Withheld and named follow-on work

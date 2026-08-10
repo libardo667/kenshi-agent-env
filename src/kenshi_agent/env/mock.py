@@ -243,6 +243,7 @@ class MockOperationPort:
     transfer_item = _record
     open_trade_window = _record
     close_active_interface = _record
+    select_dialogue_option = _record
     select_squad_member_exact = _record
     shift_into_body = _record
     survey_local_resources = _record

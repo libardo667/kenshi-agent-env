@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "subsystem": "dialogue_options",
+  "observations": [
+    {
+      "id": "dialogue_option_portable_contract",
+      "kind": "portable_test",
+      "observed_on": "2026-08-10",
+      "kenshi_version": "No live executable loaded",
+      "executable_sha256_at_probe": null,
+      "installed_dll_sha256_at_probe": null,
+      "run_bundle": null,
+      "pre_dispatch_state": "Synthetic telemetry exposes an exact dialogue target and three ordered captions.",
+      "request": "Offer every caption as a plural affordance and bind one exact target, index, and caption.",
+      "acknowledgement": "Synthetic fixture only.",
+      "later_engine_evidence": "The binding refuses the old action after the ordered captions change.",
+      "final_disposition": "Test-proves repository shape and exact rebinding only.",
+      "evidence_source": "Portable affordance tests and native protocol fixtures.",
+      "remaining_uncertainty": [
+        "Portable fixtures cannot validate the Kenshi ABI or an actual conversation transition."
+      ]
+    },
+    {
+      "id": "mercenary_hiring_dialogue_20260810",
+      "kind": "live_probe",
+      "observed_on": "2026-08-10",
+      "kenshi_version": "1.0.65 x64",
+      "executable_sha256_at_probe": "a596ab4e407c67b58599c54ffb32dc1bf2b64510cdebd3fa9359ef05a576aeb1",
+      "installed_dll_sha256_at_probe": "033cf6e489816644f5310eb38d90ffc4e625e4812f8ed41d79aac05d58e4dfdd",
+      "run_bundle": "runs/protocol-2-native-dialogue-regression-20260810-r1",
+      "durable_reduced_evidence": "game_sources/research/dialogue_options/live_evidence/mercenary-hiring-dialogue-20260810.json",
+      "pre_dispatch_state": "The exact-load fixture opened the Mercenary Captain dialogue and exposed three ordered reply affordances.",
+      "request": "Select the exact bodyguard-hiring caption, then select the exact one-day c.2,000 term from the changed reply list.",
+      "acknowledgement": "cmd-c533cd40cb084f2c989a009a409c78af completed/dialogue_options_changed; cmd-b81386a9cdad4ac0b399201b4179ccc4 completed/dialogue_closed. Both receipts recorded zero primitives.",
+      "later_engine_evidence": "The first action outcome records the exact three hiring captions changing to exact one-day/two-day/decline captions. The second records money 20000 to 18000, dialogue to world, and the retained frame displays Paid c.2000.",
+      "final_disposition": "Live-proves exact native reply selection and later dialogue-state terminals on the named target and binaries. It proves payment and closure, not the duration or conduct of the hired mercenaries.",
+      "evidence_source": "The named raw run plus the committed reduced artifact with request/acknowledgement identities, decisive telemetry, frame hashes, binary hashes, and exact reinstall commands.",
+      "remaining_uncertainty": [
+        "The proof does not establish subsequent mercenary AI behavior or contract duration.",
+        "The bounded run was deliberately interrupted after proof and required a separate supported stop because an unrelated mining command was already in flight."
+      ]
+    }
+  ]
+}

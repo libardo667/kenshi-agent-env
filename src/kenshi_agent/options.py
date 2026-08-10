@@ -843,6 +843,10 @@ class StatefulNativeMovementOption:
             and acknowledgement.section_name == expected["section_name"]
             and acknowledgement.slot_x == expected["slot_x"]
             and acknowledgement.slot_y == expected["slot_y"]
+            and acknowledgement.dialogue_option_index
+            == expected["dialogue_option_index"]
+            and acknowledgement.dialogue_option_text
+            == expected["dialogue_option_text"]
         )
 
     def _poll_result(self) -> OptionPoll:

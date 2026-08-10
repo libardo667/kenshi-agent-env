@@ -46,6 +46,7 @@ _EXACT_METHODS = frozenset(
         "open_trade_window",
         "regroup_with_squad_member",
         "respond_to_immediate_threat",
+        "select_dialogue_option",
         "survey_local_resources",
         "select_squad_member_exact",
         "shift_into_body",

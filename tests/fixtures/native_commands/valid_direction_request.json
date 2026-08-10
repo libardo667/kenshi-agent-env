@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.5",
+  "schema_version": "1.6",
   "command_id": "cmd-0123456789abcdef0123456789abcdef",
   "command": "move_in_direction",
   "control_mode": "native_assisted",
@@ -24,6 +24,8 @@
   "game_start_id": "",
   "slot_x": 0,
   "slot_y": 0,
+  "dialogue_option_index": -1,
+  "dialogue_option_text": "",
   "paused": false,
   "speed_multiplier": 0.0,
   "quantity": 0

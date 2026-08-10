@@ -1290,6 +1290,7 @@
             "pause",
             "set_speed",
             "close_active_interface",
+            "select_dialogue_option",
             "survey_local_resources"
           ],
           "title": "Command",
@@ -1384,6 +1385,19 @@
           "minimum": 0,
           "title": "Slot Y",
           "type": "integer"
+        },
+        "dialogue_option_index": {
+          "default": -1,
+          "maximum": 63,
+          "minimum": -1,
+          "title": "Dialogue Option Index",
+          "type": "integer"
+        },
+        "dialogue_option_text": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Dialogue Option Text",
+          "type": "string"
         },
         "selected_character_ids": {
           "items": {
@@ -1908,6 +1922,43 @@
       "title": "ScrollAction",
       "type": "object"
     },
+    "SelectDialogueOptionAction": {
+      "additionalProperties": false,
+      "description": "Choose one exact reply from the currently open conversation.\n\nThe index is not trusted alone: the dialogue target and exact rendered\ncaption travel with it, so a reply list that changes between observation\nand dispatch fails closed instead of selecting whatever moved into the old\nrow.",
+      "properties": {
+        "kind": {
+          "const": "select_dialogue_option",
+          "default": "select_dialogue_option",
+          "title": "Kind",
+          "type": "string"
+        },
+        "dialogue_target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Dialogue Target Id",
+          "type": "string"
+        },
+        "option_index": {
+          "maximum": 63,
+          "minimum": 0,
+          "title": "Option Index",
+          "type": "integer"
+        },
+        "option_text": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Option Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "dialogue_target_id",
+        "option_index",
+        "option_text"
+      ],
+      "title": "SelectDialogueOptionAction",
+      "type": "object"
+    },
     "SelectSquadMemberExactAction": {
       "additionalProperties": false,
       "description": "Select one exact squad member through native stable identity.",
@@ -2384,6 +2435,9 @@
         },
         {
           "$ref": "#/$defs/CloseActiveInterfaceAction"
+        },
+        {
+          "$ref": "#/$defs/SelectDialogueOptionAction"
         },
         {
           "$ref": "#/$defs/TransferItemAction"

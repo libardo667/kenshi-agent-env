@@ -27,7 +27,7 @@ def revision(sequence: int | None = 7) -> WorldStateRevision:
 
 def request() -> NativeCommandRequest:
     return NativeCommandRequest(
-        schema_version="1.5",
+        schema_version="1.6",
         command_id=COMMAND_ID,
         command="approach_confirmed_vendor",
         control_mode=ControlMode.NATIVE_ASSISTED,
@@ -152,7 +152,7 @@ def test_title_acknowledgement_retains_empty_selection_and_exact_save() -> None:
 
 
 def test_native_request_1_4_has_no_compatibility_reader() -> None:
-    with pytest.raises(ValidationError, match="1.5"):
+    with pytest.raises(ValidationError, match="1.6"):
         NativeCommandRequest.model_validate(
             request().model_dump(mode="python") | {"schema_version": "1.4"}
         )
@@ -211,6 +211,38 @@ def test_context_action_request_requires_a_reviewed_semantic() -> None:
     with pytest.raises(ValidationError, match="may carry one"):
         NativeCommandRequest.model_validate(
             valid | {"context_action": "first_aid"}
+        )
+
+
+def test_dialogue_option_request_requires_exact_index_caption_and_target() -> None:
+    valid = request().model_dump(mode="python")
+    dialogue = NativeCommandRequest.model_validate(
+        valid
+        | {
+            "command": "select_dialogue_option",
+            "target_id": "entity-mercenary-captain",
+            "dialogue_option_index": 0,
+            "dialogue_option_text": "1. I'm looking to hire some bodyguards",
+        }
+    )
+
+    assert dialogue.dialogue_option_index == 0
+    assert dialogue.dialogue_option_text.endswith("bodyguards")
+    with pytest.raises(ValidationError, match="exact index and caption"):
+        NativeCommandRequest.model_validate(
+            valid
+            | {
+                "command": "select_dialogue_option",
+                "target_id": "entity-mercenary-captain",
+            }
+        )
+    with pytest.raises(ValidationError, match="only a select_dialogue_option"):
+        NativeCommandRequest.model_validate(
+            valid
+            | {
+                "dialogue_option_index": 0,
+                "dialogue_option_text": "Different operation",
+            }
         )
 
 

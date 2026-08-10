@@ -14,6 +14,8 @@
   "game_start_id": "",
   "slot_x": 0,
   "slot_y": 0,
+  "dialogue_option_index": -1,
+  "dialogue_option_text": "",
   "selected_character_ids": [
     "entity-selected"
   ],

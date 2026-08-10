@@ -15,17 +15,17 @@ evidence appears only through the proof manifest, and unproven group cases
 remain unproven even when their intended contract is implemented.
 
 ```text
-operations               24
-planner-visible          24
+operations               25
+planner-visible          25
 internal-only             0
-native commands          17
-manifest entries         26
+native commands          18
+manifest entries         27
 coverage proof          PASS
 
 PROOF STATUS
   source_proven     10
   unit_proven        1
-  live_proven        7
+  live_proven        8
   unproven           8
   withheld           0
 
@@ -47,6 +47,7 @@ INTERACTION CONTRACT (resolved from the sole operation registry)
   recall_memory                       runtime_only       none                none             input_delivered         source_proven
   regroup_with_squad_member           ordinary_order     explicit_recipients dispatch_only    world_outcome_observed  unproven
   respond_to_immediate_threat         ordinary_order     explicit_recipients dispatch_only    order_accepted          unproven
+  select_dialogue_option              global_ui          none                none             world_outcome_observed  live_proven
   select_squad_member_exact           selection_mutation explicit_recipients none             world_outcome_observed  source_proven
   set_speed                           global_ui          none                none             world_outcome_observed  source_proven
   shift_into_body                     ordinary_order     named_body          dispatch_only    world_outcome_observed  source_proven
@@ -77,6 +78,7 @@ EXECUTION AND ROUTING
   recall_memory                       atomic_handler     any                      -                          runtime
   regroup_with_squad_member           monitored_option   running_for_progress     regroup_with_squad_member  characters
   respond_to_immediate_threat         monitored_option   running_for_progress     move_in_direction          characters
+  select_dialogue_option              atomic_handler     paused_transaction       select_dialogue_option     dialogue_options
   select_squad_member_exact           atomic_handler     any                      select_squad_member        characters
   set_speed                           atomic_handler     any                      set_speed                  runtime
   shift_into_body                     atomic_handler     running_for_progress     shift_into_body            body_shift
@@ -98,6 +100,7 @@ NATIVE COMMAND ROUTES
   perform_context_action       -> perform_context_action
   produce_resource_output      -> produce_resource_output
   regroup_with_squad_member    -> regroup_with_squad_member
+  select_dialogue_option       -> select_dialogue_option
   select_squad_member          -> select_squad_member_exact
   set_speed                    -> set_speed
   shift_into_body              -> shift_into_body

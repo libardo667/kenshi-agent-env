@@ -702,7 +702,7 @@ def _native_request_for_snapshot(
             f"Native {command} requires an authoritative session identity."
         )
     return NativeCommandRequest(
-        schema_version="1.5",
+        schema_version="1.6",
         command_id=new_command_id(),
         command=command,
         control_mode=ControlMode.NATIVE_ASSISTED,

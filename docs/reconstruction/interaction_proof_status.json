@@ -250,6 +250,19 @@
       "note": "Explicit actor. Whether engage/withdraw broadcasts to a group is proof-required and must not be inherited from current selection."
     },
     {
+      "operation_kind": "select_dialogue_option",
+      "proof_status": "live_proven",
+      "evidence": [
+        "protocol-2-native-dialogue-regression-20260810-r1 offered all three exact Mercenary Captain replies plus native return-to-world",
+        "cmd-c533cd40cb084f2c989a009a409c78af completed dialogue_options_changed and cmd-b81386a9cdad4ac0b399201b4179ccc4 completed dialogue_closed; both receipts recorded zero primitives",
+        "game_sources/research/dialogue_options/live_evidence/mercenary-hiring-dialogue-20260810.json preserves exact requests, later option/payment state, frames, binary identities, omitted-file hashes, and the cleanup caveat"
+      ],
+      "research": [
+        "game_sources/research/dialogue_options"
+      ],
+      "note": "Live-proven for two exact Mercenary Captain reply transitions: complete option-list change, then c.2,000 payment and dialogue closure. Later mercenary AI behavior remains withheld."
+    },
+    {
       "operation_kind": "select_squad_member_exact",
       "proof_status": "source_proven",
       "evidence": [

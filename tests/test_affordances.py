@@ -36,6 +36,7 @@ from kenshi_agent.core.telemetry import (
 from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.operation_definitions import (
     APPROACH_DIALOGUE_TARGET_DEFINITION,
+    BindingFailure,
     BoundActor,
     BoundOperation,
     TerminalOwner,
@@ -185,6 +186,65 @@ def test_blocking_dialogue_and_modal_offer_one_native_return_to_world() -> None:
     assert offers[0].semantic == "return_to_world"
     bound = bind_affordance(selection_for(offers[0]), observation)
     assert bound.definition.kind == "close_active_interface"
+
+
+def test_open_dialogue_offers_every_exact_reply_and_native_exit() -> None:
+    target_id = "entity-mercenary-captain"
+    option_texts = [
+        "1. I'm looking to hire some bodyguards",
+        "2. I need some mercenaries to guard my outpost",
+        "3. Nevermind",
+    ]
+    observation = _observation(
+        capabilities=[
+            "control.close_active_interface",
+            "control.select_dialogue_option",
+            "ui.dialogue",
+            "ui.dialogue.options",
+            "ui.dialogue.target",
+        ],
+        ui=UIState(
+            active_screen="dialogue",
+            modal_open=True,
+            dialogue_open=True,
+            dialogue_target_id=target_id,
+            dialogue_options=option_texts,
+        ),
+    )
+
+    offers = offered_affordances(observation)
+    replies = [offer for offer in offers if offer.operation_kind == "select_dialogue_option"]
+
+    assert [offer.semantic for offer in sorted(replies, key=lambda offer: offer.semantic)] == [
+        "reply_1",
+        "reply_2",
+        "reply_3",
+    ]
+    assert {offer.target.label for offer in replies if offer.target is not None} == set(
+        option_texts
+    )
+    assert sum(offer.operation_kind == "close_active_interface" for offer in offers) == 1
+    first = next(offer for offer in replies if offer.semantic == "reply_1")
+    bound = bind_affordance(selection_for(first), observation)
+    assert bound.operation.kind == "select_dialogue_option"
+    assert bound.operation.dialogue_target_id == target_id
+    assert bound.operation.option_index == 0
+    assert bound.operation.option_text == option_texts[0]
+
+    changed = observation.model_copy(
+        update={
+            "telemetry": observation.telemetry.model_copy(
+                update={
+                    "ui": observation.telemetry.ui.model_copy(
+                        update={"dialogue_options": list(reversed(option_texts))}
+                    )
+                }
+            )
+        }
+    )
+    rebound = bound.definition.bind(bound.operation, changed)
+    assert isinstance(rebound, BindingFailure)
+    assert "exact offered caption" in rebound.reason
 
 
 def test_rendered_prospecting_window_offers_native_return_to_world() -> None:

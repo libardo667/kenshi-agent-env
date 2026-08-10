@@ -53,6 +53,10 @@ namespace KenshiAgentTelemetry
         std::string gameStartId;
         int slotX;
         int slotY;
+        // Exact ordered reply identity. Index alone is unsafe because the
+        // conversation can advance between publication and dispatch.
+        int dialogueOptionIndex;
+        std::string dialogueOptionText;
         // Time control, which Kenshi owns directly: `GameWorld::userPause` and
         // `GameWorld::setGameSpeed`. These were the last two operations reaching
         // the game through a keystroke, and a keystroke is why setting a faster
@@ -88,6 +92,8 @@ namespace KenshiAgentTelemetry
         std::string gameStartId;
         int slotX;
         int slotY;
+        int dialogueOptionIndex;
+        std::string dialogueOptionText;
         std::vector<std::string> selectedCharacterIds;
         // Retained as a compatibility convenience for singular fixtures.
         std::string selectedCharacterId;

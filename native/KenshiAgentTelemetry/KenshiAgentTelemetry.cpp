@@ -275,6 +275,12 @@ namespace
         // A trade window is asked for, not opened on the spot: `showTradeWindow`
         // records the request and the GUI pairs the windows on a later update.
         bool isTradeWindowPending;
+        // One exact reply from the current ordered conversation. Completion
+        // belongs to a later UI update that proves the conversation advanced.
+        bool isDialogueOptionPending;
+        std::string dialogueOptionText;
+        std::vector<std::string> dialogueOptionsBefore;
+        DWORD dialogueOptionStartedTick;
         // `showT` begins Kenshi's timed prospecting lifecycle. The result
         // window appears only after its progress bar finishes, so capture and
         // close belong to later update frames rather than request dispatch.
@@ -431,6 +437,10 @@ namespace
         g_activeNativeCommand.isBuildingExit = false;
         g_activeNativeCommand.isContextAction = false;
         g_activeNativeCommand.isTradeWindowPending = false;
+        g_activeNativeCommand.isDialogueOptionPending = false;
+        g_activeNativeCommand.dialogueOptionText.clear();
+        g_activeNativeCommand.dialogueOptionsBefore.clear();
+        g_activeNativeCommand.dialogueOptionStartedTick = 0;
         g_activeNativeCommand.isProspectingSurveyPending = false;
         g_activeNativeCommand.prospectingResultObserved = false;
         g_activeNativeCommand.prospectingPlaybackOwned = false;
@@ -847,6 +857,8 @@ namespace
         acknowledgement.gameStartId = request.gameStartId;
         acknowledgement.slotX = request.slotX;
         acknowledgement.slotY = request.slotY;
+        acknowledgement.dialogueOptionIndex = request.dialogueOptionIndex;
+        acknowledgement.dialogueOptionText = request.dialogueOptionText;
         acknowledgement.selectedCharacterId =
             request.selectedCharacterId;
         acknowledgement.selectedCharacterIds =
@@ -920,6 +932,10 @@ namespace
         g_activeNativeCommand.isBuildingExit = false;
         g_activeNativeCommand.isContextAction = false;
         g_activeNativeCommand.isTradeWindowPending = false;
+        g_activeNativeCommand.isDialogueOptionPending = false;
+        g_activeNativeCommand.dialogueOptionText.clear();
+        g_activeNativeCommand.dialogueOptionsBefore.clear();
+        g_activeNativeCommand.dialogueOptionStartedTick = 0;
         g_activeNativeCommand.isProspectingSurveyPending = false;
         g_activeNativeCommand.prospectingResultObserved = false;
         g_activeNativeCommand.prospectingPlaybackOwned = false;
@@ -2721,27 +2737,44 @@ namespace
         return !targetId.empty();
     }
 
-    void AppendDialogueOptions(std::ostringstream& json)
+    bool TryGetDialogueOptions(std::vector<std::string>& options)
     {
+        options.clear();
         if (gui == NULL ||
             gui->dialogue == NULL ||
             !gui->dialogue->isVisible())
+        {
+            return false;
+        }
+
+        const Ogre::FastArray<MyGUI::EditBox*>& replyTexts =
+            gui->dialogue->replyTexts;
+        for (size_t index = 0; index < replyTexts.size(); ++index)
+        {
+            MyGUI::EditBox* reply = replyTexts[index];
+            options.push_back(
+                reply != NULL
+                    ? reply->getCaption().asUTF8()
+                    : std::string());
+        }
+        return true;
+    }
+
+    void AppendDialogueOptions(std::ostringstream& json)
+    {
+        std::vector<std::string> options;
+        if (!TryGetDialogueOptions(options))
         {
             json << "null";
             return;
         }
 
         json << "[";
-        const Ogre::FastArray<MyGUI::EditBox*>& replyTexts =
-            gui->dialogue->replyTexts;
-        for (size_t index = 0; index < replyTexts.size(); ++index)
+        for (size_t index = 0; index < options.size(); ++index)
         {
             if (index > 0)
                 json << ",";
-            MyGUI::EditBox* reply = replyTexts[index];
-            const std::string caption =
-                reply != NULL ? reply->getCaption().asUTF8() : std::string();
-            json << "\"" << JsonEscape(caption) << "\"";
+            json << "\"" << JsonEscape(options[index]) << "\"";
         }
         json << "]";
     }
@@ -3731,6 +3764,52 @@ namespace
         if (!g_activeNativeCommand.active)
             return;
 
+        if (g_activeNativeCommand.isDialogueOptionPending)
+        {
+            if (gui == NULL ||
+                gui->dialogue == NULL ||
+                !gui->dialogue->isVisible() ||
+                gui->dialogue->dialogue == NULL)
+            {
+                FinishActiveNativeCommand("completed", "dialogue_closed");
+                return;
+            }
+            std::string currentTargetId;
+            if (!TryGetDialogueTargetId(currentTargetId))
+            {
+                FinishActiveNativeCommand(
+                    "cancelled", "dialogue_target_unavailable");
+                return;
+            }
+            if (currentTargetId != g_activeNativeCommand.targetId)
+            {
+                FinishActiveNativeCommand(
+                    "completed", "dialogue_target_changed");
+                return;
+            }
+            std::vector<std::string> currentOptions;
+            if (!TryGetDialogueOptions(currentOptions))
+            {
+                FinishActiveNativeCommand(
+                    "cancelled", "dialogue_options_unavailable");
+                return;
+            }
+            if (currentOptions != g_activeNativeCommand.dialogueOptionsBefore)
+            {
+                FinishActiveNativeCommand(
+                    "completed", "dialogue_options_changed");
+                return;
+            }
+            if (GetTickCount() -
+                    g_activeNativeCommand.dialogueOptionStartedTick >=
+                10000)
+            {
+                FinishActiveNativeCommand(
+                    "cancelled", "dialogue_option_timeout");
+            }
+            return;
+        }
+
         if (g_activeNativeCommand.isProspectingSurveyPending)
         {
             ProspectingWindow* prospecting = ProspectingWindow::getSingleton();
@@ -3840,7 +3919,8 @@ namespace
         // dialogue modal (which removes the pause control) can never turn a
         // completed talk order into `world_paused`.
         if (!g_activeNativeCommand.isWalk &&
-            !g_activeNativeCommand.isContextAction &&
+            (!g_activeNativeCommand.isContextAction ||
+             g_activeNativeCommand.expectedTask == PLAYER_TALK_TO) &&
             IsExactDialogueTargetOpen(g_activeNativeCommand.targetHandle))
         {
             FinishActiveNativeCommand(
@@ -4624,9 +4704,11 @@ namespace
         // and setting speed stopped being keystrokes.
         const bool isCloseActiveInterface =
             request.command == "close_active_interface";
+        const bool isDialogueOption =
+            request.command == "select_dialogue_option";
         const bool isPause = request.command == "pause";
         const bool isSetSpeed = request.command == "set_speed";
-        if (isCloseActiveInterface || isPause || isSetSpeed || isBodyShift || isBodyShiftProbe || isApproach || isMove || isSquadSelection || isSquadRegroup ||
+        if (isCloseActiveInterface || isDialogueOption || isPause || isSetSpeed || isBodyShift || isBodyShiftProbe || isApproach || isMove || isSquadSelection || isSquadRegroup ||
             isDirection || isMapTravel || isBuildingExit || isContextAction ||
             isCharacterOrder ||
             isResourceProduction || isResourceSurvey ||
@@ -4649,7 +4731,8 @@ namespace
             !isBodyShift &&
             !isPause &&
             !isSetSpeed &&
-            !isCloseActiveInterface)
+            !isCloseActiveInterface &&
+            !isDialogueOption)
         {
             // The telemetry acknowledgement schema is intentionally limited
             // to reviewed commands. Do not publish an unparseable ack.
@@ -4684,6 +4767,77 @@ namespace
                 return;
             }
             RejectNativeCommand(request, "stale_revision");
+            return;
+        }
+
+        if (isDialogueOption)
+        {
+            if (gui == NULL ||
+                gui->dialogue == NULL ||
+                !gui->dialogue->isVisible() ||
+                gui->dialogue->dialogue == NULL)
+            {
+                RejectNativeCommand(request, "dialogue_not_open");
+                return;
+            }
+            std::string currentTargetId;
+            if (!TryGetDialogueTargetId(currentTargetId) ||
+                currentTargetId != request.targetId)
+            {
+                RejectNativeCommand(request, "dialogue_target_changed");
+                return;
+            }
+            std::vector<std::string> currentOptions;
+            if (!TryGetDialogueOptions(currentOptions))
+            {
+                RejectNativeCommand(request, "dialogue_options_unavailable");
+                return;
+            }
+            const size_t optionIndex =
+                static_cast<size_t>(request.dialogueOptionIndex);
+            if (optionIndex >= currentOptions.size() ||
+                currentOptions[optionIndex] != request.dialogueOptionText)
+            {
+                RejectNativeCommand(request, "dialogue_option_changed");
+                return;
+            }
+
+            Dialogue* dialogue = gui->dialogue->dialogue;
+            dialogue->replyClicked(request.dialogueOptionIndex);
+            AddNativeAcknowledgement(
+                request,
+                "accepted",
+                "dialogue_option_selected",
+                true,
+                false);
+            g_activeNativeCommand.active = true;
+            g_activeNativeCommand.commandId = request.commandId;
+            g_activeNativeCommand.targetId = request.targetId;
+            g_activeNativeCommand.destinationId.clear();
+            g_activeNativeCommand.selectedCharacterId.clear();
+            g_activeNativeCommand.selectedCharacterIds =
+                request.selectedCharacterIds;
+            g_activeNativeCommand.targetHandle = hand();
+            g_activeNativeCommand.selectedHandle = hand();
+            g_activeNativeCommand.isWalk = false;
+            g_activeNativeCommand.hasFixedDestination = false;
+            g_activeNativeCommand.isMapTravel = false;
+            g_activeNativeCommand.isSquadRegroup = false;
+            g_activeNativeCommand.mapInteriorOrderIssued = false;
+            g_activeNativeCommand.isBuildingExit = false;
+            g_activeNativeCommand.isContextAction = false;
+            g_activeNativeCommand.isTradeWindowPending = false;
+            g_activeNativeCommand.isDialogueOptionPending = true;
+            g_activeNativeCommand.dialogueOptionText =
+                request.dialogueOptionText;
+            g_activeNativeCommand.dialogueOptionsBefore = currentOptions;
+            g_activeNativeCommand.dialogueOptionStartedTick = GetTickCount();
+            g_activeNativeCommand.isProspectingSurveyPending = false;
+            g_activeNativeCommand.targetKind = NATIVE_TARGET_NONE;
+            g_activeNativeCommand.isResourceProduction = false;
+            g_activeNativeCommand.expectedTask = NULL_TASK;
+            g_lastNativeCommandResult = "dialogue_option_selected";
+            g_lastNativeCommandTargetId = request.targetId;
             return;
         }
 

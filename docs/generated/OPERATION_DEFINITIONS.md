@@ -12,10 +12,10 @@ Internal-only definitions are controller phases or runtime operations;
 they still bind through this registry but are not planner-visible offers.
 
 ```text
-definitions             24
-adapter operation kinds  24
-adapter routes           24
-adapters                 11
+definitions             25
+adapter operation kinds  25
+adapter routes           25
+adapters                 12
 ownership proof         PASS
 
 DEFINITIONS
@@ -35,6 +35,7 @@ DEFINITIONS
   recall_memory                       cognition.memory                                        RecallMemoryAction [runtime]
   regroup_with_squad_member           movement.regroup_with_squad_member                      RegroupWithSquadMemberAction [characters]
   respond_to_immediate_threat         movement.respond_to_immediate_threat                    RespondToImmediateThreatAction [characters]
+  select_dialogue_option              resources.select_dialogue_option                        SelectDialogueOptionAction [dialogue_options]
   select_squad_member_exact           movement.select_squad_member_exact                      SelectSquadMemberExactAction [characters]
   set_speed                           runtime.set_speed                                       SetSpeedAction [runtime]
   shift_into_body                     movement.shift_into_body                                ShiftIntoBodyAction [body_shift]
@@ -45,6 +46,7 @@ DEFINITIONS
   wait                                runtime.wait                                            WaitAction [runtime]
 
 SOURCE-SPECIFIC COMPLETENESS BOUNDARIES
+  dialogue_options: The producer exports the complete rendered reply list. Empty captions and captions beyond the 500-character exact-address contract are withheld.
   interface_exit: Native cleanup covers Prospecting, dialogue, message boxes, trade and inventory windows, and ordinary registered GUI windows.
   runtime: Only choices applicable to the current run state.
   context_orders: Only the reviewed native natural-resource operate and squad-character first_aid subcases are emitted. Every other telemetry context action is withheld rather than routed through the retired pointer path.

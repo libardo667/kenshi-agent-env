@@ -1507,6 +1507,29 @@ int main(int argc, char** argv)
         return Fail("interface close lost its game-wide recipient shape");
     }
 
+    KenshiAgentTelemetry::NativeCommandRequest dialogueOption;
+    const std::string dialogueOptionPayload =
+        ReadFile(prefix + "valid_dialogue_option_request.json");
+    if (dialogueOptionPayload.empty())
+        return Fail("could not read valid_dialogue_option_request.json");
+    if (!KenshiAgentTelemetry::ParseNativeCommandRequest(
+            dialogueOptionPayload,
+            dialogueOption,
+            rejectionReason))
+    {
+        return Fail(
+            "valid dialogue-option request was rejected as " +
+            rejectionReason);
+    }
+    if (dialogueOption.command != "select_dialogue_option" ||
+        dialogueOption.targetId != "entity-mercenary-captain" ||
+        dialogueOption.dialogueOptionIndex != 0 ||
+        dialogueOption.dialogueOptionText !=
+            "1. I'm looking to hire some bodyguards")
+    {
+        return Fail("dialogue option lost its exact target, index, or caption");
+    }
+
     // Startup has no selected recipient. Continue is targetless; exact load
     // and new-game requests retain identities from SaveManager's own address
     // spaces rather than smuggling labels through targetId.

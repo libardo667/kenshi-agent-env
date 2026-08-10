@@ -112,7 +112,7 @@ class CommandDispatchContext(StrictModel):
 
 
 class NativeCommandRequest(StrictModel):
-    schema_version: Literal["1.5"]
+    schema_version: Literal["1.6"]
     command_id: str = Field(pattern=r"^cmd-[0-9a-f]{32}$")
     command: NativeWireCommand
     control_mode: Literal[ControlMode.NATIVE_ASSISTED]
@@ -151,6 +151,10 @@ class NativeCommandRequest(StrictModel):
     )
     slot_x: int = Field(default=0, ge=0)
     slot_y: int = Field(default=0, ge=0)
+    # Dialogue is a changing ordered list. The index is useful only when the
+    # exact caption and exact conversation target still match at dispatch.
+    dialogue_option_index: int = Field(default=-1, ge=-1, le=63)
+    dialogue_option_text: str = Field(default="", max_length=500)
     # Time control, which Kenshi owns through `GameWorld::userPause` and
     # `GameWorld::setGameSpeed`. `speed_multiplier` is Kenshi's own unit; the
     # ordinal gears above it are ours, and stay ours.
@@ -182,6 +186,8 @@ class NativeCommandRequest(StrictModel):
             section_name=self.section_name,
             save_name=self.save_name,
             game_start_id=self.game_start_id,
+            dialogue_option_index=self.dialogue_option_index,
+            dialogue_option_text=self.dialogue_option_text,
         )
         return self
 

@@ -1248,6 +1248,7 @@ NATIVE_COMMANDS_ALLOWING_EMPTY_SELECTION: frozenset[str] = frozenset(
     {
         "shift_into_body",
         "close_active_interface",
+        "select_dialogue_option",
         "continue_game",
         "load_game",
         "new_game",
@@ -1306,6 +1307,8 @@ NATIVE_COMMANDS_NAMING_A_TARGET: frozenset[str] = frozenset(
         "shift_body_platoon",
         # Names the exact body to become.
         "shift_into_body",
+        # Names the exact character on the other side of the open dialogue.
+        "select_dialogue_option",
     }
 )
 
@@ -1324,6 +1327,8 @@ def require_consistent_wire_shape(
     section_name: str = "",
     save_name: str = "",
     game_start_id: str = "",
+    dialogue_option_index: int = -1,
+    dialogue_option_text: str = "",
 ) -> None:
     """Reject a native request or acknowledgement whose fields contradict it."""
 
@@ -1378,6 +1383,15 @@ def require_consistent_wire_shape(
         )
     if command != "produce_resource_output" and minimum_output_quantity != 1:
         raise ValueError("only resource production may request a larger output quantity")
+    if command == "select_dialogue_option":
+        if dialogue_option_index < 0 or not dialogue_option_text:
+            raise ValueError(
+                f"a select_dialogue_option {subject} requires an exact index and caption"
+            )
+    elif dialogue_option_index != -1 or dialogue_option_text:
+        raise ValueError(
+            f"only a select_dialogue_option {subject} may name a dialogue reply"
+        )
 
 
 # Every native command the plug-in accepts, defined once.
@@ -1429,6 +1443,7 @@ NativeWireCommand = Literal[
     # observe. This replaces the recovery-only trade closer; consumers never
     # retain the narrower compatibility verb.
     "close_active_interface",
+    "select_dialogue_option",
     "survey_local_resources",
 ]
 
@@ -1477,6 +1492,8 @@ class NativeCommandAcknowledgement(StrictModel):
     )
     slot_x: int = Field(default=0, ge=0)
     slot_y: int = Field(default=0, ge=0)
+    dialogue_option_index: int = Field(default=-1, ge=-1, le=63)
+    dialogue_option_text: str = Field(default="", max_length=500)
     # Body-shift commands truthfully echo an empty selection after
     # total loss because the target names its own recipient. Wire-shape
     # validation below still requires a selection for selection-addressed
@@ -1508,6 +1525,8 @@ class NativeCommandAcknowledgement(StrictModel):
             section_name=self.section_name,
             save_name=self.save_name,
             game_start_id=self.game_start_id,
+            dialogue_option_index=self.dialogue_option_index,
+            dialogue_option_text=self.dialogue_option_text,
         )
 
         if self.status == NativeCommandStatus.REJECTED:

@@ -1,17 +1,19 @@
 {
   "schema_version": "1.6",
-  "command_id": "cmd-bbbbbbbbbbbbbbbbbbbbbbbbbbbbb003",
-  "command": "new_game",
+  "command_id": "cmd-51515151515151515151515151515151",
+  "command": "select_dialogue_option",
   "control_mode": "native_assisted",
   "identity_session_id": "session-0000000000000001-0000000000000001",
   "based_on_revision": {
-    "telemetry_sequence": 22,
-    "frame_sequence": null,
-    "capability_epoch": 0,
-    "observed_at_monotonic": 0.0
+    "telemetry_sequence": 31,
+    "frame_sequence": 9,
+    "capability_epoch": 2,
+    "observed_at_monotonic": 32.0
   },
-  "selected_character_ids": [],
-  "target_id": "",
+  "selected_character_ids": [
+    "entity-selected"
+  ],
+  "target_id": "entity-mercenary-captain",
   "context_action": "",
   "bearing_degrees": 0.0,
   "distance_units": 0.0,
@@ -19,11 +21,11 @@
   "destination_id": "",
   "section_name": "",
   "save_name": "",
-  "game_start_id": "kae-03-broke-pair",
+  "game_start_id": "",
   "slot_x": 0,
   "slot_y": 0,
-  "dialogue_option_index": -1,
-  "dialogue_option_text": "",
+  "dialogue_option_index": 0,
+  "dialogue_option_text": "1. I'm looking to hire some bodyguards",
   "paused": false,
   "speed_multiplier": 0.0,
   "quantity": 0

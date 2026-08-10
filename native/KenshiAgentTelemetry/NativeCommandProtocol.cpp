@@ -108,6 +108,7 @@ namespace KenshiAgentTelemetry
           minimumOutputQuantity(1),
           slotX(0),
           slotY(0),
+          dialogueOptionIndex(-1),
           pauseRequested(false),
           speedMultiplier(0.0),
           quantity(0)
@@ -120,6 +121,7 @@ namespace KenshiAgentTelemetry
           minimumOutputQuantity(1),
           slotX(0),
           slotY(0),
+          dialogueOptionIndex(-1),
           basedOnTelemetrySequence(0),
           acknowledgedAtTelemetrySequence(0),
           acceptedAtTelemetrySequence(0),
@@ -180,6 +182,7 @@ namespace KenshiAgentTelemetry
     {
         return command == "shift_into_body" ||
                command == "close_active_interface" ||
+               command == "select_dialogue_option" ||
                NativeCommandControlsTime(command) ||
                NativeCommandDrivesTitleScreen(command);
     }
@@ -204,6 +207,7 @@ namespace KenshiAgentTelemetry
                // looting, and first aid arrive through the same command rather
                // than as three hand-written whitelists.
                command == "perform_character_order" ||
+               command == "select_dialogue_option" ||
                command == "produce_resource_output" ||
                // One inventory-model transfer between two open inventories,
                // wherever they came from. Capacity and the project's explicit
@@ -394,6 +398,8 @@ namespace KenshiAgentTelemetry
             "game_start_id",
             "slot_x",
             "slot_y",
+            "dialogue_option_index",
+            "dialogue_option_text",
             "paused",
             "speed_multiplier",
             "quantity"
@@ -434,6 +440,10 @@ namespace KenshiAgentTelemetry
             request.gameStartId = root.get<std::string>("game_start_id", "");
             request.slotX = root.get<int>("slot_x", -1);
             request.slotY = root.get<int>("slot_y", -1);
+            request.dialogueOptionIndex =
+                root.get<int>("dialogue_option_index", -2);
+            request.dialogueOptionText =
+                root.get<std::string>("dialogue_option_text", "");
             request.pauseRequested = root.get<bool>("paused", false);
             request.speedMultiplier =
                 root.get<double>("speed_multiplier", 0.0);
@@ -449,7 +459,7 @@ namespace KenshiAgentTelemetry
                 rejectionReason = "malformed_request";
                 return false;
             }
-            if (root.get<std::string>("schema_version") != "1.5" ||
+            if (root.get<std::string>("schema_version") != "1.6" ||
                 !IsValidCommandId(request.commandId) ||
                 request.command.empty() ||
                 request.command.size() > 80 ||
@@ -465,6 +475,7 @@ namespace KenshiAgentTelemetry
                 request.sectionName.size() > 80 ||
                 request.saveName.size() > 80 ||
                 request.gameStartId.size() > 80 ||
+                request.dialogueOptionText.size() > 500 ||
                 request.slotX < 0 ||
                 request.slotY < 0)
             {
@@ -660,6 +671,8 @@ namespace KenshiAgentTelemetry
             // a row.
             const bool isTradeWindow =
                 request.command == "open_trade_window";
+            const bool isDialogueOption =
+                request.command == "select_dialogue_option";
             if (isContextAction)
             {
                 if (request.contextAction != "operate" &&
@@ -683,6 +696,22 @@ namespace KenshiAgentTelemetry
                 }
             }
             else if (!request.contextAction.empty())
+            {
+                rejectionReason = "malformed_request";
+                return false;
+            }
+            if (isDialogueOption)
+            {
+                if (request.dialogueOptionIndex < 0 ||
+                    request.dialogueOptionIndex > 63 ||
+                    request.dialogueOptionText.empty())
+                {
+                    rejectionReason = "malformed_request";
+                    return false;
+                }
+            }
+            else if (request.dialogueOptionIndex != -1 ||
+                     !request.dialogueOptionText.empty())
             {
                 rejectionReason = "malformed_request";
                 return false;
@@ -737,6 +766,10 @@ namespace KenshiAgentTelemetry
              << JsonEscape(acknowledgement.gameStartId) << "\",";
         json << "\"slot_x\":" << acknowledgement.slotX << ",";
         json << "\"slot_y\":" << acknowledgement.slotY << ",";
+        json << "\"dialogue_option_index\":"
+             << acknowledgement.dialogueOptionIndex << ",";
+        json << "\"dialogue_option_text\":\""
+             << JsonEscape(acknowledgement.dialogueOptionText) << "\",";
         json << "\"selected_character_ids\":[";
         if (!acknowledgement.selectedCharacterIds.empty())
         {

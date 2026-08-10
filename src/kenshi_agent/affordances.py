@@ -51,6 +51,7 @@ from .core.telemetry import (
 from .operation_definitions import (
     NATIVE_CHARACTER_ORDER_CAPABILITY,
     NATIVE_CLOSE_INTERFACE_CAPABILITY,
+    NATIVE_DIALOGUE_OPTION_CAPABILITY,
     NATIVE_PRODUCE_RESOURCE_CAPABILITY,
     NATIVE_RESOURCE_OPERATOR_STATE_CAPABILITY,
     NATIVE_SHIFT_BODY_CAPABILITY,
@@ -142,6 +143,7 @@ INTERFACE_SCOPED_OPERATION_KINDS: frozenset[str] = frozenset(
         # or a looting window is reached at all.
         "open_trade_window",
         "close_active_interface",
+        "select_dialogue_option",
         # Playback is declared global_ui: it suspends the whole world and is
         # orthogonal to what is on screen, exactly as it is for a player, who
         # can pause with the inventory open. Gating it behind a clear interface
@@ -772,6 +774,46 @@ def _interface_exit_offers(observation: Observation) -> Iterable[AffordanceOffer
     )
 
 
+def _dialogue_option_offers(observation: Observation) -> Iterable[AffordanceOffer]:
+    """Offer every exact reply in the current ordered conversation surface."""
+
+    telemetry = observation.telemetry
+    if telemetry is None or observation.control_mode is not ControlMode.NATIVE_ASSISTED:
+        return
+    if NATIVE_DIALOGUE_OPTION_CAPABILITY not in set(telemetry.capabilities):
+        return
+    ui = telemetry.ui
+    if (
+        ui.dialogue_open is not True
+        or not ui.dialogue_target_id
+        or ui.dialogue_options is None
+    ):
+        return
+    for option_index, option_text in enumerate(ui.dialogue_options):
+        # Exact caption is part of the action and request. Withhold a caption
+        # the strict address cannot carry rather than truncating it into a
+        # different reply.
+        if not option_text or len(option_text) > 500:
+            continue
+        yield _offer(
+            observation,
+            source=AffordanceSource.DIALOGUE,
+            semantic=f"reply_{option_index + 1}",
+            description="Choose this exact current dialogue reply.",
+            operation_kind="select_dialogue_option",
+            target=AffordanceTarget(
+                target_id=ui.dialogue_target_id,
+                label=option_text,
+                kind="dialogue_option",
+            ),
+            arguments={
+                "dialogue_target_id": ui.dialogue_target_id,
+                "option_index": option_index,
+                "option_text": option_text,
+            },
+        )
+
+
 # No cap. A shop's contents are bounded and knowable, and a silent limit on
 # them is not a smaller world -- it is a world the agent cannot tell apart from
 # a smaller one. Truncation manufactures exactly the confusion the tri-state
@@ -1251,6 +1293,17 @@ class AffordanceAdapter:
 
 
 AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
+    AffordanceAdapter(
+        name="dialogue_options",
+        sources=frozenset({AffordanceSource.DIALOGUE}),
+        operation_kinds=frozenset({"select_dialogue_option"}),
+        denominator="Every exact current reply in the open dialogue's ordered option list.",
+        completeness_boundary=(
+            "The producer exports the complete rendered reply list. Empty captions "
+            "and captions beyond the 500-character exact-address contract are withheld."
+        ),
+        enumerate=_dialogue_option_offers,
+    ),
     AffordanceAdapter(
         name="interface_exit",
         sources=frozenset({AffordanceSource.NATIVE_OPERATION}),

@@ -15,6 +15,7 @@ from ...core.operation import (
     OpenTradeWindowAction,
     PerformContextAction,
     ProduceResourceOutputAction,
+    SelectDialogueOptionAction,
     TransferItemAction,
 )
 from ...core.transport import (
@@ -49,6 +50,10 @@ class ResourceMechanicsPort(Protocol):
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
     ) -> Transition: ...
 
+    async def select_dialogue_option(
+        self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
+    ) -> Transition: ...
+
 def resource_handlers(
     port: ResourceMechanicsPort,
     planning_config: PlanningConfig,
@@ -70,6 +75,10 @@ def resource_handlers(
         ),
         "resources.close_active_interface": AtomicMovementHandler(
             port.close_active_interface,
+            verify_native_terminal=True,
+        ),
+        "resources.select_dialogue_option": AtomicMovementHandler(
+            port.select_dialogue_option,
             verify_native_terminal=True,
         ),
     }
@@ -118,6 +127,16 @@ class KenshiResourceMechanics:
             receipt=self._execute_close_interface_operation,
         )
 
+    async def select_dialogue_option(
+        self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
+    ) -> Transition:
+        return await self._surface.run_exact(
+            action,
+            command=command,
+            token=token,
+            receipt=self._execute_dialogue_option_operation,
+        )
+
     async def transfer_item(
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
     ) -> Transition:
@@ -161,6 +180,15 @@ class KenshiResourceMechanics:
     ) -> ActionReceipt:
         return await self._execute_close_active_interface(
             cast(CloseActiveInterfaceAction, action),
+            started,
+            await self._surface.require_command(command),
+        )
+
+    async def _execute_dialogue_option_operation(
+        self, action: Action, started: datetime, command: CommandDispatchContext | None
+    ) -> ActionReceipt:
+        return await self._execute_select_dialogue_option(
+            cast(SelectDialogueOptionAction, action),
             started,
             await self._surface.require_command(command),
         )
@@ -313,6 +341,39 @@ class KenshiResourceMechanics:
             wire_command=native_commands.NATIVE_CLOSE_INTERFACE_WIRE_COMMAND,
             require_dialogue_target=False,
             accepted_is_terminal_error=True,
+        )
+
+    async def _execute_select_dialogue_option(
+        self,
+        action: SelectDialogueOptionAction,
+        started: datetime,
+        command: CommandDispatchContext,
+    ) -> ActionReceipt:
+        semantic = SemanticActionReceipt(
+            action_kind=action.kind,
+            contract_version=operations.SELECT_DIALOGUE_OPTION_DEFINITION.version,
+            target_id=action.dialogue_target_id,
+            resolved_label=action.option_text,
+            source_revision=command.based_on_revision,
+            revalidation=(
+                "Re-proved the exact dialogue target, option index, and rendered "
+                "caption before native selection, then required a later dialogue "
+                "state transition."
+            ),
+        )
+        return await self._surface.run_native_order(
+            action,
+            started,
+            command,
+            target_id=action.dialogue_target_id,
+            pulse_seconds=self._surface.controls_config.native_movement_pulse_seconds,
+            require_vendor_role=False,
+            wire_fields=operations.wire_fields_for(action),
+            semantic=semantic,
+            wire_command=native_commands.NATIVE_DIALOGUE_OPTION_WIRE_COMMAND,
+            require_dialogue_target=False,
+            await_terminal_without_playback=True,
+            deferred_terminal_timeout_seconds=10.0,
         )
 
     async def _execute_transfer_item(

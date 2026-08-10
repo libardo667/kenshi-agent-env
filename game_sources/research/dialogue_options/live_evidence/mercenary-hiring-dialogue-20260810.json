@@ -1,0 +1,171 @@
+{
+  "schema_version": 1,
+  "kind": "reduced_live_dialogue_option_evidence",
+  "run_id": "protocol-2-native-dialogue-regression-20260810-r1",
+  "source_run": "runs/protocol-2-native-dialogue-regression-20260810-r1",
+  "manifest": {
+    "source_parent": "078d74e",
+    "scenario_id": "native-launch-exact-load-20260810",
+    "scenario_fixture_digest": "105fc162134f60379812a246f1e2e00c3f8d24e935b49ef1213068ca3f3787c3",
+    "objective": "Talk to the Mercenary Captain and hire bodyguards if the observed terms are affordable, using exact current dialogue reply affordances.",
+    "requested_turns": 12,
+    "completed_action_attempts": 5,
+    "control_mode": "native_assisted",
+    "capability_proof_stop": "The run was deliberately interrupted after both dialogue selections completed; a later unrelated mining action was already in flight.",
+    "cleanup": {
+      "automatic_recovery": "Timed out waiting for native pause cleanup while the unrelated mining command was active.",
+      "supported_stop": "Kenshi closed from a fresh paused idle state.",
+      "final_sequence_in_raw_run": 240,
+      "final_close_sequence": null
+    },
+    "binary_provenance": {
+      "loaded_executable": {
+        "path": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\kenshi_x64.exe",
+        "sha256": "a596ab4e407c67b58599c54ffb32dc1bf2b64510cdebd3fa9359ef05a576aeb1"
+      },
+      "native_source": {
+        "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
+        "sha256": "f8d5ad2edc70ad3fb9e2b15343b9efd3368f1dc0cfc3b8bcb6424f793794a425"
+      },
+      "pre_dialogue_dll": {
+        "size_bytes": 430080,
+        "sha256": "aecc380c672eeeda9203227cbe483ac5313736e3d5a52d8d9e681b6075aa00c1",
+        "preserved_path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260810-dialogue-affordances\\pre-dialogue\\KenshiAgentTelemetry.dll"
+      },
+      "replacement_installed_dll": {
+        "size_bytes": 435712,
+        "sha256": "033cf6e489816644f5310eb38d90ffc4e625e4812f8ed41d79aac05d58e4dfdd",
+        "preserved_path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260810-dialogue-affordances\\replacement\\KenshiAgentTelemetry.dll"
+      },
+      "replacement_pdb": {
+        "size_bytes": 11127808,
+        "sha256": "9976a2e536e838ecc635ed2b29504b38fd9f686475530ab185c1c5ddaa2fd4d6",
+        "preserved_path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260810-dialogue-affordances\\replacement\\KenshiAgentTelemetry.pdb"
+      },
+      "native_conformance": {
+        "path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\build\\native\\bin\\NativeCommandProtocolTests.exe",
+        "size_bytes": 317440,
+        "sha256": "88e5535518c2633355dcea17d050f95313e4c6106664ee73c2a3172a149f1f37",
+        "result": "Native protocol fixtures and semantics passed."
+      }
+    }
+  },
+  "planner_affordance_surface": {
+    "telemetry_sequence": 181,
+    "dialogue_target_id": "entity-c926c38ec1528c98-0000000000000002-00000001-00000000-00000000-00000001-019431aa",
+    "offered": [
+      "reply_1:select_dialogue_option",
+      "reply_2:select_dialogue_option",
+      "reply_3:select_dialogue_option",
+      "return_to_world:close_active_interface"
+    ],
+    "initial_options": [
+      "1. I'm looking to hire some bodyguards",
+      "2. I need some mercenaries to guard my outpost",
+      "3. Nevermind"
+    ]
+  },
+  "request_and_acknowledgement": {
+    "choose_bodyguards": {
+      "command_id": "cmd-c533cd40cb084f2c989a009a409c78af",
+      "command": "select_dialogue_option",
+      "target_id": "entity-c926c38ec1528c98-0000000000000002-00000001-00000000-00000000-00000001-019431aa",
+      "dialogue_option_index": 0,
+      "dialogue_option_text": "1. I'm looking to hire some bodyguards",
+      "based_on_telemetry_sequence": 187,
+      "accepted_at_telemetry_sequence": 188,
+      "terminal_at_telemetry_sequence": 188,
+      "terminal_status": "completed",
+      "terminal_reason": "dialogue_options_changed",
+      "primitive_actions": 0
+    },
+    "choose_one_day": {
+      "command_id": "cmd-b81386a9cdad4ac0b399201b4179ccc4",
+      "command": "select_dialogue_option",
+      "target_id": "entity-c926c38ec1528c98-0000000000000002-00000001-00000000-00000000-00000001-019431aa",
+      "dialogue_option_index": 0,
+      "dialogue_option_text": "1. 1 day [c.2,000]",
+      "based_on_telemetry_sequence": 198,
+      "accepted_at_telemetry_sequence": 199,
+      "terminal_at_telemetry_sequence": 199,
+      "terminal_status": "completed",
+      "terminal_reason": "dialogue_closed",
+      "primitive_actions": 0
+    }
+  },
+  "decisive_telemetry_frames": [
+    {
+      "telemetry_sequence": 187,
+      "frame_sequence": 1,
+      "paused": true,
+      "money": 20000,
+      "dialogue_open": true,
+      "dialogue_target_id": "entity-c926c38ec1528c98-0000000000000002-00000001-00000000-00000000-00000001-019431aa",
+      "dialogue_options": [
+        "1. I'm looking to hire some bodyguards",
+        "2. I need some mercenaries to guard my outpost",
+        "3. Nevermind"
+      ],
+      "disposition": "Exact pre-dispatch target, index, and caption basis."
+    },
+    {
+      "telemetry_sequence": 189,
+      "frame_sequence": 4,
+      "paused": true,
+      "money": 20000,
+      "dialogue_open": true,
+      "dialogue_options": [
+        "1. 1 day [c.2,000]",
+        "2. 2 days [c.4,000]",
+        "3. Ah, no thanks."
+      ],
+      "command_status": "completed",
+      "command_reason": "dialogue_options_changed",
+      "decisive_frame": "runs/protocol-2-native-dialogue-regression-20260810-r1/frames/live_frame_000004.png",
+      "disposition": "A causally later complete option list and rendered dialogue prove that the first reply advanced the conversation."
+    },
+    {
+      "telemetry_sequence": 200,
+      "frame_sequence": 5,
+      "paused": false,
+      "money": 18000,
+      "active_screen": "world",
+      "dialogue_open": false,
+      "dialogue_options": null,
+      "command_status": "completed",
+      "command_reason": "dialogue_closed",
+      "decisive_frame": "runs/protocol-2-native-dialogue-regression-20260810-r1/frames/live_frame_000005.png",
+      "rendered_disposition": "Paid c.2000",
+      "disposition": "The second exact reply deducted c.2,000 and returned to the world."
+    }
+  ],
+  "omitted_raw_file_hashes": [
+    {
+      "path": "runs/protocol-2-native-dialogue-regression-20260810-r1/events.jsonl",
+      "size_bytes": 2183362,
+      "sha256": "0792f53a9e0fb8b43c1e90e4e538cf0a10b259b80cb58aed99e65abc4c818203"
+    },
+    {
+      "path": "runs/protocol-2-native-dialogue-regression-20260810-r1/frames/live_frame_000004.png",
+      "size_bytes": 1695022,
+      "sha256": "b3c668d97e25b553f9b26eabdb8796ffd44e541aaed87552b3d6354db010bc4b"
+    },
+    {
+      "path": "runs/protocol-2-native-dialogue-regression-20260810-r1/frames/live_frame_000005.png",
+      "size_bytes": 2182758,
+      "sha256": "aa3609064a51bd1af9e0aa769e96a1d3ccf75c246c3386dd7e30c2fc5f2534c1"
+    }
+  ],
+  "artifact_commands": {
+    "build": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build_native.ps1",
+    "install_current_build": "Copy-Item -LiteralPath 'C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\build\\native\\bin\\KenshiAgentTelemetry.dll' -Destination 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll' -Force",
+    "reinstall_preserved_replacement": "Copy-Item -LiteralPath 'C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260810-dialogue-affordances\\replacement\\KenshiAgentTelemetry.dll' -Destination 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll' -Force",
+    "rollback_pre_dialogue": "Copy-Item -LiteralPath 'C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260810-dialogue-affordances\\pre-dialogue\\KenshiAgentTelemetry.dll' -Destination 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll' -Force"
+  },
+  "final_disposition": {
+    "live_result": "Passed. Two exact current dialogue reply affordances were selected through Dialogue::replyClicked(int). The first produced a later complete option-list change; the second produced a later dialogue close, c.2,000 payment, and world-screen disposition.",
+    "input_result": "Both semantic receipts recorded primitive_actions=0. No pointer, click, cursor movement, key, or desktop takeover selected either reply.",
+    "run_result": "The capability proof passed before the bounded run was deliberately interrupted. Automatic cleanup then timed out behind an unrelated accepted mining command; a separate supported stop closed Kenshi from a fresh paused idle state.",
+    "withheld": "This proves exact native selection, payment, and dialogue closure on the named fixture and binaries. It does not prove subsequent bodyguard duration or AI behavior, and it is not the long survival soak."
+  }
+}

@@ -96,6 +96,9 @@ def test_reverse_engineering_claims_link_canonical_research_objects() -> None:
     assert by_kind["transfer_item"].research == (
         "game_sources/research/inventory_transfer",
     )
+    assert by_kind["select_dialogue_option"].research == (
+        "game_sources/research/dialogue_options",
+    )
 
 
 def test_only_operations_with_a_recorded_live_run_claim_live_proof() -> None:
@@ -130,6 +133,7 @@ def test_only_operations_with_a_recorded_live_run_claim_live_proof() -> None:
         "pause",
         "perform_character_order",
         "perform_context_action",
+        "select_dialogue_option",
         "survey_local_resources",
         "transfer_item",
     }

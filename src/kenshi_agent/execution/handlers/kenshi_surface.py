@@ -34,6 +34,7 @@ from ...core.operation import (
     KeyAction,
     PauseAction,
     PointerActionClass,
+    SelectDialogueOptionAction,
     SetSpeedAction,
     TransferItemAction,
 )
@@ -510,7 +511,7 @@ class KenshiControlSurface:
         if not identity_session_id:
             raise RuntimeError("Native time control requires an identity session.")
         request = NativeCommandRequest(
-            schema_version="1.5",
+            schema_version="1.6",
             command_id=new_command_id(),
             command=wire_command,
             control_mode=ControlMode.NATIVE_ASSISTED,
@@ -1443,7 +1444,7 @@ class KenshiControlSurface:
         telemetry = observation.telemetry
         assert telemetry is not None and telemetry.identity_session_id
         return NativeCommandRequest(
-            schema_version="1.5",
+            schema_version="1.6",
             command_id=command.command_id,
             command=wire_command,
             control_mode=ControlMode.NATIVE_ASSISTED,
@@ -1537,7 +1538,10 @@ class KenshiControlSurface:
                 "Native command would be delivered to different recipients than "
                 f"it was authored for: {'; '.join(drift)}."
             )
-        if authored_basis.scope is not RecipientScope.NAMED_BODY and (
+        if authored_basis.scope not in {
+            RecipientScope.NONE,
+            RecipientScope.NAMED_BODY,
+        } and (
             not selected_ids or telemetry.primary_character_id not in selected_ids
         ):
             # Every order that broadcasts to the selection needs one, and needs
@@ -1605,6 +1609,21 @@ class KenshiControlSurface:
 
         if wire_command == native_commands.NATIVE_CLOSE_INTERFACE_WIRE_COMMAND:
             # Game-wide UI state; there is no world target to re-resolve.
+            return None
+        if wire_command == native_commands.NATIVE_DIALOGUE_OPTION_WIRE_COMMAND:
+            if not isinstance(action, SelectDialogueOptionAction):
+                return "Native dialogue selection requires a typed dialogue option."
+            ui = telemetry.ui
+            if (
+                ui.dialogue_open is not True
+                or ui.dialogue_target_id != action.dialogue_target_id
+                or ui.dialogue_options is None
+            ):
+                return "The exact offered dialogue is no longer open at issue time."
+            if action.option_index >= len(ui.dialogue_options):
+                return "The exact offered dialogue option index is no longer present."
+            if ui.dialogue_options[action.option_index] != action.option_text:
+                return "The exact offered dialogue caption changed before issue time."
             return None
         if wire_command in {
             native_commands.NATIVE_DIRECTION_WIRE_COMMAND,
@@ -1730,6 +1749,10 @@ class KenshiControlSurface:
                         or acknowledgement.distance_units != request.distance_units
                         or acknowledgement.minimum_output_quantity
                         != request.minimum_output_quantity
+                        or acknowledgement.dialogue_option_index
+                        != request.dialogue_option_index
+                        or acknowledgement.dialogue_option_text
+                        != request.dialogue_option_text
                         or acknowledgement.selected_character_ids != request.selected_character_ids
                     ):
                         raise RuntimeError(
@@ -1811,6 +1834,8 @@ class KenshiControlSurface:
             current.bearing_degrees,
             current.distance_units,
             current.minimum_output_quantity,
+            current.dialogue_option_index,
+            current.dialogue_option_text,
             current.selected_character_ids,
             current.based_on_telemetry_sequence,
         )
@@ -1820,6 +1845,8 @@ class KenshiControlSurface:
             previous.bearing_degrees,
             previous.distance_units,
             previous.minimum_output_quantity,
+            previous.dialogue_option_index,
+            previous.dialogue_option_text,
             previous.selected_character_ids,
             previous.based_on_telemetry_sequence,
         )

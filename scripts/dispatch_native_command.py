@@ -79,7 +79,7 @@ def main() -> int:
 
     command_id = new_command_id()
     request = NativeCommandRequest(
-        schema_version="1.5",
+        schema_version="1.6",
         command_id=command_id,
         command=args.command,  # type: ignore[arg-type]
         control_mode="native_assisted",

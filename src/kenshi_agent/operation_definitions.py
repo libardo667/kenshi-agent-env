@@ -53,6 +53,7 @@ from .core.operation import (
     RecallMemoryAction,
     RegroupWithSquadMemberAction,
     RespondToImmediateThreatAction,
+    SelectDialogueOptionAction,
     SelectSquadMemberExactAction,
     SetSpeedAction,
     ShiftIntoBodyAction,
@@ -113,6 +114,7 @@ NATIVE_PRODUCE_RESOURCE_CAPABILITY = "control.produce_resource_output"
 NATIVE_TRANSFER_CAPABILITY = "control.transfer_item"
 NATIVE_TRADE_WINDOW_CAPABILITY = "control.open_trade_window"
 NATIVE_CLOSE_INTERFACE_CAPABILITY = "control.close_active_interface"
+NATIVE_DIALOGUE_OPTION_CAPABILITY = "control.select_dialogue_option"
 
 # The one mapping from a control capability to the native command it authorizes.
 # A capability is the permission; the command is the thing performed with it.
@@ -193,6 +195,15 @@ def _wire_transfer(action: Action) -> WireFields:
     }
 
 
+def _wire_dialogue_option(action: Action) -> WireFields:
+    option = cast(SelectDialogueOptionAction, action)
+    return {
+        "target_id": option.dialogue_target_id,
+        "dialogue_option_index": option.option_index,
+        "dialogue_option_text": option.option_text,
+    }
+
+
 WIRE_FIELD_DEFAULTS: WireFields = {
     "target_id": "",
     "context_action": "",
@@ -203,6 +214,8 @@ WIRE_FIELD_DEFAULTS: WireFields = {
     "section_name": "",
     "slot_x": 0,
     "slot_y": 0,
+    "dialogue_option_index": -1,
+    "dialogue_option_text": "",
     "paused": False,
     "speed_multiplier": 0.0,
     "quantity": 0,
@@ -493,6 +506,56 @@ def bind_close_active_interface(
             "return dialogue, modal, inventory, and management signals to world."
         ),
         resolved_label=telemetry.ui.active_screen or "blocking_interface",
+        source_revision=observation.world_revision,
+    )
+
+
+def dialogue_option_is_currently_authorable(observation: Observation) -> bool:
+    telemetry = observation.telemetry
+    if telemetry is None or observation.telemetry_stale:
+        return False
+    ui = telemetry.ui
+    return bool(
+        ui.dialogue_open is True
+        and ui.dialogue_target_id
+        and ui.dialogue_options is not None
+        and ui.dialogue_options
+    )
+
+
+def bind_select_dialogue_option(
+    action: Action,
+    observation: Observation,
+) -> BoundNamedTarget | BindingFailure:
+    if not isinstance(action, SelectDialogueOptionAction):
+        return _unbound("Action is not a select_dialogue_option action.")
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return _unbound("No telemetry is available to bind the dialogue reply.")
+    if observation.telemetry_stale:
+        return _unbound("Telemetry is stale, so the dialogue reply cannot be bound.")
+    ui = telemetry.ui
+    if ui.dialogue_open is not True or ui.active_screen != "dialogue":
+        return _unbound("No current dialogue interface is open.")
+    if ui.dialogue_target_id != action.dialogue_target_id:
+        return _unbound("The current dialogue target does not match the offered reply.")
+    if ui.dialogue_options is None:
+        return _unbound("Current dialogue options are unavailable rather than empty.")
+    if action.option_index >= len(ui.dialogue_options):
+        return _unbound("The offered dialogue reply index is no longer present.")
+    current_text = ui.dialogue_options[action.option_index]
+    if current_text != action.option_text:
+        return _unbound(
+            "The dialogue reply list changed; the exact offered caption no longer "
+            "occupies its observed index."
+        )
+    return BoundNamedTarget(
+        reason=(
+            f"Bound exact dialogue reply {action.option_index} for target "
+            f"{action.dialogue_target_id}: {action.option_text!r}."
+        ),
+        target_id=action.dialogue_target_id,
+        resolved_label=action.option_text,
         source_revision=observation.world_revision,
     )
 
@@ -2643,6 +2706,49 @@ CLOSE_ACTIVE_INTERFACE_DEFINITION = OperationDefinition(
 )
 
 
+SELECT_DIALOGUE_OPTION_DEFINITION = OperationDefinition(
+    kind="select_dialogue_option",
+    wire_command="select_dialogue_option",
+    project_wire_fields=_wire_dialogue_option,
+    version="1.0",
+    interaction=global_ui(
+        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
+        playback=PlaybackRequirement.PAUSED_TRANSACTION,
+    ),
+    operation_type=SelectDialogueOptionAction,
+    summary=(
+        "Choose one exact current dialogue reply through Kenshi's dialogue model. "
+        "The conversation target, displayed index, and exact caption are all "
+        "revalidated on the game thread before the reply is selected."
+    ),
+    argument_source=(
+        "dialogue_target_id, option_index, and option_text are copied exactly from "
+        "the currently open dialogue and its complete ordered option list."
+    ),
+    allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset(
+        {NATIVE_DIALOGUE_OPTION_CAPABILITY, "ui.dialogue.options", "ui.dialogue.target"}
+    ),
+    capability_aliases=frozenset(),
+    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
+    native_assisted=True,
+    risk=OperationRisk(native_assisted_actions=1),
+    max_primitive_actions=1,
+    reference_fields=("dialogue_target_id", "option_index", "option_text"),
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=OperationExecution.ATOMIC_HANDLER,
+    receipt_kind="semantic_dialogue_reply",
+    bind=bind_select_dialogue_option,
+    handler_key="resources.select_dialogue_option",
+    controller_verified=True,
+    native_terminal_success_reasons=frozenset(
+        {"dialogue_closed", "dialogue_target_changed", "dialogue_options_changed"}
+    ),
+    native_task_started_reasons=frozenset({"dialogue_option_selected"}),
+    authorable_when=dialogue_option_is_currently_authorable,
+)
+
+
 TRANSFER_ITEM_DEFINITION = OperationDefinition(
     kind="transfer_item",
     wire_command="transfer_item",
@@ -3095,6 +3201,7 @@ OPERATION_DEFINITION_LIST: tuple[OperationDefinition, ...] = (
     RESPOND_TO_IMMEDIATE_THREAT_DEFINITION,
     OPEN_TRADE_WINDOW_DEFINITION,
     CLOSE_ACTIVE_INTERFACE_DEFINITION,
+    SELECT_DIALOGUE_OPTION_DEFINITION,
     TRANSFER_ITEM_DEFINITION,
     REGROUP_WITH_SQUAD_MEMBER_DEFINITION,
     MOVE_TO_CHARACTER_DEFINITION,

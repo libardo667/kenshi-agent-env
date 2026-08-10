@@ -48,7 +48,7 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "const": "1.5",
+      "const": "1.6",
       "title": "Schema Version",
       "type": "string"
     },
@@ -79,6 +79,7 @@
         "pause",
         "set_speed",
         "close_active_interface",
+        "select_dialogue_option",
         "survey_local_resources"
       ],
       "title": "Command",
@@ -186,6 +187,19 @@
       "minimum": 0,
       "title": "Slot Y",
       "type": "integer"
+    },
+    "dialogue_option_index": {
+      "default": -1,
+      "maximum": 63,
+      "minimum": -1,
+      "title": "Dialogue Option Index",
+      "type": "integer"
+    },
+    "dialogue_option_text": {
+      "default": "",
+      "maxLength": 500,
+      "title": "Dialogue Option Text",
+      "type": "string"
     },
     "paused": {
       "default": false,
