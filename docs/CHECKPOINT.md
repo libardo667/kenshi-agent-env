@@ -2,14 +2,15 @@
 
 This goal exercises the native semantic surface for 120 open-ended planning
 turns and fixes failures exposed by the soak without weakening truthful
-terminals or non-progress guards. The first attempt exposed an incremental
-production-contract bug after otherwise completing mining, travel, dialogue,
-food purchases, and bodyguard hire.
+terminals or non-progress guards. The first two attempts exposed an incremental
+production-contract bug and then an unnecessary exact-identity transcription
+requirement after otherwise completing mining, travel, dialogue, food
+purchases, and bodyguard hire.
 
 ## Repository and authority
 
 ```text
-parent commit          cf4a2f9db075365b32445477ef4677a69560aeba
+parent commit          2f9da6a7e13c6a9a43bcf74252399220fca7e9f1
 integration branch     main
 starting tree          clean
 producer protocol      2.0.0
@@ -118,7 +119,7 @@ manifest, fixture attestation, exact request/acknowledgement chain, decisive
 telemetry, visual frame descriptions, DLL/PDB identities, hashes for the
 omitted 12.8-MiB event stream and all raw PNGs, and final disposition.
 
-## First soak finding and candidate repair
+## Soak findings and candidate repairs
 
 Run `protocol-2-native-survival-soak-20260810-r5` ended safely after 18
 completed plans rather than reaching the 120-turn ceiling. Its last three
@@ -140,7 +141,24 @@ offers to path to the resource and produce one additional item. The threshold
 advances up to the native action maximum of five; a full output withholds
 production until collection makes space. Focused affordance, binding, model,
 and operation-definition tests pass. The complete portable gate also passes;
-the 120-turn rerun remains pending.
+the next run proved both native Iron thresholds one and two reached their exact
+terminals rather than returning immediate success.
+
+Run `protocol-2-native-survival-soak-20260810-r6` then ended safely after 13
+turns. After bodyguard hire, three planner responses selected the sole current
+`produce_resource_output` offer but each omitted the same middle segment from
+its 100-character Copper Resource identity. Structured output was rejected
+before execution every time; no guessed identity or input crossed the boundary.
+
+`target_id` was already optional in the semantic selection model, but the
+planner instructions always required copying it. The candidate planner digest
+now marks whether an exact target is actually needed for disambiguation. A
+semantic with exactly one current offer exposes `target_id_required=false` and
+`target_id=null`; resolution binds that unique semantic to the full
+runtime-owned engine identity. Multiple offers with the same semantic still
+expose and require their exact IDs, and a missing or incorrect disambiguator
+still fails closed. Focused planner, budget, proposal, and affordance tests
+pass, as does the complete portable gate. The 120-turn rerun remains pending.
 
 ## DLL artifacts and exact commands
 
@@ -201,8 +219,8 @@ primitive desktop input, and final safe state, and Kenshi is closed cleanly.
 
 ## Verification
 
-The complete portable gate passed on 2026-08-10 for the incremental production
-candidate before the next live attempt:
+The complete portable gate passed on 2026-08-10 for the semantic-only
+unique-target candidate before the next live attempt:
 
 ```bash
 UV_CACHE_DIR=/tmp/kae-uv-cache ./dev verify-portable

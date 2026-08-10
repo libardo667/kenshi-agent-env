@@ -32,9 +32,10 @@ def planner_output_policy_language(policy: PlannerOutputPolicy) -> str:
     return "\n".join(
         (
             f"- State a broader gameplay objective, then choose {policy.cardinality_phrase}.",
-            "- Put that choice in `steps`. Copy its `semantic`, exact "
-            "`target_id` when present, and only parameters declared by the same "
-            "current offer. Never emit the runtime-only `affordance_id`.",
+            "- Put that choice in `steps`. Copy its `semantic` and only parameters "
+            "declared by the same current offer. When `target_id_required` is false, "
+            "emit `target_id: null`; when true, copy the exact `target_id`. Never "
+            "emit the runtime-only `affordance_id`.",
             "- Do not queue later selections or reserve an affordance for a later "
             "step. The runtime observes again before the next deliberation.",
             "- Example: an objective may be `Establish a reliable food supply` while "

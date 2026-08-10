@@ -10,6 +10,7 @@ import kenshi_agent.affordances as affordance_module
 from kenshi_agent.affordances import (
     AFFORDANCE_ADAPTERS,
     OPERATION_BINDING_AUTHORITY,
+    AffordanceSelection,
     AffordanceSource,
     bind_affordance,
     bound_affordance,
@@ -43,6 +44,7 @@ from kenshi_agent.operation_definitions import (
     BoundOperation,
     TerminalOwner,
 )
+from kenshi_agent.planner_context import planner_affordance_digest
 
 
 def _bounds(row: int) -> NormalizedPointerBounds:
@@ -501,6 +503,84 @@ def test_resource_offer_produces_one_more_than_exact_observed_output() -> None:
     assert "reaches 2, one more than the observed 1" in offers[0].description
     bound = bind_affordance(selection_for(offers[0]), observation)
     assert bound.operation.minimum_output_quantity == 2
+    planner_offer = next(
+        offer
+        for offer in planner_affordance_digest(observation)
+        if offer["semantic"] == "produce_resource_output"
+    )
+    assert planner_offer["target_id_required"] is False
+    assert planner_offer["target"] == {
+        "target_id": None,
+        "label": resource.name,
+        "kind": resource.kind,
+    }
+    semantic_only = bind_affordance(
+        AffordanceSelection(semantic="produce_resource_output"),
+        observation,
+    )
+    assert semantic_only.operation.target_id == resource.id
+    assert semantic_only.operation.minimum_output_quantity == 2
+
+
+def test_planner_requires_exact_target_only_when_a_semantic_is_ambiguous() -> None:
+    actor = CharacterState(id="entity-bark", name="Bark")
+    copper = WorldTarget(
+        id="resource-copper",
+        name="Copper Resource",
+        kind="natural_resource",
+        position=Vec3(x=10, y=0, z=20),
+        distance=25,
+        context_actions=[ContextActionKind.OPERATE],
+        default_task="operate_machinery",
+        operator_capacity=2,
+        current_operator_ids=[],
+        current_operators_complete=True,
+        output_inventory_complete=True,
+    )
+    iron = copper.model_copy(
+        update={
+            "id": "resource-iron",
+            "name": "Iron Resource",
+            "distance": 40,
+        }
+    )
+    observation = _observation(
+        capabilities=[
+            "control.produce_resource_output",
+            "game.pause",
+            "identity.stable_handles",
+            "world.context_targets",
+            "world.resource_operators",
+        ],
+        roster=[actor],
+        targets=[copper, iron],
+        primary_character_id=actor.id,
+        selected_character_ids=[actor.id],
+        ui=UIState(
+            active_screen="world",
+            dialogue_open=False,
+            modal_open=False,
+        ),
+    )
+
+    planner_offers = [
+        offer
+        for offer in planner_affordance_digest(observation)
+        if offer["semantic"] == "produce_resource_output"
+    ]
+
+    assert len(planner_offers) == 2
+    assert all(offer["target_id_required"] is True for offer in planner_offers)
+    assert {
+        offer["target"]["target_id"]
+        for offer in planner_offers
+        if isinstance(offer["target"], dict)
+    } == {copper.id, iron.id}
+    with pytest.raises(ValueError, match="matches 2 current choices"):
+        bind_affordance(
+            AffordanceSelection(semantic="produce_resource_output"),
+            observation,
+        )
 
 
 def test_resource_production_is_withheld_while_exact_output_is_full() -> None:

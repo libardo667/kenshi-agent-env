@@ -187,7 +187,15 @@ class AffordanceSelection(_StrictModel):
     """
 
     semantic: str = Field(min_length=1, max_length=100)
-    target_id: str | None = Field(default=None, min_length=1, max_length=500)
+    target_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=500,
+        description=(
+            "Exact current target disambiguator. Emit null when the offered "
+            "target_id_required flag is false; otherwise copy the offered value."
+        ),
+    )
     parameters: list[AffordanceParameter] = Field(default_factory=list, max_length=8)
 
     def parameter_map(self) -> dict[str, JsonValue]:
@@ -1803,6 +1811,14 @@ def bind_affordance(
     """Route a selection back to its issuing adapter for exact current binding."""
 
     resolved = resolve_selection(selection, observation)
+    resolved_target_id = resolved.target.target_id if resolved.target else None
+    # `target_id` is only a planner-side disambiguator. Once semantic resolution
+    # has proved there is exactly one current offer, carry the runtime-owned
+    # exact identity into the issuing adapter instead of asking that adapter to
+    # compare the intentionally omitted planner field with its source target.
+    canonical_selection = selection.model_copy(
+        update={"target_id": resolved_target_id}
+    )
     # Deduplicate before counting. An id is derived from what a choice *is*, so
     # a repeated identical offer is the same choice seen twice, not ambiguity: a
     # trade window holding ten identically-labelled cells emits ten identical
@@ -1823,7 +1839,11 @@ def bind_affordance(
             f"{len(matches)} adapters claim affordance {resolved.affordance_id!r} "
             f"({', '.join(sorted(matches))}); exactly one must issue it"
         )
-    return next(iter(matches.values())).bind(selection, observation, offer=resolved)
+    return next(iter(matches.values())).bind(
+        canonical_selection,
+        observation,
+        offer=resolved,
+    )
 
 
 def bound_affordance(bound: BoundOperation) -> BoundAffordance:

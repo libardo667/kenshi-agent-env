@@ -510,13 +510,14 @@ def test_reviewed_resource_target_is_an_exact_productive_affordance() -> None:
     resource_offers = [
         offer
         for offer in payload["affordances"]
-        if (offer.get("target") or {}).get("target_id") == target.id
+        if offer.get("semantic") == "produce_resource_output"
     ]
     assert len(resource_offers) == 1
     assert resource_offers[0]["source"] == "native_operation"
     assert resource_offers[0]["semantic"] == "produce_resource_output"
+    assert resource_offers[0]["target_id_required"] is False
     assert resource_offers[0]["target"] == {
-        "target_id": target.id,
+        "target_id": None,
         "label": target.name,
         "kind": target.kind,
     }

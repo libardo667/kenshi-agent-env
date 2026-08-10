@@ -13,6 +13,7 @@ recall, affordance enumeration, or advisor state to describe itself.
 from __future__ import annotations
 
 import json
+from collections import Counter
 from collections.abc import Callable
 from typing import Any
 
@@ -32,7 +33,24 @@ from .observation_budget import budget_observation_payload
 def planner_affordance_digest(observation: Observation) -> list[dict[str, Any]]:
     """Project the one runtime-authored action surface for the playing model."""
 
-    return [offer.planner_digest() for offer in offered_affordances(observation)]
+    offers = offered_affordances(observation)
+    semantic_counts = Counter(offer.semantic for offer in offers)
+    digest: list[dict[str, Any]] = []
+    for offer in offers:
+        projected = offer.planner_digest()
+        target_id_required = semantic_counts[offer.semantic] > 1
+        projected["target_id_required"] = target_id_required
+        target = projected.get("target")
+        if isinstance(target, dict) and not target_id_required:
+            # A target id is a disambiguator in the planner language, not a
+            # second copy of runtime identity. Asking the model to reproduce a
+            # 100-character engine handle when the semantic already names one
+            # exact offer created deterministic transcription failures. Keep
+            # label and kind visible for reasoning; runtime resolution still
+            # binds the sole current offer to its full engine-owned identity.
+            target["target_id"] = None
+        digest.append(projected)
+    return digest
 
 
 def planner_nutrition_digest(observation: Observation) -> dict[str, Any]:

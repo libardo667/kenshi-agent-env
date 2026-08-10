@@ -42,6 +42,7 @@
             }
           ],
           "default": null,
+          "description": "Exact current target disambiguator. Emit null when the offered target_id_required flag is false; otherwise copy the offered value.",
           "title": "Target Id"
         },
         "parameters": {
