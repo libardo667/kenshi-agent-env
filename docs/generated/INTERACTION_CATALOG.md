@@ -23,10 +23,10 @@ manifest entries         27
 coverage proof          PASS
 
 PROOF STATUS
-  source_proven     10
-  unit_proven        1
-  live_proven        8
-  unproven           8
+  source_proven      9
+  unit_proven        0
+  live_proven       11
+  unproven           7
   withheld           0
 
 INTERACTION CONTRACT (resolved from the sole operation registry)
@@ -42,19 +42,19 @@ INTERACTION CONTRACT (resolved from the sole operation registry)
   pause                               global_ui          none                none             world_outcome_observed  live_proven
   perform_character_order             ordinary_order     current_selection   dispatch_only    order_accepted          source_proven
   perform_context_action *            varies             current_selection   varies           varies                  unproven
-  produce_resource_output             ordinary_order     current_selection   dispatch_only    world_outcome_observed  unit_proven
+  produce_resource_output             ordinary_order     current_selection   dispatch_only    world_outcome_observed  live_proven
   read_fieldbook                      runtime_only       none                none             input_delivered         source_proven
   recall_memory                       runtime_only       none                none             input_delivered         source_proven
   regroup_with_squad_member           ordinary_order     explicit_recipients dispatch_only    world_outcome_observed  unproven
   respond_to_immediate_threat         ordinary_order     explicit_recipients dispatch_only    order_accepted          unproven
   select_dialogue_option              global_ui          none                none             world_outcome_observed  live_proven
   select_squad_member_exact           selection_mutation explicit_recipients none             world_outcome_observed  source_proven
-  set_speed                           global_ui          none                none             world_outcome_observed  source_proven
+  set_speed                           global_ui          none                none             world_outcome_observed  live_proven
   shift_into_body                     ordinary_order     named_body          dispatch_only    world_outcome_observed  source_proven
   stop                                runtime_only       none                none             input_delivered         source_proven
   survey_local_resources              global_ui          none                none             world_outcome_observed  live_proven
   transfer_item                       global_ui          none                none             world_outcome_observed  live_proven
-  travel_to_map_destination           ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
+  travel_to_map_destination           ordinary_order     current_selection   dispatch_only    world_outcome_observed  live_proven
   wait                                runtime_only       none                none             input_delivered         source_proven
 
   * resolves its contract per exact action; recipient scope is

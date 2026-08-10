@@ -1,0 +1,399 @@
+{
+  "schema_version": 1,
+  "conclusion": "One exact Protocol 2.0 run completed a native mine-to-sale loop without desktop input or planner-authored wait chains.",
+  "captured_at_utc": "2026-08-10T17:41:37.571755Z",
+  "manifest": {
+    "run_id": "native-mining-local-trade-regression-20260810-r1",
+    "public_command": "./dev run --scenario native-launch-exact-load-20260810 --objective <targeted mine-to-sale objective> --steps 24 --run-id native-mining-local-trade-regression-20260810-r1 --control live --timeout 180",
+    "objective": "Complete exactly one native mine-to-sale loop. Use produce_resource_output on an observed natural resource to create at least one output, pair the resource and primary inventories, and transfer at least one output item into the primary character. Then travel toward or approach the Hub Barman until the vendor is inside the local trade authoring fence; do not attempt a remote trade window merely because the vendor is visible. Open the local trade window, sell the mined output, and stop only after later money and inventory evidence prove the sale. Do not choose generic resource operate and do not use planner-authored wait loops.",
+    "scenario_attestation": {
+      "scenario_id": "native-launch-exact-load-20260810",
+      "save_id": "autosave1-native-launch-20260810",
+      "fixture_digest": "105fc162134f60379812a246f1e2e00c3f8d24e935b49ef1213068ca3f3787c3",
+      "managed_save_name": "KenshiAgentScenario",
+      "identity_session_id": "session-dcd9de7cca86a5ae-0000000000000002",
+      "loaded_sequence": 128,
+      "verified_at_utc": "2026-08-10T17:39:10.583542Z",
+      "environment": "outdoor",
+      "danger": "safe",
+      "economy": "funded",
+      "party": "squad",
+      "time_of_day": "night",
+      "money": 20000,
+      "party_size": 2
+    },
+    "producer_protocol": "2.0.0",
+    "control_mode": "native_assisted",
+    "steps_completed": 12
+  },
+  "binary_identity": {
+    "pre_change": {
+      "dll_path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260810-native-mining-local-trade\\pre-change\\KenshiAgentTelemetry.dll",
+      "dll_sha256": "033cf6e489816644f5310eb38d90ffc4e625e4812f8ed41d79aac05d58e4dfdd",
+      "dll_size_bytes": 435712,
+      "pdb_path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260810-native-mining-local-trade\\pre-change\\KenshiAgentTelemetry.pdb",
+      "pdb_sha256": "9976a2e536e838ecc635ed2b29504b38fd9f686475530ab185c1c5ddaa2fd4d6",
+      "pdb_size_bytes": 11127808
+    },
+    "live_candidate": {
+      "dll_path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260810-native-mining-local-trade\\replacement\\KenshiAgentTelemetry.dll",
+      "installed_path": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll",
+      "dll_sha256": "76310e286fc4caf833ee865e0c68c01c25f4382cbbbc39db92e5640050b08f62",
+      "dll_size_bytes": 436736,
+      "built_preserved_installed_equal": true,
+      "pdb_path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260810-native-mining-local-trade\\replacement\\KenshiAgentTelemetry.pdb",
+      "pdb_sha256": "9787a2082b3e1172902920e8750737a205be8aaca4f10a51b4c89034dcde1ff7",
+      "pdb_size_bytes": 11127808,
+      "native_conformance_exe_sha256": "3f15a37919e1223034c4e4783833d34286a0f803073d3411758da22f21406a97",
+      "native_conformance_exe_size_bytes": 318464,
+      "native_conformance_result": "Native protocol fixtures and semantics passed."
+    },
+    "commands": {
+      "build": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build_native.ps1",
+      "reinstall_live_candidate": "Copy-Item -LiteralPath 'C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260810-native-mining-local-trade\\replacement\\KenshiAgentTelemetry.dll' -Destination 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll' -Force",
+      "rollback_pre_change": "Copy-Item -LiteralPath 'C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260810-native-mining-local-trade\\pre-change\\KenshiAgentTelemetry.dll' -Destination 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll' -Force"
+    }
+  },
+  "entities": {
+    "primary": {
+      "id": "entity-dcd9de7cca86a5ae-0000000000000002-00000001-00000000-00000000-00000002-8aaa4b00",
+      "name": "Slowline"
+    },
+    "resource": {
+      "id": "entity-dcd9de7cca86a5ae-0000000000000002-00000000-00000815-00002b67-00000121-5d23b880",
+      "name": "Copper Resource"
+    },
+    "vendor": {
+      "id": "entity-dcd9de7cca86a5ae-0000000000000002-00000001-00000000-00000000-00000001-c0534d00",
+      "name": "Barman"
+    }
+  },
+  "requests_and_acknowledgements": [
+    {
+      "purpose": "produce one real Copper output",
+      "request": {
+        "command_id": "cmd-c1e8df5591a244e796b3f77b9f62b3e0",
+        "command": "produce_resource_output",
+        "target_id": "entity-dcd9de7cca86a5ae-0000000000000002-00000000-00000815-00002b67-00000121-5d23b880",
+        "minimum_output_quantity": 1,
+        "based_on_telemetry_sequence": 155
+      },
+      "accepted": {
+        "status": "accepted",
+        "reason": "issued",
+        "accepted_at_telemetry_sequence": 157
+      },
+      "terminal": {
+        "status": "completed",
+        "reason": "resource_output_ready_task_released",
+        "terminal_at_telemetry_sequence": 211
+      },
+      "primitive_actions": 0
+    },
+    {
+      "purpose": "run productive work at native 5x while its command remains monitored",
+      "plural_registry_evidence": [
+        {
+          "telemetry_sequence": 158,
+          "retained_gameplay_command": "cmd-c1e8df5591a244e796b3f77b9f62b3e0 accepted/issued",
+          "clock_command": "cmd-e9ad15c04ade48b28075cfa3c6d37901 completed/world_speed_set"
+        },
+        {
+          "telemetry_sequence": 159,
+          "retained_gameplay_command": "cmd-c1e8df5591a244e796b3f77b9f62b3e0 accepted/issued",
+          "clock_command": "cmd-30ae519bcaba49b38e2d279469141432 completed/world_speed_set"
+        }
+      ],
+      "later_action_outcome": "paused true to false; speed 0.0 to 5.0; Slowline moved 2042.99 world units",
+      "primitive_actions": 0
+    },
+    {
+      "purpose": "open the resource and primary inventories",
+      "request": {
+        "command_id": "cmd-c266a91eecc6464db06521d6bcd036c4",
+        "command": "open_trade_window",
+        "target_id": "entity-dcd9de7cca86a5ae-0000000000000002-00000001-00000000-00000000-00000002-8aaa4b00",
+        "destination_id": "entity-dcd9de7cca86a5ae-0000000000000002-00000000-00000815-00002b67-00000121-5d23b880",
+        "based_on_telemetry_sequence": 219
+      },
+      "terminal": {
+        "status": "completed",
+        "reason": "trade_window_open",
+        "terminal_at_telemetry_sequence": 220
+      },
+      "primitive_actions": 0
+    },
+    {
+      "purpose": "collect Copper into Slowline",
+      "request": {
+        "command_id": "cmd-4341e3e8d6fa40e09124ef7bbbb3ce19",
+        "command": "transfer_item",
+        "target_id": "entity-dcd9de7cca86a5ae-0000000000000002-00000000-00000815-00002b67-00000121-5d23b880",
+        "destination_id": "entity-dcd9de7cca86a5ae-0000000000000002-00000001-00000000-00000000-00000002-8aaa4b00",
+        "section_name": "out",
+        "slot_x": 0,
+        "slot_y": 0,
+        "item_name": "Copper",
+        "based_on_telemetry_sequence": 230
+      },
+      "terminal": {
+        "status": "completed",
+        "reason": "item_transferred",
+        "terminal_at_telemetry_sequence": 231
+      },
+      "primitive_actions": 0
+    },
+    {
+      "purpose": "travel to The Hub and physically approach the Barman",
+      "travel": {
+        "command_id": "cmd-b46758df2f224a95a3ed81f7fbd77963",
+        "status": "completed",
+        "reason": "map_destination_reached",
+        "terminal_at_telemetry_sequence": 271,
+        "primitive_actions": 0
+      },
+      "approach": {
+        "command_id": "cmd-24ebd98b7ff7407f886a595a49fe1103",
+        "command": "move_to_character",
+        "based_on_telemetry_sequence": 282,
+        "terminal_at_telemetry_sequence": 320,
+        "status": "cancelled",
+        "reason": "movement_stalled",
+        "distance_to_barman_before": 312.47,
+        "distance_to_barman_after": 16.73,
+        "distance_closed": 295.75,
+        "primitive_actions": 0
+      },
+      "disposition": "The movement monitor conservatively cancelled after reaching a stationary local position. No Barman trade request was dispatched before this approach; the later request was authored only after distance was 16.73 units."
+    },
+    {
+      "purpose": "open the now-local Barman trade window",
+      "request": {
+        "command_id": "cmd-482c905e973740d8b9bf6b88331b70ce",
+        "command": "open_trade_window",
+        "target_id": "entity-dcd9de7cca86a5ae-0000000000000002-00000001-00000000-00000000-00000002-8aaa4b00",
+        "destination_id": "entity-dcd9de7cca86a5ae-0000000000000002-00000001-00000000-00000000-00000001-c0534d00",
+        "based_on_telemetry_sequence": 344
+      },
+      "terminal": {
+        "status": "completed",
+        "reason": "trade_window_open",
+        "accepted_at_telemetry_sequence": 345,
+        "terminal_at_telemetry_sequence": 345
+      },
+      "primitive_actions": 0
+    },
+    {
+      "purpose": "sell Copper to the Barman",
+      "request": {
+        "command_id": "cmd-da8dc4d8084440618b71944a1456afbe",
+        "command": "transfer_item",
+        "target_id": "entity-dcd9de7cca86a5ae-0000000000000002-00000001-00000000-00000000-00000002-8aaa4b00",
+        "destination_id": "entity-dcd9de7cca86a5ae-0000000000000002-00000001-00000000-00000000-00000001-c0534d00",
+        "section_name": "main",
+        "slot_x": 0,
+        "slot_y": 0,
+        "item_name": "Copper",
+        "based_on_telemetry_sequence": 361
+      },
+      "terminal": {
+        "status": "completed",
+        "reason": "item_transferred",
+        "terminal_at_telemetry_sequence": 362
+      },
+      "primitive_actions": 0
+    }
+  ],
+  "decisive_telemetry": [
+    {
+      "sequence": 134,
+      "meaning": "fixture-attested starting state",
+      "money": 20000,
+      "paused": true,
+      "primary_position": [-51153.37, 1531.699, 3056.965],
+      "copper_resource_output": []
+    },
+    {
+      "sequence": 211,
+      "meaning": "actual output and productive-command terminal",
+      "money": 20000,
+      "copper_resource_output": [
+        {
+          "name": "Copper",
+          "item_type": 4,
+          "quantity": 1
+        }
+      ],
+      "command": "cmd-c1e8df5591a244e796b3f77b9f62b3e0 completed/resource_output_ready_task_released"
+    },
+    {
+      "sequence": 231,
+      "meaning": "collection changed later engine inventories",
+      "resource_item_count": 0,
+      "resource_sections": [],
+      "slowline_item_count": 3,
+      "slowline_sections": ["hip", "legs", "main"],
+      "copper_resource_output": [],
+      "money": 20000
+    },
+    {
+      "sequence": 320,
+      "meaning": "approach ended locally before any Barman trade request",
+      "primary_position": [-51137.5, 1578.653, 2666.951],
+      "distance_to_barman": 16.73,
+      "command": "cmd-24ebd98b7ff7407f886a595a49fe1103 cancelled/movement_stalled"
+    },
+    {
+      "sequence": 345,
+      "meaning": "exact local Barman trade terminal and pre-sale inventory",
+      "open_inventory_windows": 2,
+      "owners": ["Barman", "Slowline"],
+      "money": 20000,
+      "slowline_item_count": 3,
+      "slowline_copper": {
+        "section": "main",
+        "quantity": 1,
+        "sell_value": 195
+      },
+      "command": "cmd-482c905e973740d8b9bf6b88331b70ce completed/trade_window_open"
+    },
+    {
+      "sequence": 362,
+      "meaning": "later engine sale evidence",
+      "money": 20195,
+      "money_delta": 195,
+      "slowline_item_count": 2,
+      "slowline_sections": ["hip", "legs"],
+      "barman_item_count": 32,
+      "command": "cmd-da8dc4d8084440618b71944a1456afbe completed/item_transferred"
+    },
+    {
+      "sequence": 421,
+      "meaning": "final safe state",
+      "money": 20195,
+      "paused": true,
+      "open_inventory_windows": 0,
+      "character_work": "both characters have complete empty ordinary orders, Jobs, and permanent Jobs, with null current activity"
+    }
+  ],
+  "planner_and_input_audit": {
+    "planned_action_kinds": [
+      "produce_resource_output",
+      "open_trade_window",
+      "transfer_item",
+      "close_active_interface",
+      "travel_to_map_destination",
+      "move_to_character",
+      "open_trade_window",
+      "transfer_item",
+      "close_active_interface",
+      "noop",
+      "stop"
+    ],
+    "generic_resource_operate_plans": 0,
+    "planner_wait_plans": 0,
+    "action_receipts": 12,
+    "action_receipts_with_nonzero_primitive_actions": 0,
+    "rejected_plans": 0,
+    "aborted_plans": 1,
+    "abort_reason": "movement_stalled after reaching 16.73 units from the Barman",
+    "final_cleanup": {
+      "status": "pause_confirmed",
+      "reason": "Already confirmed paused at telemetry sequence 421.",
+      "input_attempted": false,
+      "input_executed": false
+    }
+  },
+  "visual_evidence": [
+    {
+      "path": "runs/native-mining-local-trade-regression-20260810-r1/frames/live_frame_000002.png",
+      "sha256": "f0620f97add93562976cade64af06a0a23e39ee7cb8c85f5312bdfc33db5628f",
+      "meaning": "Slowline and Zill running toward the Copper Resource under the productive operation"
+    },
+    {
+      "path": "runs/native-mining-local-trade-regression-20260810-r1/frames/live_frame_000008.png",
+      "sha256": "0787843da8cbe90990ca6943e5817458170b8f4afafc50357390c7b64ac40b2b",
+      "meaning": "paused locally inside the Hub bar before opening trade"
+    },
+    {
+      "path": "runs/native-mining-local-trade-regression-20260810-r1/frames/live_frame_000009.png",
+      "sha256": "b5ca14c981cec06945bc570e0bd2d6fb922b073f195d039174017bc55983320f",
+      "meaning": "Slowline/Barman inventories open with one Copper and c.20,000 before sale"
+    },
+    {
+      "path": "runs/native-mining-local-trade-regression-20260810-r1/frames/live_frame_000010.png",
+      "sha256": "12abdc71cd8c640b47738a198273b843f541c1a20696c100bf62704905db199a",
+      "meaning": "Copper absent from Slowline and money c.20,195 after sale"
+    }
+  ],
+  "omitted_raw_files": [
+    {
+      "path": "runs/native-mining-local-trade-regression-20260810-r1/events.jsonl",
+      "size_bytes": 12846024,
+      "sha256": "1b7acf7b86ea73cde3526cb01f904f006bd36ea406e20caad2b930d7274ce3c1"
+    },
+    {
+      "path": "runs/native-mining-local-trade-regression-20260810-r1/frames/live_frame_000001.png",
+      "size_bytes": 1644768,
+      "sha256": "21365f2836f7b75756ea3eb62a131afb5bf90c3a02139d1667d5f94851ba0fda"
+    },
+    {
+      "path": "runs/native-mining-local-trade-regression-20260810-r1/frames/live_frame_000002.png",
+      "size_bytes": 1857464,
+      "sha256": "f0620f97add93562976cade64af06a0a23e39ee7cb8c85f5312bdfc33db5628f"
+    },
+    {
+      "path": "runs/native-mining-local-trade-regression-20260810-r1/frames/live_frame_000003.png",
+      "size_bytes": 1828225,
+      "sha256": "69db4d05a9c0c96c473e28e4b0b103037440a1902e83730af004ef1d3d775b64"
+    },
+    {
+      "path": "runs/native-mining-local-trade-regression-20260810-r1/frames/live_frame_000004.png",
+      "size_bytes": 1817673,
+      "sha256": "40cd50754a5168a3ddc381e9315792f74135eb9a6345487acd283b8886afec81"
+    },
+    {
+      "path": "runs/native-mining-local-trade-regression-20260810-r1/frames/live_frame_000005.png",
+      "size_bytes": 1863783,
+      "sha256": "3a8c89b601b09a18bbb03c5fc8b2e96231cba25c0794e3696e19fdbd49f81dca"
+    },
+    {
+      "path": "runs/native-mining-local-trade-regression-20260810-r1/frames/live_frame_000006.png",
+      "size_bytes": 1584057,
+      "sha256": "0c39c5a90b452cabd16c77d8bc012a069ceaa6ae9dfe3d4afdac94fbff532059"
+    },
+    {
+      "path": "runs/native-mining-local-trade-regression-20260810-r1/frames/live_frame_000007.png",
+      "size_bytes": 1558271,
+      "sha256": "7d219fbb28c5869e412f991ed698e881550b88cd1fb794dacf7f025a5fc1c010"
+    },
+    {
+      "path": "runs/native-mining-local-trade-regression-20260810-r1/frames/live_frame_000008.png",
+      "size_bytes": 2118819,
+      "sha256": "0787843da8cbe90990ca6943e5817458170b8f4afafc50357390c7b64ac40b2b"
+    },
+    {
+      "path": "runs/native-mining-local-trade-regression-20260810-r1/frames/live_frame_000009.png",
+      "size_bytes": 1886382,
+      "sha256": "b5ca14c981cec06945bc570e0bd2d6fb922b073f195d039174017bc55983320f"
+    },
+    {
+      "path": "runs/native-mining-local-trade-regression-20260810-r1/frames/live_frame_000010.png",
+      "size_bytes": 1886104,
+      "sha256": "12abdc71cd8c640b47738a198273b843f541c1a20696c100bf62704905db199a"
+    },
+    {
+      "path": "runs/native-mining-local-trade-regression-20260810-r1/frames/live_frame_000011.png",
+      "size_bytes": 2118753,
+      "sha256": "2e1ebf3ab859579b25bb32642c65411da3310ba556c0091be16b77546c955f3a"
+    }
+  ],
+  "final_disposition": {
+    "result": "live_proven",
+    "reason": "Exact later engine state proves output creation, collection, physical approach, local trade-window completion, Copper sale, and a c.195 money increase with zero primitive input.",
+    "run_stop_reason": "The selected objective is terminal.",
+    "run_finished_at_utc": "2026-08-10T17:41:37.556215Z",
+    "supported_cleanup_after_capture": "Kenshi closed from a fresh paused idle state.",
+    "caveat": "The approach command conservatively ended movement_stalled after it had already reduced Barman distance to 16.73 units. The later local trade succeeded; this bundle does not relabel the movement terminal as success or claim simultaneous active gameplay commands."
+  }
+}

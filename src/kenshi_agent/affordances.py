@@ -42,10 +42,12 @@ from .core.operation import (
     ThreatResponseStrategy,
 )
 from .core.telemetry import (
+    TRADE_WINDOW_AUTHORING_DISTANCE,
     CharacterState,
     ContextActionKind,
     NearbyEntity,
     WorldTarget,
+    inventory_owner_is_within_trade_authoring_distance,
     map_destination_travel_available,
 )
 from .operation_definitions import (
@@ -408,7 +410,12 @@ def _runtime_offers(observation: Observation) -> Iterable[AffordanceOffer]:
                     AffordanceParameterSpec(
                         name="seconds",
                         kind=AffordanceParameterKind.NUMBER,
-                        description="Seconds of real time to observe.",
+                        description=(
+                            "Seconds of real time to observe. Productive work owns "
+                            "its longer monitored interval instead of using wait."
+                        ),
+                        minimum=0,
+                        maximum=8,
                     ),
                 ),
             )
@@ -483,11 +490,9 @@ def _context_order_description(
 
     "Issue 'operate' to 'Iron Resource'" reads like "mine this for money", and
     it is not: it assigns a standing job whose output piles up inside the
-    resource and never reaches anyone's pack. An agent that picks it to get paid
-    waits forever and concludes mining is slow. Both readings are legitimate
-    playstyles - stationing someone to mine indefinitely is ordinary Kenshi - so
-    the fix is to make which one this is unmissable at the point of choice
-    rather than to withdraw the choice.
+    resource and never reaches anyone's pack. Natural resources use the
+    monitored output operation instead, so this description now applies only
+    to other reviewed context orders.
     """
 
     if order == ContextActionKind.OPERATE and target.kind == "natural_resource":
@@ -509,6 +514,14 @@ def _context_order_offers(observation: Observation) -> Iterable[AffordanceOffer]
     native = "control.perform_context_action" in telemetry.capabilities
     for target in telemetry.world_targets:
         for order in target.context_actions:
+            # A natural-resource `operate` is an indefinite job assignment,
+            # while the planner's mining primitive owns work through actual
+            # output and releases it. Offering both caused the soak planner to
+            # choose the indefinite one, then spend its next plans on invalid
+            # generic waits. Keep the lower-level command routable for retained
+            # jobs, but make productive mining the only authored resource verb.
+            if order == ContextActionKind.OPERATE and target.kind == "natural_resource":
+                continue
             # Native or not at all. `command_world_target` clicked the object's
             # screen position for semantics the native route refuses, which is a
             # real gap - but a mouse fallback is how the planner kept choosing
@@ -516,16 +529,7 @@ def _context_order_offers(observation: Observation) -> Iterable[AffordanceOffer]
             if not (
                 native
                 and (
-                    (
-                        order == ContextActionKind.OPERATE
-                        and target.kind == "natural_resource"
-                        and NATIVE_RESOURCE_OPERATOR_STATE_CAPABILITY
-                        in telemetry.capabilities
-                        and target.operator_capacity is not None
-                        and target.operator_capacity > 0
-                        and target.current_operators_complete
-                    )
-                    or order == ContextActionKind("first_aid")
+                    order == ContextActionKind("first_aid")
                     and target.kind == "squad_character"
                 )
             ):
@@ -719,7 +723,14 @@ def _trade_window_offers(observation: Observation) -> Iterable[AffordanceOffer]:
     ]
     offered = 0
     for owner_id, label, kind in others:
-        if owner_id in held or offered >= MAX_TRADE_WINDOWS_OFFERED:
+        if (
+            owner_id in held
+            or not inventory_owner_is_within_trade_authoring_distance(
+                telemetry,
+                owner_id,
+            )
+            or offered >= MAX_TRADE_WINDOWS_OFFERED
+        ):
             continue
         offered += 1
         yield _offer(
@@ -728,8 +739,10 @@ def _trade_window_offers(observation: Observation) -> Iterable[AffordanceOffer]:
             semantic="open_trade_window",
             description=(
                 f"Open your inventory alongside {kind} {label!r} so items can "
-                "move between them. Kenshi decides whether the pairing is "
-                "trading or looting."
+                "move between them. This owner is inside the conservative local "
+                f"interaction fence ({TRADE_WINDOW_AUTHORING_DISTANCE:g} units); "
+                "Kenshi's exact trade-range predicate is still required before "
+                "the window can complete."
             ),
             operation_kind="open_trade_window",
             target=AffordanceTarget(target_id=owner_id, label=label, kind=kind),
@@ -1193,7 +1206,8 @@ def _native_and_composite_offers(
                 source=AffordanceSource.NATIVE_OPERATION,
                 semantic="produce_resource_output",
                 description=(
-                    f"Work {target.name!r} only until output stock exists, then release "
+                    f"Work {target.name!r} at fastest playback only until output stock "
+                    "exists, then release "
                     f"controller-owned work ({occupied_slots}/{target.operator_capacity} "
                     "operator slots occupied). Selection and queued work do not prove "
                     "acceptance. Output stays in the resource; pair inventories and "
@@ -1342,11 +1356,13 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
         name="context_orders",
         sources=frozenset({AffordanceSource.CONTEXT_ORDER}),
         operation_kinds=frozenset({"perform_context_action"}),
-        denominator="Every exact world-target/order pair advertised by current telemetry.",
+        denominator="Every exact reviewed world-target/order pair authorable now.",
         completeness_boundary=(
-            "Only the reviewed native natural-resource operate and squad-character "
-            "first_aid subcases are emitted. Every other telemetry context action is "
-            "withheld rather than routed through the retired pointer path."
+            "Only squad-character first_aid is emitted here. Natural-resource "
+            "operate is an indefinite standing job and is withheld in favor of the "
+            "monitored produce_resource_output operation. Every other telemetry "
+            "context action is withheld rather than routed through the retired "
+            "pointer path."
         ),
         enumerate=_context_order_offers,
     ),
@@ -1397,13 +1413,14 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
         sources=frozenset({AffordanceSource.INVENTORY}),
         operation_kinds=frozenset({"open_trade_window"}),
         denominator=(
-            "Every squadmate and reviewed natural resource, followed by a bounded "
-            "stable subset of nearby people whose inventory could be paired with "
-            "the selected character's."
+            "Every observed squadmate, reviewed natural resource, or nearby person "
+            "whose exact current distance from the primary is inside the local "
+            "trade-window authoring fence."
         ),
         completeness_boundary=(
-            "Squadmates and reviewed resources are prioritized before the nearby-owner "
-            "cap. Whether Kenshi pairs a given two is its answer at dispatch."
+            "Unknown or greater-than-30-unit distance is withheld before rendering. "
+            "After a local open, Kenshi's exact trade-range predicate remains the "
+            "terminal authority; nearby people remain subject to the stable owner cap."
         ),
         enumerate=_trade_window_offers,
     ),

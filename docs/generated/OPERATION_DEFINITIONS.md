@@ -49,11 +49,11 @@ SOURCE-SPECIFIC COMPLETENESS BOUNDARIES
   dialogue_options: The producer exports the complete rendered reply list. Empty captions and captions beyond the 500-character exact-address contract are withheld.
   interface_exit: Native cleanup covers Prospecting, dialogue, message boxes, trade and inventory windows, and ordinary registered GUI windows.
   runtime: Only choices applicable to the current run state.
-  context_orders: Only the reviewed native natural-resource operate and squad-character first_aid subcases are emitted. Every other telemetry context action is withheld rather than routed through the retired pointer path.
+  context_orders: Only squad-character first_aid is emitted here. Natural-resource operate is an indefinite standing job and is withheld in favor of the monitored produce_resource_output operation. Every other telemetry context action is withheld rather than routed through the retired pointer path.
   body_shift: Native-assisted stable identity and nearby-character evidence; a body outside the reported radius cannot be offered and a hostile one is deliberately withheld.
   character_orders: Bounded by the native probe budget: the nearest few people are asked what they afford, and the rest report that they were not asked.
   item_transfers: Uncapped across the currently exported open inventories. Native model capacity and simplified shop pricing are enforced at dispatch; Kenshi's richer trade and theft adjudication is not claimed.
-  trade_windows: Squadmates and reviewed resources are prioritized before the nearby-owner cap. Whether Kenshi pairs a given two is its answer at dispatch.
+  trade_windows: Unknown or greater-than-30-unit distance is withheld before rendering. After a local open, Kenshi's exact trade-range predicate remains the terminal authority; nearby people remain subject to the stable owner cap.
   dialogue_targets: Native-assisted stable identity and dialogue-role evidence.
   characters: Offers require the source-specific selection, identity, geometry, and safety facts.
   map: Only destinations with authoritative current travel applicability.

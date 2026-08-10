@@ -2,6 +2,20 @@
 
 namespace KenshiAgentTelemetry
 {
+    const float TRADE_WINDOW_AUTHORING_DISTANCE = 30.0f;
+
+    inline bool IsTradePairWithinAuthoringDistance(
+        float deltaX,
+        float deltaY,
+        float deltaZ)
+    {
+        const float distanceSquared =
+            deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ;
+        return distanceSquared <=
+            TRADE_WINDOW_AUTHORING_DISTANCE *
+                TRADE_WINDOW_AUTHORING_DISTANCE;
+    }
+
     inline bool IsRegisteredShopInventoryOpen(
         bool ownerCharacterInventoryOpen,
         bool shopInventoryObjectOpen)

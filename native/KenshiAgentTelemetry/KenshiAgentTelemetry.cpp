@@ -781,22 +781,23 @@ namespace
         return -1;
     }
 
-    const NativeCommandAcknowledgement* PublishedNativeCommandRecord()
+    void AppendNativeCommandRecords(std::ostringstream& json)
     {
-        // Protocol 2.0 is plural from its first frame. Until the captured-
-        // recipient registry replaces g_activeNativeCommand, the producer can
-        // truthfully publish only the one active record or, while idle, the
-        // latest terminal record. This producer-side cardinality limit must be
-        // deleted by 2026-09-20; consumers must never depend on it.
-        if (g_activeNativeCommand.active)
+        // The retained registry is the producer authority. Publishing only the
+        // active gameplay record made an exact native clock acknowledgement
+        // invisible while productive work was running, forcing the controller
+        // back through a speed key. Every record already carries its own exact
+        // recipient basis, command id, and lifecycle sequences, so the bounded
+        // plural collection is both truthful and independently addressable.
+        for (unsigned int index = 0;
+             index < g_nativeAcknowledgementCount;
+             ++index)
         {
-            const int index =
-                FindNativeAcknowledgement(g_activeNativeCommand.commandId);
-            return index >= 0 ? &g_nativeAcknowledgements[index] : NULL;
+            if (index > 0)
+                json << ",";
+            json << SerializeNativeCommandAcknowledgement(
+                g_nativeAcknowledgements[index]);
         }
-        if (g_nativeAcknowledgementCount == 0)
-            return NULL;
-        return &g_nativeAcknowledgements[g_nativeAcknowledgementCount - 1];
     }
 
     NativeCommandAcknowledgement& AddNativeAcknowledgement(
@@ -4670,7 +4671,13 @@ namespace
             g_lastNativeCommandResult = "duplicate_command_id";
             return;
         }
-        if (g_activeNativeCommand.active)
+        // Time control is game-wide and completes synchronously without taking
+        // ownership of `g_activeNativeCommand`. It must remain available while
+        // a pathing or productive-work command is active; otherwise advancing
+        // that command requires the keyboard even though `GameWorld` already
+        // exposes the exact native clock operations.
+        if (g_activeNativeCommand.active &&
+            !KenshiAgentTelemetry::NativeCommandControlsTime(request.command))
         {
             RejectNativeCommand(request, "command_already_active");
             return;
@@ -4739,7 +4746,6 @@ namespace
             g_lastNativeCommandResult = "unsupported_command";
             return;
         }
-        g_activeNativeCommand.isSquadRegroup = false;
         if (request.controlMode != "native_assisted")
         {
             RejectNativeCommand(request, "wrong_control_mode");
@@ -5502,6 +5508,37 @@ namespace
                     player, request.destinationId, secondHandle))
             {
                 RejectNativeCommand(request, "target_lifetime_changed");
+                return;
+            }
+            if (request.targetId == request.destinationId)
+            {
+                RejectNativeCommand(request, "trade_parties_not_distinct");
+                return;
+            }
+            if (request.targetId != selectedId)
+            {
+                RejectNativeCommand(request, "trade_actor_not_primary");
+                return;
+            }
+            RootObject* firstOwner = firstHandle.getRootObject();
+            RootObject* secondOwner = secondHandle.getRootObject();
+            if (firstOwner == NULL || secondOwner == NULL ||
+                !firstOwner->isValid() || !secondOwner->isValid())
+            {
+                RejectNativeCommand(request, "target_lifetime_changed");
+                return;
+            }
+            const Ogre::Vector3 firstPosition = firstOwner->getPosition();
+            const Ogre::Vector3 secondPosition = secondOwner->getPosition();
+            if (!KenshiAgentTelemetry::IsTradePairWithinAuthoringDistance(
+                    secondPosition.x - firstPosition.x,
+                    secondPosition.y - firstPosition.y,
+                    secondPosition.z - firstPosition.z))
+            {
+                // `showTradeWindow` itself has no proximity opinion. Refuse
+                // before asking it to draw a remote screen; after a local open,
+                // `isWithinRangeToTrade` remains the exact engine terminal.
+                RejectNativeCommand(request, "out_of_trade_range");
                 return;
             }
             // Asked for, not opened here. `showTradeWindow` records the pair
@@ -6936,10 +6973,7 @@ namespace
         json << "\"controller_commands\":{";
         json << "\"available\":true,";
         json << "\"commands\":[";
-        const NativeCommandAcknowledgement* publishedCommand =
-            PublishedNativeCommandRecord();
-        if (publishedCommand != NULL)
-            json << SerializeNativeCommandAcknowledgement(*publishedCommand);
+        AppendNativeCommandRecords(json);
         json << "],";
         json << "\"last_command_sequence\":" << g_nativeCommandSequence;
         if (!g_lastNativeCommand.empty())
@@ -7600,10 +7634,7 @@ namespace
         json << "\"controller_commands\":{";
         json << "\"available\":true,";
         json << "\"commands\":[";
-        const NativeCommandAcknowledgement* publishedCommand =
-            PublishedNativeCommandRecord();
-        if (publishedCommand != NULL)
-            json << SerializeNativeCommandAcknowledgement(*publishedCommand);
+        AppendNativeCommandRecords(json);
         json << "],";
         json << "\"last_command_sequence\":" << g_nativeCommandSequence;
         if (!g_lastNativeCommand.empty())

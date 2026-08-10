@@ -111,8 +111,9 @@ def test_only_operations_with_a_recorded_live_run_claim_live_proof() -> None:
     2026-08-08 closure runs prove the paired-window and item-transfer route
     against an unconscious body and a resource output. The 2026-08-09 resource
     operator run proves exact native admission independently from selection and
-    queued work. Production is deliberately only unit-proven now: its older
-    retained run predates the current exact-operator monitor contract.
+    queued work. The 2026-08-10 mine-to-sale bundle additionally proves the
+    current productive monitor, native clock control while it remains active,
+    and the exact two-character map-travel leg to The Hub.
 
     So the assertion is now an allowlist rather than a zero. Any other
     operation claiming live proof has to be added here by someone who has the
@@ -133,10 +134,62 @@ def test_only_operations_with_a_recorded_live_run_claim_live_proof() -> None:
         "pause",
         "perform_character_order",
         "perform_context_action",
+        "produce_resource_output",
         "select_dialogue_option",
+        "set_speed",
         "survey_local_resources",
+        "travel_to_map_destination",
         "transfer_item",
     }
+
+
+def test_native_mine_to_sale_evidence_preserves_the_complete_proof_chain() -> None:
+    artifact = json.loads(
+        (MANIFEST_PATH.parent / "native_mining_local_trade_20260810.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert artifact["manifest"]["producer_protocol"] == "2.0.0"
+    assert artifact["manifest"]["steps_completed"] == 12
+    assert artifact["binary_identity"]["live_candidate"][
+        "built_preserved_installed_equal"
+    ]
+    commands = artifact["binary_identity"]["commands"]
+    assert "replacement\\KenshiAgentTelemetry.dll" in commands[
+        "reinstall_live_candidate"
+    ]
+    assert "pre-change\\KenshiAgentTelemetry.dll" in commands["rollback_pre_change"]
+
+    chain = artifact["requests_and_acknowledgements"]
+    assert all(entry.get("primitive_actions", 0) == 0 for entry in chain)
+    terminals = {
+        terminal["reason"]
+        for entry in chain
+        if (terminal := entry.get("terminal")) is not None
+    }
+    assert {
+        "resource_output_ready_task_released",
+        "trade_window_open",
+        "item_transferred",
+    } <= terminals
+
+    decisive = {frame["sequence"]: frame for frame in artifact["decisive_telemetry"]}
+    assert decisive[211]["copper_resource_output"][0]["quantity"] == 1
+    assert decisive[231]["resource_item_count"] == 0
+    assert decisive[320]["distance_to_barman"] == 16.73
+    assert decisive[345]["slowline_copper"]["sell_value"] == 195
+    assert decisive[362]["money"] - decisive[345]["money"] == 195
+    assert decisive[362]["slowline_item_count"] == 2
+
+    audit = artifact["planner_and_input_audit"]
+    assert audit["generic_resource_operate_plans"] == 0
+    assert audit["planner_wait_plans"] == 0
+    assert audit["action_receipts_with_nonzero_primitive_actions"] == 0
+    assert audit["final_cleanup"]["input_attempted"] is False
+    assert audit["final_cleanup"]["input_executed"] is False
+    assert artifact["final_disposition"]["result"] == "live_proven"
+    assert all(len(entry["sha256"]) == 64 for entry in artifact["omitted_raw_files"])
 
 
 def test_catalog_renders_the_contract_execution_and_native_routes() -> None:
@@ -158,9 +211,16 @@ def test_generated_adapter_prose_describes_current_limits() -> None:
     assert "richer trade and theft adjudication is not claimed" in transfers
 
     context_orders = adapters["context_orders"].completeness_boundary
-    assert "Only the reviewed native" in context_orders
+    assert "Only squad-character first_aid" in context_orders
+    assert "indefinite standing job" in context_orders
+    assert "produce_resource_output" in context_orders
     assert "withheld" in context_orders
     assert "screen geometry" not in context_orders
+
+    trade_windows = adapters["trade_windows"].completeness_boundary
+    assert "greater-than-30-unit distance is withheld" in trade_windows
+    assert "before rendering" in trade_windows
+    assert "exact trade-range predicate" in trade_windows
 
 
 def test_diagnostic_only_routes_are_exactly_the_reviewed_set() -> None:

@@ -135,6 +135,44 @@ def test_native_plugin_requires_causal_exact_target_command_requests() -> None:
         "ObserveNativeMovementPause"
     )
 
+
+def test_native_plugin_publishes_plural_records_and_keeps_clock_control_independent() -> None:
+    source = PLUGIN_SOURCE.read_text(encoding="utf-8")
+
+    assert "PublishedNativeCommandRecord" not in source
+    assert source.count("AppendNativeCommandRecords(json);") == 2
+    publisher = source[
+        source.index("void AppendNativeCommandRecords") : source.index(
+            "NativeCommandAcknowledgement& AddNativeAcknowledgement"
+        )
+    ]
+    assert "g_nativeAcknowledgementCount" in publisher
+    assert "SerializeNativeCommandAcknowledgement" in publisher
+
+    dispatch = source[source.index("void ProcessNativeCommandRequest") :]
+    concurrency_gate = dispatch[
+        dispatch.index("if (g_activeNativeCommand.active") : dispatch.index(
+            "if (request.controlMode != \"native_assisted\")"
+        )
+    ]
+    assert "NativeCommandControlsTime(request.command)" in concurrency_gate
+    assert "g_activeNativeCommand.isSquadRegroup = false" not in concurrency_gate
+
+
+def test_native_trade_window_refuses_remote_or_nonprimary_pair_before_rendering() -> None:
+    source = PLUGIN_SOURCE.read_text(encoding="utf-8")
+    trade = source[
+        source.index("if (isTradeWindow)") : source.index("if (isTransfer)")
+    ]
+
+    assert "trade_parties_not_distinct" in trade
+    assert "trade_actor_not_primary" in trade
+    assert "IsTradePairWithinAuthoringDistance" in trade
+    assert "out_of_trade_range" in trade
+    assert trade.index("out_of_trade_range") < trade.index("gui->showTradeWindow")
+    assert trade.index("gui->showTradeWindow") < trade.index("trade_window_requested")
+
+
 def test_native_plugin_exports_food_chain_authoritative_ui_and_time_sources() -> None:
     source = PLUGIN_SOURCE.read_text(encoding="utf-8")
 

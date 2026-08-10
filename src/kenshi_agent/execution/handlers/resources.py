@@ -277,6 +277,7 @@ class KenshiResourceMechanics:
             wire_command=native_commands.NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND,
             require_dialogue_target=False,
             minimum_output_quantity=action.minimum_output_quantity,
+            running_speed_gear=3,
         )
 
 
@@ -310,7 +311,8 @@ class KenshiResourceMechanics:
             semantic=semantic,
             wire_command=native_commands.NATIVE_TRADE_WINDOW_WIRE_COMMAND,
             require_dialogue_target=False,
-            accepted_is_terminal_error=True,
+            await_terminal_without_playback=True,
+            deferred_terminal_timeout_seconds=10.0,
         )
 
     async def _execute_close_active_interface(

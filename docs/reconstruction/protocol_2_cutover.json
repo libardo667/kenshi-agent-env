@@ -2,7 +2,11 @@
   "protocol": "2.0.0",
   "cutover_date": "2026-08-09",
   "parent_commit": "1d53e57e787309975e75b710eba96b22d1feb12d",
-  "temporary_native_single_record_deadline": "2026-09-20",
+  "retired_native_single_record_bridge": {
+    "deletion_deadline": "2026-09-20",
+    "deleted_early_on": "2026-08-10",
+    "status": "discharged"
+  },
   "old_dll": {
     "protocol": "1.21.0",
     "path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260809-protocol-2-cutover\\pre-2.0\\KenshiAgentTelemetry.dll",

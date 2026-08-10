@@ -45,7 +45,7 @@
       "the Release x64 native conformance executable parses the shared full and old-shape fixtures and pins their breaking topology"
     ],
     "live_evidence": [],
-    "note": "Source, native-conformance, and portable-test proven. The native producer may publish at most one record only until 2026-09-20, while consumers and fixtures already accept plural records. No simultaneous live-command behavior is claimed."
+    "note": "Source, native-conformance, portable-test, and named live-bundle proven. The temporary one-record producer bridge carried a 2026-09-20 deletion deadline and was removed early on 2026-08-10; native and every consumer now use the bounded plural retained-command collection. The native-mining-local-trade-regression-20260810-r1 artifact proves concurrent clock acknowledgement visibility while one monitored gameplay command remains active. No simultaneous active gameplay-command behavior is claimed."
   },
   "player_topology": {
     "proof_status": "live_proven",
@@ -148,12 +148,14 @@
       "evidence": [
         "closure-loot-20260808 command cmd-ad044f547c894764b0506d8459545a81 paired Fish with unconscious Burn and completed as trade_window_open",
         "closure-harvest-fixed-20260808 command cmd-1c78e8d12e4a403f83bfc3df8f3bee46 paired Fish with the Iron Resource and completed as trade_window_open",
-        "game_sources/research/inventory_transfer/live_evidence/inventory-transfer-20260808.json durably preserves decisive request, command-result, later-state, and omitted-file hash evidence"
+        "game_sources/research/inventory_transfer/live_evidence/inventory-transfer-20260808.json durably preserves decisive request, command-result, later-state, and omitted-file hash evidence",
+        "native-mining-local-trade-regression-20260810-r1 approached the Barman from 312.47 to 16.73 units before cmd-482c905e973740d8b9bf6b88331b70ce completed trade_window_open at sequence 345",
+        "docs/reconstruction/native_mining_local_trade_20260810.json preserves the exact local request, terminal, later sale state, binary identity, omitted-file hashes, and movement-stall caveat"
       ],
       "research": [
         "game_sources/research/inventory_transfer"
       ],
-      "note": "One mechanism now has live witnesses for both looting a body and collecting a resource output. Whether Kenshi treats other owner kinds as valid remains its dispatch-time answer."
+      "note": "The mechanism has live witnesses for looting a body, collecting resource output, and opening a vendor pair after physical approach. Offer, bind, input boundary, and native dispatch now apply a conservative 30-unit pre-render fence; Kenshi's exact post-open trade predicate remains terminal authority."
     },
     {
       "operation_kind": "pause",
@@ -214,12 +216,15 @@
     },
     {
       "operation_kind": "produce_resource_output",
-      "proof_status": "unit_proven",
+      "proof_status": "live_proven",
       "evidence": [
         "closure-harvest-fixed-20260808 command cmd-9f5f58ce387f40398e780a21f5b76d75 adopted the exact already-running two-character resource task without reissuing it, remained monitored while its acknowledgement was accepted, and reached resource_output_ready at telemetry sequence 2718",
-        "The same run then exposed Raw Iron in the resource output inventory and transferred it to Fish, separating production proof from inventory-transfer proof"
+        "The same run then exposed Raw Iron in the resource output inventory and transferred it to Fish, separating production proof from inventory-transfer proof",
+        "native-mining-local-trade-regression-20260810-r1 command cmd-c1e8df5591a244e796b3f77b9f62b3e0 completed resource_output_ready_task_released at sequence 211 with one exact Copper in the target output",
+        "sequences 158 and 159 retained the accepted productive command beside independent completed native clock records; the action outcome recorded speed 0.0 to 5.0 and zero primitives",
+        "docs/reconstruction/native_mining_local_trade_20260810.json preserves the exact request, plural acknowledgements, output and collection frames, binary identity, and omitted-file hashes"
       ],
-      "note": "The historical bundle live-proves actual output and inventory transfer under the prior task-adoption terminal. Current 1.21 source and tests now require exact accepted-operator and output-inventory state, but the revised production monitor has no fresh output-ready live bundle, so its current contract is classified only as unit-proven."
+      "note": "The current Protocol 2.0 monitor is live-proven for exact output, task release, native fastest playback, and later collection. The output remains in the resource until a separate inventory transfer."
     },
     {
       "operation_kind": "read_fieldbook",
@@ -272,11 +277,13 @@
     },
     {
       "operation_kind": "set_speed",
-      "proof_status": "source_proven",
+      "proof_status": "live_proven",
       "evidence": [
-        "operation_definitions.py SET_SPEED_DEFINITION is internal-only"
+        "operation_definitions.py SET_SPEED_DEFINITION is internal-only",
+        "native-mining-local-trade-regression-20260810-r1 sequences 158 and 159 retained the accepted productive command beside completed world_speed_set records and later reported speed 5.0 with zero primitives",
+        "docs/reconstruction/native_mining_local_trade_20260810.json preserves the plural command records, later engine delta, binary identity, and omitted-file hash"
       ],
-      "note": "Global playback affects every character and every retained order. Slice 7 owner."
+      "note": "Global playback affects every character and every retained order. Live proof covers synchronous clock control while one monitored gameplay command remains active, not multiple active gameplay commands."
     },
     {
       "operation_kind": "shift_into_body",
@@ -316,18 +323,24 @@
       "evidence": [
         "closure-loot-20260808 transferred Burn's equipped Katana and Halfpants (ragged) into Fish with item_transferred terminals cmd-460ee0bb31814fd98e7d7057747348f6 and cmd-2538e63cec614d87a06511aa925f4256; later open-inventory telemetry showed Burn empty and Fish holding the moved items",
         "closure-harvest-fixed-20260808 transferred Raw Iron from the Iron Resource output slot into Fish with item_transferred terminal cmd-90f4f3ab3ea449539a64040290c7f1e3 and later inventory telemetry recorded the resource loss and Fish gain",
-        "game_sources/research/inventory_transfer/live_evidence/inventory-transfer-20260808.json durably preserves decisive request, command-result, later-state, and omitted-file hash evidence"
+        "game_sources/research/inventory_transfer/live_evidence/inventory-transfer-20260808.json durably preserves decisive request, command-result, later-state, and omitted-file hash evidence",
+        "native-mining-local-trade-regression-20260810-r1 collected Copper with cmd-4341e3e8d6fa40e09124ef7bbbb3ce19, then sold it with cmd-da8dc4d8084440618b71944a1456afbe; later state removed Copper from Slowline and increased money from c.20,000 to c.20,195",
+        "docs/reconstruction/native_mining_local_trade_20260810.json preserves the exact transfer requests, terminals, before/after inventories, money delta, binary identity, and raw-file hashes"
       ],
       "research": [
         "game_sources/research/inventory_transfer"
       ],
-      "note": "Named bundles live-prove inventory-model movement for equipped-body loot and resource-output collection. A supervised purchase separately observed conserved project-owned payment, but no exact named purchase bundle is cited here, so the ledger does not generalize those two movement bundles into durable proof of all shop economics. Binding still proves both inventories open, the section present, and the named item still in its slot, since position alone is not identity."
+      "note": "Named bundles live-prove inventory-model movement for equipped-body loot, resource-output collection, and one exact vendor sale with conserved c.195 value. That does not generalize to every shop rule. Binding still proves both inventories open, the section present, and the named item still in its slot, since position alone is not identity."
     },
     {
       "operation_kind": "travel_to_map_destination",
-      "proof_status": "unproven",
-      "evidence": [],
-      "note": "Issues a delayed interior-leg continuation through newPlayerTaskSelectedCharacters, so it is the clearest case for the captured dispatch basis and the ScopedOrderDispatcher. Section 13.3 is its proof."
+      "proof_status": "live_proven",
+      "evidence": [
+        "native-mining-local-trade-regression-20260810-r1 command cmd-b46758df2f224a95a3ed81f7fbd77963 completed map_destination_reached at sequence 271 with zero primitive actions",
+        "the later run position was inside The Hub and the subsequent Barman approach began from 312.47 units",
+        "docs/reconstruction/native_mining_local_trade_20260810.json preserves the exact request chain, terminal, later position, binary identity, and omitted-file hashes"
+      ],
+      "note": "Live-proven for the exact two-character fixture selection travelling to The Hub. Other group composition and delayed interior-leg cases remain separate."
     },
     {
       "operation_kind": "wait",
@@ -335,7 +348,7 @@
       "evidence": [
         "operation_definitions.py WAIT_DEFINITION is internal-only run control"
       ],
-      "note": "Waiting is only meaningful while the world runs; the playback requirement is the honest declaration of that, not a licence to toggle pause."
+      "note": "Planner-authored waits are bounded to zero through eight real seconds. Longer productive intervals belong to the monitored operation that can observe their actual terminal."
     }
   ]
 }

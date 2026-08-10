@@ -11,7 +11,7 @@ run evidence, not in a second current protocol narrative.
 telemetry protocol       2.0.0
 native request schema    1.6
 loaded-world capabilities 50
-controller command records emitted by native at most one until 2026-09-20
+controller command records emitted by native bounded plural registry (max 16)
 ```
 
 The source declarations are authoritative. `KenshiAgentTelemetry.cpp` owns the
@@ -34,10 +34,10 @@ selection fields are gone rather than accepted as aliases. Each character's
 count/completeness fields, and cross-channel task-name ownership inference are
 gone rather than retained as fallbacks. `controller_commands.commands` is
 plural and the old `native_control`, `active_command_id`, and
-`acknowledgements` wire names are rejected. The native producer temporarily
-publishes at most one record from its current global owner; that cardinality
-limit expires on 2026-09-20, and every consumer already treats the field as a
-collection.
+`acknowledgements` wire names are rejected. The native producer emits its
+bounded retained command registry directly, and every consumer treats the field
+as a collection. The temporary one-record publication bridge had an explicit
+2026-09-20 deletion deadline and was removed early on 2026-08-10.
 
 ## Hooks and telemetry
 
@@ -147,10 +147,13 @@ The wire name `approach_confirmed_vendor` is historical. Its current operation
 is `approach_dialogue_target`, and it may target any exact conscious,
 non-hostile character currently confirmed talkable.
 
-The native bridge temporarily retains at most one record until 2026-09-20.
-Selection is captured in the request but several native monitors still depend on
-the current selection, and separate retained commands for disjoint recipient groups
-are not implemented. Those open limits are tracked in the
+The native bridge emits up to 16 retained command records. Clock commands can
+complete while one monitored gameplay command remains active, so their exact
+acknowledgements stay independently visible without keyboard input. This does
+not establish simultaneous gameplay-command ownership: selection is captured
+in each request, several monitors still depend on current selection, and
+separate active gameplay commands for disjoint recipient groups are not
+implemented. Those open limits are tracked in the
 [Protocol 2.0 world-model decision](../../docs/PROTOCOL_2_WORLD_MODEL_DECISION.md).
 
 ## Reverse-engineered subsystem authority

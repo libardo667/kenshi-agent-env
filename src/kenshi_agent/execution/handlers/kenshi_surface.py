@@ -32,6 +32,7 @@ from ...core.operation import (
     Action,
     ControlMode,
     KeyAction,
+    OpenTradeWindowAction,
     PauseAction,
     PointerActionClass,
     SelectDialogueOptionAction,
@@ -46,6 +47,8 @@ from ...core.telemetry import (
     NearbyEntity,
     TelemetrySnapshot,
     WorldTarget,
+    inventory_owner_distance_from_primary,
+    inventory_owner_is_within_trade_authoring_distance,
 )
 from ...core.transport import (
     ActionReceipt,
@@ -497,10 +500,8 @@ class KenshiControlSurface:
     ) -> NativeCommandAcknowledgement:
         """One time-control command, straight to the engine.
 
-        No keystroke and no trigger hotkey. The plug-in dispatches on the
-        request file changing as well as on the hotkey, and the file watch is
-        what actually carried this in testing, so nothing is sent to the
-        desktop at all.
+        No keystroke and no trigger hotkey. The plug-in dispatches when the
+        request file changes, so nothing is sent to the desktop at all.
         """
 
         result = self.telemetry_reader.read()
@@ -609,11 +610,11 @@ class KenshiControlSurface:
         if not self.native_time_control_available():
             primitive_count = 0
             if paused:
-                primitive_count += await self._establish_playback_gear(1)
+                primitive_count += await self._establish_degraded_playback_gear(1)
             if action.speed != 1:
-                primitive_count += await self._establish_playback_gear(action.speed)
+                primitive_count += await self._establish_degraded_playback_gear(action.speed)
             elif not paused:
-                primitive_count += await self._establish_playback_gear(1)
+                primitive_count += await self._establish_degraded_playback_gear(1)
             return ActionReceipt(
                 action=action,
                 accepted=True,
@@ -655,20 +656,57 @@ class KenshiControlSurface:
         )
 
     async def _establish_playback_gear(self, gear: int) -> int:
-        """Retry one idempotent gear selection only after confirmation fails."""
+        """Set one playback gear through Kenshi while gameplay work remains active."""
+
+        expected = GAME_SPEED_MULTIPLIER_BY_GEAR[gear]
+        acknowledgement = await self._dispatch_time_control(
+            "set_speed",
+            speed_multiplier=expected,
+        )
+        if (
+            acknowledgement.status is not NativeCommandStatus.COMPLETED
+            or acknowledgement.reason != "world_speed_set"
+        ):
+            raise RuntimeError(
+                "Native playback gear selection did not return its exact terminal "
+                f"result: {acknowledgement.status.value}/{acknowledgement.reason}."
+            )
+        return 0
+
+    async def _establish_degraded_playback_gear(self, gear: int) -> int:
+        """Explicit no-plug-in fallback; native-assisted play never reaches it."""
 
         expected = GAME_SPEED_MULTIPLIER_BY_GEAR[gear]
         primitive_count = 0
         for _attempt in range(2):
-            primitive_count += await self._execute_speed_key(gear)
-            if await self._wait_for_playback_state(
-                paused=False,
-                multiplier=expected,
-            ):
-                return primitive_count
+            if self.controller.emergency_stop_pressed(self._port.emergency_stop_key):
+                raise RuntimeError(
+                    "Emergency stop interrupted degraded playback control."
+                )
+            if self.controller.user_input_detected():
+                raise RuntimeError("Human input interrupted degraded playback control.")
+            receipt = await self.controller.execute(
+                KeyAction(key=self.controls_config.speed_keys[gear])
+            )
+            if not receipt.executed:
+                raise RuntimeError(receipt.message or "Playback key was not executed.")
+            primitive_count += receipt.primitive_actions
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                try:
+                    result = self.telemetry_reader.read()
+                except TelemetryReadError:
+                    result = None
+                if (
+                    result is not None
+                    and not result.stale
+                    and result.snapshot.game.paused is False
+                    and result.snapshot.game.speed_multiplier == expected
+                ):
+                    return primitive_count
+                await asyncio.sleep(0.05)
         raise RuntimeError(
-            f"Kenshi did not confirm running at speed gear {gear} "
-            f"({expected:g}x) after two idempotent selections."
+            f"Kenshi did not confirm degraded speed gear {gear} ({expected:g}x)."
         )
 
     async def _establish_native_running_state(
@@ -677,99 +715,28 @@ class KenshiControlSurface:
         *,
         timeout_seconds: float = 3.0,
     ) -> tuple[int, NativeCommandAcknowledgement | None]:
-        """Start at 1x unless this exact native command finishes first."""
+        """Start at 1x natively unless this exact gameplay command finishes first."""
 
         expected = GAME_SPEED_MULTIPLIER_BY_GEAR[1]
-        if acknowledgement.status is NativeCommandStatus.COMPLETED:
-            # Some ordinary orders complete at the controller boundary as soon
-            # as Kenshi adopts the task. Their world outcome still needs time.
-            # The command slot is now free, so establish playback through the
-            # native clock instead of reviving the old speed-key path.
-            playback = await self._dispatch_time_control(
-                "set_speed",
-                speed_multiplier=expected,
-            )
-            if (
-                playback.status is not NativeCommandStatus.COMPLETED
-                or playback.reason != "world_speed_set"
-            ):
-                raise RuntimeError(
-                    "Native playback resume did not return its exact terminal "
-                    f"result: {playback.status.value}/{playback.reason}."
-                )
-            return 0, None
-        primitive_count = 0
-        for _attempt in range(2):
-            primitive_count += await self._execute_speed_key(1)
-            deadline = time.monotonic() + timeout_seconds
-            while True:
-                try:
-                    result = self.telemetry_reader.read()
-                except TelemetryReadError:
-                    result = None
-                if result is not None and not result.stale:
-                    current = self._matching_native_acknowledgement(
-                        result.snapshot,
-                        acknowledgement,
-                    )
-                    if current is not None and current.status in {
-                        NativeCommandStatus.CANCELLED,
-                        NativeCommandStatus.COMPLETED,
-                    }:
-                        return primitive_count, current
-                    if (
-                        result.snapshot.game.paused is False
-                        and result.snapshot.game.speed_multiplier == expected
-                    ):
-                        return primitive_count, None
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    break
-                await asyncio.sleep(min(0.05, remaining))
-        raise RuntimeError(
-            "Kenshi did not confirm native movement running at speed gear 1 "
-            f"({expected:g}x) after two idempotent selections."
+        playback = await self._dispatch_time_control(
+            "set_speed",
+            speed_multiplier=expected,
         )
-
-    async def _execute_speed_key(self, gear: int) -> int:
-        if self.controller.emergency_stop_pressed(self._port.emergency_stop_key):
+        if (
+            playback.status is not NativeCommandStatus.COMPLETED
+            or playback.reason != "world_speed_set"
+        ):
             raise RuntimeError(
-                "Emergency stop interrupted playback control; no further input was sent."
+                "Native playback resume did not return its exact terminal "
+                f"result: {playback.status.value}/{playback.reason}."
             )
-        if self.controller.user_input_detected():
-            raise RuntimeError(
-                "Human input interrupted playback control; no further input was sent."
-            )
-        receipt = await self.controller.execute(
-            KeyAction(key=self.controls_config.speed_keys[gear])
-        )
-        if not receipt.executed:
-            raise RuntimeError(receipt.message or "Playback key was not executed.")
-        return receipt.primitive_actions
-
-    async def _wait_for_playback_state(
-        self,
-        *,
-        paused: bool,
-        multiplier: float,
-        timeout_seconds: float = 3.0,
-    ) -> bool:
-        deadline = time.monotonic() + timeout_seconds
-        while True:
-            try:
-                result = self.telemetry_reader.read()
-                if (
-                    not result.stale
-                    and result.snapshot.game.paused is paused
-                    and result.snapshot.game.speed_multiplier == multiplier
-                ):
-                    return True
-            except TelemetryReadError:
-                pass
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                return False
-            await asyncio.sleep(min(0.05, remaining))
+        current = self._fresh_matching_native_acknowledgement(acknowledgement)
+        if current is not None and current.status in {
+            NativeCommandStatus.CANCELLED,
+            NativeCommandStatus.COMPLETED,
+        }:
+            return 0, current
+        return 0, None
 
     async def run_movement_pulse(
         self,
@@ -1159,7 +1126,10 @@ class KenshiControlSurface:
                 )
             if running_speed_gear != 1:
                 primitive_count += await self._establish_playback_gear(running_speed_gear)
-                messages.append("Established controller-owned 5x playback speed for long travel.")
+                messages.append(
+                    "Established controller-owned 5x playback speed for the "
+                    "monitored operation."
+                )
         except RuntimeError:
             terminal = self._fresh_matching_native_acknowledgement(acknowledgement)
             if terminal is None or terminal.status not in {
@@ -1194,7 +1164,7 @@ class KenshiControlSurface:
             finished_at=datetime.now(UTC),
             primitive_actions=primitive_count,
             message=(
-                "Issued the pathing order; the character walks while the world runs. "
+                "Issued the monitored native order; gameplay advances while the world runs. "
                 + " ".join(messages)
             ),
             native_acknowledgement=acknowledgement,
@@ -1666,16 +1636,35 @@ class KenshiControlSurface:
             # and irrelevant, since a squadmate is exactly who you pair with.
             # Fifth operation to reach the wire through a fall-through that did
             # not fit it.
-            parties = (
-                getattr(action, "first_owner_id", ""),
-                getattr(action, "second_owner_id", ""),
-            )
+            if not isinstance(action, OpenTradeWindowAction):
+                return "A native trade-window request requires an open_trade_window action."
+            parties = (action.first_owner_id, action.second_owner_id)
             for owner in parties:
                 if not _observes_inventory_owner(telemetry, owner):
                     return (
                         f"Native trade-window party {owner!r} is absent from "
                         "current telemetry."
                     )
+            if action.first_owner_id != telemetry.primary_character_id:
+                return (
+                    "Native trade-window first owner is not the exact current "
+                    "primary character."
+                )
+            if action.second_owner_id == action.first_owner_id:
+                return "Native trade-window owners are not distinct."
+            if not inventory_owner_is_within_trade_authoring_distance(
+                telemetry,
+                action.second_owner_id,
+            ):
+                distance = inventory_owner_distance_from_primary(
+                    telemetry,
+                    action.second_owner_id,
+                )
+                suffix = "unknown" if distance is None else f"{distance:.1f} units"
+                return (
+                    "Native trade-window second owner is outside the current local "
+                    f"interaction fence ({suffix})."
+                )
             return None
         if wire_command in _TARGET_ONLY_WIRE_COMMANDS:
             return _target_only_command_error(

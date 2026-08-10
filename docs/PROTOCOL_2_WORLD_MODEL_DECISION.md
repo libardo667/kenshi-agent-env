@@ -160,10 +160,12 @@ queued work into accepted operation.
 
 ### Withheld and named follow-on work
 
-- **Native plural command registry, deadline 2026-09-20:** populate more than one
-  retained record, preserve disjoint recipient work, prove overlap behavior,
-  and remove the current global singleton. Until that date the native producer
-  emits at most one record, but no consumer may assume that cardinality.
+- **Native plural command registry, deadline discharged early:** the temporary
+  one-record publisher carried a 2026-09-20 deletion deadline and was removed
+  on 2026-08-10. Native now emits its bounded retained registry directly, which
+  keeps a synchronous clock acknowledgement visible while one monitored
+  gameplay command remains active. This does not yet prove simultaneous active
+  gameplay commands or disjoint-recipient ownership.
 - **Platoon lifecycle follow-on:** retain worthwhile longer-run roster mutation,
   pointer-reuse, and empty-management-row questions as named work rather than
   broadening the proven topology slice. Character identity remains explicitly
@@ -173,10 +175,14 @@ queued work into accepted operation.
   Jobs, permanent Jobs, and activity must not be adopted as controller-owned.
 - **Resource progress semantics:** no progress-like native float is public until
   its natural-resource meaning, range, and rollover behavior are proven.
-- **Exact live bundle:** record built and installed DLL hashes, pre-dispatch
-  state, requests, acknowledgements, later engine evidence, and final
-  dispositions for simultaneous commands. A returning call is not proof that
-  Kenshi changed.
+- **Simultaneous active gameplay commands:** the
+  `native-mining-local-trade-regression-20260810-r1` reduced artifact proves a
+  synchronous clock command remains independently visible while one monitored
+  gameplay command is active. It does not prove multiple active gameplay
+  commands or disjoint-recipient ownership; any such claim still needs built
+  and installed hashes, pre-dispatch state, exact requests and
+  acknowledgements, later engine evidence, and final dispositions. A returning
+  call is not proof that Kenshi changed.
 
 ## Superseded planning records
 

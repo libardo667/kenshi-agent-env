@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Collection, Mapping, Sequence
 from datetime import UTC, datetime
 from enum import StrEnum
-from math import inf
+from math import inf, sqrt
 from typing import Any, ClassVar, Literal
 
 from pydantic import (
@@ -20,6 +20,13 @@ from .gui_resolution import ResolvedControl, resolve_control
 
 RUNTIME_CONTEXT_MENU_CAPABILITY = "ui.context_menu.orders"
 STABLE_HANDLE_CAPABILITY = "identity.stable_handles"
+
+# A conservative authoring fence, not a restatement of Kenshi's private trade
+# predicate. `ForgottenGUI::showTradeWindow` will draw two inventories at any
+# distance, while `InventoryGUI::isWithinRangeToTrade` can only be asked after
+# one of those windows exists. Refuse to create the window outside this local
+# radius, then require Kenshi's exact predicate before reporting it open.
+TRADE_WINDOW_AUTHORING_DISTANCE = 30.0
 
 
 def context_menu_state_is_consistent(
@@ -1801,3 +1808,50 @@ class TelemetrySnapshot(StrictModel):
             if any(sequence is not None and sequence > self.sequence for sequence in sequences):
                 raise ValueError("native acknowledgement sequences cannot exceed snapshot sequence")
         return self
+
+
+def inventory_owner_distance_from_primary(
+    snapshot: TelemetrySnapshot,
+    owner_id: str,
+) -> float | None:
+    """Observed distance from the current primary to one inventory owner.
+
+    Character and world-target distances are native positions. Unknown is
+    preserved as unknown so an interaction window cannot be authorized from
+    mere presence in a visibility-radius collection.
+    """
+
+    if snapshot.primary_character_id is None:
+        return None
+    if owner_id == snapshot.primary_character_id:
+        return 0.0
+    primary = snapshot.primary_character()
+    for entity in snapshot.nearby_entities:
+        if entity.id == owner_id:
+            return entity.distance
+    for target in snapshot.world_targets:
+        if target.id == owner_id:
+            return target.distance
+    for discovered in snapshot.discovered_objects:
+        if discovered.id == owner_id:
+            return discovered.distance
+    if primary is None or primary.position is None:
+        return None
+    for member in snapshot.roster:
+        if member.id != owner_id:
+            continue
+        if member.position is None:
+            return None
+        dx = member.position.x - primary.position.x
+        dy = member.position.y - primary.position.y
+        dz = member.position.z - primary.position.z
+        return sqrt(dx * dx + dy * dy + dz * dz)
+    return None
+
+
+def inventory_owner_is_within_trade_authoring_distance(
+    snapshot: TelemetrySnapshot,
+    owner_id: str,
+) -> bool:
+    distance = inventory_owner_distance_from_primary(snapshot, owner_id)
+    return distance is not None and distance <= TRADE_WINDOW_AUTHORING_DISTANCE

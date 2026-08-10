@@ -377,7 +377,17 @@ namespace
     int TestInventoryScreenSemantics()
     {
         using KenshiAgentTelemetry::IsRegisteredShopInventoryOpen;
+        using KenshiAgentTelemetry::IsTradePairWithinAuthoringDistance;
         using KenshiAgentTelemetry::IsTradeInventoryOpen;
+
+        if (!IsTradePairWithinAuthoringDistance(30.0f, 0.0f, 0.0f) ||
+            !IsTradePairWithinAuthoringDistance(18.0f, 6.0f, 18.0f) ||
+            IsTradePairWithinAuthoringDistance(30.01f, 0.0f, 0.0f) ||
+            IsTradePairWithinAuthoringDistance(25.0f, 20.0f, 0.0f))
+        {
+            return Fail(
+                "trade-window authoring distance did not fail closed in 3D");
+        }
 
         for (int ordinaryOwnerInventory = 0;
              ordinaryOwnerInventory <= 1;

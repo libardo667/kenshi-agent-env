@@ -19,7 +19,7 @@ from kenshi_agent.affordances import (
 )
 from kenshi_agent.core.affordance import AffordanceLifecycleStatus
 from kenshi_agent.core.observation import Observation
-from kenshi_agent.core.operation import ControlMode
+from kenshi_agent.core.operation import ControlMode, OpenTradeWindowAction
 from kenshi_agent.core.telemetry import (
     CharacterState,
     ContextActionKind,
@@ -36,6 +36,7 @@ from kenshi_agent.core.telemetry import (
 from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.operation_definitions import (
     APPROACH_DIALOGUE_TARGET_DEFINITION,
+    OPEN_TRADE_WINDOW_DEFINITION,
     BindingFailure,
     BoundActor,
     BoundOperation,
@@ -379,18 +380,18 @@ def test_group_selection_can_issue_broadcast_orders_and_still_narrow() -> None:
     operation_kinds = {offer.operation_kind for offer in offers}
 
     # Narrowing the selection stays available; it is no longer the only thing a
-    # group can do. The offer keeps the broadcast recipient set distinct from
-    # Kenshi's accepted set: two are selected, capacity is one, and only Bark
-    # is an operator. The planner may ask the group but may not report both as
-    # working the resource.
+    # group can do. Productive mining is the sole authored natural-resource
+    # verb: the lower-level indefinite job remains routable but cannot lure the
+    # planner into generic waits. Two are selected, capacity is one, and only
+    # Bark is an accepted operator.
     assert "select_squad_member_exact" in operation_kinds
-    assert "perform_context_action" in operation_kinds
+    assert "perform_context_action" not in operation_kinds
     assert "produce_resource_output" in operation_kinds
     resource_descriptions = "\n".join(
         offer.description
         for offer in offers
         if offer.operation_kind
-        in {"perform_context_action", "produce_resource_output"}
+        == "produce_resource_output"
     )
     assert "1/1 operator slots occupied" in resource_descriptions
     assert bark.id not in resource_descriptions
@@ -439,8 +440,7 @@ def test_resource_offer_descriptions_bound_complete_long_operator_sets() -> None
     ]
 
     assert {offer.operation_kind for offer in resource_offers} == {
-        "perform_context_action",
-        "produce_resource_output",
+        "produce_resource_output"
     }
     assert all(len(offer.description) <= 500 for offer in resource_offers)
     assert all("2/2 operator slots occupied" in offer.description for offer in resource_offers)
@@ -543,6 +543,110 @@ def test_resource_output_and_inventory_pair_are_both_offered() -> None:
         ("produce_resource_output", "produce_resource_output"),
         ("open_trade_window", "open_trade_window"),
     }
+
+
+def test_trade_window_requires_local_distance_while_approach_remains_available() -> None:
+    actor = CharacterState(
+        id="entity-bark",
+        name="Bark",
+        position=Vec3(x=0, y=0, z=0),
+    )
+    far_vendor = NearbyEntity(
+        id="entity-barman",
+        name="Barman",
+        kind="character",
+        is_animal=False,
+        has_vendor_list=True,
+        is_squad_leader=True,
+        has_dialogue=True,
+        conscious=True,
+        disposition=Disposition.NEUTRAL,
+        distance=120,
+        position=Vec3(x=120, y=0, z=0),
+    )
+    observation = _observation(
+        capabilities=[
+            "control.approach_dialogue_target",
+            "control.open_trade_window",
+            "game.pause",
+            "identity.stable_handles",
+            "nearby.characters",
+            "nearby.roles",
+        ],
+        roster=[actor],
+        nearby=[far_vendor],
+        primary_character_id=actor.id,
+        selected_character_ids=[actor.id],
+    )
+
+    far_offers = offered_affordances(observation)
+    assert not [offer for offer in far_offers if offer.operation_kind == "open_trade_window"]
+    assert [offer for offer in far_offers if offer.operation_kind == "approach_dialogue_target"]
+    far_binding = OPEN_TRADE_WINDOW_DEFINITION.bind(
+        OpenTradeWindowAction(
+            first_owner_id=actor.id,
+            second_owner_id=far_vendor.id,
+        ),
+        observation,
+    )
+    assert isinstance(far_binding, BindingFailure)
+    assert "outside" in far_binding.reason
+
+    near = observation.model_copy(
+        update={
+            "telemetry": observation.telemetry.model_copy(
+                update={
+                    "nearby_entities": [
+                        far_vendor.model_copy(
+                            update={
+                                "distance": 20,
+                                "position": Vec3(x=20, y=0, z=0),
+                            }
+                        )
+                    ]
+                }
+            )
+        }
+    )
+    near_offers = [
+        offer
+        for offer in offered_affordances(near)
+        if offer.operation_kind == "open_trade_window"
+    ]
+    assert len(near_offers) == 1
+    assert near_offers[0].target is not None
+    assert near_offers[0].target.target_id == far_vendor.id
+    near_binding = OPEN_TRADE_WINDOW_DEFINITION.bind(
+        OpenTradeWindowAction(
+            first_owner_id=actor.id,
+            second_owner_id=far_vendor.id,
+        ),
+        near,
+    )
+    assert not isinstance(near_binding, BindingFailure)
+
+
+def test_runtime_wait_offer_exposes_live_safe_bounds() -> None:
+    observation = _observation(
+        capabilities=["game.pause", "game.speed"],
+        ui=UIState(active_screen="world", dialogue_open=False, modal_open=False),
+    )
+    assert observation.telemetry is not None
+    observation = observation.model_copy(
+        update={
+            "telemetry": observation.telemetry.model_copy(
+                update={"game": GameState(loaded=True, paused=False, speed_multiplier=1.0)}
+            )
+        }
+    )
+
+    waits = [
+        offer for offer in offered_affordances(observation) if offer.operation_kind == "wait"
+    ]
+    assert len(waits) == 1
+    assert len(waits[0].parameters) == 1
+    assert waits[0].parameters[0].minimum == 0
+    assert waits[0].parameters[0].maximum == 8
 
 
 

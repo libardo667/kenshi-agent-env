@@ -71,11 +71,14 @@ from .core.planning import (
     ConditionPath,
 )
 from .core.telemetry import (
+    TRADE_WINDOW_AUTHORING_DISTANCE,
     ContextActionKind,
     Disposition,
     NearbyEntity,
     WorldTarget,
     dialogue_targets,
+    inventory_owner_distance_from_primary,
+    inventory_owner_is_within_trade_authoring_distance,
     map_destination_already_reached,
     map_destination_travel_available,
 )
@@ -1176,9 +1179,10 @@ def bind_open_trade_window(
 ) -> BoundNamedTarget | BindingFailure:
     """Bind two observed parties whose inventories should be paired.
 
-    Both must be observed; neither needs an inventory open yet, because opening
-    them is what this does. Whether Kenshi will pair these two is Kenshi's
-    answer at dispatch.
+    Both must be observed and the second owner must be locally interactable
+    from the current primary. The native dispatcher rechecks this conservative
+    position fence before opening anything; Kenshi's private exact trade-range
+    predicate remains the terminal after the windows exist.
     """
 
     if not isinstance(action, OpenTradeWindowAction):
@@ -1188,6 +1192,12 @@ def bind_open_trade_window(
         return _unbound("No telemetry is available to bind the trade window.")
     if observation.telemetry_stale:
         return _unbound("Telemetry is stale, so the trade window cannot be bound.")
+    if action.first_owner_id != telemetry.primary_character_id:
+        return _unbound(
+            "The first trade-window owner must be the exact current primary character."
+        )
+    if action.second_owner_id == action.first_owner_id:
+        return _unbound("A trade window requires two distinct inventory owners.")
     first = _observed_inventory_owner(action.first_owner_id, observation)
     second = _observed_inventory_owner(action.second_owner_id, observation)
     if first is None:
@@ -1202,10 +1212,26 @@ def bind_open_trade_window(
         )
     if telemetry.ui.dialogue_open is not False:
         return _unbound("A dialogue is open; close it before pairing inventories.")
+    distance = inventory_owner_distance_from_primary(
+        telemetry,
+        action.second_owner_id,
+    )
+    if distance is None:
+        return _unbound(
+            f"{second[0]!r} has no exact current distance, so mere observation "
+            "cannot authorize an interaction window."
+        )
+    if distance > TRADE_WINDOW_AUTHORING_DISTANCE:
+        return _unbound(
+            f"{second[0]!r} is {distance:.1f} units away, outside the conservative "
+            f"{TRADE_WINDOW_AUTHORING_DISTANCE:g}-unit trade-window authoring fence."
+        )
     return BoundNamedTarget(
         reason=(
             f"Bound a {action.window_type} window pairing {first[0]!r} with "
-            f"{second[0]!r}. Whether Kenshi pairs them is its answer at dispatch."
+            f"{second[0]!r} at {distance:.1f} units. Native dispatch rechecks "
+            "that local fence before drawing anything, then Kenshi's exact "
+            "trade-range predicate owns the terminal."
         ),
         target_id=action.first_owner_id,
         resolved_label=f"{first[0]} and {second[0]}",
@@ -1214,15 +1240,25 @@ def bind_open_trade_window(
 
 
 def trade_window_is_currently_authorable(observation: Observation) -> bool:
-    """Whether there are two observed parties to pair at all."""
+    """Whether the primary has any currently local observed inventory owner."""
 
     telemetry = observation.telemetry
     if telemetry is None or observation.telemetry_stale:
         return False
     if telemetry.ui.dialogue_open is not False:
         return False
-    return bool(telemetry.roster) and bool(
-        telemetry.nearby_entities or telemetry.world_targets or len(telemetry.roster) > 1
+    primary = telemetry.primary_character_id
+    if primary is None:
+        return False
+    owner_ids = (
+        [member.id for member in telemetry.roster if member.id != primary]
+        + [entity.id for entity in telemetry.nearby_entities]
+        + [target.id for target in telemetry.world_targets]
+        + [found.id for found in telemetry.discovered_objects]
+    )
+    return any(
+        inventory_owner_is_within_trade_authoring_distance(telemetry, owner_id)
+        for owner_id in owner_ids
     )
 
 
@@ -2642,9 +2678,11 @@ OPEN_TRADE_WINDOW_DEFINITION = OperationDefinition(
     operation_type=OpenTradeWindowAction,
     summary=(
         "Open two inventories side by side, which is the state a transfer acts "
-        "in. Kenshi's own window types are money_trading, looting and auto; the "
+        "in, only after the other owner is inside a conservative local "
+        "interaction fence. Kenshi's own window types are money_trading, looting and auto; the "
         "single-inventory opener shows a character's personal gear instead, "
-        "which is the stealing view and cannot host a transfer."
+        "which is the stealing view and cannot host a transfer. After opening, "
+        "Kenshi's exact trade-range predicate is still the terminal authority."
     ),
     argument_source=(
         "first_owner_id and second_owner_id are copied from any observed squad "

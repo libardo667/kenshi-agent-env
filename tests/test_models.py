@@ -455,7 +455,7 @@ def test_observation_planner_payload_omits_screenshot_path() -> None:
     assert document["objective"] == "Explore nearby."
 
 
-def test_reviewed_world_target_is_an_exact_attemptable_affordance() -> None:
+def test_reviewed_resource_target_is_an_exact_productive_affordance() -> None:
     actor = CharacterState(id="entity-player", name="Player")
     target = WorldTarget(
         id="entity-copper",
@@ -483,6 +483,7 @@ def test_reviewed_world_target_is_an_exact_attemptable_affordance() -> None:
                 "world.context_targets",
                 "world.resource_operators",
                 "control.perform_context_action",
+                "control.produce_resource_output",
                 "game.pause",
                 "identity.stable_handles",
             ],
@@ -506,12 +507,15 @@ def test_reviewed_world_target_is_an_exact_attemptable_affordance() -> None:
     )
 
     assert payload["telemetry"]["world_targets"] == [target.model_dump(mode="json")]
-    context_offers = [
-        offer for offer in payload["affordances"] if offer["source"] == "context_order"
+    resource_offers = [
+        offer
+        for offer in payload["affordances"]
+        if (offer.get("target") or {}).get("target_id") == target.id
     ]
-    assert len(context_offers) == 1
-    assert context_offers[0]["semantic"] == "operate"
-    assert context_offers[0]["target"] == {
+    assert len(resource_offers) == 1
+    assert resource_offers[0]["source"] == "native_operation"
+    assert resource_offers[0]["semantic"] == "produce_resource_output"
+    assert resource_offers[0]["target"] == {
         "target_id": target.id,
         "label": target.name,
         "kind": target.kind,

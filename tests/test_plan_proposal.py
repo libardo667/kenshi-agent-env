@@ -153,24 +153,20 @@ def test_runtime_compiles_only_model_choice_and_owns_envelope_bookkeeping() -> N
 
 def test_context_order_compiles_through_generic_target_adapter() -> None:
     actor = CharacterState(id="actor-1", name="Bark")
+    patient = CharacterState(id="patient-1", name="Ruka")
     target = WorldTarget(
-        id="resource-1",
-        name="Iron Resource",
-        kind="natural_resource",
+        id=patient.id,
+        name=patient.name,
+        kind="squad_character",
         position=Vec3(x=10, y=0, z=20),
         distance=25,
-        context_actions=[ContextActionKind.OPERATE],
-        default_task="operate",
-        operator_capacity=1,
-        current_operator_ids=[],
-        current_operators_complete=True,
-        output_inventory_complete=True,
+        context_actions=[ContextActionKind("first_aid")],
+        default_task="first_aid",
     )
     observation = _observation(
         capabilities=[
             "control.perform_context_action",
             "world.context_targets",
-            "world.resource_operators",
             "game.pause",
             "identity.stable_handles",
         ],
@@ -179,13 +175,13 @@ def test_context_order_compiles_through_generic_target_adapter() -> None:
             modal_open=False,
             dialogue_open=False,
         ),
-        roster=[actor],
+        roster=[actor, patient],
         targets=[target],
     )
-    selected = _selected(observation, "operate")
+    selected = _selected(observation, "first_aid")
 
     plan = compile_plan_proposal(
-        {"objective": "Operate the exact offered target.", "steps": [{"selection": selected}]},
+        {"objective": "Aid the exact offered target.", "steps": [{"selection": selected}]},
         observation=observation,
         context_id="pc-context",
         planning=PlanningConfig(),

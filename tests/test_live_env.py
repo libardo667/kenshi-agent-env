@@ -23,6 +23,7 @@ from kenshi_agent.core.operation import (
     MouseButton,
     MoveInDirectionAction,
     MoveToCharacterAction,
+    OpenTradeWindowAction,
     PauseAction,
     PerformCharacterOrderAction,
     PerformContextAction,
@@ -886,6 +887,7 @@ class NativeAckController(PulseController):
         complete_map_travel_on_unpause: bool = False,
         complete_deferred_survey: bool = False,
         complete_deferred_character_order: bool = False,
+        complete_deferred_trade_window: bool = False,
         reason: str | None = None,
     ) -> None:
         super().__init__(telemetry)
@@ -896,6 +898,7 @@ class NativeAckController(PulseController):
         self.complete_map_travel_on_unpause = complete_map_travel_on_unpause
         self.complete_deferred_survey = complete_deferred_survey
         self.complete_deferred_character_order = complete_deferred_character_order
+        self.complete_deferred_trade_window = complete_deferred_trade_window
         self.reason = reason
         self.request_seen_by_watcher = False
         self.request: NativeCommandRequest | None = None
@@ -950,6 +953,25 @@ class NativeAckController(PulseController):
                         )
                     ],
                 )
+            elif (
+                self.complete_deferred_trade_window
+                and pending.command == "open_trade_window"
+                and current is not None
+                and current.status is NativeCommandStatus.ACCEPTED
+            ):
+                sequence = self.telemetry.sequence + 1
+                self.telemetry.controller_commands = NativeControlState(
+                    available=True,
+                    commands=[
+                        current.model_copy(
+                            update={
+                                "status": NativeCommandStatus.COMPLETED,
+                                "reason": "trade_window_open",
+                                "terminal_at_telemetry_sequence": sequence,
+                            }
+                        )
+                    ],
+                )
             return
         self.acknowledged_command_ids.add(pending.command_id)
         basis = pending.based_on_revision.telemetry_sequence
@@ -963,6 +985,7 @@ class NativeAckController(PulseController):
                 self.telemetry.paused = pending.paused
             else:
                 self.telemetry.paused = False
+                self.telemetry.speed_multiplier = pending.speed_multiplier
             status = NativeCommandStatus.COMPLETED
             reason = (
                 ("world_paused" if pending.paused else "world_running")
@@ -1000,9 +1023,51 @@ class NativeAckController(PulseController):
             }
             else None
         )
+        existing_commands = (
+            list(self.telemetry.controller_commands.commands)
+            if pending.command in {"pause", "set_speed"}
+            else []
+        )
+        if (
+            self.complete_map_travel_on_unpause
+            and pending.command == "set_speed"
+            and self.request is not None
+        ):
+            updated_commands: list[NativeCommandAcknowledgement] = []
+            for existing in existing_commands:
+                if existing.command_id != self.request.command_id:
+                    updated_commands.append(existing)
+                    continue
+                updated_commands.append(
+                    existing.model_copy(
+                        update={
+                            "status": NativeCommandStatus.COMPLETED,
+                            "reason": "map_destination_reached",
+                            "terminal_at_telemetry_sequence": sequence,
+                        }
+                    )
+                )
+            existing_commands = updated_commands
+            self.telemetry.paused = True
+        while len(existing_commands) >= 16:
+            protected_id = self.request.command_id if self.request is not None else None
+            remove_index = next(
+                (
+                    index
+                    for index, existing in enumerate(existing_commands)
+                    if existing.command_id != protected_id
+                ),
+                0,
+            )
+            existing_commands.pop(remove_index)
         self.telemetry.controller_commands = NativeControlState(
             available=True,
             commands=[
+                *[
+                    existing
+                    for existing in existing_commands
+                    if existing.command_id != pending.command_id
+                ],
                 NativeCommandAcknowledgement(
                     command_id=(
                         self.acknowledgement_command_id or pending.command_id
@@ -1070,6 +1135,7 @@ def native_vendor_environment(
     complete_map_travel_on_unpause: bool = False,
     complete_deferred_survey: bool = False,
     complete_deferred_character_order: bool = False,
+    complete_deferred_trade_window: bool = False,
     reason: str | None = None,
 ) -> tuple[LiveEnvironment, NativePulseTelemetry, NativeAckController]:
     telemetry_path = tmp_path / "telemetry.latest.json"
@@ -1084,6 +1150,7 @@ def native_vendor_environment(
         complete_map_travel_on_unpause=complete_map_travel_on_unpause,
         complete_deferred_survey=complete_deferred_survey,
         complete_deferred_character_order=complete_deferred_character_order,
+        complete_deferred_trade_window=complete_deferred_trade_window,
         reason=reason,
     )
     telemetry.on_read = controller.acknowledge_unsent_request
@@ -1903,6 +1970,86 @@ def test_resource_production_issues_exact_monitored_native_command(
     asyncio.run(scenario())
 
 
+def test_resource_production_establishes_fastest_playback_without_desktop_input(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(
+            tmp_path,
+            status=NativeCommandStatus.ACCEPTED,
+            reason="context_task_active",
+        )
+        environment.controls_config = environment.controls_config.model_copy(
+            update={"require_paused_between_actions": False}
+        )
+        initial = await environment.reset()
+        action = ProduceResourceOutputAction(target_id="entity-copper")
+
+        transition = await execute_operation(
+            environment,
+            action,
+            command=CommandDispatchContext(
+                command_id="cmd-" + "4" * 32,
+                based_on_revision=initial.world_revision,
+                **_authorized_for(initial, action),
+            ),
+        )
+
+        assert transition.receipt.executed
+        assert controller.request is not None
+        assert controller.request.command == "produce_resource_output"
+        assert controller.actions == []
+        assert telemetry.paused is False
+        assert telemetry.speed_multiplier == 5.0
+        assert controller.time_control_request is not None
+        assert controller.time_control_request.command == "set_speed"
+        assert controller.time_control_request.speed_multiplier == 5.0
+
+    asyncio.run(scenario())
+
+
+def test_trade_window_waits_through_accepted_to_exact_native_terminal(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(
+            tmp_path,
+            status=NativeCommandStatus.ACCEPTED,
+            reason="trade_window_requested",
+            complete_deferred_trade_window=True,
+        )
+        telemetry.capabilities.append("control.open_trade_window")
+        telemetry.target_distance = 10.0
+        initial = await environment.reset()
+        action = OpenTradeWindowAction(
+            first_owner_id="entity-selected",
+            second_owner_id="entity-vendor",
+        )
+
+        transition = await execute_operation(
+            environment,
+            action,
+            command=CommandDispatchContext(
+                command_id="cmd-" + "5" * 32,
+                based_on_revision=initial.world_revision,
+                **_authorized_for(initial, action),
+            ),
+        )
+
+        acknowledgement = transition.receipt.native_acknowledgement
+        assert transition.receipt.executed
+        assert transition.receipt.error_type is None
+        assert acknowledgement is not None
+        assert acknowledgement.status is NativeCommandStatus.COMPLETED
+        assert acknowledgement.reason == "trade_window_open"
+        assert controller.request is not None
+        assert controller.request.command == "open_trade_window"
+        assert controller.actions == []
+        assert controller.time_control_request is None
+
+    asyncio.run(scenario())
+
+
 
 def test_visible_nearby_dialogue_target_still_uses_native_talk_order(
     tmp_path: Path,
@@ -2185,7 +2332,10 @@ def test_map_travel_issues_one_exact_order_and_establishes_five_x(
         assert controller.request.target_id == "entity-known-town"
         assert telemetry.paused is False
         assert telemetry.speed_multiplier == 5.0
-        assert [action.kind for action in controller.actions] == ["key", "key"]
+        assert controller.actions == []
+        assert controller.time_control_request is not None
+        assert controller.time_control_request.command == "set_speed"
+        assert controller.time_control_request.speed_multiplier == 5.0
 
     asyncio.run(scenario())
 
@@ -2287,10 +2437,9 @@ def test_squad_regroup_issues_one_global_exact_order_and_establishes_five_x(
         assert controller.request.target_id == "entity-ruka"
         assert telemetry.paused is False
         assert telemetry.speed_multiplier == 5.0
-        assert [action.kind for action in controller.actions] == [
-            "key",
-            "key",
-        ]
+        assert controller.actions == []
+        assert controller.time_control_request is not None
+        assert controller.time_control_request.speed_multiplier == 5.0
 
     asyncio.run(scenario())
 
@@ -2361,7 +2510,7 @@ def test_map_arrival_terminal_wins_race_with_running_confirmation(
         assert acknowledgement.status is NativeCommandStatus.COMPLETED
         assert acknowledgement.reason == "map_destination_reached"
         assert telemetry.paused is True
-        assert [action.kind for action in controller.actions] == ["key"]
+        assert controller.actions == []
 
     asyncio.run(scenario())
 
@@ -2449,13 +2598,15 @@ def test_continuous_native_movement_starts_a_paused_world_without_repausing(
         )
 
         assert telemetry.paused is False
-        assert [action.kind for action in controller.actions] == ["key"]
+        assert controller.actions == []
+        assert controller.time_control_request is not None
+        assert controller.time_control_request.speed_multiplier == 1.0
         assert "Started the paused world" in transition.receipt.message
 
     asyncio.run(scenario())
 
 
-def test_continuous_native_handoff_uses_idempotent_speed_key_not_pointer_unpause(
+def test_continuous_native_handoff_uses_game_clock_without_desktop_input(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2480,8 +2631,10 @@ def test_continuous_native_handoff_uses_idempotent_speed_key_not_pointer_unpause
         )
 
         assert telemetry.paused is False
-        assert [action.kind for action in controller.actions] == ["key"]
-        assert controller.actions[-1] == KeyAction(key="f2")
+        assert controller.actions == []
+        assert controller.time_control_request is not None
+        assert controller.time_control_request.command == "set_speed"
+        assert controller.time_control_request.speed_multiplier == 1.0
         assert "speed gear 1" in transition.receipt.message
 
     asyncio.run(scenario())

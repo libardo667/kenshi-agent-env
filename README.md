@@ -27,13 +27,15 @@ The current action set covers:
   orders;
 - approaching people and issuing character orders that Kenshi itself reports as
   available;
-- opening trade, looting, squadmate, and resource inventories;
+- opening local trade, looting, squadmate, and resource inventories only after a
+  conservative pre-render distance check, followed by Kenshi's exact range result;
 - buying, selling, looting, collecting resource output, and moving items between
   open inventories through Kenshi's own inventory code;
 - reading exact resource operator capacity and accepted identities, starting or
-  adopting resource work, and waiting for exact output inventory;
+  adopting productive resource work at native fastest playback, and monitoring
+  until exact output inventory exists;
 - reading a local resource survey;
-- pausing, changing game speed, waiting, and stopping a run;
+- pausing, changing game speed, bounded observation waits, and stopping a run;
 - electively shifting into an eligible nearby body; the operation is authorable
   with an empty roster, while live end-to-end recovery after true total party
   loss remains unproven; and
@@ -75,11 +77,23 @@ run bundle preserves either complete proof chain. The exact durable classificati
 for each operation is recorded in
 [the proof ledger](docs/reconstruction/interaction_proof_status.json).
 
+The named `native-mining-local-trade-regression-20260810-r1` run proves the
+current complete economic loop. Native productive work created one Copper while
+plural clock acknowledgements remained visible, collection moved it into
+Slowline, physical approach reduced Barman distance from 312.47 to 16.73 before
+the trade request, and the sale raised funds from c.20,000 to c.20,195. All 12
+action receipts recorded zero primitive input and no plan used a generic
+resource `operate` or planner-authored `wait`. The committed
+[reduced evidence artifact](docs/reconstruction/native_mining_local_trade_20260810.json)
+preserves exact requests, acknowledgements, decisive telemetry, binary identity,
+raw-file hashes, and the movement-stall caveat.
+
 There are still important limits:
 
-- `controller_commands.commands` is already plural. The native producer may retain
-  at most one record only during the explicitly temporary bridge period ending
-  **2026-09-20**; consumers do not depend on that cardinality.
+- `controller_commands.commands` is plural at both producer and consumer. The
+  temporary one-record producer bridge carried a deletion deadline of
+  **2026-09-20** and was removed early on **2026-08-10**; the bounded retained
+  registry is now emitted directly.
 - Some group behavior is still unproven, including group dialogue participation,
   mixed-building exits, threat-response scope, and delayed map-travel continuation
   after changing selection.
@@ -88,7 +102,7 @@ There are still important limits:
 - `close_active_interface` is planner-visible when fresh telemetry proves a blocking
   Prospecting, dialogue, modal, inventory, stats, or management interface.
 
-The exact Protocol 2.0 ownership and temporary producer limit are recorded in the
+The exact Protocol 2.0 ownership and retired producer bridge are recorded in the
 [Protocol 2.0 world-model decision](docs/PROTOCOL_2_WORLD_MODEL_DECISION.md).
 
 ## How a run works
