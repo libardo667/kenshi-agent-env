@@ -71,6 +71,14 @@ def test_native_plugin_exports_nearby_character_and_ui_signals() -> None:
     assert "geometry can still" in source
 
 
+def test_native_modal_signal_includes_standalone_message_boxes() -> None:
+    source = PLUGIN_SOURCE.read_text(encoding="utf-8")
+
+    assert "const bool modalMessageOpen = gui != NULL && gui->hasModalMessage();" in source
+    assert "dialogueOpen || inventoryOpen || modalMessageOpen" in source
+    assert '? "message_box"' in source
+
+
 def test_native_plugin_uses_session_scoped_validated_handle_identity() -> None:
     source = PLUGIN_SOURCE.read_text(encoding="utf-8")
 

@@ -16,8 +16,8 @@ for identifying a widget's role and never as expected text.
 layouts declared            52
 named widgets              679
 actionable widgets         228
-layouts with an interface   16
-layouts without one         36
+layouts with an interface   18
+layouts without one         34
 
 Actionable means a player can press, type, pick, or scroll it. A
 window's usefulness to an agent is bounded by those, not by its total
@@ -65,7 +65,7 @@ DECLARED INTERFACE
 >>Kenshi_LoadingScreen.layout                        5    1  -
 >>Kenshi_MessagePanel.layout                         2    1  -
 >>Kenshi_OrdersPanelOrder.layout                     3    1  -
->>Kenshi_ProspectingWindowResourceLine.layout        3    1  -
+  Kenshi_ProspectingWindowResourceLine.layout        3    1  -
 >>Kenshi_SpeechPanel.layout                          2    1  -
   item_box_v.layout                                  1    1  -
 >>Kenshi_AdvancedOptionsWindow.layout                3    0  ADVANCED OPTIONS
@@ -75,7 +75,7 @@ DECLARED INTERFACE
 >>Kenshi_ItemDropLabel.layout                        2    0  -
 >>Kenshi_LimbReplacementWindow.layout                7    0  LIMBS
 >>Kenshi_ProgressBarPanel.layout                     3    0  -
->>Kenshi_ProspectingWindow.layout                    8    0  PROSPECTING
+  Kenshi_ProspectingWindow.layout                    8    0  PROSPECTING
   Kenshi_StatsWindow.layout                         13    0  CHARACTER STATS
 
 >> marks a declared window the project models no interface for.

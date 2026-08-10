@@ -36,6 +36,9 @@ NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND: Literal["produce_resource_output"] = (
 )
 NATIVE_TRANSFER_WIRE_COMMAND: Literal["transfer_item"] = "transfer_item"
 NATIVE_TRADE_WINDOW_WIRE_COMMAND: Literal["open_trade_window"] = "open_trade_window"
+NATIVE_CLOSE_INTERFACE_WIRE_COMMAND: Literal["close_active_interface"] = (
+    "close_active_interface"
+)
 NATIVE_RESOURCE_SURVEY_WIRE_COMMAND: Literal["survey_local_resources"] = (
     "survey_local_resources"
 )

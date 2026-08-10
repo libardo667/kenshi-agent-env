@@ -34,6 +34,7 @@ from kenshi_agent.world_state import WorldStateStore
 _EXACT_METHODS = frozenset(
     {
         "approach_dialogue_target",
+        "close_active_interface",
         "exit_current_building",
         "move_in_direction",
         "move_to_character",

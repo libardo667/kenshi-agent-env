@@ -6,6 +6,7 @@ Regenerate with `python scripts/export_docs.py`.
 
 | adapter | sources | private operations | denominator | completeness boundary |
 | --- | --- | --- | --- | --- |
+| `interface_exit` | `native_operation` | `close_active_interface` | The current observed blocking interface, when one exists. | Native cleanup covers Prospecting, dialogue, message boxes, trade and inventory windows, and ordinary registered GUI windows. |
 | `runtime` | `runtime` | `consult_advisor`, `noop`, `pause`, `read_fieldbook`, `recall_memory`, `set_speed`, `stop`, `wait` | Runtime control, playback, advisor, memory, and fieldbook state. | Only choices applicable to the current run state. |
 | `context_orders` | `context_order` | `perform_context_action` | Every exact world-target/order pair advertised by current telemetry. | Only the reviewed native natural-resource operate and squad-character first_aid subcases are emitted. Every other telemetry context action is withheld rather than routed through the retired pointer path. |
 | `body_shift` | `nearby_character` | `shift_into_body` | Every exact current conscious, non-animal, non-hostile nearby character. | Native-assisted stable identity and nearby-character evidence; a body outside the reported radius cannot be offered and a hostile one is deliberately withheld. |

@@ -1560,13 +1560,16 @@ class KenshiControlSurface:
     ) -> str | None:
         """Why the world cannot currently support this command, or None."""
 
+        if wire_command == native_commands.NATIVE_CLOSE_INTERFACE_WIRE_COMMAND:
+            # Game-wide UI state; there is no world target to re-resolve.
+            return None
         if wire_command in {
             native_commands.NATIVE_DIRECTION_WIRE_COMMAND,
             native_commands.NATIVE_RESOURCE_SURVEY_WIRE_COMMAND,
         }:
-            # Reference nobody: a direction derives its destination from where
-            # the character already stands, and a survey reads the resource
-            # field underneath the primary.
+            # Reference no world target: a direction derives its destination
+            # from where the character stands, and a survey reads the field
+            # under the primary.
             return None
         if wire_command == native_commands.NATIVE_EXIT_BUILDING_WIRE_COMMAND:
             selected = telemetry.selected_characters()

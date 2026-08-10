@@ -19,9 +19,7 @@ from kenshi_agent.affordances import (
 )
 from kenshi_agent.core.affordance import AffordanceLifecycleStatus
 from kenshi_agent.core.observation import Observation
-from kenshi_agent.core.operation import (
-    ControlMode,
-)
+from kenshi_agent.core.operation import ControlMode
 from kenshi_agent.core.telemetry import (
     CharacterState,
     ContextActionKind,
@@ -163,6 +161,30 @@ def test_character_adapter_exposes_one_runtime_chosen_squad_reunion() -> None:
         "actor_id": bark.id,
         "target_id": plant.id,
     }
+
+
+def test_blocking_dialogue_and_modal_offer_one_native_return_to_world() -> None:
+    observation = _observation(
+        capabilities=["control.close_active_interface", "ui.dialogue"],
+        ui=UIState(
+            active_screen="dialogue",
+            modal_open=True,
+            dialogue_open=True,
+            dialogue_target_id="entity-hobbs",
+            dialogue_options=["Who are you?", "Goodbye."],
+        ),
+    )
+
+    offers = [
+        offer
+        for offer in offered_affordances(observation)
+        if offer.operation_kind == "close_active_interface"
+    ]
+
+    assert len(offers) == 1
+    assert offers[0].semantic == "return_to_world"
+    bound = bind_affordance(selection_for(offers[0]), observation)
+    assert bound.definition.kind == "close_active_interface"
 
 
 def test_character_adapter_prefers_exact_native_selection_over_portrait_geometry() -> None:
@@ -729,7 +751,9 @@ def test_adapter_declarations_guard_every_emitted_offer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     observation = _observation(capabilities=[])
-    runtime_adapter = AFFORDANCE_ADAPTERS[0]
+    runtime_adapter = next(
+        adapter for adapter in AFFORDANCE_ADAPTERS if adapter.name == "runtime"
+    )
     monkeypatch.setattr(
         affordance_module,
         "AFFORDANCE_ADAPTERS",

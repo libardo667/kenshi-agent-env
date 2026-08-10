@@ -15,15 +15,15 @@ evidence appears only through the proof manifest, and unproven group cases
 remain unproven even when their intended contract is implemented.
 
 ```text
-operations               23
-planner-visible          23
+operations               24
+planner-visible          24
 internal-only             0
-native commands          16
-manifest entries         24
+native commands          17
+manifest entries         25
 coverage proof          PASS
 
 PROOF STATUS
-  source_proven     12
+  source_proven     13
   unit_proven        1
   live_proven        3
   unproven           8
@@ -32,6 +32,7 @@ PROOF STATUS
 INTERACTION CONTRACT (resolved from the sole operation registry)
   operation                           kind               recipients          selection        milestone               proof
   approach_dialogue_target            ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
+  close_active_interface              global_ui          none                none             world_outcome_observed  source_proven
   consult_advisor                     runtime_only       none                none             input_delivered         source_proven
   exit_current_building               ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
   move_in_direction                   ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
@@ -61,6 +62,7 @@ INTERACTION CONTRACT (resolved from the sole operation registry)
 EXECUTION AND ROUTING
   operation                           exec               playback                 native cmd                 visibility
   approach_dialogue_target            monitored_option   running_for_progress     approach_confirmed_vendor  dialogue_targets
+  close_active_interface              atomic_handler     any                      close_active_interface     interface_exit
   consult_advisor                     atomic_handler     any                      -                          runtime
   exit_current_building               monitored_option   running_for_progress     exit_current_building      native_and_composite
   move_in_direction                   monitored_option   running_for_progress     -                          native_and_composite
@@ -86,6 +88,7 @@ EXECUTION AND ROUTING
 
 NATIVE COMMAND ROUTES
   approach_confirmed_vendor    -> approach_dialogue_target (vestigial name)
+  close_active_interface       -> close_active_interface
   exit_current_building        -> exit_current_building
   move_in_direction            -> respond_to_immediate_threat
   move_to_character            -> move_to_character

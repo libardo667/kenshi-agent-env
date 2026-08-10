@@ -150,14 +150,12 @@ namespace KenshiAgentTelemetry
         return command == "continue_game" || command == "load_game";
     }
 
-    // Closing what we opened. `open_trade_window` had no counterpart, so a
-    // window the agent opened could only be dismissed by hand -- and `./dev
-    // stop` and `./dev recover` both refuse a loaded world with a modal up,
-    // which left the game unclosable after an agent opened a trade with a
-    // non-shop owner.
+    // One planner-owned exit for the blocking interface families the controller
+    // can cause or observe. The old trade-only recovery verb is deliberately
+    // absent: every consumer moves to the general lifecycle atomically.
     bool NativeCommandClosesWindows(const std::string& command)
     {
-        return command == "close_trade_window";
+        return command == "close_active_interface";
     }
 
     // Pausing and setting speed are `GameWorld::userPause` and
@@ -177,9 +175,10 @@ namespace KenshiAgentTelemetry
     // Wire-addressing shape, not operation recipient scope. Body shift names
     // the body it acts on in `target_id`; requiring a selected character would
     // make the total-loss recovery request impossible at the native edge.
-    bool NativeCommandNamesOwnRecipient(const std::string& command)
+    bool NativeCommandAllowsEmptySelection(const std::string& command)
     {
-        return command == "shift_into_body";
+        return command == "shift_into_body" ||
+               command == "close_active_interface";
     }
 
     bool NativeCommandNamesTarget(const std::string& command)
@@ -451,17 +450,17 @@ namespace KenshiAgentTelemetry
             // Recipient cardinality is not decided here. The operation
             // registry owns recipient scope; this parser validates only that a
             // dispatch basis is structurally coherent. A title-screen command
-            // has no loaded-world selection. Body shift is the other truthful
-            // empty shape: its target is its recipient, including after total
-            // party loss. Every selection-addressed command still names at
-            // least one selected character.
+            // has no loaded-world selection. Body shift names its own target,
+            // while interface cleanup is game-wide; both remain truthful with
+            // no selected character. Every selection-addressed command still
+            // names at least one selected character.
             const bool titleScreenCommand =
                 NativeCommandDrivesTitleScreen(request.command);
-            const bool commandNamesOwnRecipient =
-                NativeCommandNamesOwnRecipient(request.command);
+            const bool commandAllowsEmptySelection =
+                NativeCommandAllowsEmptySelection(request.command);
             if ((selectedIds.empty() &&
                  !titleScreenCommand &&
-                 !commandNamesOwnRecipient) ||
+                 !commandAllowsEmptySelection) ||
                 selectedIds.size() > 64)
             {
                 rejectionReason = "malformed_request";

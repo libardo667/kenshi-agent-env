@@ -59,6 +59,7 @@ class ReplayOperationPort:
         )
 
     approach_dialogue_target = _execute
+    close_active_interface = _execute
     exit_current_building = _execute
     move_in_direction = _execute
     move_to_character = _execute
@@ -71,6 +72,9 @@ class ReplayOperationPort:
     select_squad_member_exact = _execute
     set_speed = _execute
     travel_to_map_destination = _execute
+    transfer_item = _execute
+    open_trade_window = _execute
+    survey_local_resources = _execute
     wait = _execute
 
     async def control_pause(

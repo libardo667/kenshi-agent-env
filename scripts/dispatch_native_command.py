@@ -53,6 +53,17 @@ def main() -> int:
     parser.add_argument("--section-name", default="")
     parser.add_argument("--slot-x", type=int, default=0)
     parser.add_argument("--slot-y", type=int, default=0)
+    parser.add_argument("--bearing-degrees", type=float, default=0.0)
+    parser.add_argument("--distance-units", type=float, default=0.0)
+    parser.add_argument("--minimum-output-quantity", type=int, default=1)
+    parser.add_argument("--quantity", type=int, default=0)
+    parser.add_argument(
+        "--paused",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Requested state for the pause command (default: running).",
+    )
+    parser.add_argument("--speed-multiplier", type=float, default=0.0)
     parser.add_argument("--timeout", type=float, default=15.0)
     args = parser.parse_args()
 
@@ -88,10 +99,16 @@ def main() -> int:
         selected_character_ids=list(snapshot.selected_character_ids),
         target_id=args.target_id,
         context_action=args.context_action,
+        bearing_degrees=args.bearing_degrees,
+        distance_units=args.distance_units,
+        minimum_output_quantity=args.minimum_output_quantity,
         destination_id=args.destination_id,
         section_name=args.section_name,
         slot_x=args.slot_x,
         slot_y=args.slot_y,
+        paused=args.paused,
+        speed_multiplier=args.speed_multiplier,
+        quantity=args.quantity,
     )
     write_native_command_request_atomic(
         config.telemetry.file.parent / "native_command.request.json",
@@ -113,7 +130,7 @@ def main() -> int:
     deadline = time.monotonic() + args.timeout
     while time.monotonic() < deadline:
         current = reader.read().snapshot
-        acknowledgement = current.native_control.acknowledgement_for(command_id)
+        acknowledgement = current.controller_commands.command_for(command_id)
         if acknowledgement is not None:
             print(
                 json.dumps(

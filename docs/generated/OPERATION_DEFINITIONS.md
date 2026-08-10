@@ -12,14 +12,15 @@ Internal-only definitions are controller phases or runtime operations;
 they still bind through this registry but are not planner-visible offers.
 
 ```text
-definitions             23
-adapter operation kinds  23
-adapter routes           23
-adapters                 10
+definitions             24
+adapter operation kinds  24
+adapter routes           24
+adapters                 11
 ownership proof         PASS
 
 DEFINITIONS
   approach_dialogue_target            dialogue.approach_dialogue_target                       ApproachDialogueTargetAction [dialogue_targets]
+  close_active_interface              resources.close_active_interface                        CloseActiveInterfaceAction [interface_exit]
   consult_advisor                     cognition.advisor                                       ConsultAdvisorAction [runtime]
   exit_current_building               movement.exit_current_building                          ExitCurrentBuildingAction [native_and_composite]
   move_in_direction                   movement.move_in_direction                              MoveInDirectionAction [native_and_composite]
@@ -44,6 +45,7 @@ DEFINITIONS
   wait                                runtime.wait                                            WaitAction [runtime]
 
 SOURCE-SPECIFIC COMPLETENESS BOUNDARIES
+  interface_exit: Native cleanup covers Prospecting, dialogue, message boxes, trade and inventory windows, and ordinary registered GUI windows.
   runtime: Only choices applicable to the current run state.
   context_orders: Only the reviewed native natural-resource operate and squad-character first_aid subcases are emitted. Every other telemetry context action is withheld rather than routed through the retired pointer path.
   body_shift: Native-assisted stable identity and nearby-character evidence; a body outside the reported radius cannot be offered and a hostile one is deliberately withheld.

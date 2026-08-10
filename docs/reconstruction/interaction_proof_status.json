@@ -19,8 +19,8 @@
     "The resource-operator bundle named below proves exact capacity and accepted",
     "identity semantics for a two-character selection against a capacity-one",
     "target. It does not generalize unrelated multi-recipient semantics.",
-    "close_trade_window is separately live-proven as a",
-    "native recovery command, not a registry-backed gameplay operation.",
+    "The trade-only recovery closer was deleted; close_active_interface is",
+    "the sole registry-backed interface exit and still requires live proof.",
     "Reverse-engineering conclusions live only under game_sources/research;",
     "entries here link to those packages instead of restating their argument."
   ],
@@ -93,6 +93,14 @@
       "proof_status": "unproven",
       "evidence": [],
       "note": "Movement is plausibly group-scoped while the dialogue outcome belongs to one participant. Which character becomes that participant is unproven; section 13.9 is its proof. Its wire command is still named approach_confirmed_vendor."
+    },
+    {
+      "operation_kind": "close_active_interface",
+      "proof_status": "source_proven",
+      "evidence": [
+        "OperationDefinition owns the sole planner-visible interface exit and KenshiAgentTelemetry calls each interface family's native close method"
+      ],
+      "note": "Source-proven only until the exact Prospecting-plus-dialogue regression is rerun against the installed DLL."
     },
     {
       "operation_kind": "consult_advisor",

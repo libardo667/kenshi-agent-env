@@ -127,12 +127,14 @@ The loaded-world protocol currently covers:
 - exact dialogue approach, resource context actions, generic character orders,
   resource production, and local resource survey;
 - paired trade/loot/resource windows and item transfer;
+- native cleanup of Prospecting, dialogue, message boxes, inventories, and
+  management windows through one planner-visible interface exit;
 - elective body shifting;
 - pause and speed control; and
-- recovery-only trade-window close plus the diagnostic body-platoon probe.
+- the diagnostic body-platoon probe.
 
-`close_trade_window` and `shift_body_platoon` have no planner-visible operation
-definition. They are recovery/diagnostic routes, not hidden fallbacks.
+`shift_body_platoon` has no planner-visible operation definition. It is a
+diagnostic route, not a hidden fallback.
 
 The wire name `approach_confirmed_vendor` is historical. Its current operation
 is `approach_dialogue_target`, and it may target any exact conscious,

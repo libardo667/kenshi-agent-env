@@ -44,6 +44,7 @@ class Interface(StrEnum):
     DIALOGUE = "dialogue"
     INVENTORY = "inventory"
     TRADE = "trade"
+    PROSPECTING = "prospecting"
     CHARACTER_STATS = "character_stats"
     MAP = "map"
     MESSAGE_BOX = "message_box"
@@ -96,13 +97,9 @@ AFFORDANCES: tuple[Affordance, ...] = (
         Interface.WORLD,
         Operation.ENTER,
         "Return to the world with no modal window in the way.",
-        Mechanism.NONE,
-        "",
+        Mechanism.NATIVE,
+        "close_active_interface",
         native_entry_point="ForgottenGUI::closeAllWindows @ 0x6E5660",
-        gap=(
-            "No registry-backed operation closes arbitrary modal UI. The native "
-            "close_trade_window recovery command covers trade only."
-        ),
     ),
     Affordance(
         Interface.WORLD,
@@ -165,9 +162,9 @@ AFFORDANCES: tuple[Affordance, ...] = (
         Interface.DIALOGUE,
         Operation.EXIT,
         "Leave the conversation.",
-        Mechanism.NONE,
-        "",
-        gap="No current operation selects a closing reply or closes dialogue.",
+        Mechanism.NATIVE,
+        "close_active_interface",
+        native_entry_point="DialogueWindow::hide @ 0x720D50",
     ),
     Affordance(
         Interface.INVENTORY,
@@ -195,13 +192,9 @@ AFFORDANCES: tuple[Affordance, ...] = (
         Interface.INVENTORY,
         Operation.EXIT,
         "Close the paired inventory windows.",
-        Mechanism.NONE,
-        "",
+        Mechanism.NATIVE,
+        "close_active_interface",
         native_entry_point="ForgottenGUI::closeTradeWindow @ 0x790630",
-        gap=(
-            "close_trade_window exists in the native recovery protocol but is not "
-            "a registry-backed runtime operation."
-        ),
     ),
     Affordance(
         Interface.TRADE,
@@ -231,13 +224,32 @@ AFFORDANCES: tuple[Affordance, ...] = (
         Interface.TRADE,
         Operation.EXIT,
         "Close the trade window.",
-        Mechanism.NONE,
-        "",
+        Mechanism.NATIVE,
+        "close_active_interface",
         native_entry_point="ForgottenGUI::closeTradeWindow @ 0x790630",
-        gap=(
-            "The recovery command is live-proven, but it has no registry-backed "
-            "runtime lifecycle and the planner cannot currently select it."
-        ),
+    ),
+    Affordance(
+        Interface.PROSPECTING,
+        Operation.ENTER,
+        "Read the local resource field without leaving its source window open.",
+        Mechanism.NATIVE,
+        "survey_local_resources",
+        native_entry_point="ProspectingWindow::showT / _show / hide",
+    ),
+    Affordance(
+        Interface.PROSPECTING,
+        Operation.NAVIGATE,
+        "Read the exact published resource rows.",
+        Mechanism.NATIVE,
+        "telemetry.resource_survey.readings",
+    ),
+    Affordance(
+        Interface.PROSPECTING,
+        Operation.EXIT,
+        "Return to the prior interface as part of the survey transaction.",
+        Mechanism.NATIVE,
+        "survey_local_resources / close_active_interface",
+        native_entry_point="ProspectingWindow::hide @ 0x48D6A0",
     ),
     Affordance(
         Interface.CHARACTER_STATS,
@@ -258,9 +270,8 @@ AFFORDANCES: tuple[Affordance, ...] = (
         Interface.CHARACTER_STATS,
         Operation.EXIT,
         "Close the character stats window.",
-        Mechanism.NONE,
-        "",
-        gap="No current operation closes management UI.",
+        Mechanism.NATIVE,
+        "close_active_interface",
     ),
     Affordance(
         Interface.MAP,
@@ -289,9 +300,8 @@ AFFORDANCES: tuple[Affordance, ...] = (
         Interface.MAP,
         Operation.EXIT,
         "Close the map.",
-        Mechanism.NONE,
-        "",
-        gap="No current operation closes management UI.",
+        Mechanism.NATIVE,
+        "close_active_interface",
     ),
     Affordance(
         Interface.MESSAGE_BOX,
@@ -312,9 +322,9 @@ AFFORDANCES: tuple[Affordance, ...] = (
         Interface.MESSAGE_BOX,
         Operation.EXIT,
         "Acknowledge the message.",
-        Mechanism.NONE,
-        "",
-        gap="The retired visible-control click has no native replacement yet.",
+        Mechanism.NATIVE,
+        "close_active_interface",
+        native_entry_point="ForgottenGUI::hideMessageBox @ 0x73EA10",
     ),
     Affordance(
         Interface.ESC_MENU,
@@ -328,9 +338,9 @@ AFFORDANCES: tuple[Affordance, ...] = (
         Interface.ESC_MENU,
         Operation.EXIT,
         "Return from the menu without quitting.",
-        Mechanism.NONE,
-        "",
-        gap="No current runtime operation activates Resume.",
+        Mechanism.NATIVE,
+        "close_active_interface",
+        native_entry_point="ForgottenGUI::closeAllWindows @ 0x6E5660",
     ),
 )
 

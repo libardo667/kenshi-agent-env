@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "captured_at_utc": "2026-08-09T23:56:00Z",
+  "run_id": "protocol-2-open-ended-soak-20260809-r1",
+  "source_revision": "38d4437",
+  "disposition": "operator_interrupted_agent_then_confirmed_native_pause; game left open and paused for regression evidence",
+  "manifest": {
+    "objective": "Open-ended 120-action Protocol 2.0 survival soak",
+    "raw_events": {
+      "path": "runs/protocol-2-open-ended-soak-20260809-r1/events.jsonl",
+      "size_bytes": 46909453,
+      "sha256": "9de3474837eda6a543fd12c2eafca002a2215bf65c2229ef2c3ca60ff063bab8",
+      "committed": false
+    },
+    "decisive_frame": {
+      "path": "runs/protocol-2-open-ended-soak-20260809-r1/frames/live_frame_000018.png",
+      "size_bytes": 1291640,
+      "sha256": "01e370bd46c36fdc0b8011599b6ccc35c2c3badb708ca6b2ebb0a9682e39f5f8",
+      "committed": false,
+      "description": "Prospecting Results visibly obscures Hobbs dialogue replies."
+    }
+  },
+  "decisive_events": {
+    "resource_survey": {
+      "command_id": "cmd-2fd63fcb98274d5ba52f2e02449f52df",
+      "based_on_telemetry_sequence": 208,
+      "acknowledged_at_telemetry_sequence": 209,
+      "terminal_at_telemetry_sequence": 209,
+      "status": "completed",
+      "reason": "resource_survey_published"
+    },
+    "dialogue_approach": {
+      "command_id": "cmd-545e8c7f79894abebc32d35717e62c03",
+      "based_on_telemetry_sequence": 312,
+      "accepted_at_telemetry_sequence": 313,
+      "terminal_at_telemetry_sequence": 322,
+      "later_ui": {
+        "active_screen": "dialogue",
+        "modal_open": true,
+        "dialogue_open": true,
+        "dialogue_target_id": "entity-32b08209a8710aa9-0000000000000002-00000001-00000000-00000000-00000001-2c22ce40"
+      }
+    },
+    "planner_error": "Planner selected an affordance absent from the current observation: no current choice is named 'select_dialogue_option'",
+    "action_receipt_counts": {
+      "survey_local_resources": 1,
+      "approach_dialogue_target": 1,
+      "noop": 53,
+      "pause": 11,
+      "set_speed": 6,
+      "consult_advisor": 2
+    },
+    "strategic_planner_calls": 76,
+    "final_pause": {
+      "command_id": "cmd-25fb90ad2c4d42d7ac03c2f575f6a9f3",
+      "status": "completed",
+      "reason": "world_paused",
+      "terminal_at_telemetry_sequence": 1859
+    }
+  },
+  "root_cause": [
+    "survey_local_resources opened Prospecting as an undocumented UI side effect and never hid it",
+    "approach_dialogue_target could enter dialogue while every modeled dialogue exit remained unimplemented",
+    "standalone native message boxes were closable but absent from the producer's modal_open signal, so their exit could not be offered",
+    "completed noop plans reset replan failure accounting, so fresh frames and clock changes masked semantic non-progress"
+  ],
+  "required_regression": [
+    "the native survey copies readings and verifies Prospecting hidden before terminal success",
+    "standalone message boxes publish active_screen message_box and modal_open true",
+    "every modeled interface has a planner-visible native exit",
+    "three completed noop plans against the same semantic state terminate with planner_non_progress even while frames advance"
+  ],
+  "fix_artifacts": {
+    "installed_while_kenshi_closed": true,
+    "pre_fix_dll": {
+      "protocol": "2.0.0",
+      "path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260810-interface-lifecycle\\pre-fix\\KenshiAgentTelemetry.dll",
+      "sha256": "ac96f7e6b41edcff17f8c007ab7dc41b639ccbba82ea96aee7318b41ceb9bf1d",
+      "size_bytes": 423936
+    },
+    "fixed_dll": {
+      "protocol": "2.0.0",
+      "built_path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\build\\native\\bin\\KenshiAgentTelemetry.dll",
+      "backup_path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260810-interface-lifecycle\\fixed\\KenshiAgentTelemetry.dll",
+      "installed_path": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll",
+      "sha256": "f68f63889ad29bcb63a267bdbd746f56f200357dda193e58fee608223fa68913",
+      "size_bytes": 425472,
+      "built_backup_installed_equal": true
+    },
+    "native_conformance": {
+      "path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\build\\native\\bin\\NativeCommandProtocolTests.exe",
+      "sha256": "643d6ee007dc3b49b3e63a49de559e4b129ac684bcc4063bf83079252089b676",
+      "size_bytes": 296448,
+      "result": "Native protocol fixtures and semantics passed."
+    },
+    "commands": {
+      "build": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build_native.ps1",
+      "install_current_build": "Copy-Item -LiteralPath 'C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\build\\native\\bin\\KenshiAgentTelemetry.dll' -Destination 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll' -Force",
+      "reinstall_fixed_backup": "Copy-Item -LiteralPath 'C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260810-interface-lifecycle\\fixed\\KenshiAgentTelemetry.dll' -Destination 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll' -Force",
+      "rollback_pre_fix": "Copy-Item -LiteralPath 'C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260810-interface-lifecycle\\pre-fix\\KenshiAgentTelemetry.dll' -Destination 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll' -Force"
+    }
+  }
+}

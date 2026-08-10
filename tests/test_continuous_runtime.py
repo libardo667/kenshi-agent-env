@@ -28,6 +28,7 @@ from kenshi_agent.core.operation import (
     IdempotencyPolicy,
     InterruptPolicy,
     MoveInDirectionAction,
+    NoopAction,
     PauseAction,
     ReadFieldbookAction,
     RespondToImmediateThreatAction,
@@ -372,6 +373,140 @@ class PlanThenStopPlanner(Planner):
                 }
             )
         return plan
+
+
+def test_completed_noop_plans_are_bounded_by_semantic_state_not_frame_churn(
+    tmp_path: Path,
+) -> None:
+    class RepeatingNoopPlanner(Planner):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def decide(self, current: Observation) -> PlannerOutput:
+            self.calls += 1
+            return PlanEnvelope(
+                schema_version="1.0",
+                plan_id=f"unchanged-noop-{self.calls}",
+                plan_version=1,
+                objective="Observe the same blocked state again.",
+                control_mode=current.control_mode,
+                based_on_revision=current.world_revision,
+                assumptions=[fresh()],
+                steps=[
+                    PlanStep(
+                        step_id="observe",
+                        action=NoopAction(reason="No currently chosen action."),
+                        preconditions=[fresh()],
+                        success_conditions=[],
+                        failure_conditions=[],
+                        timeout_seconds=1.0,
+                        retry_budget=0,
+                        idempotency=IdempotencyPolicy.SAFE_TO_RETRY,
+                    )
+                ],
+                entry_step_id="observe",
+                max_actions=1,
+                max_wall_seconds=2.0,
+                max_game_seconds=2.0,
+                risk_budget=RiskBudget(
+                    max_pointer_actions=0,
+                    max_purchase_actions=0,
+                    max_native_assisted_actions=0,
+                ),
+            )
+
+    async def scenario() -> None:
+        clock = FakeClock()
+        environment = RevisionEnvironment(clock=clock)
+        planner = RepeatingNoopPlanner()
+        runtime, logger = runtime_for(tmp_path, environment, planner, clock)
+        runtime.policy.config.allow_action_kinds.append("noop")
+        try:
+            summary = await runtime.run(max_steps=20)
+        finally:
+            logger.close()
+
+        assert summary.terminated is True
+        assert planner.calls == RunCoordinator._IDENTICAL_NOOP_PLAN_LIMIT
+        assert summary.steps_completed == RunCoordinator._IDENTICAL_NOOP_PLAN_LIMIT
+        assert "observe-only plans" in summary.stop_reason
+        events = read_events(tmp_path / "events.jsonl")
+        stalled = [event for event in events if event["event_type"] == "planner_non_progress"]
+        assert len(stalled) == RunCoordinator._IDENTICAL_NOOP_PLAN_LIMIT
+        assert stalled[-1]["payload"]["identical_noop_plans"] == (
+            RunCoordinator._IDENTICAL_NOOP_PLAN_LIMIT
+        )
+
+    asyncio.run(scenario())
+
+
+def test_completed_real_work_resets_the_identical_noop_streak(tmp_path: Path) -> None:
+    class NoopAroundRealWorkPlanner(Planner):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def decide(self, current: Observation) -> PlannerOutput:
+            self.calls += 1
+            action: Action = (
+                PauseAction(paused=False)
+                if self.calls == 2
+                else NoopAction(reason="No currently chosen action.")
+            )
+            return PlanEnvelope(
+                schema_version="1.0",
+                plan_id=f"noop-reset-{self.calls}",
+                plan_version=1,
+                objective="Prove real work resets observe-only accounting.",
+                control_mode=current.control_mode,
+                based_on_revision=current.world_revision,
+                assumptions=[fresh()],
+                steps=[
+                    PlanStep(
+                        step_id="one-step",
+                        action=action,
+                        preconditions=[fresh()],
+                        success_conditions=[],
+                        failure_conditions=[],
+                        timeout_seconds=1.0,
+                        retry_budget=0,
+                        idempotency=IdempotencyPolicy.SAFE_TO_RETRY,
+                    )
+                ],
+                entry_step_id="one-step",
+                max_actions=1,
+                max_wall_seconds=2.0,
+                max_game_seconds=2.0,
+                risk_budget=RiskBudget(
+                    max_pointer_actions=0,
+                    max_purchase_actions=0,
+                    max_native_assisted_actions=0,
+                ),
+            )
+
+    async def scenario() -> None:
+        clock = FakeClock()
+        environment = RevisionEnvironment(clock=clock)
+        planner = NoopAroundRealWorkPlanner()
+        runtime, logger = runtime_for(tmp_path, environment, planner, clock)
+        runtime.policy.config.allow_action_kinds.append("noop")
+        try:
+            summary = await runtime.run(max_steps=20)
+        finally:
+            logger.close()
+
+        assert summary.terminated is True
+        assert planner.calls == 5
+        assert summary.steps_completed == 5
+        events = read_events(tmp_path / "events.jsonl")
+        stalled = [event for event in events if event["event_type"] == "planner_non_progress"]
+        assert [event["payload"]["identical_noop_plans"] for event in stalled] == [
+            1,
+            1,
+            2,
+            3,
+        ]
+
+    asyncio.run(scenario())
 
 
 class BlockedPlanner(Planner):

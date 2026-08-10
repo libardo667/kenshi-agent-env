@@ -75,7 +75,7 @@
         "open_trade_window",
         "pause",
         "set_speed",
-        "close_trade_window",
+        "close_active_interface",
         "survey_local_resources"
       ],
       "title": "Command",

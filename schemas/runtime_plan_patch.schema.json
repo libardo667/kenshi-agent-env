@@ -379,6 +379,20 @@
       "title": "ClickAction",
       "type": "object"
     },
+    "CloseActiveInterfaceAction": {
+      "additionalProperties": false,
+      "description": "Return from the currently blocking interface to the world.\n\nThe action deliberately names no widget, caption, or coordinate. Native\ncode closes the interface families the controller can cause or observe and\nacknowledges success only after Kenshi reports no remaining dialogue,\nmessage box, Prospecting window, inventory pair, or ordinary GUI window.",
+      "properties": {
+        "kind": {
+          "const": "close_active_interface",
+          "default": "close_active_interface",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "CloseActiveInterfaceAction",
+      "type": "object"
+    },
     "Condition": {
       "anyOf": [
         {
@@ -1268,6 +1282,9 @@
             },
             {
               "$ref": "#/$defs/OpenTradeWindowAction"
+            },
+            {
+              "$ref": "#/$defs/CloseActiveInterfaceAction"
             },
             {
               "$ref": "#/$defs/TransferItemAction"

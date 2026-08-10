@@ -74,6 +74,7 @@ from .final_safe_state import (
     FinalSafeStateStatus,
 )
 from .live_plan_policy import live_plan_rebase_errors, with_covering_risk_budget
+from .operation_definitions import operations_count_as_progress
 from .operation_execution import OperationExecutionFactory
 from .outcome_recorder import OutcomeRecorder
 from .plan_events import PlanEventRecorder
@@ -181,10 +182,42 @@ def _character_work_at_exit(observation: Observation | None) -> dict[str, object
     }
 
 
+def _noop_stall_signature(observation: Observation) -> tuple[object, ...]:
+    """State that must change before another observe-only plan is new work.
+
+    Sequence numbers, frames, clock time, playback, and command receipts are
+    deliberately excluded. They advanced throughout the failed soak while the
+    same dialogue remained hidden behind the same Prospecting window.
+    """
+
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return ("no_telemetry", observation.control_mode.value)
+    ui = telemetry.ui
+    return (
+        telemetry.identity_session_id,
+        telemetry.game.loaded,
+        telemetry.game.location_id,
+        telemetry.primary_character_id,
+        tuple(telemetry.selected_character_ids),
+        ui.active_screen,
+        ui.modal_open,
+        ui.dialogue_open,
+        ui.dialogue_target_id,
+        tuple(ui.dialogue_options or ()),
+        ui.open_inventory_windows,
+        tuple(inventory.owner_id for inventory in ui.open_inventories),
+        ui.stats_window_open,
+        ui.management_screen_open,
+        ui.management_tab,
+    )
+
+
 class RunCoordinator:
     """Sequence one run, delegating every responsibility it does not own."""
 
     _IDENTICAL_REPLAN_FAILURE_LIMIT = 3
+    _IDENTICAL_NOOP_PLAN_LIMIT = 3
 
     def __init__(
         self,
@@ -356,6 +389,8 @@ class RunCoordinator:
         pending_reflex: PlannerDecision | None = None
         last_replan_failure: str | None = None
         identical_replan_failures = 0
+        last_noop_stall_signature: tuple[object, ...] | None = None
+        identical_noop_plans = 0
         safety_supervisor: SafetySupervisor | None = None
         state_store: WorldStateStore | None = None
 
@@ -915,6 +950,46 @@ class RunCoordinator:
                     success = result.success
                     continue
                 if result.completed:
+                    if plan.steps and not operations_count_as_progress(
+                        step.action for step in plan.steps
+                    ):
+                        signature = _noop_stall_signature(observation)
+                        if signature == last_noop_stall_signature:
+                            identical_noop_plans += 1
+                        else:
+                            last_noop_stall_signature = signature
+                            identical_noop_plans = 1
+                        self.logger.write(
+                            "planner_non_progress",
+                            step_index=observation.step_index,
+                            payload={
+                                "reason": "completed_noop_plan_with_unchanged_state",
+                                "identical_noop_plans": identical_noop_plans,
+                                "limit": self._IDENTICAL_NOOP_PLAN_LIMIT,
+                                "world_revision": observation.world_revision.model_dump(
+                                    mode="json"
+                                ),
+                            },
+                        )
+                        planner_feedback = (
+                            "Your observe-only plan completed, but the state relevant "
+                            "to action is unchanged. Choose a currently offered "
+                            "operation that changes or exits this state, or return "
+                            "StopAction; do not return another noop plan."
+                        )
+                        if identical_noop_plans >= self._IDENTICAL_NOOP_PLAN_LIMIT:
+                            stop_reason = (
+                                "Continuous planning stopped after "
+                                f"{identical_noop_plans} observe-only plans completed "
+                                "against the same actionable state."
+                            )
+                            terminated = True
+                        continue
+                    # A completed plan containing real work breaks the
+                    # observe-only streak even when its outcome leaves this
+                    # deliberately compact UI signature unchanged.
+                    last_noop_stall_signature = None
+                    identical_noop_plans = 0
                     consecutive_replans = 0
                     reset_replan_failure()
                     # The advice was taken; stop repeating it.

@@ -9,15 +9,14 @@ mechanism is declared, not that its effect is proven live.
 Regenerate with `python scripts/export_docs.py`.
 
 ```text
-modeled rows   30
-implemented    17
-unimplemented  13
-stranding   7  (missing exits)
+modeled rows   33
+implemented    28
+unimplemented   5
+stranding   0  (missing exits)
 on pixels   0  (covered, but fragile)
 
 WORLD
-  GAP enter     Return to the world with no modal window in the way.  [none: ForgottenGUI::closeAllWindows @ 0x6E5660]
-        -> No registry-backed operation closes arbitrary modal UI. The native close_trade_window recovery command covers trade only.
+  ok  enter     Return to the world with no modal window in the way.  [native: close_active_interface]
   ok  navigate  Travel by observed identity, discovered destination, or bounded bearing.  [native: move_to_character / travel_to_map_destination / move_in_direction]
   ok  interact  Issue an exact task Kenshi advertises on a person or world object.  [native: perform_character_order / perform_context_action]
   ok  interact  Pause, resume, or select a playback speed.  [native: pause / set_speed]
@@ -29,29 +28,30 @@ DIALOGUE
   ok  navigate  Read the available replies.  [native: telemetry.ui.dialogue.options]
   GAP interact  Choose one exact reply.  [none: -]
         -> The retired visible-control click has no native replacement yet.
-  GAP exit      Leave the conversation.  [none: -]
-        -> No current operation selects a closing reply or closes dialogue.
+  ok  exit      Leave the conversation.  [native: close_active_interface]
 
 INVENTORY
   ok  enter     Pair two observed owners so their inventories are open together.  [native: open_trade_window]
   ok  navigate  Address an item by its exported section and slot.  [native: telemetry.ui.open_inventories]
   ok  interact  Transfer an item between the two open inventories.  [native: transfer_item]
-  GAP exit      Close the paired inventory windows.  [none: ForgottenGUI::closeTradeWindow @ 0x790630]
-        -> close_trade_window exists in the native recovery protocol but is not a registry-backed runtime operation.
+  ok  exit      Close the paired inventory windows.  [native: close_active_interface]
 
 TRADE
   ok  enter     Open a money-trading, looting, or automatic transfer window.  [native: open_trade_window]
   ok  navigate  Read every exported inventory section and slot.  [native: telemetry.ui.open_inventories]
   ok  interact  Buy, sell, give, loot, or collect through one inventory-model transfer.  [native: transfer_item]
-  GAP exit      Close the trade window.  [none: ForgottenGUI::closeTradeWindow @ 0x790630]
-        -> The recovery command is live-proven, but it has no registry-backed runtime lifecycle and the planner cannot currently select it.
+  ok  exit      Close the trade window.  [native: close_active_interface]
+
+PROSPECTING
+  ok  enter     Read the local resource field without leaving its source window open.  [native: survey_local_resources]
+  ok  navigate  Read the exact published resource rows.  [native: telemetry.resource_survey.readings]
+  ok  exit      Return to the prior interface as part of the survey transaction.  [native: survey_local_resources / close_active_interface]
 
 CHARACTER_STATS
   GAP enter     Open the character stats window.  [none: -]
         -> No current operation opens management UI.
   ok  interact  Read exported roster skills, health, and state.  [native: telemetry.roster]
-  GAP exit      Close the character stats window.  [none: -]
-        -> No current operation closes management UI.
+  ok  exit      Close the character stats window.  [native: close_active_interface]
 
 MAP
   GAP enter     Open the world map.  [none: -]
@@ -59,19 +59,16 @@ MAP
   GAP navigate  Pan or zoom the open map.  [none: -]
         -> No current operation manipulates map presentation.
   ok  interact  Travel to an exact discovered settlement marker.  [native: travel_to_map_destination]
-  GAP exit      Close the map.  [none: -]
-        -> No current operation closes management UI.
+  ok  exit      Close the map.  [native: close_active_interface]
 
 MESSAGE_BOX
   ok  enter     Kenshi opens a refusal message itself.  [native: ForgottenGUI::messageBox @ 0x740F60]
   ok  interact  Read the refusal text.  [native: telemetry.ui.visible_controls[text]]
-  GAP exit      Acknowledge the message.  [none: -]
-        -> The retired visible-control click has no native replacement yet.
+  ok  exit      Acknowledge the message.  [native: close_active_interface]
 
 ESC_MENU
   GAP enter     Open the game menu.  [none: -]
         -> No current runtime operation opens the escape menu.
-  GAP exit      Return from the menu without quitting.  [none: -]
-        -> No current runtime operation activates Resume.
+  ok  exit      Return from the menu without quitting.  [native: close_active_interface]
 
 ```

@@ -1250,15 +1250,15 @@ class NativeCommandStatus(StrEnum):
 # is never inferred from a command name here.
 NATIVE_COMMANDS_CARRYING_DIRECTION: frozenset[str] = frozenset({"move_in_direction"})
 
-NATIVE_COMMANDS_NAMING_THEIR_OWN_RECIPIENT: frozenset[str] = frozenset({"shift_into_body"})
-"""Commands whose recipient is the target they name, not the current selection.
+NATIVE_COMMANDS_ALLOWING_EMPTY_SELECTION: frozenset[str] = frozenset(
+    {"shift_into_body", "close_active_interface"}
+)
+"""Commands whose meaning does not require a selected character recipient.
 
-Everything else broadcasts to whoever is selected, so an empty selection means
-an order with nobody to receive it and is refused. A body shift is the opposite:
-it names the character it acts on, and the case it exists for is precisely the
-one where nothing is selected because every character is dead. A blanket
-non-empty floor would make the recovery unreachable at exactly the moment it is
-the whole point.
+A body shift names the body it acts on. Closing the active interface is
+game-wide UI cleanup. Both must remain reachable when the selection is empty;
+all selection-addressed commands still refuse a basis with nobody to receive
+the operation.
 """
 
 # Commands whose meaning is incomplete without naming which action to take.
@@ -1323,7 +1323,7 @@ def require_consistent_wire_shape(
 ) -> None:
     """Reject a native request or acknowledgement whose fields contradict it."""
 
-    if command not in NATIVE_COMMANDS_NAMING_THEIR_OWN_RECIPIENT and not selected_character_ids:
+    if command not in NATIVE_COMMANDS_ALLOWING_EMPTY_SELECTION and not selected_character_ids:
         raise ValueError(f"a {command} {subject} must name at least one selected recipient")
     if command in NATIVE_COMMANDS_CARRYING_DIRECTION:
         if target_id:
@@ -1403,12 +1403,10 @@ NativeWireCommand = Literal[
     # depends on the plug-in answering is not a stop.
     "pause",
     "set_speed",
-    # Closing what we opened. `open_trade_window` shipped without a counterpart,
-    # so a window the agent opened could only be dismissed by hand -- and both
-    # `./dev stop` and `./dev recover` refuse a loaded world with a modal up,
-    # which left the game unclosable after the agent opened a trade with a
-    # non-shop owner.
-    "close_trade_window",
+    # One native lifecycle for every blocking interface the agent can cause or
+    # observe. This replaces the recovery-only trade closer; consumers never
+    # retain the narrower compatibility verb.
+    "close_active_interface",
     "survey_local_resources",
 ]
 

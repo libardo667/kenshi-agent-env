@@ -1776,8 +1776,6 @@ namespace
         g_prospectSurvey.centerZ = window->lastPos.z;
         g_prospectSurvey.skill = window->lastSkill;
         g_prospectSurvey.surveyedName = window->lastName;
-        g_prospectSurvey.windowVisible = window->getVisible();
-
         const unsigned int lineCount =
             static_cast<unsigned int>(window->lines.size());
         for (unsigned int index = 0; index < lineCount; ++index)
@@ -1795,6 +1793,11 @@ namespace
             reading.value = FindProspectLineValue(line->button->getParent());
             g_prospectSurvey.readings.push_back(reading);
         }
+        // Survey is a read transaction, not an interface transition. The old
+        // producer returned here and stranded the agent behind Prospecting.
+        // Copy every decisive row first, then close the exact window we opened.
+        window->hide();
+        g_prospectSurvey.windowVisible = window->getVisible();
         g_prospectSurvey.valid = true;
         return true;
     }
@@ -4526,10 +4529,11 @@ namespace
             request.command == "shift_into_body";
         // Time control. Kenshi owns the clock through `GameWorld`, so pausing
         // and setting speed stopped being keystrokes.
-        const bool isCloseTradeWindow = request.command == "close_trade_window";
+        const bool isCloseActiveInterface =
+            request.command == "close_active_interface";
         const bool isPause = request.command == "pause";
         const bool isSetSpeed = request.command == "set_speed";
-        if (isCloseTradeWindow || isPause || isSetSpeed || isBodyShift || isBodyShiftProbe || isApproach || isMove || isSquadSelection || isSquadRegroup ||
+        if (isCloseActiveInterface || isPause || isSetSpeed || isBodyShift || isBodyShiftProbe || isApproach || isMove || isSquadSelection || isSquadRegroup ||
             isDirection || isMapTravel || isBuildingExit || isContextAction ||
             isCharacterOrder ||
             isResourceProduction || isResourceSurvey ||
@@ -4552,7 +4556,7 @@ namespace
             !isBodyShift &&
             !isPause &&
             !isSetSpeed &&
-            !isCloseTradeWindow)
+            !isCloseActiveInterface)
         {
             // The telemetry acknowledgement schema is intentionally limited
             // to reviewed commands. Do not publish an unparseable ack.
@@ -4590,19 +4594,48 @@ namespace
             return;
         }
 
-        if (isCloseTradeWindow)
+        if (isCloseActiveInterface)
         {
             if (gui == NULL)
             {
                 RejectNativeCommand(request, "gui_unavailable");
                 return;
             }
+            ProspectingWindow* prospecting = ProspectingWindow::getSingleton();
+            if (prospecting != NULL && prospecting->getVisible())
+                prospecting->hide();
+            if (gui->hasModalMessage())
+                gui->hideMessageBox(false);
+            if (gui->dialogue != NULL && gui->dialogue->getVisible())
+                gui->dialogue->hide(gui->dialogue->dialogue);
             gui->closeTradeWindow();
             gui->closeAllInventories();
+            gui->closeAllCharacterStatsWindows();
+            ManagementScreen* management = ManagementScreen::getSingleton();
+            if (management != NULL && management->getVisible())
+                management->setVisible(false, -1);
+            gui->closeAllWindows();
+
+            const bool prospectingVisible =
+                prospecting != NULL && prospecting->getVisible();
+            const bool dialogueVisible =
+                gui->dialogue != NULL && gui->dialogue->getVisible();
+            const bool managementVisible =
+                management != NULL && management->getVisible();
+            if (prospectingVisible ||
+                gui->hasModalMessage() ||
+                dialogueVisible ||
+                gui->getNumOpenInventoryWindows() != 0 ||
+                gui->isStatsWindowOpen() ||
+                managementVisible)
+            {
+                RejectNativeCommand(request, "interface_close_incomplete");
+                return;
+            }
             AddNativeAcknowledgement(
-                request, "completed", "trade_window_closed", true, true);
+                request, "completed", "active_interface_closed", true, true);
             g_lastNativeCommand = request.command;
-            g_lastNativeCommandResult = "trade_window_closed";
+            g_lastNativeCommandResult = "active_interface_closed";
             return;
         }
 
@@ -4938,6 +4971,11 @@ namespace
             if (!g_prospectSurvey.valid)
             {
                 RejectNativeCommand(request, "resource_field_unavailable");
+                return;
+            }
+            if (g_prospectSurvey.windowVisible)
+            {
+                RejectNativeCommand(request, "prospecting_window_close_failed");
                 return;
             }
             AddNativeAcknowledgement(
@@ -6318,6 +6356,7 @@ namespace
                 traderInventoryOpen,
                 registeredShopInventoryOpen);
         const bool statsWindowOpen = gui != NULL && gui->characterStatsWindowVisible();
+        const bool modalMessageOpen = gui != NULL && gui->hasModalMessage();
         // Map, squad, research and factions are not separate screens: they are
         // tabs of one ManagementScreen. Reporting only `active_screen` left all
         // four indistinguishable from the plain world view, so the agent could
@@ -6343,9 +6382,17 @@ namespace
 
         json << "\"ui\":{";
         json << "\"active_screen\":\""
-             << (dialogueOpen ? "dialogue" : (tradeOpen ? "trade" : (inventoryOpen ? "inventory" : "world")))
+             << (dialogueOpen
+                    ? "dialogue"
+                    : (modalMessageOpen
+                        ? "message_box"
+                        : (tradeOpen
+                            ? "trade"
+                            : (inventoryOpen ? "inventory" : "world"))))
              << "\",";
-        json << "\"modal_open\":" << JsonBool(dialogueOpen || inventoryOpen) << ",";
+        json << "\"modal_open\":"
+             << JsonBool(dialogueOpen || inventoryOpen || modalMessageOpen)
+             << ",";
         json << "\"stats_window_open\":" << JsonBool(statsWindowOpen) << ",";
         json << "\"management_screen_open\":" << JsonBool(managementOpen) << ",";
         json << "\"management_tab\":" << managementTab << ",";

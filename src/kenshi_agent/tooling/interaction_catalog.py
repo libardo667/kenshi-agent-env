@@ -92,18 +92,6 @@ VESTIGIAL_NATIVE_COMMAND_NAMES = frozenset({"approach_confirmed_vendor"})
 DIAGNOSTIC_ONLY_NATIVE_COMMANDS: frozenset[str] = frozenset(
     {
         "shift_body_platoon",
-        # Recovery, not gameplay. `open_trade_window` shipped without a
-        # counterpart, so a window the agent opened could only be dismissed by
-        # hand -- and `./dev stop` and `./dev recover` both refuse a loaded
-        # world while a modal is up, which left the game unclosable after an
-        # agent opened a trade with a non-shop owner.
-        #
-        # Deliberately not planner-visible yet. Offering it made the runtime
-        # pick it in fifty tests whose doubles never acknowledge it, which is a
-        # fair warning that a recovery verb needs its own lifecycle rather than
-        # being dropped into the gameplay language. It is reachable now by
-        # direct dispatch, which is what recovery needs.
-        "close_trade_window",
     }
 )
 """Wire commands with no owning operation, on purpose.

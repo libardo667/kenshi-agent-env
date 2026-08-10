@@ -50,6 +50,7 @@ from .core.telemetry import (
 )
 from .operation_definitions import (
     NATIVE_CHARACTER_ORDER_CAPABILITY,
+    NATIVE_CLOSE_INTERFACE_CAPABILITY,
     NATIVE_PRODUCE_RESOURCE_CAPABILITY,
     NATIVE_RESOURCE_OPERATOR_STATE_CAPABILITY,
     NATIVE_SHIFT_BODY_CAPABILITY,
@@ -140,6 +141,7 @@ INTERFACE_SCOPED_OPERATION_KINDS: frozenset[str] = frozenset(
         # Pairing a second inventory while one is already open is how a trade
         # or a looting window is reached at all.
         "open_trade_window",
+        "close_active_interface",
         # Playback is declared global_ui: it suspends the whole world and is
         # orthogonal to what is on screen, exactly as it is for a player, who
         # can pause with the inventory open. Gating it behind a clear interface
@@ -737,6 +739,38 @@ def _trade_window_offers(observation: Observation) -> Iterable[AffordanceOffer]:
         )
 
 
+def _interface_exit_offers(observation: Observation) -> Iterable[AffordanceOffer]:
+    """Offer one native escape whenever an observed interface blocks the world."""
+
+    telemetry = observation.telemetry
+    if telemetry is None or observation.control_mode is not ControlMode.NATIVE_ASSISTED:
+        return
+    if NATIVE_CLOSE_INTERFACE_CAPABILITY not in set(telemetry.capabilities):
+        return
+    ui = telemetry.ui
+    blocked = bool(
+        ui.dialogue_open is True
+        or ui.modal_open is True
+        or (ui.open_inventory_windows or 0) > 0
+        or ui.stats_window_open is True
+        or ui.management_screen_open is True
+        or (ui.active_screen is not None and ui.active_screen != "world")
+    )
+    if not blocked:
+        return
+    yield _offer(
+        observation,
+        source=AffordanceSource.NATIVE_OPERATION,
+        semantic="return_to_world",
+        description=(
+            "Close the currently blocking interface through Kenshi's native UI "
+            "lifecycle and return to the world."
+        ),
+        operation_kind="close_active_interface",
+        arguments={},
+    )
+
+
 # No cap. A shop's contents are bounded and knowable, and a silent limit on
 # them is not a smaller world -- it is a world the agent cannot tell apart from
 # a smaller one. Truncation manufactures exactly the confusion the tri-state
@@ -1216,6 +1250,17 @@ class AffordanceAdapter:
 
 
 AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
+    AffordanceAdapter(
+        name="interface_exit",
+        sources=frozenset({AffordanceSource.NATIVE_OPERATION}),
+        operation_kinds=frozenset({"close_active_interface"}),
+        denominator="The current observed blocking interface, when one exists.",
+        completeness_boundary=(
+            "Native cleanup covers Prospecting, dialogue, message boxes, trade and "
+            "inventory windows, and ordinary registered GUI windows."
+        ),
+        enumerate=_interface_exit_offers,
+    ),
     AffordanceAdapter(
         name="runtime",
         sources=frozenset({AffordanceSource.RUNTIME}),

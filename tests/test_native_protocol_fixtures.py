@@ -91,6 +91,16 @@ def test_python_accepts_parameterless_building_exit_request_fixture() -> None:
     assert request.distance_units == 0.0
 
 
+def test_python_accepts_game_wide_interface_close_with_empty_selection() -> None:
+    request = NativeCommandRequest.model_validate_json(
+        (FIXTURES / "valid_close_active_interface_request.json").read_bytes()
+    )
+
+    assert request.command == "close_active_interface"
+    assert request.selected_character_ids == []
+    assert request.target_id == ""
+
+
 def test_python_accepts_exact_context_action_request_fixture() -> None:
     request = NativeCommandRequest.model_validate_json(
         (FIXTURES / "valid_context_action_request.json").read_bytes()

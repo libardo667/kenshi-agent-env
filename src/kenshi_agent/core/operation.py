@@ -368,6 +368,18 @@ class OpenTradeWindowAction(StrictModel):
     window_type: Literal["money_trading", "looting", "auto"] = "auto"
 
 
+class CloseActiveInterfaceAction(StrictModel):
+    """Return from the currently blocking interface to the world.
+
+    The action deliberately names no widget, caption, or coordinate. Native
+    code closes the interface families the controller can cause or observe and
+    acknowledges success only after Kenshi reports no remaining dialogue,
+    message box, Prospecting window, inventory pair, or ordinary GUI window.
+    """
+
+    kind: Literal["close_active_interface"] = "close_active_interface"
+
+
 class TransferItemAction(StrictModel):
     """Move one item between two open inventories, whatever owns them.
 
@@ -772,6 +784,7 @@ AtomicRuntimeOperation: TypeAlias = (
     | ShiftIntoBodyAction
     | SurveyLocalResourcesAction
     | OpenTradeWindowAction
+    | CloseActiveInterfaceAction
     | TransferItemAction
 )
 """Reusable atomic game/UI operations materialized from affordances."""
@@ -813,6 +826,7 @@ SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
         "perform_context_action",
         "produce_resource_output",
         "open_trade_window",
+        "close_active_interface",
         "transfer_item",
         "respond_to_immediate_threat",
         "regroup_with_squad_member",

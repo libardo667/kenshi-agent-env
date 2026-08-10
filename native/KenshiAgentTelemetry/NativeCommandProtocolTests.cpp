@@ -1483,6 +1483,30 @@ int main(int argc, char** argv)
         return Fail("valid building exit did not remain parameterless");
     }
 
+    // Interface cleanup is game-wide. It cannot depend on a selected
+    // character, because a blocking interface may survive selection or roster
+    // loss and still needs a planner-reachable exit.
+    KenshiAgentTelemetry::NativeCommandRequest interfaceClose;
+    const std::string interfaceClosePayload =
+        ReadFile(prefix + "valid_close_active_interface_request.json");
+    if (interfaceClosePayload.empty())
+        return Fail("could not read valid_close_active_interface_request.json");
+    if (!KenshiAgentTelemetry::ParseNativeCommandRequest(
+            interfaceClosePayload,
+            interfaceClose,
+            rejectionReason))
+    {
+        return Fail(
+            "valid empty-selection interface close was rejected as " +
+            rejectionReason);
+    }
+    if (interfaceClose.command != "close_active_interface" ||
+        !interfaceClose.selectedCharacterIds.empty() ||
+        !interfaceClose.targetId.empty())
+    {
+        return Fail("interface close lost its game-wide recipient shape");
+    }
+
     KenshiAgentTelemetry::NativeCommandRequest contextAction;
     const std::string contextActionPayload =
         ReadFile(prefix + "valid_context_action_request.json");

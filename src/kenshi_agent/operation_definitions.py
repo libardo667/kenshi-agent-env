@@ -8,7 +8,7 @@ directly; no second contract language reconstructs an operation's meaning.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field, fields
 from enum import Enum, StrEnum
 from hashlib import sha256
@@ -35,6 +35,7 @@ from .core.operation import (
     GAME_SPEED_MULTIPLIER_BY_GEAR,
     Action,
     ApproachDialogueTargetAction,
+    CloseActiveInterfaceAction,
     ConsultAdvisorAction,
     ControlMode,
     ExitCurrentBuildingAction,
@@ -111,6 +112,7 @@ NATIVE_RESOURCE_OPERATOR_STATE_CAPABILITY = "world.resource_operators"
 NATIVE_PRODUCE_RESOURCE_CAPABILITY = "control.produce_resource_output"
 NATIVE_TRANSFER_CAPABILITY = "control.transfer_item"
 NATIVE_TRADE_WINDOW_CAPABILITY = "control.open_trade_window"
+NATIVE_CLOSE_INTERFACE_CAPABILITY = "control.close_active_interface"
 
 # The one mapping from a control capability to the native command it authorizes.
 # A capability is the permission; the command is the thing performed with it.
@@ -452,6 +454,46 @@ def _world_interface_error(observation: Observation) -> str | None:
             "the active modal or dialogue before issuing a world action."
         )
     return None
+
+
+def active_interface_is_open(observation: Observation) -> bool:
+    telemetry = observation.telemetry
+    if telemetry is None or observation.telemetry_stale:
+        return False
+    ui = telemetry.ui
+    return bool(
+        ui.dialogue_open is True
+        or ui.modal_open is True
+        or (ui.open_inventory_windows or 0) > 0
+        or ui.stats_window_open is True
+        or ui.management_screen_open is True
+        or (ui.active_screen is not None and ui.active_screen != "world")
+    )
+
+
+def bind_close_active_interface(
+    action: Action,
+    observation: Observation,
+) -> BoundNamedOperation | BindingFailure:
+    if not isinstance(action, CloseActiveInterfaceAction):
+        return _unbound("Action is not a close_active_interface action.")
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return _unbound("No telemetry is available to bind interface cleanup.")
+    if observation.telemetry_stale:
+        return _unbound("Telemetry is stale, so interface cleanup cannot be bound.")
+    if telemetry.game.loaded is not True:
+        return _unbound("No loaded world has an interface to close.")
+    if not active_interface_is_open(observation):
+        return _unbound("The world interface is already unobstructed.")
+    return BoundNamedOperation(
+        reason=(
+            "Bound to the current blocking interface state; native cleanup must "
+            "return dialogue, modal, inventory, and management signals to world."
+        ),
+        resolved_label=telemetry.ui.active_screen or "blocking_interface",
+        source_revision=observation.world_revision,
+    )
 
 
 
@@ -1578,6 +1620,10 @@ class OperationDefinition:
     )
     handler_key: str = ""
     emits_world_command: bool = True
+    # Whether successful completion is evidence of progress for scheduler
+    # liveness accounting. This is definition-owned so the coordinator never
+    # needs to know which semantic operation is observe-only.
+    counts_as_progress: bool = True
     requires_fresh_telemetry: bool = True
     # How this operation addresses Kenshi. Exactly one of these is populated:
     # a static contract, or a resolver for operations whose scope depends on
@@ -2098,6 +2144,7 @@ def _runtime_cognitive_definition(
     handler_key: str,
     idempotency: IdempotencyPolicy = IdempotencyPolicy.SAFE_TO_RETRY,
     max_primitive_actions: int = 0,
+    counts_as_progress: bool = True,
 ) -> OperationDefinition:
     return OperationDefinition(
         kind=kind,
@@ -2121,6 +2168,7 @@ def _runtime_cognitive_definition(
         bind=bind_runtime_cognitive,
         handler_key=handler_key,
         emits_world_command=False,
+        counts_as_progress=counts_as_progress,
         requires_fresh_telemetry=False,
         controller_verified=True,
     )
@@ -2133,6 +2181,7 @@ NOOP_DEFINITION = _runtime_cognitive_definition(
     argument_source="The runtime offer supplies the optional reason.",
     handler_key="runtime.noop",
     max_primitive_actions=1,
+    counts_as_progress=False,
 )
 STOP_DEFINITION = _runtime_cognitive_definition(
     kind="stop",
@@ -2554,6 +2603,38 @@ OPEN_TRADE_WINDOW_DEFINITION = OperationDefinition(
     # so acceptance is not the outcome: the terminal is two windows observed.
     native_task_started_reasons=frozenset({"trade_window_requested"}),
     authorable_when=trade_window_is_currently_authorable,
+)
+
+
+CLOSE_ACTIVE_INTERFACE_DEFINITION = OperationDefinition(
+    kind="close_active_interface",
+    wire_command="close_active_interface",
+    project_wire_fields=_wire_nothing,
+    version="1.0",
+    interaction=global_ui(milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED),
+    operation_type=CloseActiveInterfaceAction,
+    summary=(
+        "Return from the current blocking interface to the world through Kenshi's "
+        "own close methods. This covers Prospecting, dialogue, message boxes, "
+        "trade and inventory windows, and ordinary GUI windows."
+    ),
+    argument_source="No arguments; current UI telemetry is the exact binding.",
+    allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset({NATIVE_CLOSE_INTERFACE_CAPABILITY}),
+    capability_aliases=frozenset(),
+    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
+    native_assisted=True,
+    risk=OperationRisk(native_assisted_actions=1),
+    max_primitive_actions=1,
+    reference_fields=(),
+    idempotency=IdempotencyPolicy.SAFE_TO_RETRY,
+    execution=OperationExecution.ATOMIC_HANDLER,
+    receipt_kind="semantic_interface_close",
+    bind=bind_close_active_interface,
+    handler_key="resources.close_active_interface",
+    controller_verified=True,
+    native_terminal_success_reasons=frozenset({"active_interface_closed"}),
+    authorable_when=active_interface_is_open,
 )
 
 
@@ -3006,6 +3087,7 @@ OPERATION_DEFINITION_LIST: tuple[OperationDefinition, ...] = (
     PERFORM_CHARACTER_ORDER_DEFINITION,
     RESPOND_TO_IMMEDIATE_THREAT_DEFINITION,
     OPEN_TRADE_WINDOW_DEFINITION,
+    CLOSE_ACTIVE_INTERFACE_DEFINITION,
     TRANSFER_ITEM_DEFINITION,
     REGROUP_WITH_SQUAD_MEMBER_DEFINITION,
     MOVE_TO_CHARACTER_DEFINITION,
@@ -3037,6 +3119,17 @@ def definition_for(action: Action) -> OperationDefinition | None:
     """Return the sole definition for an adapted private operation, if any."""
 
     return OPERATION_DEFINITIONS.get(action.kind)
+
+
+def operations_count_as_progress(actions: Iterable[Action]) -> bool:
+    """Whether any action's sole definition classifies it as progress."""
+
+    for action in actions:
+        definition = definition_for(action)
+        # An unknown operation is never safe to classify as observe-only.
+        if definition is None or definition.counts_as_progress:
+            return True
+    return False
 
 
 def risk_for_operation(action: Action) -> OperationRisk | None:

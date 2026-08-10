@@ -67,6 +67,8 @@ def test_planner_and_manual_dispatch_use_root_topology_authority() -> None:
     assert "telemetry.squad" not in prompt
     assert "snapshot.selected_character_ids" in dispatch
     assert "snapshot.ui.selected_character_ids" not in dispatch
+    assert "current.controller_commands.command_for(command_id)" in dispatch
+    assert "current.native_control" not in dispatch
 
 
 @pytest.mark.parametrize(

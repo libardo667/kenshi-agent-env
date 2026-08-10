@@ -251,6 +251,20 @@
       "title": "BoundAffordance",
       "type": "object"
     },
+    "CloseActiveInterfaceAction": {
+      "additionalProperties": false,
+      "description": "Return from the currently blocking interface to the world.\n\nThe action deliberately names no widget, caption, or coordinate. Native\ncode closes the interface families the controller can cause or observe and\nacknowledges success only after Kenshi reports no remaining dialogue,\nmessage box, Prospecting window, inventory pair, or ordinary GUI window.",
+      "properties": {
+        "kind": {
+          "const": "close_active_interface",
+          "default": "close_active_interface",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "CloseActiveInterfaceAction",
+      "type": "object"
+    },
     "ConsultAdvisorAction": {
       "additionalProperties": false,
       "description": "Ask a read-only guide-grounded model for strategic advice.\n\nThis is a cognitive action. It emits no controller primitives, never enters\nthe environment dispatch path, and cannot directly change Kenshi state.",
@@ -1211,6 +1225,9 @@
         },
         {
           "$ref": "#/$defs/OpenTradeWindowAction"
+        },
+        {
+          "$ref": "#/$defs/CloseActiveInterfaceAction"
         },
         {
           "$ref": "#/$defs/TransferItemAction"
