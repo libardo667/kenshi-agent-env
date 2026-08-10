@@ -543,6 +543,7 @@ class Observation(StrictModel):
                 "dialogue_target_id": telemetry.ui.dialogue_target_id,
                 "tooltip_visible": telemetry.ui.tooltip_visible,
                 "open_inventory_windows": telemetry.ui.open_inventory_windows,
+                "prospecting_window_open": telemetry.ui.prospecting_window_open,
                 "management_screen_open": telemetry.ui.management_screen_open,
                 "management_tab": telemetry.ui.management_tab,
                 # These are not bulk UI detail: together they are the authority

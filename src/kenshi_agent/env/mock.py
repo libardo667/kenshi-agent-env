@@ -366,6 +366,7 @@ class MockEnvironment(AgentEnvironment):
                 active_screen="world",
                 modal_open=False,
                 dialogue_open=False,
+                prospecting_window_open=False,
                 client_width=1280,
                 client_height=720,
                 visible_controls=[

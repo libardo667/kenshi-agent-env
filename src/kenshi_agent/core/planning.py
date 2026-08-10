@@ -85,6 +85,7 @@ class FieldConditionPath(StrEnum):
     TELEMETRY_UI_DIALOGUE_OPTION_0 = "telemetry.ui.dialogue_option_0"
     TELEMETRY_UI_VISIBLE_CONTROL_COUNT = "telemetry.ui.visible_control_count"
     TELEMETRY_UI_STATS_WINDOW_OPEN = "telemetry.ui.stats_window_open"
+    TELEMETRY_UI_PROSPECTING_WINDOW_OPEN = "telemetry.ui.prospecting_window_open"
     TELEMETRY_UI_OPEN_INVENTORY_WINDOWS = "telemetry.ui.open_inventory_windows"
     TELEMETRY_UI_MANAGEMENT_SCREEN_OPEN = "telemetry.ui.management_screen_open"
     TELEMETRY_UI_MANAGEMENT_TAB = "telemetry.ui.management_tab"

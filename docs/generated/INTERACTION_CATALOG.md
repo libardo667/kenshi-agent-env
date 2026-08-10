@@ -19,27 +19,27 @@ operations               24
 planner-visible          24
 internal-only             0
 native commands          17
-manifest entries         25
+manifest entries         26
 coverage proof          PASS
 
 PROOF STATUS
-  source_proven     13
+  source_proven     10
   unit_proven        1
-  live_proven        3
+  live_proven        7
   unproven           8
   withheld           0
 
 INTERACTION CONTRACT (resolved from the sole operation registry)
   operation                           kind               recipients          selection        milestone               proof
   approach_dialogue_target            ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
-  close_active_interface              global_ui          none                none             world_outcome_observed  source_proven
+  close_active_interface              global_ui          none                none             world_outcome_observed  live_proven
   consult_advisor                     runtime_only       none                none             input_delivered         source_proven
   exit_current_building               ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
   move_in_direction                   ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
   move_to_character                   ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
   noop                                runtime_only       none                none             input_delivered         source_proven
   open_trade_window                   global_ui          none                none             world_outcome_observed  live_proven
-  pause                               global_ui          none                none             world_outcome_observed  source_proven
+  pause                               global_ui          none                none             world_outcome_observed  live_proven
   perform_character_order             ordinary_order     current_selection   dispatch_only    order_accepted          source_proven
   perform_context_action *            varies             current_selection   varies           varies                  unproven
   produce_resource_output             ordinary_order     current_selection   dispatch_only    world_outcome_observed  unit_proven
@@ -51,7 +51,7 @@ INTERACTION CONTRACT (resolved from the sole operation registry)
   set_speed                           global_ui          none                none             world_outcome_observed  source_proven
   shift_into_body                     ordinary_order     named_body          dispatch_only    world_outcome_observed  source_proven
   stop                                runtime_only       none                none             input_delivered         source_proven
-  survey_local_resources              global_ui          none                none             world_outcome_observed  source_proven
+  survey_local_resources              global_ui          none                none             world_outcome_observed  live_proven
   transfer_item                       global_ui          none                none             world_outcome_observed  live_proven
   travel_to_map_destination           ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
   wait                                runtime_only       none                none             input_delivered         source_proven
@@ -81,7 +81,7 @@ EXECUTION AND ROUTING
   set_speed                           atomic_handler     any                      set_speed                  runtime
   shift_into_body                     atomic_handler     running_for_progress     shift_into_body            body_shift
   stop                                atomic_handler     any                      -                          runtime
-  survey_local_resources              atomic_handler     any                      survey_local_resources     native_and_composite
+  survey_local_resources              monitored_option   any                      survey_local_resources     native_and_composite
   transfer_item                       atomic_handler     paused_transaction       transfer_item              item_transfers
   travel_to_map_destination           monitored_option   running_for_progress     travel_to_map_destination  map
   wait                                atomic_handler     running_for_progress     -                          runtime
@@ -106,5 +106,6 @@ NATIVE COMMAND ROUTES
   travel_to_map_destination    -> travel_to_map_destination
 
 SEMANTIC SUBCASES
+  perform_character_order:player_talk_to        live_proven
   perform_context_action:operate                live_proven
 ```

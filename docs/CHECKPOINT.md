@@ -1,22 +1,22 @@
-# Checkpoint: remove the unsafe task-probability oracle
+# Checkpoint: native safety cleanup and long-run readiness
 
-This slice removes `PlayerInterface::getPlayerTaskProbability` from the native
-producer and deletes odds-derived affordances from Protocol 2.0. Character
-orders are now discovered and revalidated only through Kenshi's muted context
-menu, while resource-operation capacity retains its independent structural
-authority. The removal closes the repeated native crash class instead of
-blacklisting the one task value that happened to expose it first.
+This slice makes healthy loaded-session pause and blocking-interface cleanup
+fully native. Safety handoff, environment close, `./dev stop`, and `./dev
+recover` now require exact native terminal acknowledgements and causally later
+engine state. Keyboard pause and the crash-reporter hotkey survive only at the
+degraded boundary where no fresh native identity exists; production cleanup no
+longer guesses window geometry or drives a pointer.
 
 ## Repository and authority
 
 ```text
-parent commit          645ca30e585423b3e839354bcb7ed12d3b1cbcbf
+parent commit          8e9927f7475c4d8058272ae8da3380b76090c69b
 integration branch     main
 starting remote        origin/main at 1d53e57e787309975e75b710eba96b22d1feb12d
 starting tree          clean
 producer protocol      2.0.0
 request schema         1.5
-declared capabilities  50 loaded-world + 4 title-screen
+declared capabilities  51 loaded-world + 4 title-screen
 ```
 
 The current authorities are `native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp`,
@@ -87,6 +87,24 @@ delivery, or launch input leases. Ordinary recovery UI and emergency/final
 safety logic remain isolated from `_perform_launch`; they are not a launch
 fallback.
 
+## Native safety-cleanup contract
+
+- A healthy loaded session pauses through the Protocol 2.0 `pause` command,
+  requires terminal `completed` / `world_paused`, and then observes a causally
+  later fresh paused frame. A returned write or stale pause bit is not proof.
+- Environment close and safety-supervisor handoff route through that same
+  native command. Their receipts report no primitive input, and tests reject a
+  hidden keyboard fallback when native identity is available.
+- `./dev stop` and `./dev recover` close Prospecting, dialogue, inventory,
+  trade, stats, management, message-box, and other blocking surfaces through
+  one `close_active_interface` request. Success requires terminal `completed`
+  / `active_interface_closed` plus later engine-owned interface state.
+- The old safe-close inventory coordinate calculation, pointer click,
+  controller input lease, and interrupted-state keyboard cleanup are deleted.
+- Physical pause remains available only when telemetry cannot supply a fresh
+  native identity. That is an explicit degraded/emergency boundary, not a
+  compatibility reader or an ordinary production path.
+
 ## Evidence lanes
 
 Source- and test-proven: every supported start source selects one of the three
@@ -126,6 +144,24 @@ Final cleanup confirmed pause at 449 before deliberate close. Its reduced
 artifact preserves the requests, acknowledgements, decisive frames, installed
 binary, omitted-file hashes, run-level cleanup caveat, and final disposition.
 
+The definitive interface-lifecycle regression is
+`native-cleanup-interface-regression-20260810-r7`. Survey command
+`cmd-b76743394dbe495cb5eb4d9b8ef9d110` was accepted at telemetry sequence 175
+while the native command temporarily advanced the paused world, then completed
+as `resource_survey_published` at 176 only after the real Prospecting widget had
+populated, its five rows were copied, it remained hidden, and pause was
+restored. The historical survey record says the concrete widget was visible at
+capture; later telemetry and frame 2 say it was no longer open.
+
+Character order `cmd-5642a486cd044d3595e6d8f7c8344015` then started
+`PLAYER_TALK_TO` natively with zero primitives. Sequence 222 and frame 4 prove
+the exact Barman dialogue opened with no Prospecting overlay. Native interface
+close completed at 231, native pause completed at 245, and final sequence 262
+was paused on the unobstructed world screen. The run had no rejected or aborted
+plans; final cleanup reported `input_attempted=false` and
+`input_executed=false`. The committed reduced artifact is
+`game_sources/research/prospecting_window/live_evidence/prospecting-dialogue-lifecycle-20260810.json`.
+
 ## DLL artifacts and exact reinstall commands
 
 ```text
@@ -162,6 +198,33 @@ Rollback this slice to the preserved crash-reproducing Protocol 2.0 DLL:
 
 ```powershell
 Copy-Item -LiteralPath 'C:\Users\levib\AppData\Local\KenshiAgent\backups\native\20260810-probability-oracle-removal\pre-cutover\KenshiAgentTelemetry.dll' -Destination 'C:\Program Files (x86)\Steam\steamapps\common\Kenshi\mods\KenshiAgentTelemetry\KenshiAgentTelemetry.dll' -Force
+```
+
+The final native cleanup and Prospecting lifecycle artifacts supersede the
+intermediate binaries above for the installed test candidate:
+
+```text
+pre-fix DLL sha256       51226226dd80710ff16e5ef86708b750b6594bf0576b620d73b630f1775dfdf3
+pre-fix DLL size         429056
+final DLL sha256         aecc380c672eeeda9203227cbe483ac5313736e3d5a52d8d9e681b6075aa00c1
+final DLL size           430080
+final PDB sha256         077052e0574f4d6bc885db0af878e08e7512acc74d4065b69b6aff12b7524545
+final PDB size           11127808
+installed/staged parity  YES
+conformance exe sha256   0572c5eafb0801846a8db3fe5280f0158a478da6a33582ad560e12d224364daf
+conformance exe size     311808
+```
+
+Reinstall the preserved final cleanup/lifecycle DLL:
+
+```powershell
+Copy-Item -LiteralPath 'C:\Users\levib\AppData\Local\KenshiAgent\backups\native\20260810-prospecting-render-closure\replacement-final\KenshiAgentTelemetry.dll' -Destination 'C:\Program Files (x86)\Steam\steamapps\common\Kenshi\mods\KenshiAgentTelemetry\KenshiAgentTelemetry.dll' -Force
+```
+
+Rollback specifically to the preserved pre-fix DLL:
+
+```powershell
+Copy-Item -LiteralPath 'C:\Users\levib\AppData\Local\KenshiAgent\backups\native\20260810-prospecting-render-closure\pre-fix\KenshiAgentTelemetry.dll' -Destination 'C:\Program Files (x86)\Steam\steamapps\common\Kenshi\mods\KenshiAgentTelemetry\KenshiAgentTelemetry.dll' -Force
 ```
 
 ## Withheld and named follow-on work

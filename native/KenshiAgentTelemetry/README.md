@@ -215,7 +215,7 @@ exact title-request/ack/loaded handoff capture, not a second protocol producer.
 - The hook, protocol, command, inventory-model, simplified-pricing, and body
   shift paths above are present in the current source and in the configured
   KenshiLib declarations they call.
-- Protocol 2.0.0 and the 50-entry loaded-world capability manifest are embedded
+- Protocol 2.0.0 and the 51-entry loaded-world capability manifest are embedded
   into the native build inputs.
 - Atomic request replacement is the sole dispatch signal; neither plug-in nor
   supported Python path contains a trigger hotkey.

@@ -82,6 +82,7 @@ def test_reverse_engineering_claims_link_canonical_research_objects() -> None:
     by_kind = {entry.operation_kind: entry for entry in audit.entries}
     assert by_kind["perform_character_order"].research == (
         "game_sources/research/context_menu_orders",
+        "game_sources/research/prospecting_window",
     )
     assert by_kind["shift_into_body"].research == (
         "game_sources/research/body_shift",
@@ -100,10 +101,10 @@ def test_reverse_engineering_claims_link_canonical_research_objects() -> None:
 def test_only_operations_with_a_recorded_live_run_claim_live_proof() -> None:
     """Updated deliberately, which is what the characterization asked for.
 
-    Historical `perform_character_order` dispatches were observed from the
-    kae-04-funded-pair start, but no exact retained run bundle, command ids,
-    sequences, or binary hashes survive. Its canonical research package
-    therefore downgrades the durable classification to source-proven. The
+    Historical generic `perform_character_order` dispatches remain only
+    source-proven, while the exact r7 bundle now proves its PLAYER_TALK_TO
+    subcase through later Barman dialogue. The same bundle proves the timed
+    survey lifecycle, native interface close, and native pause. The
     2026-08-08 closure runs prove the paired-window and item-transfer route
     against an unconscious body and a resource output. The 2026-08-09 resource
     operator run proves exact native admission independently from selection and
@@ -125,7 +126,11 @@ def test_only_operations_with_a_recorded_live_run_claim_live_proof() -> None:
 
     assert live_proven == {
         "open_trade_window",
+        "close_active_interface",
+        "pause",
+        "perform_character_order",
         "perform_context_action",
+        "survey_local_resources",
         "transfer_item",
     }
 

@@ -20,7 +20,8 @@
     "identity semantics for a two-character selection against a capacity-one",
     "target. It does not generalize unrelated multi-recipient semantics.",
     "The trade-only recovery closer was deleted; close_active_interface is",
-    "the sole registry-backed interface exit and still requires live proof.",
+    "the sole registry-backed interface exit and now has an exact Prospecting",
+    "plus dialogue lifecycle witness in the committed reduced r7 artifact.",
     "Reverse-engineering conclusions live only under game_sources/research;",
     "entries here link to those packages instead of restating their argument."
   ],
@@ -96,11 +97,16 @@
     },
     {
       "operation_kind": "close_active_interface",
-      "proof_status": "source_proven",
+      "proof_status": "live_proven",
       "evidence": [
-        "OperationDefinition owns the sole planner-visible interface exit and KenshiAgentTelemetry calls each interface family's native close method"
+        "OperationDefinition owns the sole planner-visible interface exit and KenshiAgentTelemetry calls each interface family's native close method",
+        "native-cleanup-interface-regression-20260810-r7 opened the exact Barman dialogue at telemetry sequence 222, completed close_active_interface at 231, and later reported world/dialogue false/modal false/prospecting false",
+        "game_sources/research/prospecting_window/live_evidence/prospecting-dialogue-lifecycle-20260810.json preserves the exact commands, decisive frames, binary identities, omitted-file hashes, and final disposition"
       ],
-      "note": "Source-proven only until the exact Prospecting-plus-dialogue regression is rerun against the installed DLL."
+      "research": [
+        "game_sources/research/prospecting_window"
+      ],
+      "note": "Live-proven for the combined Prospecting and ordinary Barman dialogue lifecycle on the named fixture. Other interface families retain their own evidence status."
     },
     {
       "operation_kind": "consult_advisor",
@@ -151,11 +157,13 @@
     },
     {
       "operation_kind": "pause",
-      "proof_status": "source_proven",
+      "proof_status": "live_proven",
       "evidence": [
-        "operation_definitions.py PAUSE_DEFINITION is internal-only"
+        "operation_definitions.py PAUSE_DEFINITION is internal-only",
+        "native-cleanup-interface-regression-20260810-r7 completed native pause as world_paused at sequence 245 and retained a clean paused frame through sequence 262",
+        "the r7 final safety outcome reported input_attempted false and input_executed false"
       ],
-      "note": "Slice 7 moves ordinary in-run pause behind the playback coordinator; FinalSafeStateOwner keeps the terminal pause decision. Its milestone is a real observed world state, not delivery."
+      "note": "Ordinary and final safety pause both use the native clock when fresh loaded identity exists. Physical pause remains only at the explicit degraded boundary."
     },
     {
       "operation_kind": "perform_character_order",
@@ -167,6 +175,21 @@
         "game_sources/research/context_menu_orders"
       ],
       "note": "Historical exact-task adoption was observed from the kae-04-funded-pair start, but no exact run bundle, command ids, sequences, or binary hashes survive. Durable live proof is withheld; group delivery and post-adoption outcomes remain unproven."
+    },
+    {
+      "operation_kind": "perform_character_order",
+      "subcase": "player_talk_to",
+      "proof_status": "live_proven",
+      "evidence": [
+        "native-cleanup-interface-regression-20260810-r7 completed cmd-5642a486cd044d3595e6d8f7c8344015 as context_task_started at telemetry sequence 202 with zero primitives",
+        "later telemetry sequence 222 and live frame 4 prove dialogue_open true for the exact Barman target while Prospecting remained closed",
+        "game_sources/research/prospecting_window/live_evidence/prospecting-dialogue-lifecycle-20260810.json durably preserves request, terminal, later engine state, frame, and binary evidence"
+      ],
+      "research": [
+        "game_sources/research/context_menu_orders",
+        "game_sources/research/prospecting_window"
+      ],
+      "note": "Live-proven only for PLAYER_TALK_TO on the exact two-character fixture selection. Other advertised character orders and recipient aggregation remain separately withheld."
     },
     {
       "operation_kind": "perform_context_action",
@@ -263,14 +286,16 @@
     },
     {
       "operation_kind": "survey_local_resources",
-      "proof_status": "source_proven",
+      "proof_status": "live_proven",
       "evidence": [
-        "game_sources/research/prospecting_window records the deleted direct sampler, window ABI, crash, scalar contradiction, and current caption-copy path"
+        "game_sources/research/prospecting_window records the deleted direct sampler, window ABI, crash, scalar contradiction, and current caption-copy path",
+        "native-cleanup-interface-regression-20260810-r7 accepted the survey at sequence 175 while native playback advanced, captured five populated rows, completed only after close and restored pause at 176, and remained clear at later frame 2",
+        "game_sources/research/prospecting_window/live_evidence/prospecting-dialogue-lifecycle-20260810.json preserves the exact survey record, commands, decisive telemetry and frames, binary identities, omitted-file hashes, and final disposition"
       ],
       "research": [
         "game_sources/research/prospecting_window"
       ],
-      "note": "Reads verbatim populated Prospecting-window captions. The displayed scalar's area, aggregation, unit, and relationship to discrete deposits remain withheld."
+      "note": "Live-proven for the exact timed request-to-populated-caption-to-native-close lifecycle. The displayed scalar's area, aggregation, unit, and relationship to discrete deposits remain withheld."
     },
     {
       "operation_kind": "transfer_item",

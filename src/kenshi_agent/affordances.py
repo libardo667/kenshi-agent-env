@@ -753,6 +753,7 @@ def _interface_exit_offers(observation: Observation) -> Iterable[AffordanceOffer
         or ui.modal_open is True
         or (ui.open_inventory_windows or 0) > 0
         or ui.stats_window_open is True
+        or ui.prospecting_window_open is True
         or ui.management_screen_open is True
         or (ui.active_screen is not None and ui.active_screen != "world")
     )

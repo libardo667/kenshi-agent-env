@@ -291,7 +291,14 @@ def test_the_survey_has_a_complete_dispatch_route() -> None:
         / "GameplayCapabilities.json"
     ).read_text()
     assert "control.survey_local_resources" in manifest
-    assert '"survey_local_resources"' in NATIVE.read_text(encoding="utf-8", errors="replace")
+    native_source = NATIVE.read_text(encoding="utf-8", errors="replace")
+    assert '"survey_local_resources"' in native_source
+    # 7. The reading is not terminal while Kenshi can still render the window
+    #    on its next GUI update. Native monitoring closes the concrete widget
+    #    and only then publishes the survey terminal.
+    assert "isProspectingSurveyPending" in native_source
+    assert "prospecting->window->setVisible(false)" in native_source
+    assert '"resource_survey_captured"' in native_source
 
 
 def test_no_operation_is_offered_without_a_dispatch_route() -> None:

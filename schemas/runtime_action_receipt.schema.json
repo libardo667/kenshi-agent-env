@@ -874,6 +874,7 @@
         "telemetry.ui.dialogue_option_0",
         "telemetry.ui.visible_control_count",
         "telemetry.ui.stats_window_open",
+        "telemetry.ui.prospecting_window_open",
         "telemetry.ui.open_inventory_windows",
         "telemetry.ui.management_screen_open",
         "telemetry.ui.management_tab",

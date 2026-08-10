@@ -503,6 +503,7 @@ def advisor_state_fingerprint(observation: Observation) -> str:
                 "dialogue_target_id": telemetry.ui.dialogue_target_id,
                 "dialogue_options": telemetry.ui.dialogue_options,
                 "open_inventory_windows": telemetry.ui.open_inventory_windows,
+                "prospecting_window_open": telemetry.ui.prospecting_window_open,
                 "management_screen_open": telemetry.ui.management_screen_open,
             }
             if telemetry is not None

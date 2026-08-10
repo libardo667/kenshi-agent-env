@@ -10,13 +10,10 @@ import pytest
 from kenshi_agent.config import ControlsConfig, load_config
 from kenshi_agent.control.base import InputController, PrimitiveInputAction, WindowRect
 from kenshi_agent.core.operation import (
-    ClickAction,
     HotkeyAction,
-    KeyAction,
 )
 from kenshi_agent.core.telemetry import (
     CharacterState,
-    Disposition,
     GameState,
     KnownMapDestination,
     NativeCommandAcknowledgement,
@@ -38,10 +35,8 @@ from kenshi_agent.tooling.live_dev import (
     LaunchFailed,
     LaunchInterrupted,
     _agent_argv,
-    _click,
     _disable_re_kenshi_startup_panel,
     _dispatch_native_startup_command,
-    _ensure_interrupted_safe_state,
     _ensure_native_launch_pause,
     _game_executable,
     _observe_loaded_paused_health,
@@ -471,11 +466,15 @@ def test_safe_close_requires_fresh_paused_idle_telemetry() -> None:
         )
 
 
-def test_supported_close_pauses_and_confirms_before_requesting_wm_close() -> None:
+def test_supported_close_pauses_natively_before_requesting_wm_close(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     async def scenario() -> None:
-        root = Path(__file__).resolve().parents[1]
-        config = load_config(root / "config" / "live.yaml")
+        config = _native_launch_config(tmp_path)
         controller = LaunchController()
+        command_id = "cmd-" + "1" * 32
+        monkeypatch.setattr(live_dev, "new_command_id", lambda: command_id)
 
         def idle_snapshot(sequence: int, *, paused: bool) -> TelemetrySnapshot:
             return launch_snapshot(sequence, paused=paused).model_copy(
@@ -488,12 +487,13 @@ def test_supported_close_pauses_and_confirms_before_requesting_wm_close() -> Non
                 }
             )
 
-        telemetry = LaunchTelemetry(
-            idle_snapshot(40, paused=False),
-            idle_snapshot(40, paused=False),
+        running = native_cleanup_snapshot(idle_snapshot(40, paused=False))
+        paused = native_cleanup_snapshot(
             idle_snapshot(41, paused=True),
-            idle_snapshot(41, paused=True),
+            command_id=command_id,
+            based_on_sequence=40,
         )
+        telemetry = LaunchTelemetry(running, running, paused, paused)
 
         await live_dev._close_kenshi_safely(
             config,
@@ -505,7 +505,14 @@ def test_supported_close_pauses_and_confirms_before_requesting_wm_close() -> Non
             ),
         )
 
-        assert controller.safety_actions == [KeyAction(key=config.controls.pause_key)]
+        request = NativeCommandRequest.model_validate_json(
+            (tmp_path / "native_command.request.json").read_bytes()
+        )
+        assert request.command == "pause"
+        assert request.paused is True
+        assert controller.actions == []
+        assert controller.safety_actions == []
+        assert controller.lease_entries == 0
         assert controller.close_requested is True
 
     import asyncio
@@ -513,37 +520,56 @@ def test_supported_close_pauses_and_confirms_before_requesting_wm_close() -> Non
     asyncio.run(scenario())
 
 
-def test_interrupted_recovery_pauses_and_dismisses_owned_inventories_without_closing() -> None:
+def test_interrupted_recovery_pauses_and_closes_interface_natively(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     async def scenario() -> None:
-        root = Path(__file__).resolve().parents[1]
-        config = load_config(root / "config" / "live.yaml")
+        config = _native_launch_config(tmp_path)
         controller = LaunchController()
+        pause_id = "cmd-" + "2" * 32
+        close_id = "cmd-" + "3" * 32
+        command_ids = iter((pause_id, close_id))
+        monkeypatch.setattr(live_dev, "new_command_id", lambda: next(command_ids))
         inventory_capabilities = [
             *resource_inventory_snapshot(40).capabilities,
             "game.pause",
+            "control.close_active_interface",
         ]
-        unpaused = resource_inventory_snapshot(40).model_copy(
-            update={
-                "capabilities": inventory_capabilities,
-                "game": GameState(loaded=True, paused=False),
-            },
-            deep=True,
+        unpaused = native_cleanup_snapshot(
+            resource_inventory_snapshot(40).model_copy(
+                update={
+                    "capabilities": inventory_capabilities,
+                    "game": GameState(loaded=True, paused=False),
+                },
+                deep=True,
+            )
         )
-        paused = resource_inventory_snapshot(41).model_copy(
-            update={"capabilities": inventory_capabilities},
-            deep=True,
+        paused = native_cleanup_snapshot(
+            resource_inventory_snapshot(41).model_copy(
+                update={"capabilities": inventory_capabilities},
+                deep=True,
+            ),
+            command_id=pause_id,
+            based_on_sequence=40,
         )
-        world = launch_snapshot(42, paused=True).model_copy(
-            update={
-                "ui": UIState(
-                    active_screen="world",
-                    modal_open=False,
-                    dialogue_open=False,
-                    open_inventory_windows=0,
-                    visible_controls_complete=True,
-                    visible_controls=[],
-                )
-            }
+        world = native_cleanup_snapshot(
+            paused.model_copy(
+                update={
+                    "sequence": 42,
+                    "ui": UIState(
+                        active_screen="world",
+                        modal_open=False,
+                        dialogue_open=False,
+                        open_inventory_windows=0,
+                        visible_controls_complete=True,
+                        visible_controls=[],
+                    )
+                }
+            ),
+            command_id=close_id,
+            command="close_active_interface",
+            based_on_sequence=41,
         )
         telemetry = LaunchTelemetry(
             unpaused,
@@ -551,6 +577,7 @@ def test_interrupted_recovery_pauses_and_dismisses_owned_inventories_without_clo
             paused,
             paused,
             paused,
+            world,
             world,
         )
 
@@ -563,14 +590,13 @@ def test_interrupted_recovery_pauses_and_dismisses_owned_inventories_without_clo
         )
 
         assert safe_state == "loaded_paused"
-        assert controller.safety_actions == [KeyAction(key=config.controls.pause_key)]
-        assert controller.actions == [
-            ClickAction(
-                x=0.488,
-                y=0.311,
-                hold_seconds=live_dev.MYGUI_CLICK_HOLD_SECONDS,
-            )
-        ]
+        request = NativeCommandRequest.model_validate_json(
+            (tmp_path / "native_command.request.json").read_bytes()
+        )
+        assert request.command == "close_active_interface"
+        assert controller.safety_actions == []
+        assert controller.actions == []
+        assert controller.lease_entries == 0
         assert controller.close_requested is False
 
     import asyncio
@@ -578,7 +604,7 @@ def test_interrupted_recovery_pauses_and_dismisses_owned_inventories_without_clo
     asyncio.run(scenario())
 
 
-def test_interrupted_recovery_waits_for_paused_native_command_to_cancel() -> None:
+def test_interrupted_recovery_refuses_pause_without_native_identity() -> None:
     async def scenario() -> None:
         root = Path(__file__).resolve().parents[1]
         config = load_config(root / "config" / "live.yaml")
@@ -626,16 +652,17 @@ def test_interrupted_recovery_waits_for_paused_native_command_to_cancel() -> Non
                 ),
             )
 
-        safe_state = await live_dev._recover_kenshi_safe_state(
-            config,
-            controller,
-            telemetry,
-            timeout_seconds=0.1,
-            process_names=lambda: {"kenshi_x64.exe"},
-        )
+        with pytest.raises(LaunchFailed, match="authoritative session identity"):
+            await live_dev._recover_kenshi_safe_state(
+                config,
+                controller,
+                telemetry,
+                timeout_seconds=0.1,
+                process_names=lambda: {"kenshi_x64.exe"},
+            )
 
-        assert safe_state == "loaded_paused"
-        assert controller.safety_actions == [KeyAction(key=config.controls.pause_key)]
+        assert controller.safety_actions == []
+        assert controller.actions == []
         assert controller.close_requested is False
 
     import asyncio
@@ -643,7 +670,7 @@ def test_interrupted_recovery_waits_for_paused_native_command_to_cancel() -> Non
     asyncio.run(scenario())
 
 
-def test_supported_close_never_closes_an_unresolved_modal() -> None:
+def test_supported_close_never_closes_modal_without_native_cleanup_authority() -> None:
     async def scenario() -> None:
         root = Path(__file__).resolve().parents[1]
         config = load_config(root / "config" / "live.yaml")
@@ -658,7 +685,7 @@ def test_supported_close_never_closes_an_unresolved_modal() -> None:
             }
         )
 
-        with pytest.raises(LaunchFailed, match="modal or dialogue"):
+        with pytest.raises(LaunchFailed, match="native close_active_interface cleanup"):
             await live_dev._close_kenshi_safely(
                 config,
                 controller,
@@ -675,26 +702,38 @@ def test_supported_close_never_closes_an_unresolved_modal() -> None:
     asyncio.run(scenario())
 
 
-def test_supported_close_dismisses_exact_resource_inventory_before_wm_close() -> None:
+def test_supported_close_closes_resource_inventory_natively_before_wm_close(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     async def scenario() -> None:
-        root = Path(__file__).resolve().parents[1]
-        config = load_config(root / "config" / "live.yaml")
+        config = _native_launch_config(tmp_path)
         controller = LaunchController()
-        resource_inventory = resource_inventory_snapshot(
-            60,
-            loaded_shop_trader_count=2,
+        command_id = "cmd-" + "4" * 32
+        monkeypatch.setattr(live_dev, "new_command_id", lambda: command_id)
+        resource_inventory = native_cleanup_snapshot(
+            resource_inventory_snapshot(
+                60,
+                loaded_shop_trader_count=2,
+            )
         )
-        world = launch_snapshot(61, paused=True).model_copy(
-            update={
-                "ui": UIState(
-                    active_screen="world",
-                    modal_open=False,
-                    dialogue_open=False,
-                    open_inventory_windows=0,
-                    visible_controls_complete=True,
-                    visible_controls=[],
-                )
-            }
+        world = native_cleanup_snapshot(
+            resource_inventory.model_copy(
+                update={
+                    "sequence": 61,
+                    "ui": UIState(
+                        active_screen="world",
+                        modal_open=False,
+                        dialogue_open=False,
+                        open_inventory_windows=0,
+                        visible_controls_complete=True,
+                        visible_controls=[],
+                    )
+                }
+            ),
+            command_id=command_id,
+            command="close_active_interface",
+            based_on_sequence=60,
         )
         telemetry = LaunchTelemetry(
             resource_inventory,
@@ -714,13 +753,13 @@ def test_supported_close_dismisses_exact_resource_inventory_before_wm_close() ->
             ),
         )
 
-        assert controller.actions == [
-            ClickAction(
-                x=0.488,
-                y=0.311,
-                hold_seconds=live_dev.MYGUI_CLICK_HOLD_SECONDS,
-            )
-        ]
+        request = NativeCommandRequest.model_validate_json(
+            (tmp_path / "native_command.request.json").read_bytes()
+        )
+        assert request.command == "close_active_interface"
+        assert controller.actions == []
+        assert controller.safety_actions == []
+        assert controller.lease_entries == 0
         assert controller.close_requested is True
 
     import asyncio
@@ -728,7 +767,7 @@ def test_supported_close_dismisses_exact_resource_inventory_before_wm_close() ->
     asyncio.run(scenario())
 
 
-def test_supported_close_never_dismisses_an_incomplete_inventory_layout() -> None:
+def test_supported_close_never_uses_layout_as_cleanup_authority() -> None:
     async def scenario() -> None:
         root = Path(__file__).resolve().parents[1]
         config = load_config(root / "config" / "live.yaml")
@@ -742,7 +781,7 @@ def test_supported_close_never_dismisses_an_incomplete_inventory_layout() -> Non
             deep=True,
         )
 
-        with pytest.raises(LaunchFailed, match="modal or dialogue"):
+        with pytest.raises(LaunchFailed, match="native close_active_interface cleanup"):
             await live_dev._close_kenshi_safely(
                 config,
                 controller,
@@ -759,149 +798,41 @@ def test_supported_close_never_dismisses_an_incomplete_inventory_layout() -> Non
     asyncio.run(scenario())
 
 
-def test_supported_close_resolves_an_exact_shop_inventory_layout() -> None:
-    trade = resource_inventory_snapshot(
-        75,
-        destination_open=True,
-        loaded_shop_trader_count=2,
-    )
-    shop_controls = []
-    for control in trade.ui.visible_controls or []:
-        if control.window == "IRON RESOURCE":
-            shop_controls.append(
-                control.model_copy(
-                    update={
-                        "label": (
-                            "ZU" if control.role == "text" else "Dried Meat"
-                        ),
-                        "window": "ZU",
-                        "item_name": (
-                            "Dried Meat" if control.role == "item" else None
-                        ),
-                        "section": (
-                            "main" if control.role == "item" else None
-                        ),
-                    }
-                )
-            )
-        else:
-            shop_controls.append(control)
-    actual_trade = trade.model_copy(
-        update={
-            "nearby_entities": [
-                NearbyEntity(
-                    id="entity-zu",
-                    name="Zu",
-                    disposition=Disposition.NEUTRAL,
-                    shop_inventory_owner=True,
-                )
-            ],
-            "ui": trade.ui.model_copy(
-                update={
-                    # This is the state the live exporter produced: both exact
-                    # trade inventories were open, but the transient native
-                    # trader pointer left the collapsed label at "inventory".
-                    "active_screen": "inventory",
-                    "context_inventory_target_id": None,
-                    "visible_controls": shop_controls,
-                }
-            )
-        },
-        deep=True,
-    )
-
-    caption, bounds = live_dev._safe_close_inventory_window(actual_trade)
-
-    assert caption == "Zu"
-    assert bounds == NormalizedPointerBounds(
-        min_x=0.2,
-        max_x=0.5,
-        min_y=0.3,
-        max_y=0.7,
-    )
-
-    hostile_owner = actual_trade.nearby_entities[0].model_copy(
-        update={"disposition": Disposition.HOSTILE}
-    )
-    non_shop_owner = actual_trade.nearby_entities[0].model_copy(
-        update={"shop_inventory_owner": False}
-    )
-    duplicate_owner = actual_trade.nearby_entities[0].model_copy(
-        update={"id": "entity-zu-duplicate"}
-    )
-    for invalid_entities in (
-        [],
-        [hostile_owner],
-        [non_shop_owner],
-        [*actual_trade.nearby_entities, duplicate_owner],
-    ):
-        unsafe = actual_trade.model_copy(
-            update={"nearby_entities": invalid_entities},
-            deep=True,
-        )
-        with pytest.raises(LaunchFailed, match="one exact shop-owner window"):
-            live_dev._safe_close_inventory_window(unsafe)
-
-    shop_root = next(
-        control
-        for control in actual_trade.ui.visible_controls or []
-        if control.role == "text"
-        and control.window == "ZU"
-        and control.label == "ZU"
-    )
-    duplicate_roots = actual_trade.model_copy(
-        update={
-            "ui": actual_trade.ui.model_copy(
-                update={
-                    "visible_controls": [
-                        *(actual_trade.ui.visible_controls or []),
-                        shop_root,
-                    ]
-                }
-            )
-        },
-        deep=True,
-    )
-    with pytest.raises(LaunchFailed, match="duplicate roots"):
-        live_dev._safe_close_inventory_window(duplicate_roots)
-
-
-def test_supported_close_dismisses_source_and_destination_before_wm_close() -> None:
+def test_supported_close_closes_both_inventories_with_one_native_command(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     async def scenario() -> None:
-        root = Path(__file__).resolve().parents[1]
-        config = load_config(root / "config" / "live.yaml")
+        config = _native_launch_config(tmp_path)
         controller = LaunchController()
-        both = resource_inventory_snapshot(
-            80,
-            destination_open=True,
-            loaded_shop_trader_count=5,
+        command_id = "cmd-" + "5" * 32
+        monkeypatch.setattr(live_dev, "new_command_id", lambda: command_id)
+        both = native_cleanup_snapshot(
+            resource_inventory_snapshot(
+                80,
+                destination_open=True,
+                loaded_shop_trader_count=5,
+            )
         )
-        destination = resource_inventory_snapshot(
-            81,
-            source_open=False,
-            destination_open=True,
-            loaded_shop_trader_count=5,
+        world = native_cleanup_snapshot(
+            both.model_copy(
+                update={
+                    "sequence": 81,
+                    "ui": UIState(
+                        active_screen="world",
+                        modal_open=False,
+                        dialogue_open=False,
+                        open_inventory_windows=0,
+                        visible_controls_complete=True,
+                        visible_controls=[],
+                    )
+                }
+            ),
+            command_id=command_id,
+            command="close_active_interface",
+            based_on_sequence=80,
         )
-        world = launch_snapshot(82, paused=True).model_copy(
-            update={
-                "ui": UIState(
-                    active_screen="world",
-                    modal_open=False,
-                    dialogue_open=False,
-                    open_inventory_windows=0,
-                    visible_controls_complete=True,
-                    visible_controls=[],
-                )
-            }
-        )
-        telemetry = LaunchTelemetry(
-            both,
-            both,
-            both,
-            destination,
-            destination,
-            world,
-        )
+        telemetry = LaunchTelemetry(both, both, both, world, world)
 
         await live_dev._close_kenshi_safely(
             config,
@@ -913,15 +844,12 @@ def test_supported_close_dismisses_source_and_destination_before_wm_close() -> N
             ),
         )
 
-        assert len(controller.actions) == 2
-        assert all(
-            isinstance(action, ClickAction) for action in controller.actions
+        request = NativeCommandRequest.model_validate_json(
+            (tmp_path / "native_command.request.json").read_bytes()
         )
-        clicks = [
-            action for action in controller.actions if isinstance(action, ClickAction)
-        ]
-        assert (clicks[0].x, clicks[0].y) == pytest.approx((0.488, 0.311))
-        assert (clicks[1].x, clicks[1].y) == pytest.approx((0.888, 0.211))
+        assert request.command == "close_active_interface"
+        assert controller.actions == []
+        assert controller.safety_actions == []
         assert controller.close_requested is True
 
     import asyncio
@@ -954,6 +882,50 @@ def launch_snapshot(sequence: int, *, paused: bool) -> TelemetrySnapshot:
         capabilities=["game.pause"],
         game=GameState(loaded=True, paused=paused),
         roster=[CharacterState(id="entity-hep", name="Hep")],
+    )
+
+
+def native_cleanup_snapshot(
+    snapshot: TelemetrySnapshot,
+    *,
+    command_id: str | None = None,
+    command: str = "pause",
+    based_on_sequence: int | None = None,
+    reason: str | None = None,
+) -> TelemetrySnapshot:
+    capabilities = list(snapshot.capabilities)
+    for capability in ("game.pause", "control.close_active_interface"):
+        if capability not in capabilities:
+            capabilities.append(capability)
+    commands: list[NativeCommandAcknowledgement] = []
+    if command_id is not None:
+        basis = based_on_sequence if based_on_sequence is not None else snapshot.sequence - 1
+        commands.append(
+            NativeCommandAcknowledgement(
+                command_id=command_id,
+                command=command,  # type: ignore[arg-type]
+                status=NativeCommandStatus.COMPLETED,
+                reason=(
+                    reason
+                    or ("world_paused" if command == "pause" else "active_interface_closed")
+                ),
+                selected_character_ids=list(snapshot.selected_character_ids),
+                based_on_telemetry_sequence=basis,
+                acknowledged_at_telemetry_sequence=snapshot.sequence,
+                accepted_at_telemetry_sequence=snapshot.sequence,
+                terminal_at_telemetry_sequence=snapshot.sequence,
+            )
+        )
+    return snapshot.model_copy(
+        update={
+            "identity_session_id": "session-world",
+            "capabilities": capabilities,
+            "controller_commands": NativeControlState(
+                available=True,
+                commands=commands,
+            ),
+        },
+        deep=True,
     )
 
 
@@ -1055,37 +1027,6 @@ def resource_inventory_snapshot(
             )
         ],
     )
-
-
-
-def test_safe_ui_click_aborts_before_lease_when_human_input_is_detected() -> None:
-    async def scenario() -> None:
-        controller = LaunchController(human_input=True)
-
-        with pytest.raises(LaunchInterrupted, match="human input"):
-            await _click(controller, 0.3, 0.1)
-
-        assert controller.lease_entries == 0
-        assert controller.actions == []
-
-    import asyncio
-
-    asyncio.run(scenario())
-
-
-def test_safe_ui_click_aborts_inside_lease_without_emitting_input() -> None:
-    async def scenario() -> None:
-        controller = LaunchController(interrupt_inside_lease=True)
-
-        with pytest.raises(LaunchInterrupted, match="human input"):
-            await _click(controller, 0.3, 0.1)
-
-        assert controller.lease_entries == 1
-        assert controller.actions == []
-
-    import asyncio
-
-    asyncio.run(scenario())
 
 
 
@@ -1210,53 +1151,6 @@ def test_launcher_controller_forces_polite_restoring_input_session(
     assert captured["restore_foreground_after_input"] is True
     assert captured["restore_cursor_after_input"] is True
     assert captured["alt_tab_after_input"] is False
-
-
-def test_interrupted_loaded_game_gets_one_causally_confirmed_safety_pause() -> None:
-    async def scenario() -> None:
-        controller = LaunchController(human_input=True)
-        reader = LaunchTelemetry(
-            launch_snapshot(10, paused=False),
-            launch_snapshot(11, paused=True),
-        )
-
-        outcome = await _ensure_interrupted_safe_state(
-            controller,
-            reader,  # type: ignore[arg-type]
-            pause_key="space",
-            timeout_seconds=0.2,
-        )
-
-        assert outcome == "Confirmed paused at telemetry sequence 11."
-        assert controller.actions == []
-        assert controller.safety_actions == [KeyAction(key="space")]
-        assert controller.lease_entries == 1
-
-    import asyncio
-
-    asyncio.run(scenario())
-
-
-def test_interrupted_already_paused_game_emits_no_cleanup_input() -> None:
-    async def scenario() -> None:
-        controller = LaunchController(human_input=True)
-        reader = LaunchTelemetry(launch_snapshot(20, paused=True))
-
-        outcome = await _ensure_interrupted_safe_state(
-            controller,
-            reader,  # type: ignore[arg-type]
-            pause_key="space",
-            timeout_seconds=0.2,
-        )
-
-        assert outcome == "Already confirmed paused at telemetry sequence 20."
-        assert controller.actions == []
-        assert controller.safety_actions == []
-        assert controller.lease_entries == 0
-
-    import asyncio
-
-    asyncio.run(scenario())
 
 
 def test_re_kenshi_startup_panel_is_disabled_with_one_backup(tmp_path: Path) -> None:
@@ -2875,21 +2769,20 @@ def test_title_transition_waits_for_fresh_native_title_authority(
 
 def test_post_load_pause_is_native_and_never_acquires_input(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def scenario() -> None:
         config = _native_launch_config(tmp_path)
         controller = LaunchController()
-        running = launch_snapshot(30, paused=False).model_copy(
-            update={
-                "identity_session_id": "session-world",
-                "controller_commands": NativeControlState(available=True),
-            }
+        command_id = "cmd-" + "6" * 32
+        monkeypatch.setattr(live_dev, "new_command_id", lambda: command_id)
+        running = native_cleanup_snapshot(
+            launch_snapshot(30, paused=False)
         )
-        paused = launch_snapshot(31, paused=True).model_copy(
-            update={
-                "identity_session_id": "session-world",
-                "controller_commands": NativeControlState(available=True),
-            }
+        paused = native_cleanup_snapshot(
+            launch_snapshot(31, paused=True),
+            command_id=command_id,
+            based_on_sequence=30,
         )
         reader = LaunchTelemetry(running, paused)
 

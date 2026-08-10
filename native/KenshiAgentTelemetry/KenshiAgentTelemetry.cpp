@@ -275,6 +275,17 @@ namespace
         // A trade window is asked for, not opened on the spot: `showTradeWindow`
         // records the request and the GUI pairs the windows on a later update.
         bool isTradeWindowPending;
+        // `showT` begins Kenshi's timed prospecting lifecycle. The result
+        // window appears only after its progress bar finishes, so capture and
+        // close belong to later update frames rather than request dispatch.
+        bool isProspectingSurveyPending;
+        bool prospectingResultObserved;
+        // Prospecting progress advances with Kenshi's world clock. When this
+        // command finds a paused world it owns the temporary 1x resume and
+        // must restore pause before publishing any terminal.
+        bool prospectingPlaybackOwned;
+        DWORD prospectingStartedTick;
+        DWORD prospectingHiddenSinceTick;
         NativeCommandTargetKind targetKind;
         bool isResourceProduction;
         bool resourceTaskObserved;
@@ -420,6 +431,11 @@ namespace
         g_activeNativeCommand.isBuildingExit = false;
         g_activeNativeCommand.isContextAction = false;
         g_activeNativeCommand.isTradeWindowPending = false;
+        g_activeNativeCommand.isProspectingSurveyPending = false;
+        g_activeNativeCommand.prospectingResultObserved = false;
+        g_activeNativeCommand.prospectingPlaybackOwned = false;
+        g_activeNativeCommand.prospectingStartedTick = 0;
+        g_activeNativeCommand.prospectingHiddenSinceTick = 0;
         g_activeNativeCommand.targetKind = NATIVE_TARGET_NONE;
         g_activeNativeCommand.isResourceProduction = false;
         g_activeNativeCommand.resourceTaskObserved = false;
@@ -866,6 +882,19 @@ namespace
         const char* status,
         const char* reason)
     {
+        // `showT` does not finish while the simulation is paused. A survey
+        // that temporarily resumed a paused world owns that clock state all
+        // the way through success, cancellation, and timeout.
+        if (g_activeNativeCommand.prospectingPlaybackOwned)
+        {
+            if (ou != NULL && !ou->isPaused())
+                ou->userPause(true);
+            if (ou == NULL || !ou->isPaused())
+            {
+                status = "cancelled";
+                reason = "prospecting_repause_failed";
+            }
+        }
         const int index =
             FindNativeAcknowledgement(g_activeNativeCommand.commandId);
         if (index >= 0)
@@ -891,6 +920,11 @@ namespace
         g_activeNativeCommand.isBuildingExit = false;
         g_activeNativeCommand.isContextAction = false;
         g_activeNativeCommand.isTradeWindowPending = false;
+        g_activeNativeCommand.isProspectingSurveyPending = false;
+        g_activeNativeCommand.prospectingResultObserved = false;
+        g_activeNativeCommand.prospectingPlaybackOwned = false;
+        g_activeNativeCommand.prospectingStartedTick = 0;
+        g_activeNativeCommand.prospectingHiddenSinceTick = 0;
         g_activeNativeCommand.targetKind = NATIVE_TARGET_NONE;
         g_activeNativeCommand.isResourceProduction = false;
         g_activeNativeCommand.resourceTaskObserved = false;
@@ -1745,7 +1779,7 @@ namespace
 
     ProspectSurveyRecord g_prospectSurvey;
 
-    bool RunProspectSurvey(Character* surveyor, const std::string& commandId)
+    bool BeginProspectSurvey(Character* surveyor, const std::string& commandId)
     {
         if (surveyor == NULL || !surveyor->isValid())
             return false;
@@ -1757,22 +1791,30 @@ namespace
         const float skill = stats != NULL ? stats->science : 0.0f;
         const Ogre::Vector3 position = surveyor->getPosition();
 
-        // The same call the game's own prospecting button ends in. This is the
-        // action, not a simulation of it, so what comes back is what a player
-        // would be looking at.
-        window->showT(position, skill, surveyor->getName());
-        // showT records the survey parameters; the resource lines are built
-        // when the window actually shows. Reading immediately after showT
-        // returned an empty list with lastPos/lastSkill correctly set, so the
-        // panel build is a separate step.
-        window->_show();
-
         g_prospectSurvey = ProspectSurveyRecord();
         g_prospectSurvey.commandId = commandId;
-        g_prospectSurvey.centerX = window->lastPos.x;
-        g_prospectSurvey.centerZ = window->lastPos.z;
-        g_prospectSurvey.skill = window->lastSkill;
-        g_prospectSurvey.surveyedName = window->lastName;
+        g_prospectSurvey.centerX = position.x;
+        g_prospectSurvey.centerZ = position.z;
+        g_prospectSurvey.skill = skill;
+        g_prospectSurvey.surveyedName = surveyor->getName();
+
+        // The same call the game's own prospecting button ends in. It starts a
+        // timed progress lifecycle; it does not mean the result rows exist
+        // yet. The monitor waits for the concrete result window instead of
+        // calling `_show` early and leaving Kenshi's scheduled show behind.
+        window->showT(position, skill, surveyor->getName());
+        return true;
+    }
+
+    bool CaptureVisibleProspectSurvey(ProspectingWindow* window)
+    {
+        if (window == NULL ||
+            window->window == NULL ||
+            !window->window->getVisible())
+        {
+            return false;
+        }
+        g_prospectSurvey.readings.clear();
         const unsigned int lineCount =
             static_cast<unsigned int>(window->lines.size());
         for (unsigned int index = 0; index < lineCount; ++index)
@@ -1790,11 +1832,10 @@ namespace
             reading.value = FindProspectLineValue(line->button->getParent());
             g_prospectSurvey.readings.push_back(reading);
         }
-        // Survey is a read transaction, not an interface transition. The old
-        // producer returned here and stranded the agent behind Prospecting.
-        // Copy every decisive row first, then close the exact window we opened.
-        window->hide();
-        g_prospectSurvey.windowVisible = window->getVisible();
+        // Historical fact: the concrete result widget was visible when these
+        // rows were read. Current obstruction is exported independently as
+        // ui.prospecting_window_open.
+        g_prospectSurvey.windowVisible = true;
         g_prospectSurvey.valid = true;
         return true;
     }
@@ -3690,6 +3731,56 @@ namespace
         if (!g_activeNativeCommand.active)
             return;
 
+        if (g_activeNativeCommand.isProspectingSurveyPending)
+        {
+            ProspectingWindow* prospecting = ProspectingWindow::getSingleton();
+            if (prospecting == NULL || prospecting->window == NULL)
+            {
+                FinishActiveNativeCommand(
+                    "cancelled", "prospecting_window_unavailable");
+                return;
+            }
+            const DWORD now = GetTickCount();
+            const bool rendered = prospecting->window->getVisible();
+            if (!g_activeNativeCommand.prospectingResultObserved)
+            {
+                if (!rendered)
+                {
+                    if (now - g_activeNativeCommand.prospectingStartedTick >= 30000)
+                    {
+                        FinishActiveNativeCommand(
+                            "cancelled", "prospecting_results_timeout");
+                    }
+                    return;
+                }
+                if (!CaptureVisibleProspectSurvey(prospecting))
+                {
+                    FinishActiveNativeCommand(
+                        "cancelled", "prospecting_results_unavailable");
+                    return;
+                }
+                g_activeNativeCommand.prospectingResultObserved = true;
+                prospecting->hide();
+                prospecting->window->setVisible(false);
+                g_activeNativeCommand.prospectingHiddenSinceTick = now;
+                return;
+            }
+            if (rendered)
+            {
+                prospecting->hide();
+                prospecting->window->setVisible(false);
+                g_activeNativeCommand.prospectingHiddenSinceTick = now;
+                return;
+            }
+            if (now - g_activeNativeCommand.prospectingHiddenSinceTick < 250)
+                return;
+            // The real results were visible and read, then the concrete widget
+            // remained hidden across later game updates.
+            FinishActiveNativeCommand(
+                "completed", "resource_survey_published");
+            return;
+        }
+
         if (g_activeNativeCommand.isTradeWindowPending)
         {
             // The pair is observed, not counted. "Two windows are open" was the
@@ -4606,6 +4697,8 @@ namespace
             ProspectingWindow* prospecting = ProspectingWindow::getSingleton();
             if (prospecting != NULL && prospecting->getVisible())
                 prospecting->hide();
+            if (prospecting != NULL && prospecting->window != NULL)
+                prospecting->window->setVisible(false);
             if (gui->hasModalMessage())
                 gui->hideMessageBox(false);
             if (gui->dialogue != NULL && gui->dialogue->getVisible())
@@ -4619,7 +4712,9 @@ namespace
             gui->closeAllWindows();
 
             const bool prospectingVisible =
-                prospecting != NULL && prospecting->getVisible();
+                prospecting != NULL &&
+                prospecting->window != NULL &&
+                prospecting->window->getVisible();
             const bool dialogueVisible =
                 gui->dialogue != NULL && gui->dialogue->getVisible();
             const bool managementVisible =
@@ -4969,24 +5064,59 @@ namespace
                 RejectNativeCommand(request, "selection_not_available");
                 return;
             }
-            RunProspectSurvey(surveyor, request.commandId);
-            if (!g_prospectSurvey.valid)
+            if (!BeginProspectSurvey(surveyor, request.commandId))
             {
                 RejectNativeCommand(request, "resource_field_unavailable");
                 return;
             }
-            if (g_prospectSurvey.windowVisible)
-            {
-                RejectNativeCommand(request, "prospecting_window_close_failed");
-                return;
-            }
             AddNativeAcknowledgement(
                 request,
-                "completed",
-                "resource_survey_published",
+                "accepted",
+                "resource_survey_captured",
                 true,
-                true);
-            g_lastNativeCommandResult = "resource_survey_published";
+                false);
+            g_activeNativeCommand.active = true;
+            g_activeNativeCommand.commandId = request.commandId;
+            g_activeNativeCommand.targetId.clear();
+            g_activeNativeCommand.destinationId.clear();
+            g_activeNativeCommand.selectedCharacterId = selectedId;
+            g_activeNativeCommand.selectedCharacterIds =
+                request.selectedCharacterIds;
+            g_activeNativeCommand.selectedHandle = selectedHandle;
+            g_activeNativeCommand.isWalk = false;
+            g_activeNativeCommand.hasFixedDestination = false;
+            g_activeNativeCommand.isMapTravel = false;
+            g_activeNativeCommand.isSquadRegroup = false;
+            g_activeNativeCommand.mapInteriorOrderIssued = false;
+            g_activeNativeCommand.isBuildingExit = false;
+            g_activeNativeCommand.isContextAction = false;
+            g_activeNativeCommand.isTradeWindowPending = false;
+            g_activeNativeCommand.isProspectingSurveyPending = true;
+            g_activeNativeCommand.prospectingResultObserved = false;
+            g_activeNativeCommand.prospectingPlaybackOwned =
+                ou != NULL && ou->isPaused();
+            g_activeNativeCommand.prospectingStartedTick = GetTickCount();
+            g_activeNativeCommand.prospectingHiddenSinceTick = 0;
+            g_activeNativeCommand.targetKind = NATIVE_TARGET_NONE;
+            g_activeNativeCommand.isResourceProduction = false;
+            g_activeNativeCommand.resourceTaskObserved = false;
+            g_activeNativeCommand.resourceTaskIssuedByCommand = false;
+            g_activeNativeCommand.resourceTaskReleaseRequested = false;
+            KenshiAgentTelemetry::ResetResourceTaskReleaseConfirmationWindow(
+                g_activeNativeCommand.resourceTaskReleaseWindow);
+            g_activeNativeCommand.minimumOutputQuantity = 1;
+            g_activeNativeCommand.expectedTask = NULL_TASK;
+            g_activeNativeCommand.originX = 0.0f;
+            g_activeNativeCommand.originZ = 0.0f;
+            if (g_activeNativeCommand.prospectingPlaybackOwned)
+            {
+                // The normal prospect action is a timed world operation, not
+                // an instant GUI read. Advance it natively at 1x, then let the
+                // terminal path above restore the previously paused state.
+                ou->setGameSpeed(1.0f, false);
+                ou->userPause(false);
+            }
+            g_lastNativeCommandResult = "resource_survey_captured";
             return;
         }
 
@@ -5089,6 +5219,16 @@ namespace
                 g_activeNativeCommand.outdoorWindow);
             g_activeNativeCommand.originX = 0.0f;
             g_activeNativeCommand.originZ = 0.0f;
+            if (ou != NULL && ou->isPaused())
+            {
+                // Context goals such as PLAYER_TALK_TO need world time before
+                // HasExactContextGoal can observe adoption. This command owns
+                // that resume directly; making the Python monitor race a
+                // speed key against the next native update leaked desktop
+                // input into an otherwise native operation.
+                ou->setGameSpeed(1.0f, false);
+                ou->userPause(false);
+            }
             g_lastNativeCommandResult =
                 exactTaskAlreadyActive
                     ? "adopted_existing_task"
@@ -6344,6 +6484,11 @@ namespace
                 registeredShopInventoryOpen);
         const bool statsWindowOpen = gui != NULL && gui->characterStatsWindowVisible();
         const bool modalMessageOpen = gui != NULL && gui->hasModalMessage();
+        ProspectingWindow* prospectingWindow = ProspectingWindow::getSingleton();
+        const bool prospectingWindowOpen =
+            prospectingWindow != NULL &&
+            prospectingWindow->window != NULL &&
+            prospectingWindow->window->getVisible();
         // Map, squad, research and factions are not separate screens: they are
         // tabs of one ManagementScreen. Reporting only `active_screen` left all
         // four indistinguishable from the plain world view, so the agent could
@@ -6381,6 +6526,8 @@ namespace
              << JsonBool(dialogueOpen || inventoryOpen || modalMessageOpen)
              << ",";
         json << "\"stats_window_open\":" << JsonBool(statsWindowOpen) << ",";
+        json << "\"prospecting_window_open\":"
+             << JsonBool(prospectingWindowOpen) << ",";
         json << "\"management_screen_open\":" << JsonBool(managementOpen) << ",";
         json << "\"management_tab\":" << managementTab << ",";
         json << "\"open_inventory_windows\":" << openInventoryWindows << ",";

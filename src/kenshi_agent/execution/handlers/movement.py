@@ -59,6 +59,7 @@ from ..types import (
 from .kenshi_surface import KenshiControlSurface
 
 MovementOperation = Callable[..., Coroutine[Any, Any, Transition]]
+PROSPECT_SURVEY_TERMINAL_TIMEOUT_SECONDS = 35.0
 
 
 class MovementMechanicsPort(Protocol):
@@ -453,6 +454,10 @@ class KenshiMovementMechanics:
             task_started_reasons=(
                 operations.PERFORM_CHARACTER_ORDER_DEFINITION.native_task_started_reasons
             ),
+            # Native dispatch resumes the world itself so goal adoption can be
+            # observed. Wait for that keyed command's terminal; do not race a
+            # keyboard playback primitive against the next game update.
+            await_terminal_without_playback=True,
         )
 
 
@@ -788,9 +793,10 @@ class KenshiMovementMechanics:
     ) -> ActionReceipt:
         """Ask native code to read the resource field where the actor stands.
 
-        No pulse and no monitoring: the survey mutates nothing and completes
-        the moment the reading is published, so there is no world change to
-        wait for and nothing that could later be cancelled.
+        No controller playback pulse: native code owns the temporary 1x clock
+        resume required by Kenshi's progress bar, waits until the concrete
+        Prospecting widget appears, captures and closes it, restores pause,
+        then publishes the terminal.
         """
 
         semantic = SemanticActionReceipt(
@@ -814,6 +820,8 @@ class KenshiMovementMechanics:
             continue_until_terminal=True,
             wire_command=native_commands.NATIVE_RESOURCE_SURVEY_WIRE_COMMAND,
             require_dialogue_target=False,
+            await_terminal_without_playback=True,
+            deferred_terminal_timeout_seconds=PROSPECT_SURVEY_TERMINAL_TIMEOUT_SECONDS,
         )
 
     async def _execute_body_shift(

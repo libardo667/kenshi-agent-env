@@ -24,16 +24,20 @@ from kenshi_agent.core.operation import (
     MoveInDirectionAction,
     MoveToCharacterAction,
     PauseAction,
+    PerformCharacterOrderAction,
     PerformContextAction,
     ProduceResourceOutputAction,
     RegroupWithSquadMemberAction,
     RespondToImmediateThreatAction,
     SelectSquadMemberExactAction,
     SetSpeedAction,
+    SurveyLocalResourcesAction,
     ThreatResponseStrategy,
     TravelToMapDestinationAction,
 )
 from kenshi_agent.core.telemetry import (
+    AdvertisedTask,
+    AdvertisedTaskSource,
     CharacterState,
     ContextActionKind,
     Disposition,
@@ -607,6 +611,7 @@ class NativePulseTelemetry(PulseTelemetry):
         self.squad_target_portrait_bounds: NormalizedPointerBounds | None = None
         self.world_target_screen_position: Vec2 | None = None
         self.target_visible: bool | None = None
+        self.vendor_advertised_tasks: list[AdvertisedTask] = []
         self.dialogue_target_id: str | None = None
         self.indoors = False
         self.first_aid_target_enabled = False
@@ -688,8 +693,10 @@ class NativePulseTelemetry(PulseTelemetry):
                         disposition=Disposition.NEUTRAL,
                         distance=self.target_distance,
                         screen_position=self.target_screen_position,
-                        visible=self.target_visible,
-                    )
+                    visible=self.target_visible,
+                    advertised_tasks=self.vendor_advertised_tasks,
+                    advertised_tasks_probed=bool(self.vendor_advertised_tasks),
+                )
                 ],
                 world_targets=[
                     WorldTarget(
@@ -877,6 +884,8 @@ class NativeAckController(PulseController):
         acknowledgement_command_id: str | None = None,
         open_dialogue_on_dispatch: bool = False,
         complete_map_travel_on_unpause: bool = False,
+        complete_deferred_survey: bool = False,
+        complete_deferred_character_order: bool = False,
         reason: str | None = None,
     ) -> None:
         super().__init__(telemetry)
@@ -885,6 +894,8 @@ class NativeAckController(PulseController):
         self.acknowledgement_command_id = acknowledgement_command_id
         self.open_dialogue_on_dispatch = open_dialogue_on_dispatch
         self.complete_map_travel_on_unpause = complete_map_travel_on_unpause
+        self.complete_deferred_survey = complete_deferred_survey
+        self.complete_deferred_character_order = complete_deferred_character_order
         self.reason = reason
         self.request_seen_by_watcher = False
         self.request: NativeCommandRequest | None = None
@@ -900,6 +911,45 @@ class NativeAckController(PulseController):
             self.request_path.read_bytes()
         )
         if pending.command_id in self.acknowledged_command_ids:
+            current = self.telemetry.controller_commands.command_for(pending.command_id)
+            if (
+                self.complete_deferred_survey
+                and pending.command == "survey_local_resources"
+                and current is not None
+                and current.status is NativeCommandStatus.ACCEPTED
+            ):
+                sequence = self.telemetry.sequence + 1
+                self.telemetry.controller_commands = NativeControlState(
+                    available=True,
+                    commands=[
+                        current.model_copy(
+                            update={
+                                "status": NativeCommandStatus.COMPLETED,
+                                "reason": "resource_survey_published",
+                                "terminal_at_telemetry_sequence": sequence,
+                            }
+                        )
+                    ],
+                )
+            elif (
+                self.complete_deferred_character_order
+                and pending.command == "perform_character_order"
+                and current is not None
+                and current.status is NativeCommandStatus.ACCEPTED
+            ):
+                sequence = self.telemetry.sequence + 1
+                self.telemetry.controller_commands = NativeControlState(
+                    available=True,
+                    commands=[
+                        current.model_copy(
+                            update={
+                                "status": NativeCommandStatus.COMPLETED,
+                                "reason": "context_task_started",
+                                "terminal_at_telemetry_sequence": sequence,
+                            }
+                        )
+                    ],
+                )
             return
         self.acknowledged_command_ids.add(pending.command_id)
         basis = pending.based_on_revision.telemetry_sequence
@@ -922,6 +972,13 @@ class NativeAckController(PulseController):
         else:
             self.request_seen_by_watcher = True
             self.request = pending
+            if (
+                self.complete_deferred_character_order
+                and pending.command == "perform_character_order"
+            ):
+                # Native character-order dispatch owns this resume before it
+                # publishes accepted/issued.
+                self.telemetry.paused = False
             if self.open_dialogue_on_dispatch:
                 self.telemetry.dialogue_target_id = pending.target_id
             status = self.status
@@ -1011,6 +1068,8 @@ def native_vendor_environment(
     acknowledgement_command_id: str | None = None,
     open_dialogue_on_dispatch: bool = False,
     complete_map_travel_on_unpause: bool = False,
+    complete_deferred_survey: bool = False,
+    complete_deferred_character_order: bool = False,
     reason: str | None = None,
 ) -> tuple[LiveEnvironment, NativePulseTelemetry, NativeAckController]:
     telemetry_path = tmp_path / "telemetry.latest.json"
@@ -1023,6 +1082,8 @@ def native_vendor_environment(
         acknowledgement_command_id=acknowledgement_command_id,
         open_dialogue_on_dispatch=open_dialogue_on_dispatch,
         complete_map_travel_on_unpause=complete_map_travel_on_unpause,
+        complete_deferred_survey=complete_deferred_survey,
+        complete_deferred_character_order=complete_deferred_character_order,
         reason=reason,
     )
     telemetry.on_read = controller.acknowledge_unsent_request
@@ -1051,6 +1112,90 @@ def native_vendor_environment(
 
 def native_vendor_action(target_id: str = "entity-vendor") -> ApproachDialogueTargetAction:
     return ApproachDialogueTargetAction(target_id=target_id)
+
+
+def test_resource_survey_waits_for_deferred_native_close_without_playback(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(
+            tmp_path,
+            status=NativeCommandStatus.ACCEPTED,
+            reason="resource_survey_captured",
+            complete_deferred_survey=True,
+        )
+        telemetry.capabilities.append("control.survey_local_resources")
+        initial = await environment.reset()
+        action = SurveyLocalResourcesAction()
+
+        transition = await execute_operation(
+            environment,
+            action,
+            command=CommandDispatchContext(
+                command_id="cmd-" + "8" * 32,
+                based_on_revision=initial.world_revision,
+                **_authorized_for(initial, action),
+            ),
+        )
+
+        acknowledgement = transition.receipt.native_acknowledgement
+        assert acknowledgement is not None
+        assert acknowledgement.status is NativeCommandStatus.COMPLETED
+        assert acknowledgement.reason == "resource_survey_published"
+        assert telemetry.paused is True
+        assert transition.receipt.primitive_actions == 0
+        assert controller.time_control_request is None
+        assert controller.actions == []
+
+    asyncio.run(scenario())
+
+
+def test_final_cleanup_uses_native_pause_without_keyboard_input(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(tmp_path)
+        telemetry.paused = False
+
+        outcome = await environment.close()
+
+        assert outcome.status == "pause_confirmed"
+        assert outcome.initial_sequence is not None
+        assert outcome.confirmed_sequence is not None
+        assert outcome.confirmed_sequence > outcome.initial_sequence
+        assert outcome.input_attempted is False
+        assert outcome.input_executed is False
+        assert controller.time_control_request is not None
+        assert controller.time_control_request.command == "pause"
+        assert controller.time_control_request.paused is True
+        assert controller.actions == []
+
+    asyncio.run(scenario())
+
+
+def test_supervisor_pause_uses_native_command_after_human_input(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(tmp_path)
+        telemetry.paused = False
+        controller.continuous_user_input = True
+        observation = await environment.reset()
+
+        transition = await environment.operation_mechanics.control_pause(
+            PauseAction(paused=True),
+            command=CommandDispatchContext(
+                command_id="cmd-" + "7" * 32,
+                based_on_revision=observation.world_revision,
+            ),
+        )
+
+        assert transition.receipt.executed is True
+        assert transition.receipt.primitive_actions == 0
+        assert transition.receipt.causal_revision_advanced is True
+        assert controller.time_control_request is not None
+        assert controller.time_control_request.command == "pause"
+        assert controller.time_control_request.paused is True
+        assert controller.actions == []
+        assert "native pause(paused=True) -> world_paused" in transition.receipt.message
+
+    asyncio.run(scenario())
 
 
 
@@ -1663,12 +1808,11 @@ def test_a_started_context_task_leaves_the_world_running(tmp_path: Path) -> None
             ),
         )
 
-        speed_key = environment.controls_config.speed_keys[1]
-        assert [
-            action
-            for action in controller.actions
-            if isinstance(action, KeyAction) and action.key == speed_key
-        ], "the started context task left Kenshi paused, so the job could never run"
+        assert controller.time_control_request is not None
+        assert controller.time_control_request.command == "set_speed"
+        assert controller.time_control_request.speed_multiplier == 1.0
+        assert telemetry.paused is False
+        assert not [action for action in controller.actions if isinstance(action, KeyAction)]
 
     asyncio.run(scenario())
 
@@ -1679,6 +1823,7 @@ def test_first_aid_uses_the_same_exact_semantic_native_route(tmp_path: Path) -> 
             tmp_path,
             status=NativeCommandStatus.COMPLETED,
             reason="context_task_started",
+            complete_deferred_character_order=True,
         )
         telemetry.first_aid_target_enabled = True
         environment.controls_config = environment.controls_config.model_copy(
@@ -1829,6 +1974,110 @@ def test_paused_native_talk_stops_before_movement_pulse_when_dialogue_opens(
         assert telemetry.dialogue_target_id == "entity-vendor"
         assert not [action for action in controller.actions if isinstance(action, PauseAction)]
         assert "no movement pulse or pause toggle" in transition.receipt.message
+
+    asyncio.run(scenario())
+
+
+def test_started_character_talk_order_resumes_world_through_native_clock(
+    tmp_path: Path,
+) -> None:
+    """Order acceptance is not dialogue-open evidence and must not freeze time."""
+
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(
+            tmp_path,
+            status=NativeCommandStatus.COMPLETED,
+            reason="context_task_started",
+            complete_deferred_character_order=True,
+        )
+        environment.controls_config = environment.controls_config.model_copy(
+            update={"require_paused_between_actions": False}
+        )
+        telemetry.capabilities.extend(
+            ["game.speed", "nearby.orderable_tasks", "control.perform_character_order"]
+        )
+        telemetry.vendor_advertised_tasks = [
+            AdvertisedTask(
+                value=12,
+                name="PLAYER_TALK_TO",
+                source=AdvertisedTaskSource.MENU,
+            )
+        ]
+        initial = await environment.reset()
+        action = PerformCharacterOrderAction(
+            target_id="entity-vendor",
+            order="player_talk_to",
+        )
+
+        transition = await execute_operation(
+            environment,
+            action,
+            command=CommandDispatchContext(
+                command_id="cmd-" + "9" * 32,
+                based_on_revision=initial.world_revision,
+                **_authorized_for(initial, action),
+            ),
+        )
+
+        assert controller.request is not None
+        assert controller.request.command == "perform_character_order"
+        assert controller.time_control_request is None
+        assert telemetry.paused is False
+        assert transition.receipt.primitive_actions == 0
+        assert not [action for action in controller.actions if isinstance(action, KeyAction)]
+
+    asyncio.run(scenario())
+
+
+def test_accepted_character_order_waits_for_native_terminal_without_speed_key(
+    tmp_path: Path,
+) -> None:
+    """An accepted-first live acknowledgement must not race desktop playback."""
+
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(
+            tmp_path,
+            status=NativeCommandStatus.ACCEPTED,
+            reason="issued",
+            complete_deferred_character_order=True,
+        )
+        environment.controls_config = environment.controls_config.model_copy(
+            update={"require_paused_between_actions": False}
+        )
+        telemetry.capabilities.extend(
+            ["game.speed", "nearby.orderable_tasks", "control.perform_character_order"]
+        )
+        telemetry.vendor_advertised_tasks = [
+            AdvertisedTask(
+                value=12,
+                name="PLAYER_TALK_TO",
+                source=AdvertisedTaskSource.MENU,
+            )
+        ]
+        initial = await environment.reset()
+        action = PerformCharacterOrderAction(
+            target_id="entity-vendor",
+            order="player_talk_to",
+        )
+
+        transition = await execute_operation(
+            environment,
+            action,
+            command=CommandDispatchContext(
+                command_id="cmd-" + "7" * 32,
+                based_on_revision=initial.world_revision,
+                **_authorized_for(initial, action),
+            ),
+        )
+
+        acknowledgement = transition.receipt.native_acknowledgement
+        assert acknowledgement is not None
+        assert acknowledgement.status is NativeCommandStatus.COMPLETED
+        assert acknowledgement.reason == "context_task_started"
+        assert telemetry.paused is False
+        assert transition.receipt.primitive_actions == 0
+        assert controller.time_control_request is None
+        assert controller.actions == []
 
     asyncio.run(scenario())
 

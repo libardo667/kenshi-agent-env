@@ -208,6 +208,7 @@ def _noop_stall_signature(observation: Observation) -> tuple[object, ...]:
         ui.open_inventory_windows,
         tuple(inventory.owner_id for inventory in ui.open_inventories),
         ui.stats_window_open,
+        ui.prospecting_window_open,
         ui.management_screen_open,
         ui.management_tab,
     )

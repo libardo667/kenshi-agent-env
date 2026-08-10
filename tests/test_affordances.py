@@ -187,6 +187,28 @@ def test_blocking_dialogue_and_modal_offer_one_native_return_to_world() -> None:
     assert bound.definition.kind == "close_active_interface"
 
 
+def test_rendered_prospecting_window_offers_native_return_to_world() -> None:
+    observation = _observation(
+        capabilities=["control.close_active_interface", "ui.prospecting"],
+        ui=UIState(
+            active_screen="world",
+            modal_open=False,
+            dialogue_open=False,
+            prospecting_window_open=True,
+        ),
+    )
+
+    offers = [
+        offer
+        for offer in offered_affordances(observation)
+        if offer.operation_kind == "close_active_interface"
+    ]
+
+    assert len(offers) == 1
+    bound = bind_affordance(selection_for(offers[0]), observation)
+    assert bound.definition.kind == "close_active_interface"
+
+
 def test_character_adapter_prefers_exact_native_selection_over_portrait_geometry() -> None:
     bark = CharacterState(id="entity-bark", name="Bark")
     plant = CharacterState(id="entity-plant", name="Plant")

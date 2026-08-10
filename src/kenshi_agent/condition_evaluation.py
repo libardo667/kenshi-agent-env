@@ -66,6 +66,7 @@ _PATH_CAPABILITY_ALTERNATIVES: dict[str, tuple[str, ...]] = {
     "telemetry.ui.visible_control_count": ("ui.visible_controls",),
     # Screen-state signals ride with the inventory/UI capability that reports them.
     "telemetry.ui.stats_window_open": ("ui.inventory", "ui.dialogue"),
+    "telemetry.ui.prospecting_window_open": ("ui.prospecting",),
     "telemetry.ui.open_inventory_windows": ("ui.inventory", "ui.dialogue"),
     "telemetry.ui.management_screen_open": ("ui.inventory", "ui.dialogue"),
     "telemetry.ui.management_tab": ("ui.inventory", "ui.dialogue"),
@@ -175,6 +176,7 @@ def _resolve_field(condition: Condition, observation: Observation) -> object | N
             else None
         ),
         "telemetry.ui.stats_window_open": telemetry.ui.stats_window_open,
+        "telemetry.ui.prospecting_window_open": telemetry.ui.prospecting_window_open,
         "telemetry.ui.open_inventory_windows": telemetry.ui.open_inventory_windows,
         "telemetry.ui.management_screen_open": telemetry.ui.management_screen_open,
         "telemetry.ui.management_tab": telemetry.ui.management_tab,

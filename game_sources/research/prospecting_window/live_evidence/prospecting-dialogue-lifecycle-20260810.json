@@ -1,0 +1,221 @@
+{
+  "schema_version": 1,
+  "kind": "reduced_live_prospecting_lifecycle_evidence",
+  "run_id": "native-cleanup-interface-regression-20260810-r7",
+  "source_run": "runs/native-cleanup-interface-regression-20260810-r7",
+  "manifest": {
+    "source_parent": "8e9927f7475c4d8058272ae8da3380b76090c69b",
+    "scenario_id": "native-launch-exact-load-20260810",
+    "scenario_fixture_digest": "105fc162134f60379812a246f1e2e00c3f8d24e935b49ef1213068ca3f3787c3",
+    "objective": "Survey once; wait for terminal resource_survey_published and a closed Prospecting window; issue PLAYER_TALK_TO to the exact Barman; wait for dialogue_open; close the interface; finish paused on the world screen.",
+    "requested_turns": 16,
+    "completed_action_attempts": 7,
+    "control_mode": "native_assisted",
+    "planner_failures": 0,
+    "run_stop_reason": "The selected objective is terminal.",
+    "final_safe_state": {
+      "status": "pause_confirmed",
+      "confirmed_sequence": 262,
+      "input_attempted": false,
+      "input_executed": false
+    },
+    "binary_provenance": {
+      "loaded_executable": {
+        "path": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\kenshi_x64.exe",
+        "sha256": "a596ab4e407c67b58599c54ffb32dc1bf2b64510cdebd3fa9359ef05a576aeb1"
+      },
+      "native_source": {
+        "path": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp",
+        "sha256": "3a6b8c94af9278eb42ebfcb86832ab7ff542ba4fe3a8a03ab351501e0c3d2ad5"
+      },
+      "built_staged_installed_and_preserved_dll": {
+        "size_bytes": 430080,
+        "sha256": "aecc380c672eeeda9203227cbe483ac5313736e3d5a52d8d9e681b6075aa00c1",
+        "preserved_path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260810-prospecting-render-closure\\replacement-final\\KenshiAgentTelemetry.dll"
+      },
+      "matching_pdb": {
+        "size_bytes": 11127808,
+        "sha256": "077052e0574f4d6bc885db0af878e08e7512acc74d4065b69b6aff12b7524545",
+        "preserved_path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260810-prospecting-render-closure\\replacement-final\\KenshiAgentTelemetry.pdb"
+      },
+      "native_conformance": {
+        "path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\build\\native\\bin\\NativeCommandProtocolTests.exe",
+        "size_bytes": 311808,
+        "sha256": "0572c5eafb0801846a8db3fe5280f0158a478da6a33582ad560e12d224364daf",
+        "result": "Native protocol fixtures and semantics passed."
+      }
+    }
+  },
+  "request_and_acknowledgement": {
+    "survey": {
+      "command_id": "cmd-b76743394dbe495cb5eb4d9b8ef9d110",
+      "command": "survey_local_resources",
+      "based_on_telemetry_sequence": 174,
+      "accepted_at_telemetry_sequence": 175,
+      "accepted_status": "accepted",
+      "accepted_reason": "resource_survey_captured",
+      "terminal_at_telemetry_sequence": 176,
+      "terminal_status": "completed",
+      "terminal_reason": "resource_survey_published",
+      "primitive_actions": 0
+    },
+    "talk": {
+      "command_id": "cmd-5642a486cd044d3595e6d8f7c8344015",
+      "command": "perform_character_order",
+      "context_action": "player_talk_to",
+      "target_id": "entity-d38cc035523b51f9-0000000000000002-00000001-00000000-00000000-00000001-c0534d00",
+      "based_on_telemetry_sequence": 201,
+      "accepted_at_telemetry_sequence": 202,
+      "terminal_at_telemetry_sequence": 202,
+      "terminal_status": "completed",
+      "terminal_reason": "context_task_started",
+      "primitive_actions": 0
+    },
+    "close": {
+      "command_id": "cmd-5e0a03528731494f8a6cb91b9bccff50",
+      "command": "close_active_interface",
+      "based_on_telemetry_sequence": 230,
+      "terminal_at_telemetry_sequence": 231,
+      "terminal_status": "completed",
+      "terminal_reason": "active_interface_closed",
+      "primitive_actions": 0
+    },
+    "final_pause": {
+      "command_id": "cmd-1e8cb29646e1416c88e5da28fb37406a",
+      "command": "pause",
+      "terminal_at_telemetry_sequence": 245,
+      "terminal_status": "completed",
+      "terminal_reason": "world_paused",
+      "primitive_actions": 0
+    }
+  },
+  "captured_survey": {
+    "command_id": "cmd-b76743394dbe495cb5eb4d9b8ef9d110",
+    "surveyor": "Slowline",
+    "center": {"x": -51153.37, "z": 3056.965},
+    "science_skill": 1.2,
+    "window_visible_when_captured": true,
+    "readings": [
+      {"label": "Water", "value": "48"},
+      {"label": "Fertility", "value": "78"},
+      {"label": "Stone", "value": "0"},
+      {"label": "Iron", "value": "0"},
+      {"label": "Copper", "value": "0"}
+    ]
+  },
+  "decisive_telemetry_frames": [
+    {
+      "telemetry_sequence": 174,
+      "frame_sequence": 1,
+      "paused": true,
+      "prospecting_window_open": false,
+      "dialogue_open": false,
+      "active_screen": "world",
+      "disposition": "Fresh paused basis before survey dispatch."
+    },
+    {
+      "telemetry_sequence": 175,
+      "frame_sequence": 1,
+      "paused": false,
+      "prospecting_window_open": false,
+      "survey_status": "accepted",
+      "survey_reason": "resource_survey_captured",
+      "disposition": "The native survey owns the temporary 1x progress phase; dispatch is not terminal."
+    },
+    {
+      "telemetry_sequence": 176,
+      "frame_sequence": 1,
+      "paused": true,
+      "prospecting_window_open": false,
+      "survey_status": "completed",
+      "survey_reason": "resource_survey_published",
+      "disposition": "The concrete window was populated and captured, then remained hidden and the previously paused clock was restored before terminal success."
+    },
+    {
+      "telemetry_sequence": 177,
+      "frame_sequence": 2,
+      "paused": true,
+      "prospecting_window_open": false,
+      "active_screen": "world",
+      "decisive_frame": "runs/native-cleanup-interface-regression-20260810-r7/frames/live_frame_000002.png",
+      "disposition": "Causally later visual and engine state remains clear of Prospecting."
+    },
+    {
+      "telemetry_sequence": 202,
+      "frame_sequence": 2,
+      "paused": false,
+      "prospecting_window_open": false,
+      "dialogue_open": false,
+      "talk_status": "completed",
+      "talk_reason": "context_task_started",
+      "disposition": "The native character-order command started playback without desktop primitives; task start is not yet dialogue proof."
+    },
+    {
+      "telemetry_sequence": 222,
+      "frame_sequence": 4,
+      "paused": true,
+      "prospecting_window_open": false,
+      "dialogue_open": true,
+      "modal_open": true,
+      "active_screen": "dialogue",
+      "dialogue_target_id": "entity-d38cc035523b51f9-0000000000000002-00000001-00000000-00000000-00000001-c0534d00",
+      "decisive_frame": "runs/native-cleanup-interface-regression-20260810-r7/frames/live_frame_000004.png",
+      "disposition": "Later engine and visual evidence proves the exact Barman dialogue opened with no Prospecting overlay."
+    },
+    {
+      "telemetry_sequence": 231,
+      "frame_sequence": 4,
+      "paused": false,
+      "prospecting_window_open": false,
+      "dialogue_open": false,
+      "modal_open": false,
+      "active_screen": "world",
+      "close_status": "completed",
+      "close_reason": "active_interface_closed"
+    },
+    {
+      "telemetry_sequence": 262,
+      "frame_sequence": 6,
+      "paused": true,
+      "prospecting_window_open": false,
+      "dialogue_open": false,
+      "modal_open": false,
+      "active_screen": "world",
+      "decisive_frame": "runs/native-cleanup-interface-regression-20260810-r7/frames/live_frame_000006.png",
+      "disposition": "Final causally later safe state; no interface obstruction and no physical cleanup input."
+    }
+  ],
+  "omitted_raw_file_hashes": [
+    {
+      "path": "runs/native-cleanup-interface-regression-20260810-r7/events.jsonl",
+      "size_bytes": 2551781,
+      "sha256": "804b2b72f481588e148991ca4feeacd7044508e8625a4ba407eb3fbc398ba95c"
+    },
+    {
+      "path": "runs/native-cleanup-interface-regression-20260810-r7/frames/live_frame_000002.png",
+      "size_bytes": 1664702,
+      "sha256": "788a1a6642d044de565cf8a3ad2e8d89caed5839764b948d6104f085222c70de"
+    },
+    {
+      "path": "runs/native-cleanup-interface-regression-20260810-r7/frames/live_frame_000004.png",
+      "size_bytes": 2014625,
+      "sha256": "c5ac30fd7917749e4161950fa14a448555960d0caea146e118ad68dcdc1acb81"
+    },
+    {
+      "path": "runs/native-cleanup-interface-regression-20260810-r7/frames/live_frame_000006.png",
+      "size_bytes": 2274896,
+      "sha256": "175ebbc06ded75ef25354848cafe26755a2ce3368f75f069c2c378b0716d896c"
+    }
+  ],
+  "artifact_commands": {
+    "build": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build_native.ps1",
+    "install_current_build": "Copy-Item -LiteralPath 'C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\build\\native\\bin\\KenshiAgentTelemetry.dll' -Destination 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll' -Force",
+    "reinstall_preserved_replacement": "Copy-Item -LiteralPath 'C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260810-prospecting-render-closure\\replacement-final\\KenshiAgentTelemetry.dll' -Destination 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll' -Force",
+    "rollback_pre_fix": "Copy-Item -LiteralPath 'C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260810-prospecting-render-closure\\pre-fix\\KenshiAgentTelemetry.dll' -Destination 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll' -Force"
+  },
+  "final_disposition": {
+    "live_result": "Passed. Kenshi's timed Prospecting lifecycle populated a real result record, native code captured the rows, closed the concrete widget, and restored pause before terminal resource_survey_published. A later native PLAYER_TALK_TO reached the exact Barman dialogue without a Prospecting overlay, and native close plus pause returned to a clean world screen.",
+    "input_result": "Survey, accepted-first character order, interface close, final pause, and final safety cleanup all recorded zero primitives; final input_attempted and input_executed were false.",
+    "withheld": "This proves the exact local survey and Barman lifecycle on the named fixture and binaries. It does not assign physical units or deposit-absence meaning to the displayed resource scalars, and it is not a long-duration stability claim."
+  }
+}

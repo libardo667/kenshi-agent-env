@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Awaitable, Callable
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
@@ -9,6 +10,8 @@ from pydantic import BaseModel, ConfigDict
 from .control.base import InputController, PrimitiveInputAction
 from .telemetry import TelemetryReader, TelemetryReadError
 from .terminal_state import terminal_window_title
+
+FinalPauseRequest = Callable[[], Awaitable[tuple[int, str]]]
 
 
 class FinalSafeStateStatus(StrEnum):
@@ -69,6 +72,7 @@ async def ensure_final_safe_state(
     controller: InputController,
     telemetry: TelemetryReader,
     pause_primitives: list[PrimitiveInputAction],
+    pause_request: FinalPauseRequest | None = None,
     timeout_seconds: float,
     input_authorized: bool,
 ) -> FinalSafeStateOutcome:
@@ -118,47 +122,54 @@ async def ensure_final_safe_state(
             reason="Pause state or capability unavailable; no cleanup input was sent.",
             initial_sequence=initial_sequence,
         )
-    if not pause_primitives:
+    if pause_request is None and not pause_primitives:
         return FinalSafeStateOutcome(
             status=FinalSafeStateStatus.PAUSE_UNVERIFIED,
-            reason="No configured final-pause primitive was available.",
+            reason="No configured final-pause control was available.",
             initial_sequence=initial_sequence,
         )
 
+    input_attempted = False
     input_executed = False
     try:
-        async with controller.safety_input_lease():
-            for primitive in pause_primitives:
-                terminal_failure = _terminal_window_failure(
-                    controller,
-                    initial_sequence=initial_sequence,
-                    input_attempted=input_executed,
-                    input_executed=input_executed,
-                )
-                if terminal_failure is not None:
-                    return terminal_failure
-                receipt = await controller.execute_safety(primitive)
-                input_executed = input_executed or receipt.executed
-                if not receipt.executed:
-                    return FinalSafeStateOutcome(
-                        status=FinalSafeStateStatus.PAUSE_UNVERIFIED,
-                        reason=(
-                            "A final-pause primitive was not executed "
-                            f"({receipt.message})."
-                        ),
+        if pause_request is not None:
+            primitive_count, _description = await pause_request()
+            input_attempted = primitive_count > 0
+            input_executed = primitive_count > 0
+        else:
+            async with controller.safety_input_lease():
+                for primitive in pause_primitives:
+                    terminal_failure = _terminal_window_failure(
+                        controller,
                         initial_sequence=initial_sequence,
-                        input_attempted=True,
+                        input_attempted=input_attempted,
                         input_executed=input_executed,
                     )
+                    if terminal_failure is not None:
+                        return terminal_failure
+                    input_attempted = True
+                    receipt = await controller.execute_safety(primitive)
+                    input_executed = input_executed or receipt.executed
+                    if not receipt.executed:
+                        return FinalSafeStateOutcome(
+                            status=FinalSafeStateStatus.PAUSE_UNVERIFIED,
+                            reason=(
+                                "A final-pause primitive was not executed "
+                                f"({receipt.message})."
+                            ),
+                            initial_sequence=initial_sequence,
+                            input_attempted=input_attempted,
+                            input_executed=input_executed,
+                        )
     except Exception as exc:
         return FinalSafeStateOutcome(
             status=FinalSafeStateStatus.PAUSE_UNVERIFIED,
             reason=(
-                "Final-pause input failed "
+                "Final-pause request failed "
                 f"({type(exc).__name__}: {exc})."
             ),
             initial_sequence=initial_sequence,
-            input_attempted=True,
+            input_attempted=input_attempted,
             input_executed=input_executed,
         )
 
@@ -167,7 +178,7 @@ async def ensure_final_safe_state(
         terminal_failure = _terminal_window_failure(
             controller,
             initial_sequence=initial_sequence,
-            input_attempted=True,
+            input_attempted=input_attempted,
             input_executed=input_executed,
         )
         if terminal_failure is not None:
@@ -192,7 +203,7 @@ async def ensure_final_safe_state(
                     ),
                     initial_sequence=initial_sequence,
                     confirmed_sequence=current.sequence,
-                    input_attempted=True,
+                    input_attempted=input_attempted,
                     input_executed=input_executed,
                 )
         remaining = deadline - time.monotonic()
@@ -200,11 +211,11 @@ async def ensure_final_safe_state(
             return FinalSafeStateOutcome(
                 status=FinalSafeStateStatus.PAUSE_UNVERIFIED,
                 reason=(
-                    "Final-pause input was not confirmed on a causally later "
+                    "Final-pause request was not confirmed on a causally later "
                     "fresh telemetry sequence."
                 ),
                 initial_sequence=initial_sequence,
-                input_attempted=True,
+                input_attempted=input_attempted,
                 input_executed=input_executed,
             )
         await asyncio.sleep(min(0.05, remaining))

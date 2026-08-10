@@ -466,6 +466,7 @@ def active_interface_is_open(observation: Observation) -> bool:
         or ui.modal_open is True
         or (ui.open_inventory_windows or 0) > 0
         or ui.stats_window_open is True
+        or ui.prospecting_window_open is True
         or ui.management_screen_open is True
         or (ui.active_screen is not None and ui.active_screen != "world")
     )
@@ -2179,7 +2180,7 @@ NOOP_DEFINITION = _runtime_cognitive_definition(
     summary="Acknowledge that the current state requires no game input.",
     argument_source="The runtime offer supplies the optional reason.",
     handler_key="runtime.noop",
-    max_primitive_actions=1,
+    max_primitive_actions=0,
     counts_as_progress=False,
 )
 STOP_DEFINITION = _runtime_cognitive_definition(
@@ -2506,6 +2507,11 @@ PERFORM_CHARACTER_ORDER_DEFINITION = OperationDefinition(
     bind=bind_perform_character_order,
     handler_key="movement.perform_character_order",
     controller_verified=True,
+    # Kenshi has accepted the ordinary order, but an order such as
+    # PLAYER_TALK_TO still needs world time before its visible outcome can
+    # occur. Native dispatch owns the 1x resume and Python waits for this
+    # terminal without sending a playback key.
+    native_task_started_reasons=frozenset({"context_task_started"}),
     authorable_when=perform_character_order_is_currently_authorable,
 )
 
@@ -2885,13 +2891,15 @@ SURVEY_LOCAL_RESOURCES_DEFINITION = OperationDefinition(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
-    # Reading the resource field mutates nothing, so a repeated survey is safe
-    # and costs only the reading.
+    # Reading the resource field changes no durable world state, so a repeated
+    # survey is safe. It is nevertheless a monitored option: Kenshi advances a
+    # progress bar before rendering the result window, and the native command
+    # owns that temporal lifecycle through capture, close, and re-pause.
     risk=OperationRisk(native_assisted_actions=1),
     max_primitive_actions=0,
     reference_fields=(),
     idempotency=IdempotencyPolicy.SAFE_TO_RETRY,
-    execution=OperationExecution.ATOMIC_HANDLER,
+    execution=OperationExecution.MONITORED_OPTION,
     receipt_kind="resource_survey",
     bind=bind_survey_local_resources,
     handler_key="movement.survey_local_resources",

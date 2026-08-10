@@ -1196,6 +1196,10 @@ class UIState(StrictModel):
     # dialogue/trade/inventory/world, which cannot express "the stats window is
     # up" or "two inventory windows are open".
     stats_window_open: bool | None = None
+    # The concrete MyGUI window, not ProspectingWindow's wrapper visibility.
+    # Live evidence proved the wrapper could report hidden while this widget
+    # remained rendered over movement and dialogue.
+    prospecting_window_open: bool | None = None
     open_inventory_windows: int | None = Field(default=None, ge=0)
     # Map, squad, research and factions are tabs of one management window, not
     # separate screens, so `active_screen` cannot express them.
@@ -1416,8 +1420,9 @@ NativeWireCommand = Literal[
     # `GameWorld::setGameSpeed`, so these stopped being keystrokes -- and with
     # them the last gameplay use of the keyboard. They name no target, no
     # direction and no action; a pause carries a state and a speed carries a
-    # multiplier. The safety pause keeps its key deliberately: a stop that
-    # depends on the plug-in answering is not a stop.
+    # multiplier. Healthy loaded-session safety cleanup uses the same native
+    # authority; the pause key survives only as a degraded or emergency path
+    # when no fresh native identity is available.
     "pause",
     "set_speed",
     # One native lifecycle for every blocking interface the agent can cause or

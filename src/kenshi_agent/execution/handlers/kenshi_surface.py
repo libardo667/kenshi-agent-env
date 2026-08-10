@@ -474,14 +474,13 @@ class KenshiControlSurface:
             f"pause key {self.controls_config.pause_key!r}"
         )
 
-    def _native_time_control_available(self) -> bool:
+    def native_time_control_available(self) -> bool:
         """Whether the plug-in can be asked to control the clock right now.
 
         A native command needs an identity session, which only the plug-in
-        supplies. Without one there is nothing to send a request to, so the
-        keyboard is not legacy here -- it is the path that still works when the
-        native side is absent, which is the same reason the safety pause keeps
-        its key.
+        supplies. Healthy loaded sessions always use that authoritative path,
+        including safety cleanup. The keyboard is reserved for degraded or
+        emergency cleanup when there is no fresh native identity to command.
         """
 
         try:
@@ -533,18 +532,16 @@ class KenshiControlSurface:
         *,
         safety: bool = False,
     ) -> tuple[int, str]:
-        """Pause or resume, natively unless this is the kill switch.
+        """Pause or resume through the native clock whenever it is healthy.
 
         Kenshi owns the clock through `GameWorld::userPause`, so an ordinary
-        pause is a native command and costs no keystroke. The safety path
-        deliberately keeps the keyboard: it runs when the world is in a state
-        the agent could not resolve, sometimes with telemetry stale or the
-        plug-in not answering, and a stop that depends on the thing that may
-        have failed is not a stop. That is the one keyboard use the desktop
-        subsystem still exists for.
+        pause and a safety pause share one idempotent native command. The
+        keyboard remains only as the explicit degraded boundary when fresh
+        native authority is absent; a healthy loaded plug-in is never bypassed
+        merely because the caller is the supervisor.
         """
 
-        if safety or not self._native_time_control_available():
+        if not self.native_time_control_available():
             primitives, description = self.pause_primitives(paused)
             primitive_count = 0
             for primitive in primitives:
@@ -559,6 +556,15 @@ class KenshiControlSurface:
             "pause",
             paused=paused,
         )
+        expected_reason = "world_paused" if paused else "world_running"
+        if (
+            acknowledgement.status is not NativeCommandStatus.COMPLETED
+            or acknowledgement.reason != expected_reason
+        ):
+            raise RuntimeError(
+                "Native pause did not return its exact terminal result: "
+                f"{acknowledgement.status.value}/{acknowledgement.reason}."
+            )
         return 0, (
             f"native pause(paused={paused}) -> {acknowledgement.reason}"
         )
@@ -599,7 +605,7 @@ class KenshiControlSurface:
                 ),
             )
 
-        if not self._native_time_control_available():
+        if not self.native_time_control_available():
             primitive_count = 0
             if paused:
                 primitive_count += await self._establish_playback_gear(1)
@@ -673,6 +679,24 @@ class KenshiControlSurface:
         """Start at 1x unless this exact native command finishes first."""
 
         expected = GAME_SPEED_MULTIPLIER_BY_GEAR[1]
+        if acknowledgement.status is NativeCommandStatus.COMPLETED:
+            # Some ordinary orders complete at the controller boundary as soon
+            # as Kenshi adopts the task. Their world outcome still needs time.
+            # The command slot is now free, so establish playback through the
+            # native clock instead of reviving the old speed-key path.
+            playback = await self._dispatch_time_control(
+                "set_speed",
+                speed_multiplier=expected,
+            )
+            if (
+                playback.status is not NativeCommandStatus.COMPLETED
+                or playback.reason != "world_speed_set"
+            ):
+                raise RuntimeError(
+                    "Native playback resume did not return its exact terminal "
+                    f"result: {playback.status.value}/{playback.reason}."
+                )
+            return 0, None
         primitive_count = 0
         for _attempt in range(2):
             primitive_count += await self._execute_speed_key(1)
@@ -888,6 +912,8 @@ class KenshiControlSurface:
         context_action: ContextActionKind | None = None,
         task_started_reasons: frozenset[str] = frozenset(),
         paused_dialogue_terminal: bool = False,
+        await_terminal_without_playback: bool = False,
+        deferred_terminal_timeout_seconds: float = NATIVE_COMMAND_ACK_TIMEOUT_SECONDS,
     ) -> ActionReceipt:
         adopted = (
             self._active_native_order_for(
@@ -975,6 +1001,24 @@ class KenshiControlSurface:
             acknowledgement.status is NativeCommandStatus.COMPLETED
             and acknowledgement.reason in task_started_reasons
         ):
+            return self._accepted_native_terminal_receipt(
+                action=action,
+                command=command,
+                started=started,
+                primitive_count=primitive_count,
+                messages=messages,
+                acknowledgement=acknowledgement,
+                semantic=semantic,
+            )
+        if await_terminal_without_playback:
+            acknowledgement = await self._wait_for_native_terminal_acknowledgement(
+                acknowledgement,
+                timeout_seconds=deferred_terminal_timeout_seconds,
+            )
+            messages.append(
+                "Native deferred terminal "
+                f"{acknowledgement.status.value!r}: {acknowledgement.reason}."
+            )
             return self._accepted_native_terminal_receipt(
                 action=action,
                 command=command,
@@ -1708,6 +1752,31 @@ class KenshiControlSurface:
                     f"after {NATIVE_COMMAND_ACK_TIMEOUT_SECONDS:.0f}s. "
                     "The order was accepted, so the character may still be walking: "
                     "check whether it arrived before ordering it again."
+                )
+            await asyncio.sleep(min(NATIVE_COMMAND_POLL_SECONDS, remaining))
+
+    async def _wait_for_native_terminal_acknowledgement(
+        self,
+        previous: NativeCommandAcknowledgement,
+        *,
+        timeout_seconds: float,
+    ) -> NativeCommandAcknowledgement:
+        """Wait for one accepted UI transaction without advancing playback."""
+
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            current = self._fresh_matching_native_acknowledgement(previous)
+            if current is not None and current.status in {
+                NativeCommandStatus.REJECTED,
+                NativeCommandStatus.CANCELLED,
+                NativeCommandStatus.COMPLETED,
+            }:
+                return current
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError(
+                    "Kenshi did not publish the deferred native UI terminal after "
+                    f"{timeout_seconds:.0f}s."
                 )
             await asyncio.sleep(min(NATIVE_COMMAND_POLL_SECONDS, remaining))
 

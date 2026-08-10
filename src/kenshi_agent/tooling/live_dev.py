@@ -30,21 +30,16 @@ from ..control.capture import WindowCapture
 from ..control.win32 import Win32InputController
 from ..core.observation import Observation
 from ..core.operation import (
-    ClickAction,
     ControlMode,
     HotkeyAction,
-    KeyAction,
 )
 from ..core.scenario import MANAGED_SAVE_NAME, ScenarioFixtureManifest
 from ..core.telemetry import (
     TITLE_SCREEN_NATIVE_COMMANDS,
-    Disposition,
     NativeCommandStatus,
     NativeWireCommand,
-    NormalizedPointerBounds,
     ScenarioIdentity,
     TelemetrySnapshot,
-    window_close_point,
 )
 from ..core.transport import NativeCommandRequest, new_command_id
 from ..core.world import WorldStateRevision
@@ -53,7 +48,6 @@ from ..display_lease import (
     DisplayTopologyController,
     external_display_lease,
 )
-from ..final_safe_state import FinalSafeStateStatus, ensure_final_safe_state
 from ..native_commands import write_native_command_request_atomic
 from ..scenario_validation import (
     ScenarioFixtureError,
@@ -133,12 +127,6 @@ class LowPhysicalMemory(LaunchFailed):
         )
 
 
-def _normalize_control_label(value: str) -> str:
-    """Normalize captions used only by bounded recovery UI inspection."""
-
-    return " ".join(value.split()).casefold()
-
-
 def _config_path(args: argparse.Namespace) -> str | Path:
     if getattr(args, "config", None) is not None:
         return str(args.config)
@@ -211,221 +199,6 @@ def _validate_safe_close_snapshot(
     raise LaunchFailed(
         "Safe close requires a fresh loaded paused world or the title screen."
     )
-
-
-def _safe_close_inventory_window(
-    snapshot: TelemetrySnapshot,
-) -> tuple[str, NormalizedPointerBounds]:
-    """Resolve one exact non-commercial inventory window safe to dismiss.
-
-    Shutdown may clean up an inventory layout it can fully explain, but it does
-    not gain generic modal-closing authority. The exact contextual source and
-    selected-character destination are the only recognized owners.
-    """
-
-    refusal = (
-        "Safe close refuses a loaded world while a modal or dialogue is open; "
-        "automatic inventory cleanup"
-    )
-    ui = snapshot.ui
-    if (
-        snapshot.game.loaded is not True
-        or snapshot.game.paused is not True
-        or ui.modal_open is not True
-        or ui.dialogue_open is not False
-    ):
-        raise LaunchFailed(f"{refusal} requires a paused inventory modal.")
-    if snapshot.controller_commands.active_commands():
-        raise LaunchFailed("Safe close refuses while a native command is active.")
-    if ui.active_screen not in {"inventory", "trade"}:
-        raise LaunchFailed(f"{refusal} does not recognize this screen.")
-    if ui.context_menu_open is True:
-        raise LaunchFailed(f"{refusal} refuses an open context menu.")
-    if ui.open_inventory_windows not in {1, 2}:
-        raise LaunchFailed(f"{refusal} requires one or two exact inventory windows.")
-    if (
-        "ui.visible_controls" not in snapshot.capabilities
-        or ui.visible_controls_complete is not True
-        or ui.visible_controls is None
-    ):
-        raise LaunchFailed(f"{refusal} requires complete visible-control telemetry.")
-
-    selected = [
-        character
-        for character in snapshot.selected_characters()
-        if character.id == snapshot.primary_character_id
-    ]
-    if len(selected) != 1 or not selected[0].name:
-        raise LaunchFailed(f"{refusal} requires one exact selected character.")
-    destination_caption = selected[0].name
-
-    source_caption: str | None = None
-    if ui.context_inventory_target_id is not None:
-        targets = [
-            target
-            for target in snapshot.world_targets
-            if target.id == ui.context_inventory_target_id
-            and target.kind == "natural_resource"
-        ]
-        if len(targets) != 1 or not targets[0].name:
-            raise LaunchFailed(f"{refusal} cannot resolve the contextual source.")
-        source_caption = targets[0].name
-    elif ui.open_inventory_windows == 2:
-        # A real trade can arrive with active_screen="inventory" when Kenshi's
-        # transient inventoryWindowTrader pointer is empty. Resolve authority
-        # from the stronger evidence instead: exactly one observed non-hostile
-        # registered shop owner has an exact named inventory root beside ours.
-        shop_captions: list[str] = []
-        for entity in snapshot.nearby_entities:
-            if (
-                entity.shop_inventory_owner is not True
-                or entity.disposition
-                not in {Disposition.FRIENDLY, Disposition.NEUTRAL}
-                or not entity.name
-            ):
-                continue
-            normalized = _normalize_control_label(entity.name)
-            roots = [
-                control
-                for control in ui.visible_controls
-                if control.role == "text"
-                and _normalize_control_label(control.window) == normalized
-                and _normalize_control_label(control.label) == normalized
-            ]
-            if len(roots) == 1:
-                shop_captions.append(entity.name)
-            elif len(roots) > 1:
-                raise LaunchFailed(
-                    f"{refusal} found duplicate roots for {entity.name!r}."
-                )
-        if len(shop_captions) != 1:
-            raise LaunchFailed(
-                f"{refusal} cannot resolve one exact shop-owner window."
-            )
-        source_caption = shop_captions[0]
-
-    captions = [
-        caption
-        for caption in (source_caption, destination_caption)
-        if caption is not None
-    ]
-    normalized_captions = {
-        _normalize_control_label(caption): caption for caption in captions
-    }
-    if len(normalized_captions) != len(captions):
-        raise LaunchFailed(f"{refusal} found ambiguous inventory owners.")
-
-    resolved: dict[str, NormalizedPointerBounds] = {}
-    for normalized, caption in normalized_captions.items():
-        roots = [
-            control
-            for control in ui.visible_controls
-            if control.role == "text"
-            and _normalize_control_label(control.window) == normalized
-            and _normalize_control_label(control.label) == normalized
-        ]
-        if len(roots) > 1:
-            raise LaunchFailed(
-                f"{refusal} found duplicate roots for {caption!r}."
-            )
-        if len(roots) == 1:
-            resolved[normalized] = roots[0].bounds
-
-    if source_caption is not None:
-        source_key = _normalize_control_label(source_caption)
-        if source_key not in resolved:
-            raise LaunchFailed(f"{refusal} cannot see the exact source window.")
-    else:
-        destination_key = _normalize_control_label(destination_caption)
-        if destination_key not in resolved:
-            raise LaunchFailed(
-                f"{refusal} cannot see the selected character's inventory."
-            )
-    if len(resolved) != ui.open_inventory_windows:
-        raise LaunchFailed(
-            f"{refusal} found an unexplained or missing inventory window."
-        )
-
-    chosen_caption = source_caption or destination_caption
-    return (
-        chosen_caption,
-        resolved[_normalize_control_label(chosen_caption)].model_copy(deep=True),
-    )
-
-
-async def _dismiss_safe_close_inventories(
-    controller: InputController,
-    telemetry: TelemetryReader,
-    current: TelemetryRead,
-    *,
-    timeout_seconds: float,
-) -> TelemetryRead:
-    """Dismiss at most the exact source and destination, with causal proof."""
-
-    deadline = time.monotonic() + timeout_seconds
-    for _ in range(2):
-        baseline = current.snapshot
-        if baseline.ui.modal_open is False:
-            return current
-        caption, bounds = _safe_close_inventory_window(baseline)
-        open_count = baseline.ui.open_inventory_windows
-        if open_count is None:
-            raise LaunchFailed("Safe close inventory count became unknown.")
-        action = ClickAction(
-            x=window_close_point(bounds)[0],
-            y=window_close_point(bounds)[1],
-            hold_seconds=MYGUI_CLICK_HOLD_SECONDS,
-        )
-
-        _abort_if_human_input(controller)
-        async with controller.input_lease():
-            _abort_if_human_input(controller)
-            in_lease = telemetry.read()
-            if in_lease.stale:
-                raise LaunchFailed(
-                    "Safe close inventory telemetry became stale inside the input lease."
-                )
-            current_caption, current_bounds = _safe_close_inventory_window(
-                in_lease.snapshot
-            )
-            current_action = ClickAction(
-                x=window_close_point(current_bounds)[0],
-                y=window_close_point(current_bounds)[1],
-                hold_seconds=MYGUI_CLICK_HOLD_SECONDS,
-            )
-            if current_caption != caption or current_action != action:
-                raise LaunchFailed(
-                    "Safe close inventory layout changed inside the input lease; "
-                    "no pointer input was sent."
-                )
-            receipt = await controller.execute(action)
-        if not receipt.executed:
-            raise LaunchFailed(
-                receipt.message or f"Safe close could not dismiss {caption!r}."
-            )
-
-        while time.monotonic() < deadline:
-            candidate = telemetry.read()
-            if (
-                not candidate.stale
-                and candidate.snapshot.sequence > in_lease.snapshot.sequence
-                and candidate.snapshot.game.loaded is True
-                and candidate.snapshot.game.paused is True
-                and not candidate.snapshot.controller_commands.active_commands()
-                and candidate.snapshot.ui.dialogue_open is False
-                and candidate.snapshot.ui.open_inventory_windows is not None
-                and candidate.snapshot.ui.open_inventory_windows < open_count
-            ):
-                current = candidate
-                break
-            await asyncio.sleep(0.25)
-        else:
-            raise LaunchFailed(
-                f"Safe close could not causally confirm {caption!r} closed."
-            )
-    if current.snapshot.ui.modal_open is False:
-        return current
-    raise LaunchFailed("Safe close inventory cleanup exceeded two exact windows.")
 
 
 def _controller(
@@ -1085,22 +858,64 @@ async def _ensure_native_launch_pause(
 ) -> TelemetrySnapshot:
     """Pause a freshly loaded world through the native request watcher."""
 
+    return await _dispatch_native_loaded_cleanup(
+        config,
+        reader,
+        controller,
+        command="pause",
+        timeout=timeout,
+        health_check=health_check,
+    )
+
+
+def _blocking_interface_open(snapshot: TelemetrySnapshot) -> bool:
+    ui = snapshot.ui
+    return bool(
+        ui.modal_open is True
+        or ui.dialogue_open is True
+        or (ui.open_inventory_windows or 0) > 0
+        or ui.stats_window_open is True
+        or ui.prospecting_window_open is True
+        or ui.management_screen_open is True
+        or (ui.active_screen is not None and ui.active_screen != "world")
+    )
+
+
+async def _dispatch_native_loaded_cleanup(
+    config: AppConfig,
+    reader: TelemetryReader,
+    controller: InputController,
+    *,
+    command: Literal["pause", "close_active_interface"],
+    timeout: float,
+    health_check: Callable[[], None] | None = None,
+) -> TelemetrySnapshot:
+    """Run one loaded-world cleanup command with exact terminal evidence."""
+
     initial = reader.read()
     if initial.stale:
-        raise LaunchFailed("Native post-load pause requires fresh telemetry.")
+        raise LaunchFailed(f"Native {command} cleanup requires fresh telemetry.")
     snapshot = initial.snapshot
-    if snapshot.game.paused is True:
+    if command == "pause" and snapshot.game.paused is True:
         return snapshot
+    if command == "close_active_interface" and not _blocking_interface_open(snapshot):
+        return snapshot
+    capability = "game.pause" if command == "pause" else "control.close_active_interface"
     if (
         not snapshot.game.loaded
-        or snapshot.game.paused is not False
-        or "game.pause" not in snapshot.capabilities
+        or (command == "pause" and snapshot.game.paused is not False)
+        or (command == "close_active_interface" and snapshot.game.paused is not True)
+        or capability not in snapshot.capabilities
         or not snapshot.controller_commands.available
     ):
         raise LaunchFailed(
-            "Freshly loaded world does not expose the native pause contract."
+            f"Freshly loaded world does not expose the native {command} cleanup contract."
         )
-    request = _native_request_for_snapshot(snapshot, command="pause", paused=True)
+    request = _native_request_for_snapshot(
+        snapshot,
+        command=command,
+        paused=command == "pause",
+    )
     write_native_command_request_atomic(_native_request_path(config), request)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -1109,7 +924,7 @@ async def _ensure_native_launch_pause(
         terminal_title = _terminal_window_title(controller)
         if terminal_title is not None:
             raise LaunchFailed(
-                f"Native post-load pause failed because {terminal_title!r} appeared."
+                f"Native {command} cleanup failed because {terminal_title!r} appeared."
             )
         try:
             current = reader.read()
@@ -1121,15 +936,45 @@ async def _ensure_native_launch_pause(
             continue
         current_snapshot = current.snapshot
         if current_snapshot.identity_session_id != request.identity_session_id:
-            raise LaunchFailed("Loaded-world identity changed during native pause.")
-        _raise_if_native_rejected(current_snapshot, request)
-        if (
-            current_snapshot.sequence > snapshot.sequence
-            and current_snapshot.game.paused is True
-        ):
-            return current_snapshot
+            raise LaunchFailed(f"Loaded-world identity changed during native {command}.")
+        acknowledgement = current_snapshot.controller_commands.command_for(
+            request.command_id
+        )
+        if acknowledgement is not None:
+            if acknowledgement.status in {
+                NativeCommandStatus.REJECTED,
+                NativeCommandStatus.CANCELLED,
+            }:
+                raise LaunchFailed(
+                    f"Native {command} cleanup was {acknowledgement.status.value}: "
+                    f"{acknowledgement.reason}."
+                )
+            if (
+                acknowledgement.based_on_telemetry_sequence
+                != request.based_on_revision.telemetry_sequence
+                or acknowledgement.selected_character_ids
+                != request.selected_character_ids
+            ):
+                raise LaunchFailed(
+                    f"Native {command} cleanup acknowledgement violated request fences."
+                )
+            expected_reason = (
+                "world_paused" if command == "pause" else "active_interface_closed"
+            )
+            state_confirmed = (
+                current_snapshot.game.paused is True
+                if command == "pause"
+                else not _blocking_interface_open(current_snapshot)
+            )
+            if (
+                current_snapshot.sequence > snapshot.sequence
+                and acknowledgement.status is NativeCommandStatus.COMPLETED
+                and acknowledgement.reason == expected_reason
+                and state_confirmed
+            ):
+                return current_snapshot
         await asyncio.sleep(0.1)
-    raise TimeoutError("Timed out waiting for the native post-load pause.")
+    raise TimeoutError(f"Timed out waiting for native {command} cleanup.")
 
 
 async def _execute_primitive(
@@ -1144,23 +989,6 @@ async def _execute_primitive(
         raise RuntimeError(receipt.message)
 
 
-async def _click(
-    controller: InputController,
-    x: float,
-    y: float,
-) -> None:
-    await _execute_primitive(
-        controller,
-        ClickAction(x=x, y=y, hold_seconds=MYGUI_CLICK_HOLD_SECONDS),
-    )
-
-
-# Kenshi's MyGUI needs a measurable press; an instantaneous down/up moves the
-# cursor and activates nothing. Matches controls.control_activation_hold_seconds.
-MYGUI_CLICK_HOLD_SECONDS = 0.12
-
-
-
 def _validate_calibrated_client_rect(
     rect: WindowRect,
     controls: ControlsConfig,
@@ -1173,23 +1001,6 @@ def _validate_calibrated_client_rect(
         expected_width=expected_width,
         expected_height=expected_height,
     )
-
-
-async def _ensure_interrupted_safe_state(
-    controller: InputController,
-    reader: TelemetryReader,
-    *,
-    pause_key: str,
-    timeout_seconds: float,
-) -> str:
-    outcome = await ensure_final_safe_state(
-        controller=controller,
-        telemetry=reader,
-        pause_primitives=[KeyAction(key=pause_key)],
-        timeout_seconds=timeout_seconds,
-        input_authorized=True,
-    )
-    return outcome.reason
 
 
 async def _observe_loaded_paused_health(
@@ -1555,33 +1366,30 @@ async def _close_kenshi_safely(
     if initial.stale:
         raise LaunchFailed("Safe close requires fresh telemetry.")
     if initial.snapshot.game.loaded and initial.snapshot.game.paused is not True:
-        outcome = await ensure_final_safe_state(
-            controller=controller,
-            telemetry=telemetry,
-            pause_primitives=[KeyAction(key=config.controls.pause_key)],
-            timeout_seconds=timeout_seconds,
-            input_authorized=True,
+        await _dispatch_native_loaded_cleanup(
+            config,
+            telemetry,
+            controller,
+            command="pause",
+            timeout=timeout_seconds,
         )
-        if outcome.status is not FinalSafeStateStatus.PAUSE_CONFIRMED:
-            raise LaunchFailed(
-                "Safe close could not causally confirm a pause; "
-                f"WM_CLOSE was not sent. {outcome.reason}"
-            )
 
     current = telemetry.read()
     if current.stale:
         raise LaunchFailed("Safe close requires fresh telemetry.")
-    if (
-        current.snapshot.game.loaded is True
-        and current.snapshot.game.paused is True
-        and current.snapshot.ui.modal_open is True
+    if current.snapshot.game.loaded is True and _blocking_interface_open(
+        current.snapshot
     ):
-        current = await _dismiss_safe_close_inventories(
-            controller,
+        closed = await _dispatch_native_loaded_cleanup(
+            config,
             telemetry,
-            current,
-            timeout_seconds=timeout_seconds,
+            controller,
+            command="close_active_interface",
+            timeout=timeout_seconds,
         )
+        current = telemetry.read()
+        if current.stale or current.snapshot.sequence < closed.sequence:
+            raise LaunchFailed("Safe close lost fresh native interface-close evidence.")
     safe_state = _validate_safe_close_snapshot(
         current.snapshot.model_dump(mode="json"),
         max_age_seconds=config.telemetry.max_age_seconds,
@@ -1614,18 +1422,13 @@ async def _recover_kenshi_safe_state(
     if initial.stale:
         raise LaunchFailed("Interrupted recovery requires fresh telemetry.")
     if initial.snapshot.game.loaded and initial.snapshot.game.paused is not True:
-        outcome = await ensure_final_safe_state(
-            controller=controller,
-            telemetry=telemetry,
-            pause_primitives=[KeyAction(key=config.controls.pause_key)],
-            timeout_seconds=timeout_seconds,
-            input_authorized=True,
+        await _dispatch_native_loaded_cleanup(
+            config,
+            telemetry,
+            controller,
+            command="pause",
+            timeout=timeout_seconds,
         )
-        if outcome.status is not FinalSafeStateStatus.PAUSE_CONFIRMED:
-            raise LaunchFailed(
-                "Interrupted recovery could not causally confirm a pause. "
-                f"{outcome.reason}"
-            )
 
     current = telemetry.read()
     if current.stale:
@@ -1645,17 +1448,19 @@ async def _recover_kenshi_safe_state(
             command_ids=active_command_ids,
             timeout_seconds=timeout_seconds,
         )
-    if (
-        current.snapshot.game.loaded is True
-        and current.snapshot.game.paused is True
-        and current.snapshot.ui.modal_open is True
+    if current.snapshot.game.loaded is True and _blocking_interface_open(
+        current.snapshot
     ):
-        current = await _dismiss_safe_close_inventories(
-            controller,
+        closed = await _dispatch_native_loaded_cleanup(
+            config,
             telemetry,
-            current,
-            timeout_seconds=timeout_seconds,
+            controller,
+            command="close_active_interface",
+            timeout=timeout_seconds,
         )
+        current = telemetry.read()
+        if current.stale or current.snapshot.sequence < closed.sequence:
+            raise LaunchFailed("Recovery lost fresh native interface-close evidence.")
     return _validate_safe_close_snapshot(
         current.snapshot.model_dump(mode="json"),
         max_age_seconds=config.telemetry.max_age_seconds,

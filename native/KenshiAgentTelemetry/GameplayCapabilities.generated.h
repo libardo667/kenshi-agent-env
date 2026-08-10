@@ -33,6 +33,7 @@ namespace KenshiAgentTelemetry
             "ui.dialogue",
             "ui.dialogue.target",
             "ui.dialogue.options",
+            "ui.prospecting",
             "ui.tooltip",
             "ui.visible_controls",
             "ui.context_inventory_target",

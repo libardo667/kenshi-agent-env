@@ -12,7 +12,7 @@ of restating their reverse-engineering conclusions.
 | [`context_menu_orders`](../../game_sources/research/context_menu_orders/conclusion.md) | `source_proven` | 1.0.65 `a596ab4e407c...` | `medium` | 2 | 2 | 4 |
 | [`inventory_transfer`](../../game_sources/research/inventory_transfer/conclusion.md) | `live_proven` | 1.0.65 `a596ab4e407c...` | `medium` | 2 | 1 | 4 |
 | [`player_topology`](../../game_sources/research/player_topology/conclusion.md) | `live_proven` | 1.0.65 `a596ab4e407c...` | `medium` | 1 | 0 | 4 |
-| [`prospecting_window`](../../game_sources/research/prospecting_window/conclusion.md) | `source_proven` | 1.0.65 `a596ab4e407c...` | `medium` | 0 | 1 | 3 |
+| [`prospecting_window`](../../game_sources/research/prospecting_window/conclusion.md) | `live_proven` | 1.0.65 `a596ab4e407c...` | `medium` | 1 | 1 | 3 |
 | [`resource_operators`](../../game_sources/research/resource_operators/conclusion.md) | `live_proven` | 1.0.65 `a596ab4e407c...` | `medium` | 1 | 0 | 4 |
 | [`task_channels`](../../game_sources/research/task_channels/conclusion.md) | `live_proven` | 1.0.65 `a596ab4e407c...` | `medium` | 1 | 0 | 3 |
 

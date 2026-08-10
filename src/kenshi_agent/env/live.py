@@ -323,10 +323,21 @@ class LiveEnvironment(AgentEnvironment):
                     ),
                 )
                 return self._close_outcome
+            async def request_native_pause() -> tuple[int, str]:
+                return await self._surface.apply_pause_request(
+                    True,
+                    safety=True,
+                )
+
+            pause_request = None
+            if self._surface.native_time_control_available():
+                pause_request = request_native_pause
+                pause_primitives = []
             self._close_outcome = await ensure_final_safe_state(
                 controller=self.controller,
                 telemetry=self.telemetry_reader,
                 pause_primitives=pause_primitives,
+                pause_request=pause_request,
                 timeout_seconds=self.final_pause_timeout_seconds,
                 input_authorized=True,
             )

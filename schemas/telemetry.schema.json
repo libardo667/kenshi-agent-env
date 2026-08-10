@@ -2129,6 +2129,18 @@
           "default": null,
           "title": "Stats Window Open"
         },
+        "prospecting_window_open": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prospecting Window Open"
+        },
         "open_inventory_windows": {
           "anyOf": [
             {
