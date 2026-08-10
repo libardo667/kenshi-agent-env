@@ -1,15 +1,15 @@
-# Checkpoint: native productive mining and local trade
+# Checkpoint: 120-turn native survival soak
 
-This goal makes the mine-to-vendor loop native, efficient, and truthful before
-returning to an open-ended survival soak. Productive resource work owns its
-monitored interval and fastest playback. Trade-window authoring requires a
-local primary/vendor pair before native rendering, and an accepted request is
-not success until Kenshi reports the exact open-window terminal.
+This goal exercises the native semantic surface for 120 open-ended planning
+turns and fixes failures exposed by the soak without weakening truthful
+terminals or non-progress guards. The first attempt exposed an incremental
+production-contract bug after otherwise completing mining, travel, dialogue,
+food purchases, and bodyguard hire.
 
 ## Repository and authority
 
 ```text
-parent commit          dd1230a357b2cac8ac88b08002795fc6459c94d4
+parent commit          cf4a2f9db075365b32445477ef4677a69560aeba
 integration branch     main
 starting tree          clean
 producer protocol      2.0.0
@@ -36,7 +36,8 @@ claim simultaneous active gameplay-command ownership.
 - Natural-resource `operate` remains a routable low-level standing-job command,
   but it is not planner-authored. The resource offer exposes only
   `produce_resource_output`, whose native monitor owns exact accepted-operator
-  admission, waits for real output stock, and releases controller-owned work.
+  admission, advances the complete observed output total by one up to five,
+  waits for that exact threshold, and releases controller-owned work.
 - The productive command establishes gear 3 / 5x through the native
   `set_speed` command. No speed key, pause key, pointer action, or input lease is
   used in a healthy native-assisted session.
@@ -117,6 +118,30 @@ manifest, fixture attestation, exact request/acknowledgement chain, decisive
 telemetry, visual frame descriptions, DLL/PDB identities, hashes for the
 omitted 12.8-MiB event stream and all raw PNGs, and final disposition.
 
+## First soak finding and candidate repair
+
+Run `protocol-2-native-survival-soak-20260810-r5` ended safely after 18
+completed plans rather than reaching the 120-turn ceiling. Its last three
+structured plans each stated an objective to travel to the Copper Resource,
+but selected the exact `observe` / `noop` affordance. These were not parser,
+transport, or fallback failures: structured output was accepted and the
+planner chose the no-op itself. The unchanged-state guard then stopped the run
+after the third completed no-op, which is the intended safety behavior.
+
+At that state the Copper Resource was 1,850 units away and its complete output
+inventory already contained one Copper. `produce_resource_output` was still
+offered, but its bound action retained the default absolute threshold of one
+and its planner-visible description promised only to work until any stock
+existed. Selecting it therefore could not travel, work, or change state.
+
+The candidate repair derives each offer from complete engine output state. An
+observed total of one now binds `minimum_output_quantity=2` and explicitly
+offers to path to the resource and produce one additional item. The threshold
+advances up to the native action maximum of five; a full output withholds
+production until collection makes space. Focused affordance, binding, model,
+and operation-definition tests pass. The complete portable gate also passes;
+the 120-turn rerun remains pending.
+
 ## DLL artifacts and exact commands
 
 Both sides of the installation are preserved:
@@ -170,11 +195,14 @@ The named targeted live regression proves:
 6. no mouse, pointer, keyboard, false acknowledgement, or planner wait loop was
    used.
 
-The later 100+ turn open-ended survival soak remains outside this bounded goal.
+The current goal is complete only after a fresh run reaches all 120 turns, its
+bundle is audited for crashes, early stops, rejected or aborted actions,
+primitive desktop input, and final safe state, and Kenshi is closed cleanly.
 
 ## Verification
 
-The complete portable gate passed on 2026-08-10:
+The complete portable gate passed on 2026-08-10 for the incremental production
+candidate before the next live attempt:
 
 ```bash
 UV_CACHE_DIR=/tmp/kae-uv-cache ./dev verify-portable

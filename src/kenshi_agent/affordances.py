@@ -1200,14 +1200,26 @@ def _native_and_composite_offers(
                 and target.output_inventory_complete
             ):
                 continue
+            output_quantity = sum(item.quantity for item in target.output_inventory)
+            # The native production command owns an absolute output threshold.
+            # Offering its default threshold after stock already exists creates
+            # an action that succeeds without travelling or working. Advance
+            # the exact observed threshold by one so every offered selection is
+            # capable of producing new output. Five is both the action contract
+            # maximum and the resource output capacity exposed by this route;
+            # collection must make space before production can be offered again.
+            if output_quantity >= 5:
+                continue
+            minimum_output_quantity = output_quantity + 1
             occupied_slots = len(target.current_operator_ids)
             yield _offer(
                 observation,
                 source=AffordanceSource.NATIVE_OPERATION,
                 semantic="produce_resource_output",
                 description=(
-                    f"Work {target.name!r} at fastest playback only until output stock "
-                    "exists, then release "
+                    f"Travel/path to and work {target.name!r} at fastest playback until "
+                    f"its exact output total reaches {minimum_output_quantity}, one more "
+                    f"than the observed {output_quantity}, then release "
                     f"controller-owned work ({occupied_slots}/{target.operator_capacity} "
                     "operator slots occupied). Selection and queued work do not prove "
                     "acceptance. Output stays in the resource; pair inventories and "
@@ -1219,7 +1231,10 @@ def _native_and_composite_offers(
                     label=target.name,
                     kind=target.kind,
                 ),
-                arguments={"target_id": target.id},
+                arguments={
+                    "target_id": target.id,
+                    "minimum_output_quantity": minimum_output_quantity,
+                },
             )
 
     yield _offer(

@@ -28,6 +28,7 @@ from kenshi_agent.core.telemetry import (
     KnownMapDestination,
     NearbyEntity,
     NormalizedPointerBounds,
+    ResourceOutputItem,
     TelemetrySnapshot,
     UIState,
     Vec3,
@@ -446,6 +447,103 @@ def test_resource_offer_descriptions_bound_complete_long_operator_sets() -> None
     assert all("2/2 operator slots occupied" in offer.description for offer in resource_offers)
     assert all(first.id not in offer.description for offer in resource_offers)
     assert all(second.id not in offer.description for offer in resource_offers)
+
+
+def test_resource_offer_produces_one_more_than_exact_observed_output() -> None:
+    actor = CharacterState(id="entity-bark", name="Bark")
+    resource = WorldTarget(
+        id="resource-copper",
+        name="Copper Resource",
+        kind="natural_resource",
+        position=Vec3(x=10, y=0, z=20),
+        distance=1850,
+        context_actions=[ContextActionKind.OPERATE],
+        default_task="operate_machinery",
+        operator_capacity=2,
+        current_operator_ids=[],
+        current_operators_complete=True,
+        output_inventory=[
+            ResourceOutputItem(name="Copper", quantity=1, item_type=4)
+        ],
+        output_inventory_complete=True,
+    )
+    observation = _observation(
+        capabilities=[
+            "control.produce_resource_output",
+            "game.pause",
+            "identity.stable_handles",
+            "world.context_targets",
+            "world.resource_operators",
+        ],
+        roster=[actor],
+        targets=[resource],
+        primary_character_id=actor.id,
+        selected_character_ids=[actor.id],
+        ui=UIState(
+            active_screen="world",
+            dialogue_open=False,
+            modal_open=False,
+        ),
+    )
+
+    offers = [
+        offer
+        for offer in offered_affordances(observation)
+        if offer.operation_kind == "produce_resource_output"
+    ]
+
+    assert len(offers) == 1
+    assert offers[0].operation_arguments == {
+        "target_id": resource.id,
+        "minimum_output_quantity": 2,
+    }
+    assert "Travel/path to and work 'Copper Resource'" in offers[0].description
+    assert "reaches 2, one more than the observed 1" in offers[0].description
+    bound = bind_affordance(selection_for(offers[0]), observation)
+    assert bound.operation.minimum_output_quantity == 2
+
+
+def test_resource_production_is_withheld_while_exact_output_is_full() -> None:
+    actor = CharacterState(id="entity-bark", name="Bark")
+    full_resource = WorldTarget(
+        id="resource-copper",
+        name="Copper Resource",
+        kind="natural_resource",
+        position=Vec3(x=10, y=0, z=20),
+        distance=25,
+        context_actions=[ContextActionKind.OPERATE],
+        default_task="operate_machinery",
+        operator_capacity=2,
+        current_operator_ids=[],
+        current_operators_complete=True,
+        output_inventory=[
+            ResourceOutputItem(name="Copper", quantity=5, item_type=4)
+        ],
+        output_inventory_complete=True,
+    )
+    observation = _observation(
+        capabilities=[
+            "control.produce_resource_output",
+            "game.pause",
+            "identity.stable_handles",
+            "world.context_targets",
+            "world.resource_operators",
+        ],
+        roster=[actor],
+        targets=[full_resource],
+        primary_character_id=actor.id,
+        selected_character_ids=[actor.id],
+        ui=UIState(
+            active_screen="world",
+            dialogue_open=False,
+            modal_open=False,
+        ),
+    )
+
+    assert not any(
+        offer.operation_kind == "produce_resource_output"
+        for offer in offered_affordances(observation)
+    )
 
 
 def test_resource_operations_are_withheld_without_complete_engine_state() -> None:

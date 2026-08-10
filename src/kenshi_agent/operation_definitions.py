@@ -2521,7 +2521,8 @@ PRODUCE_RESOURCE_OUTPUT_DEFINITION = OperationDefinition(
     operation_type=ProduceResourceOutputAction,
     summary=(
         "Keep one exact natural-resource order under option ownership until the "
-        "resource output inventory contains stock. Current operators come only from "
+        "resource output inventory reaches its requested exact threshold. Current "
+        "operators come only from "
         "Kenshi's accepted-operator set; selection and queued work are not acceptance. "
         "Work issued by this option is fully cleared before its terminal; an already "
         "accepted selected operator is adopted and left player-owned."
