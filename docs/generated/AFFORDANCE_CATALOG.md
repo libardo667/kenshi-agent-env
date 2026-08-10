@@ -6,6 +6,7 @@ Regenerate with `python scripts/export_docs.py`.
 
 | adapter | sources | private operations | denominator | completeness boundary |
 | --- | --- | --- | --- | --- |
+| `character_editor` | `native_operation` | `confirm_character_editor` | The exact mandatory character editor, when currently open. | The editor is exported from Kenshi's own character-editor mode and the operation invokes only its exact CONFIRM control. |
 | `dialogue_options` | `dialogue` | `select_dialogue_option` | Every exact current reply in the open dialogue's ordered option list. | The producer exports the complete rendered reply list. Empty captions and captions beyond the 500-character exact-address contract are withheld. |
 | `interface_exit` | `native_operation` | `close_active_interface` | The current observed blocking interface, when one exists. | Native cleanup covers Prospecting, dialogue, message boxes, trade and inventory windows, and ordinary registered GUI windows. |
 | `runtime` | `runtime` | `consult_advisor`, `noop`, `pause`, `read_fieldbook`, `recall_memory`, `set_speed`, `stop`, `wait` | Runtime control, playback, advisor, memory, and fieldbook state. | Only choices applicable to the current run state. |

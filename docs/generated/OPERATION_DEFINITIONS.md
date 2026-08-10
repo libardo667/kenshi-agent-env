@@ -12,15 +12,16 @@ Internal-only definitions are controller phases or runtime operations;
 they still bind through this registry but are not planner-visible offers.
 
 ```text
-definitions             25
-adapter operation kinds  25
-adapter routes           25
-adapters                 12
+definitions             26
+adapter operation kinds  26
+adapter routes           26
+adapters                 13
 ownership proof         PASS
 
 DEFINITIONS
   approach_dialogue_target            dialogue.approach_dialogue_target                       ApproachDialogueTargetAction [dialogue_targets]
   close_active_interface              resources.close_active_interface                        CloseActiveInterfaceAction [interface_exit]
+  confirm_character_editor            resources.confirm_character_editor                      ConfirmCharacterEditorAction [character_editor]
   consult_advisor                     cognition.advisor                                       ConsultAdvisorAction [runtime]
   exit_current_building               movement.exit_current_building                          ExitCurrentBuildingAction [native_and_composite]
   move_in_direction                   movement.move_in_direction                              MoveInDirectionAction [native_and_composite]
@@ -46,6 +47,7 @@ DEFINITIONS
   wait                                runtime.wait                                            WaitAction [runtime]
 
 SOURCE-SPECIFIC COMPLETENESS BOUNDARIES
+  character_editor: The editor is exported from Kenshi's own character-editor mode and the operation invokes only its exact CONFIRM control.
   dialogue_options: The producer exports the complete rendered reply list. Empty captions and captions beyond the 500-character exact-address contract are withheld.
   interface_exit: Native cleanup covers Prospecting, dialogue, message boxes, trade and inventory windows, and ordinary registered GUI windows.
   runtime: Only choices applicable to the current run state.

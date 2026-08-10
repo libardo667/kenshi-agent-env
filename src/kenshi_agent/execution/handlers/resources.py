@@ -12,6 +12,7 @@ from ...core.evidence import SemanticActionReceipt
 from ...core.operation import (
     Action,
     CloseActiveInterfaceAction,
+    ConfirmCharacterEditorAction,
     OpenTradeWindowAction,
     PerformContextAction,
     ProduceResourceOutputAction,
@@ -50,6 +51,10 @@ class ResourceMechanicsPort(Protocol):
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
     ) -> Transition: ...
 
+    async def confirm_character_editor(
+        self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
+    ) -> Transition: ...
+
     async def select_dialogue_option(
         self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
     ) -> Transition: ...
@@ -75,6 +80,10 @@ def resource_handlers(
         ),
         "resources.close_active_interface": AtomicMovementHandler(
             port.close_active_interface,
+            verify_native_terminal=True,
+        ),
+        "resources.confirm_character_editor": AtomicMovementHandler(
+            port.confirm_character_editor,
             verify_native_terminal=True,
         ),
         "resources.select_dialogue_option": AtomicMovementHandler(
@@ -125,6 +134,16 @@ class KenshiResourceMechanics:
             command=command,
             token=token,
             receipt=self._execute_close_interface_operation,
+        )
+
+    async def confirm_character_editor(
+        self, action: Action, *, command: CommandDispatchContext, token: ExecutionToken | None
+    ) -> Transition:
+        return await self._surface.run_exact(
+            action,
+            command=command,
+            token=token,
+            receipt=self._execute_confirm_character_editor_operation,
         )
 
     async def select_dialogue_option(
@@ -189,6 +208,15 @@ class KenshiResourceMechanics:
     ) -> ActionReceipt:
         return await self._execute_select_dialogue_option(
             cast(SelectDialogueOptionAction, action),
+            started,
+            await self._surface.require_command(command),
+        )
+
+    async def _execute_confirm_character_editor_operation(
+        self, action: Action, started: datetime, command: CommandDispatchContext | None
+    ) -> ActionReceipt:
+        return await self._execute_confirm_character_editor(
+            cast(ConfirmCharacterEditorAction, action),
             started,
             await self._surface.require_command(command),
         )
@@ -343,6 +371,38 @@ class KenshiResourceMechanics:
             wire_command=native_commands.NATIVE_CLOSE_INTERFACE_WIRE_COMMAND,
             require_dialogue_target=False,
             accepted_is_terminal_error=True,
+        )
+
+    async def _execute_confirm_character_editor(
+        self,
+        action: ConfirmCharacterEditorAction,
+        started: datetime,
+        command: CommandDispatchContext,
+    ) -> ActionReceipt:
+        semantic = SemanticActionReceipt(
+            action_kind=action.kind,
+            contract_version=operations.CONFIRM_CHARACTER_EDITOR_DEFINITION.version,
+            resolved_label="CONFIRM",
+            source_revision=command.based_on_revision,
+            revalidation=(
+                "Re-proved Kenshi's character-editor mode, invoked its exact "
+                "native CONFIRM control, and required a later frame in which "
+                "character-editor mode ended."
+            ),
+        )
+        return await self._surface.run_native_order(
+            action,
+            started,
+            command,
+            target_id="",
+            pulse_seconds=self._surface.controls_config.native_movement_pulse_seconds,
+            require_vendor_role=False,
+            wire_fields=operations.wire_fields_for(action),
+            semantic=semantic,
+            wire_command=native_commands.NATIVE_CONFIRM_CHARACTER_EDITOR_WIRE_COMMAND,
+            require_dialogue_target=False,
+            await_terminal_without_playback=True,
+            deferred_terminal_timeout_seconds=10.0,
         )
 
     async def _execute_select_dialogue_option(

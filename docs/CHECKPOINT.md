@@ -10,7 +10,7 @@ purchases, and bodyguard hire.
 ## Repository and authority
 
 ```text
-parent commit          2f9da6a7e13c6a9a43bcf74252399220fca7e9f1
+parent commit          72dddb637a4ff8c456eefb620cd8fd9186c4235a
 integration branch     main
 starting tree          clean
 producer protocol      2.0.0
@@ -160,30 +160,48 @@ expose and require their exact IDs, and a missing or incorrect disambiguator
 still fails closed. Focused planner, budget, proposal, and affordance tests
 pass, as does the complete portable gate. The 120-turn rerun remains pending.
 
+Run `protocol-2-native-survival-soak-20260810-r7` reached 34 turns and proved
+incremental Iron output thresholds one through five, Copper production,
+travel, food and medical purchases, and the complete Ruka recruitment
+dialogue. Kenshi then opened its mandatory `IMPORT CHARACTER` editor while the
+ordinary roster and selection were empty. The model had no semantic operation
+for that surface, so the unchanged-state guard safely stopped after three
+observe-only plans. The user completed recruitment and saved
+`kenshi-ruka-recruit`; it is captured immutably as scenario
+`ruka-recruited-survival-soak-20260810` with fixture digest
+`96d3a749a5a85bb9e44b064e2516da25c3faeb45812364ccfe11637c6ec9c917`.
+
+The candidate now exports `ui.character_editor_open`, reports
+`active_screen=character_editor`, withholds generic interface closure, and
+offers only `accept_recruited_character`. Its native command resolves the exact
+layout-owned `ConfirmButton`, invokes the game-owned click event without a
+mouse, cursor, key, or coordinate, and remains accepted until a later engine
+frame proves character-editor mode absent. Source, strict models, shared wire
+fixture, portable tests, compiled conformance, and installed parity are proven;
+the new command's live outcome remains explicitly unproven.
+
 ## DLL artifacts and exact commands
 
 Both sides of the installation are preserved:
 
 ```text
-pre-change DLL path     C:\Users\levib\AppData\Local\KenshiAgent\backups\native\20260810-native-mining-local-trade\pre-change\KenshiAgentTelemetry.dll
-pre-change DLL sha256   033cf6e489816644f5310eb38d90ffc4e625e4812f8ed41d79aac05d58e4dfdd
-pre-change DLL size     435712
-pre-change PDB sha256   9976a2e536e838ecc635ed2b29504b38fd9f686475530ab185c1c5ddaa2fd4d6
-pre-change PDB size     11127808
-replacement DLL path    C:\Users\levib\AppData\Local\KenshiAgent\backups\native\20260810-native-mining-local-trade\replacement\KenshiAgentTelemetry.dll
-replacement DLL sha256  76310e286fc4caf833ee865e0c68c01c25f4382cbbbc39db92e5640050b08f62
-replacement DLL size    436736
-replacement PDB sha256  9787a2082b3e1172902920e8750737a205be8aaca4f10a51b4c89034dcde1ff7
-replacement PDB size    11127808
-conformance exe sha256  3f15a37919e1223034c4e4783833d34286a0f803073d3411758da22f21406a97
-conformance exe size    318464
+pre-change DLL path     C:\Users\levib\AppData\Local\KenshiAgent\backups\native\20260810-character-editor-confirmation\pre-change\KenshiAgentTelemetry.dll
+pre-change DLL sha256   76310e286fc4caf833ee865e0c68c01c25f4382cbbbc39db92e5640050b08f62
+pre-change DLL size     436736
+replacement DLL path    C:\Users\levib\AppData\Local\KenshiAgent\backups\native\20260810-character-editor-confirmation\replacement\KenshiAgentTelemetry.dll
+replacement DLL sha256  7aae1d50a36f8fdd6ddfbf43392632ebfd597b3306ef3c9c0af14b53fc5a6b42
+replacement DLL size    440320
+replacement PDB sha256  0e601c7e68623b15d902018f1aacf7270edd280212a32df2899b2deed652ee95
+replacement PDB size    11136000
+conformance exe sha256  46411ba3aa44eb0802027a185cc5af460005ddfe7b7749922096e4f2fd946af6
+conformance exe size    322560
 installed parity        YES
 ```
 
 Rollback exactly to the pre-change DLL:
 
 ```powershell
-Copy-Item -LiteralPath 'C:\Users\levib\AppData\Local\KenshiAgent\backups\native\20260810-native-mining-local-trade\pre-change\KenshiAgentTelemetry.dll' -Destination 'C:\Program Files (x86)\Steam\steamapps\common\Kenshi\mods\KenshiAgentTelemetry\KenshiAgentTelemetry.dll' -Force
+Copy-Item -LiteralPath 'C:\Users\levib\AppData\Local\KenshiAgent\backups\native\20260810-character-editor-confirmation\pre-change\KenshiAgentTelemetry.dll' -Destination 'C:\Program Files (x86)\Steam\steamapps\common\Kenshi\mods\KenshiAgentTelemetry\KenshiAgentTelemetry.dll' -Force
 ```
 
 Build the candidate:
@@ -192,10 +210,10 @@ Build the candidate:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build_native.ps1
 ```
 
-Reinstall the exact live-proven replacement DLL:
+Reinstall the exact candidate replacement DLL:
 
 ```powershell
-Copy-Item -LiteralPath 'C:\Users\levib\AppData\Local\KenshiAgent\backups\native\20260810-native-mining-local-trade\replacement\KenshiAgentTelemetry.dll' -Destination 'C:\Program Files (x86)\Steam\steamapps\common\Kenshi\mods\KenshiAgentTelemetry\KenshiAgentTelemetry.dll' -Force
+Copy-Item -LiteralPath 'C:\Users\levib\AppData\Local\KenshiAgent\backups\native\20260810-character-editor-confirmation\replacement\KenshiAgentTelemetry.dll' -Destination 'C:\Program Files (x86)\Steam\steamapps\common\Kenshi\mods\KenshiAgentTelemetry\KenshiAgentTelemetry.dll' -Force
 ```
 
 ## Completion boundary

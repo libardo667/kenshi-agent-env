@@ -499,6 +499,7 @@ def advisor_state_fingerprint(observation: Observation) -> str:
         "ui": (
             {
                 "active_screen": telemetry.ui.active_screen,
+                "character_editor_open": telemetry.ui.character_editor_open,
                 "dialogue_open": telemetry.ui.dialogue_open,
                 "dialogue_target_id": telemetry.ui.dialogue_target_id,
                 "dialogue_options": telemetry.ui.dialogue_options,

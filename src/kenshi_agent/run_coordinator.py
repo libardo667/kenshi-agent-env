@@ -202,6 +202,7 @@ def _noop_stall_signature(observation: Observation) -> tuple[object, ...]:
         tuple(telemetry.selected_character_ids),
         ui.active_screen,
         ui.modal_open,
+        ui.character_editor_open,
         ui.dialogue_open,
         ui.dialogue_target_id,
         tuple(ui.dialogue_options or ()),

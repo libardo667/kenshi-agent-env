@@ -243,6 +243,7 @@ class MockOperationPort:
     transfer_item = _record
     open_trade_window = _record
     close_active_interface = _record
+    confirm_character_editor = _record
     select_dialogue_option = _record
     select_squad_member_exact = _record
     shift_into_body = _record
@@ -366,6 +367,7 @@ class MockEnvironment(AgentEnvironment):
             ui=UIState(
                 active_screen="world",
                 modal_open=False,
+                character_editor_open=False,
                 dialogue_open=False,
                 prospecting_window_open=False,
                 client_width=1280,

@@ -101,6 +101,16 @@ def test_python_accepts_game_wide_interface_close_with_empty_selection() -> None
     assert request.target_id == ""
 
 
+def test_python_accepts_character_editor_confirmation_with_empty_selection() -> None:
+    request = NativeCommandRequest.model_validate_json(
+        (FIXTURES / "valid_confirm_character_editor_request.json").read_bytes()
+    )
+
+    assert request.command == "confirm_character_editor"
+    assert request.selected_character_ids == []
+    assert request.target_id == ""
+
+
 @pytest.mark.parametrize(
     ("fixture", "command", "save_name", "game_start_id"),
     [

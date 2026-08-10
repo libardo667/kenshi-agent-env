@@ -36,6 +36,7 @@ from .core.operation import (
     Action,
     ApproachDialogueTargetAction,
     CloseActiveInterfaceAction,
+    ConfirmCharacterEditorAction,
     ConsultAdvisorAction,
     ControlMode,
     ExitCurrentBuildingAction,
@@ -117,6 +118,7 @@ NATIVE_PRODUCE_RESOURCE_CAPABILITY = "control.produce_resource_output"
 NATIVE_TRANSFER_CAPABILITY = "control.transfer_item"
 NATIVE_TRADE_WINDOW_CAPABILITY = "control.open_trade_window"
 NATIVE_CLOSE_INTERFACE_CAPABILITY = "control.close_active_interface"
+NATIVE_CONFIRM_CHARACTER_EDITOR_CAPABILITY = "control.confirm_character_editor"
 NATIVE_DIALOGUE_OPTION_CAPABILITY = "control.select_dialogue_option"
 
 # The one mapping from a control capability to the native command it authorizes.
@@ -479,12 +481,43 @@ def active_interface_is_open(observation: Observation) -> bool:
     ui = telemetry.ui
     return bool(
         ui.dialogue_open is True
+        or ui.character_editor_open is True
         or ui.modal_open is True
         or (ui.open_inventory_windows or 0) > 0
         or ui.stats_window_open is True
         or ui.prospecting_window_open is True
         or ui.management_screen_open is True
         or (ui.active_screen is not None and ui.active_screen != "world")
+    )
+
+
+def character_editor_is_currently_authorable(observation: Observation) -> bool:
+    telemetry = observation.telemetry
+    return bool(
+        telemetry is not None
+        and not observation.telemetry_stale
+        and telemetry.game.loaded is True
+        and telemetry.ui.character_editor_open is True
+        and telemetry.ui.active_screen == "character_editor"
+    )
+
+
+def bind_confirm_character_editor(
+    action: Action,
+    observation: Observation,
+) -> BoundNamedOperation | BindingFailure:
+    if not isinstance(action, ConfirmCharacterEditorAction):
+        return _unbound("Action is not a confirm_character_editor action.")
+    if not character_editor_is_currently_authorable(observation):
+        return _unbound("No exact current character editor is open.")
+    return BoundNamedOperation(
+        reason=(
+            "Bound to Kenshi's current mandatory character editor; native "
+            "dispatch must activate its exact CONFIRM control and later prove "
+            "that editor mode ended."
+        ),
+        resolved_label="CONFIRM",
+        source_revision=observation.world_revision,
     )
 
 
@@ -2745,6 +2778,42 @@ CLOSE_ACTIVE_INTERFACE_DEFINITION = OperationDefinition(
 )
 
 
+CONFIRM_CHARACTER_EDITOR_DEFINITION = OperationDefinition(
+    kind="confirm_character_editor",
+    wire_command="confirm_character_editor",
+    project_wire_fields=_wire_nothing,
+    version="1.0",
+    interaction=global_ui(
+        milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED,
+        playback=PlaybackRequirement.PAUSED_TRANSACTION,
+    ),
+    operation_type=ConfirmCharacterEditorAction,
+    summary=(
+        "Accept the character currently held in Kenshi's mandatory appearance "
+        "editor by invoking its exact native CONFIRM control. Completion belongs "
+        "to a later engine frame in which character-editor mode is absent."
+    ),
+    argument_source="No arguments; current character-editor telemetry is the binding.",
+    allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset({NATIVE_CONFIRM_CHARACTER_EDITOR_CAPABILITY}),
+    capability_aliases=frozenset(),
+    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
+    native_assisted=True,
+    risk=OperationRisk(native_assisted_actions=1),
+    max_primitive_actions=1,
+    reference_fields=(),
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=OperationExecution.ATOMIC_HANDLER,
+    receipt_kind="semantic_character_editor_confirmation",
+    bind=bind_confirm_character_editor,
+    handler_key="resources.confirm_character_editor",
+    controller_verified=True,
+    native_terminal_success_reasons=frozenset({"character_editor_confirmed"}),
+    native_task_started_reasons=frozenset({"character_editor_confirmation_requested"}),
+    authorable_when=character_editor_is_currently_authorable,
+)
+
+
 SELECT_DIALOGUE_OPTION_DEFINITION = OperationDefinition(
     kind="select_dialogue_option",
     wire_command="select_dialogue_option",
@@ -3240,6 +3309,7 @@ OPERATION_DEFINITION_LIST: tuple[OperationDefinition, ...] = (
     RESPOND_TO_IMMEDIATE_THREAT_DEFINITION,
     OPEN_TRADE_WINDOW_DEFINITION,
     CLOSE_ACTIVE_INTERFACE_DEFINITION,
+    CONFIRM_CHARACTER_EDITOR_DEFINITION,
     SELECT_DIALOGUE_OPTION_DEFINITION,
     TRANSFER_ITEM_DEFINITION,
     REGROUP_WITH_SQUAD_MEMBER_DEFINITION,

@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "captured_at_utc": "2026-08-10T18:53:26Z",
+  "source_revision": "72dddb637a4ff8c456eefb620cd8fd9186c4235a",
+  "disposition": "source_unit_native_conformance_and_installed_parity_proven; live dispatch pending",
+  "finding": {
+    "run_id": "protocol-2-native-survival-soak-20260810-r7",
+    "turns_completed": 34,
+    "terminal": "planner_non_progress",
+    "observed_surface": {
+      "open_window": "IMPORT CHARACTER",
+      "roster": [],
+      "selected_character_id": null,
+      "prior_model": "world with no modeled blocking interface"
+    },
+    "root_cause": "Kenshi's mandatory post-recruitment character editor was visible but absent from telemetry and the semantic affordance model."
+  },
+  "repair": {
+    "telemetry": "ui.character_editor_open plus active_screen=character_editor and modal_open=true",
+    "planner_affordance": "accept_recruited_character",
+    "wire_command": "confirm_character_editor",
+    "dispatch": "resolve the exact prefixed ConfirmButton and invoke its game-owned eventMouseButtonClick without OS input",
+    "terminal": "a later engine update reports character-editor mode absent, then character_editor_confirmed",
+    "generic_close_withheld": true,
+    "desktop_primitives": 0,
+    "live_status": "unproven"
+  },
+  "saved_fixture": {
+    "scenario_id": "ruka-recruited-survival-soak-20260810",
+    "save_id": "kenshi-ruka-recruit-20260810",
+    "source_save": "kenshi-ruka-recruit",
+    "sha256": "96d3a749a5a85bb9e44b064e2516da25c3faeb45812364ccfe11637c6ec9c917",
+    "purpose": "Resume the accumulated recruited-party and supplies state for the 120-turn soak."
+  },
+  "artifacts": {
+    "installed_while_kenshi_closed": true,
+    "pre_change_dll": {
+      "path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260810-character-editor-confirmation\\pre-change\\KenshiAgentTelemetry.dll",
+      "sha256": "76310e286fc4caf833ee865e0c68c01c25f4382cbbbc39db92e5640050b08f62",
+      "size_bytes": 436736
+    },
+    "replacement_dll": {
+      "built_path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\build\\native\\bin\\KenshiAgentTelemetry.dll",
+      "backup_path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260810-character-editor-confirmation\\replacement\\KenshiAgentTelemetry.dll",
+      "installed_path": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll",
+      "sha256": "7aae1d50a36f8fdd6ddfbf43392632ebfd597b3306ef3c9c0af14b53fc5a6b42",
+      "size_bytes": 440320,
+      "built_backup_installed_equal": true
+    },
+    "replacement_pdb": {
+      "path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260810-character-editor-confirmation\\replacement\\KenshiAgentTelemetry.pdb",
+      "sha256": "0e601c7e68623b15d902018f1aacf7270edd280212a32df2899b2deed652ee95",
+      "size_bytes": 11136000
+    },
+    "native_conformance": {
+      "path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\build\\native\\bin\\NativeCommandProtocolTests.exe",
+      "sha256": "46411ba3aa44eb0802027a185cc5af460005ddfe7b7749922096e4f2fd946af6",
+      "size_bytes": 322560,
+      "result": "Native protocol fixtures and semantics passed."
+    },
+    "commands": {
+      "build": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build_native.ps1",
+      "install_current_build": "Copy-Item -LiteralPath 'C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\build\\native\\bin\\KenshiAgentTelemetry.dll' -Destination 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll' -Force",
+      "reinstall_replacement": "Copy-Item -LiteralPath 'C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260810-character-editor-confirmation\\replacement\\KenshiAgentTelemetry.dll' -Destination 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll' -Force",
+      "rollback_pre_change": "Copy-Item -LiteralPath 'C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260810-character-editor-confirmation\\pre-change\\KenshiAgentTelemetry.dll' -Destination 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll' -Force"
+    }
+  }
+}

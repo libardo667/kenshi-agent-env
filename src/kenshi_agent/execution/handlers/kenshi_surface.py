@@ -30,6 +30,7 @@ from ...core.observation import Observation
 from ...core.operation import (
     GAME_SPEED_MULTIPLIER_BY_GEAR,
     Action,
+    ConfirmCharacterEditorAction,
     ControlMode,
     KeyAction,
     OpenTradeWindowAction,
@@ -1579,6 +1580,15 @@ class KenshiControlSurface:
 
         if wire_command == native_commands.NATIVE_CLOSE_INTERFACE_WIRE_COMMAND:
             # Game-wide UI state; there is no world target to re-resolve.
+            return None
+        if wire_command == native_commands.NATIVE_CONFIRM_CHARACTER_EDITOR_WIRE_COMMAND:
+            if not isinstance(action, ConfirmCharacterEditorAction):
+                return "Native editor confirmation requires its typed operation."
+            if (
+                telemetry.ui.character_editor_open is not True
+                or telemetry.ui.active_screen != "character_editor"
+            ):
+                return "The exact offered character editor is no longer open."
             return None
         if wire_command == native_commands.NATIVE_DIALOGUE_OPTION_WIRE_COMMAND:
             if not isinstance(action, SelectDialogueOptionAction):

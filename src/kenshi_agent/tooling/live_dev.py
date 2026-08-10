@@ -872,6 +872,7 @@ def _blocking_interface_open(snapshot: TelemetrySnapshot) -> bool:
     ui = snapshot.ui
     return bool(
         ui.modal_open is True
+        or ui.character_editor_open is True
         or ui.dialogue_open is True
         or (ui.open_inventory_windows or 0) > 0
         or ui.stats_window_open is True

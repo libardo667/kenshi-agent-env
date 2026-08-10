@@ -53,6 +53,7 @@ from .core.telemetry import (
 from .operation_definitions import (
     NATIVE_CHARACTER_ORDER_CAPABILITY,
     NATIVE_CLOSE_INTERFACE_CAPABILITY,
+    NATIVE_CONFIRM_CHARACTER_EDITOR_CAPABILITY,
     NATIVE_DIALOGUE_OPTION_CAPABILITY,
     NATIVE_PRODUCE_RESOURCE_CAPABILITY,
     NATIVE_RESOURCE_OPERATOR_STATE_CAPABILITY,
@@ -145,6 +146,7 @@ INTERFACE_SCOPED_OPERATION_KINDS: frozenset[str] = frozenset(
         # or a looting window is reached at all.
         "open_trade_window",
         "close_active_interface",
+        "confirm_character_editor",
         "select_dialogue_option",
         # Playback is declared global_ui: it suspends the whole world and is
         # orthogonal to what is on screen, exactly as it is for a player, who
@@ -771,6 +773,10 @@ def _interface_exit_offers(observation: Observation) -> Iterable[AffordanceOffer
     if NATIVE_CLOSE_INTERFACE_CAPABILITY not in set(telemetry.capabilities):
         return
     ui = telemetry.ui
+    # This mandatory recruitment surface has a meaningful accept operation.
+    # Never present generic closure beside it: closing can discard the recruit.
+    if ui.character_editor_open is True:
+        return
     blocked = bool(
         ui.dialogue_open is True
         or ui.modal_open is True
@@ -791,6 +797,32 @@ def _interface_exit_offers(observation: Observation) -> Iterable[AffordanceOffer
             "lifecycle and return to the world."
         ),
         operation_kind="close_active_interface",
+        arguments={},
+    )
+
+
+def _character_editor_offers(observation: Observation) -> Iterable[AffordanceOffer]:
+    """Offer the exact native accept operation for mandatory recruitment UI."""
+
+    telemetry = observation.telemetry
+    if telemetry is None or observation.control_mode is not ControlMode.NATIVE_ASSISTED:
+        return
+    if NATIVE_CONFIRM_CHARACTER_EDITOR_CAPABILITY not in set(telemetry.capabilities):
+        return
+    if (
+        telemetry.ui.character_editor_open is not True
+        or telemetry.ui.active_screen != "character_editor"
+    ):
+        return
+    yield _offer(
+        observation,
+        source=AffordanceSource.NATIVE_OPERATION,
+        semantic="accept_recruited_character",
+        description=(
+            "Accept the current recruited character's name and appearance through "
+            "Kenshi's exact native CONFIRM control, then return to the world."
+        ),
+        operation_kind="confirm_character_editor",
         arguments={},
     )
 
@@ -1330,6 +1362,17 @@ class AffordanceAdapter:
 
 
 AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
+    AffordanceAdapter(
+        name="character_editor",
+        sources=frozenset({AffordanceSource.NATIVE_OPERATION}),
+        operation_kinds=frozenset({"confirm_character_editor"}),
+        denominator="The exact mandatory character editor, when currently open.",
+        completeness_boundary=(
+            "The editor is exported from Kenshi's own character-editor mode and "
+            "the operation invokes only its exact CONFIRM control."
+        ),
+        enumerate=_character_editor_offers,
+    ),
     AffordanceAdapter(
         name="dialogue_options",
         sources=frozenset({AffordanceSource.DIALOGUE}),

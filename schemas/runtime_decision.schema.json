@@ -265,6 +265,20 @@
       "title": "CloseActiveInterfaceAction",
       "type": "object"
     },
+    "ConfirmCharacterEditorAction": {
+      "additionalProperties": false,
+      "description": "Accept the character currently held in Kenshi's mandatory editor.\n\nRecruitment is not complete when dialogue closes: Kenshi opens this editor\nand withholds the new roster until its exact CONFIRM control is activated.\nNative code dispatches that game-owned semantic event without moving a\npointer or naming a coordinate.",
+      "properties": {
+        "kind": {
+          "const": "confirm_character_editor",
+          "default": "confirm_character_editor",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "ConfirmCharacterEditorAction",
+      "type": "object"
+    },
     "ConsultAdvisorAction": {
       "additionalProperties": false,
       "description": "Ask a read-only guide-grounded model for strategic advice.\n\nThis is a cognitive action. It emits no controller primitives, never enters\nthe environment dispatch path, and cannot directly change Kenshi state.",
@@ -1265,6 +1279,9 @@
         },
         {
           "$ref": "#/$defs/CloseActiveInterfaceAction"
+        },
+        {
+          "$ref": "#/$defs/ConfirmCharacterEditorAction"
         },
         {
           "$ref": "#/$defs/SelectDialogueOptionAction"

@@ -109,6 +109,16 @@
       "note": "Live-proven for the combined Prospecting and ordinary Barman dialogue lifecycle on the named fixture. Other interface families retain their own evidence status."
     },
     {
+      "operation_kind": "confirm_character_editor",
+      "proof_status": "unit_proven",
+      "evidence": [
+        "Pinned native CharacterEditWindow headers and the installed Kenshi_CharacterEditor.layout identify the exact ConfirmButton and its game-owned click event",
+        "the strict UI model, affordance adapter, operation registry, shared native request fixture, and native monitor all pin the parameterless empty-selection lifecycle",
+        "tests/test_affordances.py proves the editor offers only accept_recruited_character rather than generic interface closure"
+      ],
+      "note": "Source- and unit-proven. The r7 soak exposed the mandatory editor, but a supervised run has not yet dispatched this new command and observed character_editor_confirmed, so no live outcome is claimed."
+    },
+    {
       "operation_kind": "consult_advisor",
       "proof_status": "source_proven",
       "evidence": [

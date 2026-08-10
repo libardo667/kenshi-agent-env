@@ -158,7 +158,10 @@ namespace KenshiAgentTelemetry
     // absent: every consumer moves to the general lifecycle atomically.
     bool NativeCommandClosesWindows(const std::string& command)
     {
-        return command == "close_active_interface";
+        // Both are parameter-free global UI controls. Confirmation is kept a
+        // distinct command because generic closure can discard a recruitment.
+        return command == "close_active_interface" ||
+               command == "confirm_character_editor";
     }
 
     // Pausing and setting speed are `GameWorld::userPause` and
@@ -182,6 +185,7 @@ namespace KenshiAgentTelemetry
     {
         return command == "shift_into_body" ||
                command == "close_active_interface" ||
+               command == "confirm_character_editor" ||
                command == "select_dialogue_option" ||
                NativeCommandControlsTime(command) ||
                NativeCommandDrivesTitleScreen(command);

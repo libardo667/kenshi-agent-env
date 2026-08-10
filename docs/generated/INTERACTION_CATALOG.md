@@ -15,16 +15,16 @@ evidence appears only through the proof manifest, and unproven group cases
 remain unproven even when their intended contract is implemented.
 
 ```text
-operations               25
-planner-visible          25
+operations               26
+planner-visible          26
 internal-only             0
-native commands          18
-manifest entries         27
+native commands          19
+manifest entries         28
 coverage proof          PASS
 
 PROOF STATUS
   source_proven      9
-  unit_proven        0
+  unit_proven        1
   live_proven       11
   unproven           7
   withheld           0
@@ -33,6 +33,7 @@ INTERACTION CONTRACT (resolved from the sole operation registry)
   operation                           kind               recipients          selection        milestone               proof
   approach_dialogue_target            ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
   close_active_interface              global_ui          none                none             world_outcome_observed  live_proven
+  confirm_character_editor            global_ui          none                none             world_outcome_observed  unit_proven
   consult_advisor                     runtime_only       none                none             input_delivered         source_proven
   exit_current_building               ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
   move_in_direction                   ordinary_order     current_selection   dispatch_only    world_outcome_observed  unproven
@@ -64,6 +65,7 @@ EXECUTION AND ROUTING
   operation                           exec               playback                 native cmd                 visibility
   approach_dialogue_target            monitored_option   running_for_progress     approach_confirmed_vendor  dialogue_targets
   close_active_interface              atomic_handler     any                      close_active_interface     interface_exit
+  confirm_character_editor            atomic_handler     paused_transaction       confirm_character_editor   character_editor
   consult_advisor                     atomic_handler     any                      -                          runtime
   exit_current_building               monitored_option   running_for_progress     exit_current_building      native_and_composite
   move_in_direction                   monitored_option   running_for_progress     -                          native_and_composite
@@ -91,6 +93,7 @@ EXECUTION AND ROUTING
 NATIVE COMMAND ROUTES
   approach_confirmed_vendor    -> approach_dialogue_target (vestigial name)
   close_active_interface       -> close_active_interface
+  confirm_character_editor     -> confirm_character_editor
   exit_current_building        -> exit_current_building
   move_in_direction            -> respond_to_immediate_threat
   move_to_character            -> move_to_character

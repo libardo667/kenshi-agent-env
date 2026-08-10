@@ -42,6 +42,9 @@ NATIVE_TRADE_WINDOW_WIRE_COMMAND: Literal["open_trade_window"] = "open_trade_win
 NATIVE_CLOSE_INTERFACE_WIRE_COMMAND: Literal["close_active_interface"] = (
     "close_active_interface"
 )
+NATIVE_CONFIRM_CHARACTER_EDITOR_WIRE_COMMAND: Literal["confirm_character_editor"] = (
+    "confirm_character_editor"
+)
 NATIVE_DIALOGUE_OPTION_WIRE_COMMAND: Literal["select_dialogue_option"] = (
     "select_dialogue_option"
 )

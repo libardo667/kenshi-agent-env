@@ -380,6 +380,18 @@ class CloseActiveInterfaceAction(StrictModel):
     kind: Literal["close_active_interface"] = "close_active_interface"
 
 
+class ConfirmCharacterEditorAction(StrictModel):
+    """Accept the character currently held in Kenshi's mandatory editor.
+
+    Recruitment is not complete when dialogue closes: Kenshi opens this editor
+    and withholds the new roster until its exact CONFIRM control is activated.
+    Native code dispatches that game-owned semantic event without moving a
+    pointer or naming a coordinate.
+    """
+
+    kind: Literal["confirm_character_editor"] = "confirm_character_editor"
+
+
 class SelectDialogueOptionAction(StrictModel):
     """Choose one exact reply from the currently open conversation.
 
@@ -800,6 +812,7 @@ AtomicRuntimeOperation: TypeAlias = (
     | SurveyLocalResourcesAction
     | OpenTradeWindowAction
     | CloseActiveInterfaceAction
+    | ConfirmCharacterEditorAction
     | SelectDialogueOptionAction
     | TransferItemAction
 )
@@ -843,6 +856,7 @@ SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
         "produce_resource_output",
         "open_trade_window",
         "close_active_interface",
+        "confirm_character_editor",
         "select_dialogue_option",
         "transfer_item",
         "respond_to_immediate_threat",

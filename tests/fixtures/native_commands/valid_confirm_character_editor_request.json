@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.6",
+  "command_id": "cmd-fedcba9876543210fedcba9876543210",
+  "command": "confirm_character_editor",
+  "control_mode": "native_assisted",
+  "identity_session_id": "session-0000000000000001-0000000000000001",
+  "based_on_revision": {
+    "telemetry_sequence": 17,
+    "frame_sequence": 5,
+    "capability_epoch": 2,
+    "observed_at_monotonic": 19.25
+  },
+  "selected_character_ids": [],
+  "target_id": "",
+  "context_action": "",
+  "bearing_degrees": 0.0,
+  "distance_units": 0.0,
+  "minimum_output_quantity": 1,
+  "destination_id": "",
+  "section_name": "",
+  "save_name": "",
+  "game_start_id": "",
+  "slot_x": 0,
+  "slot_y": 0,
+  "dialogue_option_index": -1,
+  "dialogue_option_text": "",
+  "paused": false,
+  "speed_multiplier": 0.0,
+  "quantity": 0
+}

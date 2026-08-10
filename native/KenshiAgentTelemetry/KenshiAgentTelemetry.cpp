@@ -78,6 +78,7 @@
 #include <kenshi/SaveManager.h>
 #include <kenshi/ShopTrader.h>
 #include <kenshi/gui/DialogueWindow.h>
+#include <kenshi/gui/CharacterEditWindow.h>
 #include <kenshi/gui/ProspectingWindow.h>
 #include <kenshi/gui/ForgottenGUI.h>
 #include <kenshi/gui/InventoryGUI.h>
@@ -281,6 +282,10 @@ namespace
         std::string dialogueOptionText;
         std::vector<std::string> dialogueOptionsBefore;
         DWORD dialogueOptionStartedTick;
+        // Recruitment is not complete until the mandatory character editor's
+        // exact CONFIRM event has produced a later frame outside editor mode.
+        bool isCharacterEditorConfirmationPending;
+        DWORD characterEditorConfirmationStartedTick;
         // `showT` begins Kenshi's timed prospecting lifecycle. The result
         // window appears only after its progress bar finishes, so capture and
         // close belong to later update frames rather than request dispatch.
@@ -441,6 +446,8 @@ namespace
         g_activeNativeCommand.dialogueOptionText.clear();
         g_activeNativeCommand.dialogueOptionsBefore.clear();
         g_activeNativeCommand.dialogueOptionStartedTick = 0;
+        g_activeNativeCommand.isCharacterEditorConfirmationPending = false;
+        g_activeNativeCommand.characterEditorConfirmationStartedTick = 0;
         g_activeNativeCommand.isProspectingSurveyPending = false;
         g_activeNativeCommand.prospectingResultObserved = false;
         g_activeNativeCommand.prospectingPlaybackOwned = false;
@@ -937,6 +944,8 @@ namespace
         g_activeNativeCommand.dialogueOptionText.clear();
         g_activeNativeCommand.dialogueOptionsBefore.clear();
         g_activeNativeCommand.dialogueOptionStartedTick = 0;
+        g_activeNativeCommand.isCharacterEditorConfirmationPending = false;
+        g_activeNativeCommand.characterEditorConfirmationStartedTick = 0;
         g_activeNativeCommand.isProspectingSurveyPending = false;
         g_activeNativeCommand.prospectingResultObserved = false;
         g_activeNativeCommand.prospectingPlaybackOwned = false;
@@ -3765,6 +3774,26 @@ namespace
         if (!g_activeNativeCommand.active)
             return;
 
+        if (g_activeNativeCommand.isCharacterEditorConfirmationPending)
+        {
+            const bool editorOpen =
+                gui != NULL && gui->isCharacterEditorMode();
+            if (!editorOpen)
+            {
+                FinishActiveNativeCommand(
+                    "completed", "character_editor_confirmed");
+                return;
+            }
+            if (GetTickCount() -
+                    g_activeNativeCommand.characterEditorConfirmationStartedTick >=
+                10000)
+            {
+                FinishActiveNativeCommand(
+                    "cancelled", "character_editor_confirmation_timeout");
+            }
+            return;
+        }
+
         if (g_activeNativeCommand.isDialogueOptionPending)
         {
             if (gui == NULL ||
@@ -4711,11 +4740,13 @@ namespace
         // and setting speed stopped being keystrokes.
         const bool isCloseActiveInterface =
             request.command == "close_active_interface";
+        const bool isConfirmCharacterEditor =
+            request.command == "confirm_character_editor";
         const bool isDialogueOption =
             request.command == "select_dialogue_option";
         const bool isPause = request.command == "pause";
         const bool isSetSpeed = request.command == "set_speed";
-        if (isCloseActiveInterface || isDialogueOption || isPause || isSetSpeed || isBodyShift || isBodyShiftProbe || isApproach || isMove || isSquadSelection || isSquadRegroup ||
+        if (isCloseActiveInterface || isConfirmCharacterEditor || isDialogueOption || isPause || isSetSpeed || isBodyShift || isBodyShiftProbe || isApproach || isMove || isSquadSelection || isSquadRegroup ||
             isDirection || isMapTravel || isBuildingExit || isContextAction ||
             isCharacterOrder ||
             isResourceProduction || isResourceSurvey ||
@@ -4739,6 +4770,7 @@ namespace
             !isPause &&
             !isSetSpeed &&
             !isCloseActiveInterface &&
+            !isConfirmCharacterEditor &&
             !isDialogueOption)
         {
             // The telemetry acknowledgement schema is intentionally limited
@@ -4844,6 +4876,86 @@ namespace
             g_activeNativeCommand.expectedTask = NULL_TASK;
             g_lastNativeCommandResult = "dialogue_option_selected";
             g_lastNativeCommandTargetId = request.targetId;
+            return;
+        }
+
+        if (isConfirmCharacterEditor)
+        {
+            if (gui == NULL || !gui->isCharacterEditorMode())
+            {
+                RejectNativeCommand(request, "character_editor_not_open");
+                return;
+            }
+            CharacterEditWindow* editor = gui->characterEditor;
+            if (editor == NULL)
+            {
+                RejectNativeCommand(request, "character_editor_unavailable");
+                return;
+            }
+            MyGUI::Button* confirmButton = NULL;
+            const std::string exactName = editor->mPrefix + "ConfirmButton";
+            for (MyGUI::VectorWidgetPtr::iterator root =
+                     editor->mListWindowRoot.begin();
+                 root != editor->mListWindowRoot.end();
+                 ++root)
+            {
+                MyGUI::Widget* candidate = (*root)->findWidget(exactName);
+                if (candidate != NULL)
+                {
+                    confirmButton = candidate->castType<MyGUI::Button>(false);
+                    break;
+                }
+            }
+            if (confirmButton == NULL)
+            {
+                RejectNativeCommand(request, "character_editor_confirm_unavailable");
+                return;
+            }
+            if (!confirmButton->getInheritedVisible() ||
+                !confirmButton->getInheritedEnabled())
+            {
+                RejectNativeCommand(request, "character_editor_confirm_disabled");
+                return;
+            }
+
+            // Invoke the exact handler Kenshi attached to ConfirmButton. This
+            // is native semantic GUI dispatch: no OS pointer, cursor, key, or
+            // coordinate is synthesized.
+            confirmButton->eventMouseButtonClick(confirmButton);
+            AddNativeAcknowledgement(
+                request,
+                "accepted",
+                "character_editor_confirmation_requested",
+                true,
+                false);
+            g_activeNativeCommand.active = true;
+            g_activeNativeCommand.commandId = request.commandId;
+            g_activeNativeCommand.targetId.clear();
+            g_activeNativeCommand.destinationId.clear();
+            g_activeNativeCommand.selectedCharacterId.clear();
+            g_activeNativeCommand.selectedCharacterIds =
+                request.selectedCharacterIds;
+            g_activeNativeCommand.targetHandle = hand();
+            g_activeNativeCommand.selectedHandle = hand();
+            g_activeNativeCommand.isWalk = false;
+            g_activeNativeCommand.hasFixedDestination = false;
+            g_activeNativeCommand.isMapTravel = false;
+            g_activeNativeCommand.isSquadRegroup = false;
+            g_activeNativeCommand.mapInteriorOrderIssued = false;
+            g_activeNativeCommand.isBuildingExit = false;
+            g_activeNativeCommand.isContextAction = false;
+            g_activeNativeCommand.isTradeWindowPending = false;
+            g_activeNativeCommand.isDialogueOptionPending = false;
+            g_activeNativeCommand.isCharacterEditorConfirmationPending = true;
+            g_activeNativeCommand.characterEditorConfirmationStartedTick =
+                GetTickCount();
+            g_activeNativeCommand.isProspectingSurveyPending = false;
+            g_activeNativeCommand.targetKind = NATIVE_TARGET_NONE;
+            g_activeNativeCommand.isResourceProduction = false;
+            g_activeNativeCommand.expectedTask = NULL_TASK;
+            g_lastNativeCommandResult =
+                "character_editor_confirmation_requested";
+            g_lastNativeCommandTargetId.clear();
             return;
         }
 
@@ -6675,6 +6787,10 @@ namespace
                 registeredShopInventoryOpen);
         const bool statsWindowOpen = gui != NULL && gui->characterStatsWindowVisible();
         const bool modalMessageOpen = gui != NULL && gui->hasModalMessage();
+        const bool characterEditorOpen =
+            gui != NULL && gui->isCharacterEditorMode();
+        const bool ordinaryModalOpen =
+            dialogueOpen || inventoryOpen || modalMessageOpen;
         ProspectingWindow* prospectingWindow = ProspectingWindow::getSingleton();
         const bool prospectingWindowOpen =
             prospectingWindow != NULL &&
@@ -6705,17 +6821,22 @@ namespace
 
         json << "\"ui\":{";
         json << "\"active_screen\":\""
-             << (dialogueOpen
+             << (characterEditorOpen
+                    ? "character_editor"
+                    : (dialogueOpen
                     ? "dialogue"
                     : (modalMessageOpen
                         ? "message_box"
                         : (tradeOpen
                             ? "trade"
-                            : (inventoryOpen ? "inventory" : "world"))))
+                            : (inventoryOpen ? "inventory" : "world")))))
              << "\",";
         json << "\"modal_open\":"
-             << JsonBool(dialogueOpen || inventoryOpen || modalMessageOpen)
+             << JsonBool(
+                    characterEditorOpen || ordinaryModalOpen)
              << ",";
+        json << "\"character_editor_open\":"
+             << JsonBool(characterEditorOpen) << ",";
         json << "\"stats_window_open\":" << JsonBool(statsWindowOpen) << ",";
         json << "\"prospecting_window_open\":"
              << JsonBool(prospectingWindowOpen) << ",";

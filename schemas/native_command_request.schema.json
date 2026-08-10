@@ -79,6 +79,7 @@
         "pause",
         "set_speed",
         "close_active_interface",
+        "confirm_character_editor",
         "select_dialogue_option",
         "survey_local_resources"
       ],

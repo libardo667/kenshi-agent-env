@@ -159,6 +159,24 @@ def test_native_plugin_publishes_plural_records_and_keeps_clock_control_independ
     assert "g_activeNativeCommand.isSquadRegroup = false" not in concurrency_gate
 
 
+def test_native_character_editor_confirmation_uses_exact_game_owned_control() -> None:
+    source = PLUGIN_SOURCE.read_text(encoding="utf-8")
+    confirmation = source[
+        source.index("if (isConfirmCharacterEditor)") : source.index(
+            "if (isCloseActiveInterface)"
+        )
+    ]
+
+    assert 'editor->mPrefix + "ConfirmButton"' in confirmation
+    assert "candidate->castType<MyGUI::Button>(false)" in confirmation
+    assert "getInheritedVisible()" in confirmation
+    assert "getInheritedEnabled()" in confirmation
+    assert "confirmButton->eventMouseButtonClick(confirmButton)" in confirmation
+    assert "character_editor_confirmation_requested" in confirmation
+    assert "SetCursorPos" not in confirmation
+    assert "SendInput" not in confirmation
+
+
 def test_native_trade_window_refuses_remote_or_nonprimary_pair_before_rendering() -> None:
     source = PLUGIN_SOURCE.read_text(encoding="utf-8")
     trade = source[

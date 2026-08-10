@@ -1517,6 +1517,29 @@ int main(int argc, char** argv)
         return Fail("interface close lost its game-wide recipient shape");
     }
 
+    // Recruitment confirmation is global UI and must remain reachable during
+    // the editor's intentionally empty-roster interval.
+    KenshiAgentTelemetry::NativeCommandRequest characterEditorConfirm;
+    const std::string characterEditorConfirmPayload =
+        ReadFile(prefix + "valid_confirm_character_editor_request.json");
+    if (characterEditorConfirmPayload.empty())
+        return Fail("could not read valid_confirm_character_editor_request.json");
+    if (!KenshiAgentTelemetry::ParseNativeCommandRequest(
+            characterEditorConfirmPayload,
+            characterEditorConfirm,
+            rejectionReason))
+    {
+        return Fail(
+            "valid empty-selection character editor confirmation was rejected as " +
+            rejectionReason);
+    }
+    if (characterEditorConfirm.command != "confirm_character_editor" ||
+        !characterEditorConfirm.selectedCharacterIds.empty() ||
+        !characterEditorConfirm.targetId.empty())
+    {
+        return Fail("character editor confirmation lost its global UI shape");
+    }
+
     KenshiAgentTelemetry::NativeCommandRequest dialogueOption;
     const std::string dialogueOptionPayload =
         ReadFile(prefix + "valid_dialogue_option_request.json");

@@ -35,6 +35,7 @@ _EXACT_METHODS = frozenset(
     {
         "approach_dialogue_target",
         "close_active_interface",
+        "confirm_character_editor",
         "exit_current_building",
         "move_in_direction",
         "move_to_character",

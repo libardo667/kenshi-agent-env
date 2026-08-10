@@ -1148,6 +1148,11 @@ class OpenInventory(StrictModel):
 class UIState(StrictModel):
     active_screen: str | None = None
     modal_open: bool | None = None
+    # Kenshi removes a newly recruited character from the ordinary roster while
+    # its mandatory appearance editor owns the screen.  Model that surface
+    # directly: an empty roster during recruitment is not a world with nobody
+    # to control, and its exact CONFIRM control is not a generic close button.
+    character_editor_open: bool | None = None
     # Kenshi's own `InventoryGUI::getNPCTrader()`: who the player is trading
     # with for money, or None. This is the switch a transfer uses to decide
     # between the engine's priced adjudicator and a plain inventory move, and
@@ -1255,6 +1260,7 @@ NATIVE_COMMANDS_ALLOWING_EMPTY_SELECTION: frozenset[str] = frozenset(
     {
         "shift_into_body",
         "close_active_interface",
+        "confirm_character_editor",
         "select_dialogue_option",
         "continue_game",
         "load_game",
@@ -1450,6 +1456,7 @@ NativeWireCommand = Literal[
     # observe. This replaces the recovery-only trade closer; consumers never
     # retain the narrower compatibility verb.
     "close_active_interface",
+    "confirm_character_editor",
     "select_dialogue_option",
     "survey_local_resources",
 ]

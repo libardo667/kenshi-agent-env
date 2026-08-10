@@ -192,6 +192,34 @@ def test_blocking_dialogue_and_modal_offer_one_native_return_to_world() -> None:
     assert bound.definition.kind == "close_active_interface"
 
 
+def test_character_editor_offers_exact_accept_and_withholds_generic_close() -> None:
+    observation = _observation(
+        capabilities=[
+            "control.confirm_character_editor",
+            "control.close_active_interface",
+        ],
+        ui=UIState(
+            active_screen="character_editor",
+            modal_open=True,
+            character_editor_open=True,
+            dialogue_open=False,
+        ),
+    )
+
+    offers = list(offered_affordances(observation))
+    editor_offers = [
+        offer for offer in offers if offer.operation_kind == "confirm_character_editor"
+    ]
+
+    assert len(editor_offers) == 1
+    assert editor_offers[0].semantic == "accept_recruited_character"
+    assert not [offer for offer in offers if offer.operation_kind == "close_active_interface"]
+    bound = bind_affordance(selection_for(editor_offers[0]), observation)
+    assert isinstance(bound, BoundOperation)
+    assert bound.operation.kind == "confirm_character_editor"
+    assert bound.binding.resolved_label == "CONFIRM"
+
+
 def test_open_dialogue_offers_every_exact_reply_and_native_exit() -> None:
     target_id = "entity-mercenary-captain"
     option_texts = [
