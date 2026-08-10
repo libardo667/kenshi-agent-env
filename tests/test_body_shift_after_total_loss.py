@@ -163,7 +163,7 @@ def test_the_body_itself_is_the_recorded_recipient() -> None:
 
 def test_the_wire_accepts_a_shift_with_no_selected_recipients() -> None:
     request = NativeCommandRequest(
-        schema_version="1.4",
+        schema_version="1.5",
         command_id="cmd-" + "0" * 32,
         command="shift_into_body",
         control_mode=ControlMode.NATIVE_ASSISTED,
@@ -200,7 +200,7 @@ def test_every_other_command_still_requires_a_recipient() -> None:
 
     with pytest.raises(ValueError, match="at least one selected recipient"):
         NativeCommandRequest(
-            schema_version="1.4",
+            schema_version="1.5",
             command_id="cmd-" + "0" * 32,
             command="move_to_character",
             control_mode=ControlMode.NATIVE_ASSISTED,

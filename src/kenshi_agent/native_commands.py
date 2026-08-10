@@ -10,6 +10,9 @@ from .core.transport import NativeCommandRequest
 NATIVE_APPROACH_WIRE_COMMAND: Literal["approach_confirmed_vendor"] = (
     "approach_confirmed_vendor"
 )
+NATIVE_CONTINUE_GAME_WIRE_COMMAND: Literal["continue_game"] = "continue_game"
+NATIVE_LOAD_GAME_WIRE_COMMAND: Literal["load_game"] = "load_game"
+NATIVE_NEW_GAME_WIRE_COMMAND: Literal["new_game"] = "new_game"
 NATIVE_SQUAD_SELECTION_WIRE_COMMAND: Literal["select_squad_member"] = (
     "select_squad_member"
 )

@@ -73,7 +73,7 @@ options:
   --scenario SCENARIO      Use this exact restored and attested scenario fixture. (default: None)
   --game-start GAME_START  Start this exact bundled authored start and prove its initial state. (default: None)
   --title                  Stop at the title screen instead of loading a world. (default: True)
-  --resume-launcher        Resume one verified pre-game launcher left by an interruption. (default: False)
+  --resume-launcher        Resume one verified native Kenshi window left by an interruption. (default: False)
   --focus-display          Temporarily switch to the external 1920x1080 display only; the default keeps the internal panel and external display active. (default: False)
 ```
 

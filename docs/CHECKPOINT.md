@@ -1,109 +1,111 @@
-# Checkpoint: Protocol 2.0 interface-lifecycle hardening
+# Checkpoint: fully native launch and save load
 
-This checkpoint follows the atomic Protocol 2.0 cutover. The first open-ended
-soak exposed a Prospecting window left over from a completed survey, an opened
-dialogue with no modeled exit, and completed no-op plans whose frame churn hid
-semantic non-progress. This slice fixes that class across the native producer,
-operation registry, planner surface, mocks, replay, tooling, evidence, generated
-artifacts, and tests.
+This slice removes the supported launcher's mouse and keyboard machinery. The
+installed Kenshi bootstrap, its native settings dialog, the title screen, exact
+save/Game Start transitions, post-load pause, and causal evidence now form one
+strict launch path. Pointer-based gameplay fallbacks remain deleted; emergency
+stop and final host-safety fallback remain a deliberately separate boundary.
 
 ## Repository and authority
 
 ```text
-parent commit          38d4437543c549a016ff15f434f3691dba72b396
+parent commit          344b39291f6db80f9dea762e9c9a1c10c7d80cb7
 integration branch     main
 starting remote        origin/main at 1d53e57e787309975e75b710eba96b22d1feb12d
 starting tree          clean
 producer protocol      2.0.0
-request schema         1.4
-declared capabilities  50
+request schema         1.5
+declared capabilities  50 loaded-world + 4 title-screen
 ```
 
-The authority is `docs/PROTOCOL_2_WORLD_MODEL_DECISION.md`, the strict models
-in `src/kenshi_agent/core/telemetry.py`, and the producer in
-`native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp`. There is no 1.x
-compatibility reader. `TelemetrySnapshot.squad`, the `native_control` wire
-object, `NativeControlState.active_command_id`, and the `acknowledgements` wire
-collection are rejected instead of translated.
+The current authorities are `src/kenshi_agent/tooling/live_dev.py`,
+`src/kenshi_agent/core/transport.py`, and
+`native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp`. Protocol 2.0 remains
+strict: there is no reader for `TelemetrySnapshot.squad`, `native_control`,
+`NativeControlState.active_command_id`, or the former `acknowledgements` shape.
+Every consumer reads plural `controller_commands.commands`. The native producer
+may retain at most one record only until **2026-09-20**; that temporary
+producer-side exception must be deleted by the deadline.
 
-## Coherent 2.0 slice
+## Native launch contract
 
-- Player topology uses explicit roster, platoon membership, selection,
-  primary, and active-platoon authorities.
-- Controller state is always consumed as the plural
-  `controller_commands.commands` collection. The native producer may publish
-  at most one retained record only until **2026-09-20**; no Python consumer is
-  allowed to assume that cardinality.
-- Ordinary orders, Jobs, permanent Jobs, and current activity remain separate
-  work channels.
-- When ordinary-order enumeration is complete, `has_player_orders` must agree
-  with the exact total: true forbids total zero and false forbids a positive
-  total. Truncated or unknown enumeration does not invent a contradiction.
-- Planner context, observations, run summaries, mocks, replay, fixtures,
-  scenario tooling, schemas, and generated documentation use only the 2.0
-  names and shapes.
+- The supported process target is the installed
+  `C:\Program Files (x86)\Steam\steamapps\common\Kenshi\kenshi_x64.exe`.
+  Desktop shortcuts, `KENSHI_AGENT_SHORTCUT`, and direct selection of the
+  archived `RE_Kenshi\Kenshi_x64.exe` are deleted from launch authority.
+- Kenshi's small native settings window is resolved as one exact visible Win32
+  `Button` named `OK` with control id `1003`. The launcher routes `WM_COMMAND`
+  through the dialog's own MFC handler. It does not focus the window, move the
+  cursor, synthesize a click, or send a key.
+- Atomic replacement of `native_command.request.json` is the sole plug-in
+  dispatch signal. The Ctrl+Shift+F10 trigger and its native polling branch are
+  deleted.
+- The strict title surface exposes `continue_game`, `load_game`, and
+  `new_game`. Exact load carries only `save_name`; exact new game carries only
+  `game_start_id`; Continue carries neither. All title requests have an empty
+  recipient selection.
+- `SaveManager::load` and `SaveManager::newGame` own exact transitions.
+  Continue invokes Kenshi's title handler directly. The request schema is 1.5
+  in Python, C++, fixtures, schema output, and the diagnostic dispatcher.
+- A title transition changes identity sessions. Its exact acknowledgement is
+  preserved across `GameWorld::resetGame`, becomes terminal as
+  `world_session_loaded` in the first loaded frame, and is then retired. The
+  launcher refuses a loaded session without that explicit cross-session record.
+- Post-load pause is another request-file command with a causally later
+  `world_paused` acknowledgement. No launch branch acquires an input lease.
+- Fresh title authority is awaited independently of plug-in status so early
+  startup cannot race a stale telemetry file.
+- Scenario verification already consumes complete plural selection. It now
+  anchors environment/danger evidence to the selected primary rather than
+  incorrectly requiring exactly one selected character.
 
-## Interface-lifecycle and non-progress fix
+## Deleted launcher machinery
 
-- `survey_local_resources` copies its readings, hides the exact Prospecting
-  window it opened, and refuses terminal success if the window remains visible.
-- `close_active_interface` is the sole native UI-exit operation. It closes
-  Prospecting, dialogue, message boxes, trade and inventory windows, character
-  stats, management screens, and ordinary GUI windows, then verifies the
-  blocking signals are absent before completing.
-- The exit is planner-visible whenever fresh telemetry proves a blocking
-  interface and remains wire-valid with an empty selection because it addresses
-  game-wide UI state rather than a character recipient.
-- Every modeled interface EXIT row is covered by a native operation; the audit
-  contains no stranding gaps and no pixel-based covered route.
-- Three completed observe-only plans against the same actionable UI signature
-  terminate with `planner_non_progress`. Frame, sequence, clock, playback, and
-  command-record churn do not reset the bound; a completed real-work operation
-  does.
-- The manual native dispatcher reads the plural
-  `controller_commands.commands` authority and exposes every request field; it
-  contains no deleted `native_control` reader.
-- Mutable repository call-site line numbers are informational. Current-source
-  continuity uses path, enclosing function, and contained expression, while the
-  recorded source SHA remains provenance for the originally inspected blob.
+The old launcher no longer contains semantic control clicking, MyGUI startup
+coordinates, carousel stepping, Enter-to-launch, desktop-shortcut discovery,
+startup control labels, startup input takeover/countdown state, hotkey trigger
+delivery, or launch input leases. Ordinary recovery UI and emergency/final
+safety logic remain isolated from `_perform_launch`; they are not a launch
+fallback.
 
 ## Evidence lanes
 
-Source-proven and test-proven: the strict 2.0 producer and model cutover,
-plural command consumers, no aliases, the temporary producer limit and dated
-deletion requirement, the complete-order invariant, and shared C++/Python
-fixtures. The interface-lifecycle fix is pinned by shared empty-selection close
-fixtures, an all-interface exit audit, the exact dialogue-plus-modal affordance
-regression, and bounded non-progress tests. The native Release x64 conformance
-executable reported `Native protocol fixtures and semantics passed.`
+Source- and test-proven: every supported start source selects one of the three
+strict native title commands; the Win32 handoff requires an exact visible
+button/id pair; title/global commands accept empty selection; request fields are
+exclusive; stale title telemetry is awaited; loaded sessions require their
+cross-session acknowledgement; and `_perform_launch` contains no click, key,
+hotkey, primitive-input, or input-lease delivery.
 
-Installed-proven: Kenshi was not running during replacement. The current build,
-preserved fixed 2.0 artifact, and installed DLL hashes are identical. The
-pre-fix installed 2.0 artifact is separately preserved for exact rollback.
+Build- and installed-proven: the Release x64 native fixture executable reported
+`Native protocol fixtures and semantics passed.` The preserved final DLL,
+current build, and installed mod have identical SHA-256. The pre-cutover DLL is
+preserved separately for exact rollback.
 
-Live-proven remains deliberately separate. This cutover did not launch Kenshi
-and does not claim a fresh 2.0 game-process load or command outcome. Historical
-live conclusions retain reduced committed evidence artifacts containing their
-manifest facts, decisive frames, request/acknowledgement, omitted-file hashes,
-and final disposition. Those artifacts preserve historical conclusions; they
-do not upgrade them to Protocol 2.0 live proof.
-
-The README also withholds true total-party-loss recovery: elective nearby-body
-shifting is supported and empty-roster authoring is allowed, but a live
-end-to-end recovery after true total party loss remains unproven.
-
-## DLL artifacts and reinstall commands
-
-The exact machine-local artifact record, hashes, sizes, and commands are in
-`docs/reconstruction/protocol_2_cutover.json` for the breaking cutover and
-`docs/reconstruction/interface_lifecycle_soak_regression.json` for this fix.
+Live-proven: `./dev launch --title --timeout 120` reached a fresh Protocol 2.0
+title without physical input. A separate fresh Continue run loaded a new world
+session and paused natively. The definitive exact-save run was:
 
 ```text
-old 1.21 backup sha256  91526b828e44035b0cb6de5a22b7cc5ad0c2e392b66a7b8adcbf9ae9403d8db8
-pre-fix 2.0 DLL sha256 ac96f7e6b41edcff17f8c007ab7dc41b639ccbba82ea96aee7318b41ceb9bf1d
-fixed 2.0 DLL sha256   f68f63889ad29bcb63a267bdbd746f56f200357dda193e58fee608223fa68913
-fixed installed parity YES
-conformance exe sha256 643d6ee007dc3b49b3e63a49de559e4b129ac684bcc4063bf83079252089b676
+./dev launch --scenario native-launch-exact-load-20260810 --timeout 180
+Kenshi launched, loaded, and paused. Scenario 'native-launch-exact-load-20260810' was fixture-attested.
+```
+
+The reduced committed artifact
+`docs/reconstruction/native_launch_20260810.json` contains its manifest, exact
+title/load/pause frames, request, terminal cross-session acknowledgement,
+scenario attestation, hashes for omitted raw files, and final disposition.
+
+## DLL artifacts and exact reinstall commands
+
+```text
+pre-cutover DLL sha256   f68f63889ad29bcb63a267bdbd746f56f200357dda193e58fee608223fa68913
+pre-cutover DLL size     425472
+native-launch DLL sha256 c8e3da7572b2074db55c941acd1ff26bdc4d302a6b8c8f62bd20b10e9b55e083
+native-launch DLL size   430080
+installed parity         YES
+conformance exe sha256   c0138500b6105beebda3e95eab920ba8495d707db272ae1ee69611aa9e7c3ab2
+conformance exe size     311808
 ```
 
 Build:
@@ -112,54 +114,43 @@ Build:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build_native.ps1
 ```
 
-Install the current build:
+Install the current build directly:
 
 ```powershell
 Copy-Item -LiteralPath 'C:\Users\levib\AppData\Local\KenshiAgent\build\native\bin\KenshiAgentTelemetry.dll' -Destination 'C:\Program Files (x86)\Steam\steamapps\common\Kenshi\mods\KenshiAgentTelemetry\KenshiAgentTelemetry.dll' -Force
 ```
 
-Reinstall the preserved 2.0 artifact:
+Reinstall the preserved native-launch artifact:
 
 ```powershell
-Copy-Item -LiteralPath 'C:\Users\levib\AppData\Local\KenshiAgent\backups\native\20260809-protocol-2-cutover\protocol-2.0\KenshiAgentTelemetry.dll' -Destination 'C:\Program Files (x86)\Steam\steamapps\common\Kenshi\mods\KenshiAgentTelemetry\KenshiAgentTelemetry.dll' -Force
+Copy-Item -LiteralPath 'C:\Users\levib\AppData\Local\KenshiAgent\backups\native\20260810-native-launch\native-launch-final\KenshiAgentTelemetry.dll' -Destination 'C:\Program Files (x86)\Steam\steamapps\common\Kenshi\mods\KenshiAgentTelemetry\KenshiAgentTelemetry.dll' -Force
 ```
 
-Reinstall this fixed 2.0 artifact:
+Rollback this slice to the preserved pre-cutover Protocol 2.0 DLL:
 
 ```powershell
-Copy-Item -LiteralPath 'C:\Users\levib\AppData\Local\KenshiAgent\backups\native\20260810-interface-lifecycle\fixed\KenshiAgentTelemetry.dll' -Destination 'C:\Program Files (x86)\Steam\steamapps\common\Kenshi\mods\KenshiAgentTelemetry\KenshiAgentTelemetry.dll' -Force
-```
-
-Rollback only the interface-lifecycle fix while retaining Protocol 2.0:
-
-```powershell
-Copy-Item -LiteralPath 'C:\Users\levib\AppData\Local\KenshiAgent\backups\native\20260810-interface-lifecycle\pre-fix\KenshiAgentTelemetry.dll' -Destination 'C:\Program Files (x86)\Steam\steamapps\common\Kenshi\mods\KenshiAgentTelemetry\KenshiAgentTelemetry.dll' -Force
-```
-
-Rollback to the preserved 1.21 artifact:
-
-```powershell
-Copy-Item -LiteralPath 'C:\Users\levib\AppData\Local\KenshiAgent\backups\native\20260809-protocol-2-cutover\pre-2.0\KenshiAgentTelemetry.dll' -Destination 'C:\Program Files (x86)\Steam\steamapps\common\Kenshi\mods\KenshiAgentTelemetry\KenshiAgentTelemetry.dll' -Force
+Copy-Item -LiteralPath 'C:\Users\levib\AppData\Local\KenshiAgent\backups\native\20260810-native-launch\pre-cutover\KenshiAgentTelemetry.dll' -Destination 'C:\Program Files (x86)\Steam\steamapps\common\Kenshi\mods\KenshiAgentTelemetry\KenshiAgentTelemetry.dll' -Force
 ```
 
 ## Withheld and named follow-on work
 
 - **By 2026-09-20:** replace the native singleton publication bridge with the
   full retained-command registry and delete its `at most one` exception.
-- Fresh Protocol 2.0 live-load and multi-command causal bundles remain
-  follow-on proof, not an assertion of this source/test cutover.
-- True total-party-loss body-shift recovery remains unproven.
-- Cross-session character identity and deeper unknown/truncated task-channel
-  enumeration remain bounded exactly as before.
+- True total-party-loss body-shift recovery remains unproven. Elective nearby
+  shifting and empty-roster authoring do not upgrade that claim.
+- Alternate host configurations and a 100+ turn open-ended run require their
+  own evidence. This launch proof establishes startup/save-load behavior, not
+  long-duration agent stability.
 
 ## Verification
 
-The final candidate passed on 2026-08-10:
+The final candidate passed the portable gate on 2026-08-10 from the repository
+root with:
 
 ```bash
-UV_CACHE_DIR=/tmp/kenshi-uv-cache ./dev verify-portable
+UV_CACHE_DIR=/tmp/kae-uv-cache ./dev verify-portable
 ```
 
-That gate covers locked dependency sync, Ruff, strict mypy, research-package
+It covers locked dependency sync, Ruff, strict mypy, research-package
 validation, schema and generated-document freshness, the complete pytest suite,
 and `git diff --check`.

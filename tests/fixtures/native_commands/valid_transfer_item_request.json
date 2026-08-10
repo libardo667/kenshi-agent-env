@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.4",
+  "schema_version": "1.5",
   "command_id": "cmd-66666666666666666666666666666666",
   "command": "transfer_item",
   "control_mode": "native_assisted",
@@ -20,6 +20,8 @@
   "minimum_output_quantity": 1,
   "destination_id": "entity-destination-owner",
   "section_name": "main",
+  "save_name": "",
+  "game_start_id": "",
   "slot_x": 2,
   "slot_y": 1,
   "paused": false,

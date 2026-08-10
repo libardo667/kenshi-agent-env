@@ -311,45 +311,6 @@ class ControlsConfig(ConfigModel):
             client_width=self.calibrated_client_width,
             client_height=self.calibrated_client_height,
         )
-    startup_continue_control_labels: list[str] = Field(
-        default_factory=lambda: ["Continue"],
-        min_length=1,
-        max_length=8,
-    )
-    startup_new_game_control_labels: list[str] = Field(
-        default_factory=lambda: ["New Game"],
-        min_length=1,
-        max_length=8,
-    )
-    startup_begin_control_labels: list[str] = Field(
-        default_factory=lambda: ["Begin"],
-        min_length=1,
-        max_length=8,
-    )
-    startup_confirm_control_labels: list[str] = Field(
-        default_factory=lambda: ["Confirm"],
-        min_length=1,
-        max_length=8,
-    )
-    startup_warning_confirm_control_labels: list[str] = Field(
-        default_factory=lambda: ["Yes"],
-        min_length=1,
-        max_length=8,
-    )
-    # The Game Start picker is a carousel with no stable ordering contract.
-    # Traverse by the currently rendered label and stop if the carousel cycles.
-    startup_game_start_max_carousel_steps: int = Field(default=64, ge=1, le=256)
-    startup_load_control_labels: list[str] = Field(
-        default_factory=lambda: ["Load Game", "Load"],
-        min_length=1,
-        max_length=8,
-    )
-    startup_save_control_labels: list[str] = Field(
-        default_factory=lambda: ["autosave1"],
-        min_length=1,
-        max_length=8,
-    )
-
     @field_validator("speed_keys")
     @classmethod
     def all_speeds_present(cls, value: dict[int, str]) -> dict[int, str]:
@@ -367,25 +328,6 @@ class ControlsConfig(ConfigModel):
                 "calibrated_client_width and calibrated_client_height must be set together"
             )
         return self
-
-    @field_validator(
-        "startup_continue_control_labels",
-        "startup_new_game_control_labels",
-        "startup_begin_control_labels",
-        "startup_confirm_control_labels",
-        "startup_warning_confirm_control_labels",
-        "startup_load_control_labels",
-        "startup_save_control_labels",
-    )
-    @classmethod
-    def startup_control_labels_are_nonempty(
-        cls,
-        value: list[str],
-    ) -> list[str]:
-        if any(not label.strip() for label in value):
-            raise ValueError("startup control labels must be non-empty")
-        return value
-
 
 class SafetyConfig(ConfigModel):
     live_actions_enabled: bool = False

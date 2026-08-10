@@ -27,7 +27,7 @@ def revision(sequence: int | None = 7) -> WorldStateRevision:
 
 def request() -> NativeCommandRequest:
     return NativeCommandRequest(
-        schema_version="1.4",
+        schema_version="1.5",
         command_id=COMMAND_ID,
         command="approach_confirmed_vendor",
         control_mode=ControlMode.NATIVE_ASSISTED,
@@ -95,6 +95,67 @@ def test_transport_validates_basis_consistency_not_recipient_cardinality() -> No
         )
     with pytest.raises(ValidationError):
         NativeCommandRequest.model_validate(valid | {"selected_character_ids": []})
+
+
+def test_title_commands_require_exact_startup_identity_and_no_selection() -> None:
+    valid = request().model_dump(mode="python") | {
+        "selected_character_ids": [],
+        "target_id": "",
+    }
+
+    continuation = NativeCommandRequest.model_validate(
+        valid | {"command": "continue_game"}
+    )
+    exact_save = NativeCommandRequest.model_validate(
+        valid | {"command": "load_game", "save_name": "autosave1"}
+    )
+    exact_start = NativeCommandRequest.model_validate(
+        valid | {"command": "new_game", "game_start_id": "kae-03-broke-pair"}
+    )
+
+    assert continuation.selected_character_ids == []
+    assert exact_save.save_name == "autosave1"
+    assert exact_start.game_start_id == "kae-03-broke-pair"
+    with pytest.raises(ValidationError, match="exact save name"):
+        NativeCommandRequest.model_validate(valid | {"command": "load_game"})
+    with pytest.raises(ValidationError, match="exact Game Start ID"):
+        NativeCommandRequest.model_validate(valid | {"command": "new_game"})
+    with pytest.raises(ValidationError, match="startup identities"):
+        NativeCommandRequest.model_validate(
+            valid | {"command": "continue_game", "save_name": "autosave1"}
+        )
+    with pytest.raises(ValidationError):
+        NativeCommandRequest.model_validate(
+            valid | {"command": "load_game", "save_name": "../autosave1"}
+        )
+    with pytest.raises(ValidationError):
+        NativeCommandRequest.model_validate(
+            valid | {"command": "new_game", "game_start_id": "KAE Pair"}
+        )
+
+
+def test_title_acknowledgement_retains_empty_selection_and_exact_save() -> None:
+    acknowledgement = NativeCommandAcknowledgement(
+        command_id=COMMAND_ID,
+        command="load_game",
+        status=NativeCommandStatus.ACCEPTED,
+        reason="title_screen_action_issued",
+        save_name="KenshiAgentScenario",
+        selected_character_ids=[],
+        based_on_telemetry_sequence=20,
+        acknowledged_at_telemetry_sequence=21,
+        accepted_at_telemetry_sequence=21,
+    )
+
+    assert acknowledgement.selected_character_ids == []
+    assert acknowledgement.save_name == "KenshiAgentScenario"
+
+
+def test_native_request_1_4_has_no_compatibility_reader() -> None:
+    with pytest.raises(ValidationError, match="1.5"):
+        NativeCommandRequest.model_validate(
+            request().model_dump(mode="python") | {"schema_version": "1.4"}
+        )
 
 
 def test_recipient_scope_is_declared_by_the_operation_registry() -> None:

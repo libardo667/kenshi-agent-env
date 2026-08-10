@@ -1,3 +1,4 @@
+import inspect
 import json
 import os
 from contextlib import asynccontextmanager
@@ -29,26 +30,24 @@ from kenshi_agent.core.telemetry import (
     VisibleUIControl,
     WorldTarget,
 )
-from kenshi_agent.core.transport import ActionReceipt
+from kenshi_agent.core.transport import ActionReceipt, NativeCommandRequest
 from kenshi_agent.telemetry import TelemetryRead
 from kenshi_agent.tooling import live_dev
 from kenshi_agent.tooling.dev_cli import parse_args, render_reference
 from kenshi_agent.tooling.live_dev import (
-    MYGUI_CLICK_HOLD_SECONDS,
     LaunchFailed,
     LaunchInterrupted,
     _agent_argv,
     _click,
-    _click_semantic_control,
     _disable_re_kenshi_startup_panel,
+    _dispatch_native_startup_command,
     _ensure_interrupted_safe_state,
+    _ensure_native_launch_pause,
+    _game_executable,
     _observe_loaded_paused_health,
-    _open_exact_authored_game_start,
-    _open_exact_scenario_save,
     _plugin_ready,
     _steam_connection_state,
     _telemetry_payload,
-    _unique_visible_control,
     _validate_calibrated_client_rect,
     _validate_launch_preconditions,
     _validate_resumable_launcher_rect,
@@ -76,6 +75,7 @@ class LaunchController(InputController):
         self.title = title
         self.visible_titles = visible_titles
         self.close_requested = False
+        self.dialog_commands: list[tuple[str, int]] = []
 
     @asynccontextmanager
     async def input_lease(self, *, alt_tab_on_restore: bool = False):
@@ -126,6 +126,9 @@ class LaunchController(InputController):
 
     def request_close(self) -> None:
         self.close_requested = True
+
+    def request_dialog_command(self, *, button_text: str, control_id: int) -> None:
+        self.dialog_commands.append((button_text, control_id))
 
 
 def test_live_dev_exposes_only_the_approved_top_level_commands() -> None:
@@ -930,14 +933,16 @@ class LaunchTelemetry:
     def __init__(self, *snapshots: TelemetrySnapshot) -> None:
         self.snapshots = list(snapshots)
         self.index = 0
+        self.stale_reads = 0
 
     def read(self) -> TelemetryRead:
-        snapshot = self.snapshots[min(self.index, len(self.snapshots) - 1)]
+        read_index = self.index
+        snapshot = self.snapshots[min(read_index, len(self.snapshots) - 1)]
         self.index += 1
         return TelemetryRead(
             snapshot=snapshot,
             age_seconds=0.0,
-            stale=False,
+            stale=read_index < self.stale_reads,
             path=Path("telemetry.latest.json"),
         )
 
@@ -1052,81 +1057,8 @@ def resource_inventory_snapshot(
     )
 
 
-def semantic_snapshot(
-    sequence: int,
-    *,
-    label: str,
-    bounds: NormalizedPointerBounds | None = None,
-) -> TelemetrySnapshot:
-    return TelemetrySnapshot(
-        sequence=sequence,
-        capabilities=["ui.visible_controls"],
-        ui=UIState(
-            visible_controls=[
-                VisibleUIControl(
-                    label=label,
-                    role="button",
-                    bounds=bounds
-                    or NormalizedPointerBounds(
-                        min_x=0.2,
-                        max_x=0.4,
-                        min_y=0.1,
-                        max_y=0.2,
-                    ),
-                )
-            ]
-        ),
-    )
 
-
-def carousel_snapshot(
-    sequence: int,
-    *,
-    label: str,
-    duplicate_left: bool = False,
-) -> TelemetrySnapshot:
-    left = VisibleUIControl(
-        label="session_LeftButton",
-        role="button",
-        bounds=NormalizedPointerBounds(
-            min_x=0.55,
-            max_x=0.57,
-            min_y=0.08,
-            max_y=0.13,
-        ),
-    )
-    controls = [
-        left,
-        *([left.model_copy(deep=True)] if duplicate_left else []),
-        VisibleUIControl(
-            label="session_RightButton",
-            role="button",
-            bounds=NormalizedPointerBounds(
-                min_x=0.73,
-                max_x=0.75,
-                min_y=0.08,
-                max_y=0.13,
-            ),
-        ),
-        VisibleUIControl(
-            label=label,
-            role="text",
-            bounds=NormalizedPointerBounds(
-                min_x=0.57,
-                max_x=0.73,
-                min_y=0.078,
-                max_y=0.134,
-            ),
-        ),
-    ]
-    return TelemetrySnapshot(
-        sequence=sequence,
-        capabilities=["ui.visible_controls"],
-        ui=UIState(visible_controls=controls),
-    )
-
-
-def test_launch_click_aborts_before_lease_when_human_input_is_detected() -> None:
+def test_safe_ui_click_aborts_before_lease_when_human_input_is_detected() -> None:
     async def scenario() -> None:
         controller = LaunchController(human_input=True)
 
@@ -1141,7 +1073,7 @@ def test_launch_click_aborts_before_lease_when_human_input_is_detected() -> None
     asyncio.run(scenario())
 
 
-def test_launch_click_aborts_inside_lease_without_emitting_input() -> None:
+def test_safe_ui_click_aborts_inside_lease_without_emitting_input() -> None:
     async def scenario() -> None:
         controller = LaunchController(interrupt_inside_lease=True)
 
@@ -1155,122 +1087,6 @@ def test_launch_click_aborts_inside_lease_without_emitting_input() -> None:
 
     asyncio.run(scenario())
 
-
-def test_startup_input_gate_resets_takeover_after_new_human_input() -> None:
-    class SequenceController(LaunchController):
-        def __init__(self) -> None:
-            super().__init__()
-            self.human_inputs = iter([True, False, True, False, False, False])
-
-        def continuous_user_input_detected(self) -> bool:
-            return next(self.human_inputs, False)
-
-    class Clock:
-        def __init__(self) -> None:
-            self.now = 0.0
-
-        def monotonic(self) -> float:
-            return self.now
-
-        async def sleep(self, seconds: float) -> None:
-            self.now += seconds
-
-    async def scenario() -> None:
-        controller = SequenceController()
-        clock = Clock()
-        gate = live_dev._StartupInputGate(
-            controller,
-            emergency_stop_key="f12",
-            quiet_seconds=1.0,
-            countdown_seconds=2.0,
-            poll_seconds=1.0,
-            monotonic=clock.monotonic,
-            sleep=clock.sleep,
-        )
-
-        waited = await gate.wait_for_turn()
-
-        assert waited == 5.0
-
-    import asyncio
-
-    asyncio.run(scenario())
-
-
-def test_startup_input_gate_reacquires_after_input_inside_lease() -> None:
-    class InterruptedLeaseController(LaunchController):
-        def __init__(self) -> None:
-            super().__init__()
-            self.detected = False
-
-        @asynccontextmanager
-        async def input_lease(self, *, alt_tab_on_restore: bool = False):
-            del alt_tab_on_restore
-            self.lease_entries += 1
-            self.detected = self.lease_entries == 1
-            yield
-
-        def continuous_user_input_detected(self) -> bool:
-            detected, self.detected = self.detected, False
-            return detected
-
-    class Clock:
-        def __init__(self) -> None:
-            self.now = 0.0
-
-        def monotonic(self) -> float:
-            return self.now
-
-        async def sleep(self, seconds: float) -> None:
-            self.now += seconds
-
-    async def scenario() -> None:
-        controller = InterruptedLeaseController()
-        clock = Clock()
-        gate = live_dev._StartupInputGate(
-            controller,
-            emergency_stop_key="f12",
-            quiet_seconds=0.0,
-            countdown_seconds=1.0,
-            poll_seconds=1.0,
-            monotonic=clock.monotonic,
-            sleep=clock.sleep,
-        )
-
-        await live_dev._execute_primitive(
-            controller,
-            KeyAction(key="enter"),
-            input_gate=gate,
-        )
-
-        assert controller.lease_entries == 2
-        assert controller.actions == [KeyAction(key="enter")]
-
-    import asyncio
-
-    asyncio.run(scenario())
-
-
-def test_startup_input_gate_treats_f12_as_a_permanent_brake() -> None:
-    class EmergencyController(LaunchController):
-        def emergency_stop_pressed(self, key: str) -> bool:
-            return key == "f12"
-
-    async def scenario() -> None:
-        gate = live_dev._StartupInputGate(
-            EmergencyController(),
-            emergency_stop_key="f12",
-            quiet_seconds=0.0,
-            countdown_seconds=1.0,
-            poll_seconds=0.1,
-        )
-
-        with pytest.raises(LaunchInterrupted, match="disarmed"):
-            await gate.wait_for_turn()
-
-    import asyncio
-
-    asyncio.run(scenario())
 
 
 def test_launcher_wait_fails_immediately_on_crash_reporter() -> None:
@@ -1583,11 +1399,12 @@ def test_non_launching_preflight_can_validate_an_existing_kenshi_client(
     )
 
 
-def test_resume_launcher_requires_the_exact_small_pre_game_window() -> None:
+def test_resume_launcher_accepts_small_or_full_native_window() -> None:
+    _validate_resumable_launcher_rect(WindowRect(0, 0, 1920, 1080))
     _validate_resumable_launcher_rect(WindowRect(0, 0, 900, 700))
 
-    with pytest.raises(LaunchFailed, match="exact small RE_Kenshi"):
-        _validate_resumable_launcher_rect(WindowRect(0, 0, 1920, 1080))
+    with pytest.raises(LaunchFailed, match="measurable"):
+        _validate_resumable_launcher_rect(WindowRect(0, 0, 0, 0))
 
 
 def test_launch_preflight_prioritizes_terminal_crash_over_duplicate_process(
@@ -2511,332 +2328,6 @@ def test_post_load_health_rejects_recovered_kernel_gpu_timeout() -> None:
     asyncio.run(scenario())
 
 
-def test_semantic_control_matches_normalized_label_and_live_bounds() -> None:
-    snapshot = semantic_snapshot(1, label="  Continue\n")
-
-    control = _unique_visible_control(snapshot, ["continue"])
-
-    assert control is not None
-    assert control.center == pytest.approx((0.3, 0.15))
-
-
-def test_semantic_control_click_rechecks_exact_anchor_inside_input_lease() -> None:
-    async def scenario() -> None:
-        controller = LaunchController()
-        initial = semantic_snapshot(1, label="Continue")
-        changed = semantic_snapshot(
-            2,
-            label="Continue",
-            bounds=NormalizedPointerBounds(
-                min_x=0.6,
-                max_x=0.8,
-                min_y=0.6,
-                max_y=0.8,
-            ),
-        )
-        reader = LaunchTelemetry(initial, changed)
-
-        with pytest.raises(RuntimeError, match="changed inside the input lease"):
-            await _click_semantic_control(
-                controller,
-                reader,  # type: ignore[arg-type]
-                ["Continue"],
-            )
-
-        assert controller.actions == []
-
-    import asyncio
-
-    asyncio.run(scenario())
-
-
-def test_semantic_control_click_uses_current_center_at_any_client_size() -> None:
-    async def scenario() -> None:
-        controller = LaunchController()
-        snapshot = semantic_snapshot(
-            3,
-            label="Continue",
-            bounds=NormalizedPointerBounds(
-                min_x=0.55,
-                max_x=0.75,
-                min_y=0.25,
-                max_y=0.35,
-            ),
-        )
-        reader = LaunchTelemetry(snapshot, snapshot)
-
-        await _click_semantic_control(
-            controller,
-            reader,  # type: ignore[arg-type]
-            ["Continue"],
-        )
-
-        assert controller.actions == [
-            live_dev.ClickAction(x=0.65, y=0.3, hold_seconds=MYGUI_CLICK_HOLD_SECONDS)
-        ]
-
-    import asyncio
-
-    asyncio.run(scenario())
-
-
-def test_scenario_start_uses_load_game_then_exact_managed_save() -> None:
-    async def scenario() -> None:
-        controller = LaunchController()
-        load_bounds = NormalizedPointerBounds(
-            min_x=0.1,
-            max_x=0.3,
-            min_y=0.2,
-            max_y=0.4,
-        )
-        save_bounds = NormalizedPointerBounds(
-            min_x=0.4,
-            max_x=0.8,
-            min_y=0.5,
-            max_y=0.7,
-        )
-        reader = LaunchTelemetry(
-            semantic_snapshot(1, label="Load Game", bounds=load_bounds),
-            semantic_snapshot(2, label="Load Game", bounds=load_bounds),
-            semantic_snapshot(3, label="Load Game", bounds=load_bounds),
-            semantic_snapshot(
-                4,
-                label="KenshiAgentScenario",
-                bounds=save_bounds,
-            ),
-            semantic_snapshot(
-                5,
-                label="KenshiAgentScenario",
-                bounds=save_bounds,
-            ),
-            semantic_snapshot(
-                6,
-                label="KenshiAgentScenario",
-                bounds=save_bounds,
-            ),
-        )
-
-        await _open_exact_scenario_save(
-            controller,
-            reader,  # type: ignore[arg-type]
-            load_control_labels=["Load Game"],
-            save_control_label="KenshiAgentScenario",
-            timeout=0.5,
-        )
-
-        assert len(controller.actions) == 2
-        first, second = controller.actions
-        assert isinstance(first, live_dev.ClickAction)
-        assert isinstance(second, live_dev.ClickAction)
-        assert (first.x, first.y) == pytest.approx((0.2, 0.3))
-        assert (second.x, second.y) == pytest.approx((0.6, 0.6))
-        assert first.hold_seconds == second.hold_seconds == MYGUI_CLICK_HOLD_SECONDS
-
-    import asyncio
-
-    asyncio.run(scenario())
-
-
-def test_authored_pair_start_confirms_unchanged_character_warning() -> None:
-    async def scenario() -> None:
-        controller = LaunchController()
-        snapshots = [
-            semantic_snapshot(1, label="New Game"),
-            semantic_snapshot(2, label="New Game"),
-            semantic_snapshot(3, label="New Game"),
-            carousel_snapshot(4, label="Wanderer"),
-            carousel_snapshot(5, label="Wanderer"),
-            carousel_snapshot(6, label="Wanderer"),
-            carousel_snapshot(7, label="Freedom Seekers"),
-            carousel_snapshot(8, label="Freedom Seekers"),
-            carousel_snapshot(9, label="Freedom Seekers"),
-            carousel_snapshot(10, label="Freedom Seekers"),
-            carousel_snapshot(11, label="KAE 03 - Broke Pair"),
-            semantic_snapshot(12, label="Begin"),
-            semantic_snapshot(13, label="Begin"),
-            semantic_snapshot(14, label="Begin"),
-            semantic_snapshot(15, label="Confirm"),
-            semantic_snapshot(16, label="Confirm"),
-            semantic_snapshot(17, label="Confirm"),
-            semantic_snapshot(18, label="Yes"),
-            semantic_snapshot(19, label="Yes"),
-            semantic_snapshot(20, label="Yes"),
-        ]
-        reader = LaunchTelemetry(*snapshots)
-
-        await _open_exact_authored_game_start(
-            controller,
-            reader,  # type: ignore[arg-type]
-            new_game_control_labels=["New Game"],
-            game_start_label="KAE 03 - Broke Pair",
-            begin_control_labels=["Begin"],
-            confirm_control_labels=["Confirm"],
-            warning_confirm_control_labels=["Yes"],
-            max_carousel_steps=16,
-            timeout=0.5,
-        )
-
-        assert len(controller.actions) == 6
-        assert all(isinstance(action, live_dev.ClickAction) for action in controller.actions)
-
-    import asyncio
-
-    asyncio.run(scenario())
-
-
-def test_authored_solo_start_does_not_invent_a_warning_confirmation() -> None:
-    async def scenario() -> None:
-        controller = LaunchController()
-        reader = LaunchTelemetry(
-            semantic_snapshot(1, label="New Game"),
-            semantic_snapshot(2, label="New Game"),
-            semantic_snapshot(3, label="New Game"),
-            carousel_snapshot(4, label="KAE 01 - Solo"),
-            semantic_snapshot(5, label="Begin"),
-            semantic_snapshot(6, label="Begin"),
-            semantic_snapshot(7, label="Begin"),
-            semantic_snapshot(8, label="Confirm"),
-            semantic_snapshot(9, label="Confirm"),
-            semantic_snapshot(10, label="Confirm"),
-            launch_snapshot(11, paused=True),
-        )
-
-        await _open_exact_authored_game_start(
-            controller,
-            reader,  # type: ignore[arg-type]
-            new_game_control_labels=["New Game"],
-            game_start_label="KAE 01 - Solo",
-            begin_control_labels=["Begin"],
-            confirm_control_labels=["Confirm"],
-            warning_confirm_control_labels=["Yes"],
-            max_carousel_steps=16,
-            timeout=0.5,
-        )
-
-        assert len(controller.actions) == 3
-        assert all(isinstance(action, live_dev.ClickAction) for action in controller.actions)
-
-    import asyncio
-
-    asyncio.run(scenario())
-
-
-def test_authored_start_ambiguity_emits_no_start_selection_input() -> None:
-    async def scenario() -> None:
-        controller = LaunchController()
-        new_game = semantic_snapshot(1, label="New Game")
-        ambiguous = carousel_snapshot(
-            4,
-            label="Wanderer",
-            duplicate_left=True,
-        )
-        reader = LaunchTelemetry(new_game, new_game, new_game, ambiguous)
-
-        with pytest.raises(TimeoutError, match="exact authored Game Start"):
-            await _open_exact_authored_game_start(
-                controller,
-                reader,  # type: ignore[arg-type]
-                new_game_control_labels=["New Game"],
-                game_start_label="KAE 03 - Broke Pair",
-                begin_control_labels=["Begin"],
-                confirm_control_labels=["Confirm"],
-                warning_confirm_control_labels=["Yes"],
-                max_carousel_steps=16,
-                timeout=0.01,
-            )
-
-        assert len(controller.actions) == 1
-
-    import asyncio
-
-    asyncio.run(scenario())
-
-
-def test_authored_start_carousel_cycle_stops_before_begin() -> None:
-    async def scenario() -> None:
-        controller = LaunchController()
-        snapshots = [
-            semantic_snapshot(1, label="New Game"),
-            semantic_snapshot(2, label="New Game"),
-            semantic_snapshot(3, label="New Game"),
-            carousel_snapshot(4, label="Wanderer"),
-            carousel_snapshot(5, label="Wanderer"),
-            carousel_snapshot(6, label="Wanderer"),
-            carousel_snapshot(7, label="Nobodies"),
-            carousel_snapshot(8, label="Nobodies"),
-            carousel_snapshot(9, label="Nobodies"),
-            carousel_snapshot(10, label="Nobodies"),
-            carousel_snapshot(11, label="Wanderer"),
-        ]
-        reader = LaunchTelemetry(*snapshots)
-
-        with pytest.raises(LaunchFailed, match="cycled"):
-            await _open_exact_authored_game_start(
-                controller,
-                reader,  # type: ignore[arg-type]
-                new_game_control_labels=["New Game"],
-                game_start_label="KAE 03 - Broke Pair",
-                begin_control_labels=["Begin"],
-                confirm_control_labels=["Confirm"],
-                warning_confirm_control_labels=["Yes"],
-                max_carousel_steps=16,
-                timeout=0.5,
-            )
-
-        assert len(controller.actions) == 3
-
-    import asyncio
-
-    asyncio.run(scenario())
-
-
-def test_authored_start_carousel_requires_causally_later_label_change() -> None:
-    async def scenario() -> None:
-        controller = LaunchController()
-        snapshots = [
-            semantic_snapshot(1, label="New Game"),
-            semantic_snapshot(2, label="New Game"),
-            semantic_snapshot(3, label="New Game"),
-            carousel_snapshot(4, label="Wanderer"),
-            carousel_snapshot(5, label="Wanderer"),
-            carousel_snapshot(6, label="Wanderer"),
-            carousel_snapshot(6, label="KAE 03 - Broke Pair"),
-        ]
-        reader = LaunchTelemetry(*snapshots)
-
-        with pytest.raises(TimeoutError, match="advance from 'Wanderer'"):
-            await _open_exact_authored_game_start(
-                controller,
-                reader,  # type: ignore[arg-type]
-                new_game_control_labels=["New Game"],
-                game_start_label="KAE 03 - Broke Pair",
-                begin_control_labels=["Begin"],
-                confirm_control_labels=["Confirm"],
-                warning_confirm_control_labels=["Yes"],
-                max_carousel_steps=16,
-                timeout=0.01,
-            )
-
-        assert len(controller.actions) == 2
-
-    import asyncio
-
-    asyncio.run(scenario())
-
-
-def test_duplicate_semantic_label_is_ambiguous_and_emits_no_match() -> None:
-    control = semantic_snapshot(4, label="Continue").ui.visible_controls
-    assert control is not None
-    snapshot = semantic_snapshot(4, label="Continue").model_copy(
-        update={
-            "ui": UIState(
-                visible_controls=[control[0], control[0].model_copy(deep=True)]
-            )
-        }
-    )
-
-    assert _unique_visible_control(snapshot, ["Continue"]) is None
-
 
 def _run_args(*extra: str) -> object:
     return live_dev.build_parser().parse_args(
@@ -3210,71 +2701,256 @@ def test_run_owned_overlay_escalates_to_kill_when_terminate_stalls(
     assert calls == ["terminate", "wait", "kill", "wait"]
 
 
-def test_startup_clicks_hold_long_enough_for_mygui() -> None:
-    """Kenshi ignores an instantaneous press.
-
-    The launcher's startup click used the zero-duration default. That squeaked
-    through only while relative stepping walked the cursor to its target slowly;
-    once the pointer began warping, the click arrived instantly and stopped
-    registering, and startup stalled silently on the title screen with the
-    Continue button plainly visible.
-    """
-
-    assert MYGUI_CLICK_HOLD_SECONDS > 0.0
-    # Matches the value the semantic control action uses in live gameplay.
-    from kenshi_agent.config import ControlsConfig
-
-    assert MYGUI_CLICK_HOLD_SECONDS == ControlsConfig().control_activation_hold_seconds
+def _title_snapshot(sequence: int = 20) -> TelemetrySnapshot:
+    return TelemetrySnapshot(
+        sequence=sequence,
+        identity_session_id="session-title",
+        capabilities=[
+            "control.continue_game",
+            "control.load_game",
+            "control.new_game",
+        ],
+        game=GameState(loaded=False),
+        ui=UIState(active_screen="title"),
+        controller_commands=NativeControlState(available=True),
+    )
 
 
-def test_launcher_resolves_without_a_desktop_shortcut(
+def _title_transition_ack(
+    command: str,
+    *,
+    save_name: str = "",
+    game_start_id: str = "",
+) -> NativeCommandAcknowledgement:
+    return NativeCommandAcknowledgement(
+        command_id="cmd-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        command=command,  # type: ignore[arg-type]
+        status=NativeCommandStatus.COMPLETED,
+        reason="world_session_loaded",
+        save_name=save_name,
+        game_start_id=game_start_id,
+        selected_character_ids=[],
+        based_on_telemetry_sequence=20,
+        acknowledged_at_telemetry_sequence=21,
+        accepted_at_telemetry_sequence=21,
+        terminal_at_telemetry_sequence=21,
+    )
+
+
+def _native_launch_config(tmp_path: Path):
+    root = Path(__file__).resolve().parents[1]
+    config = load_config(root / "config" / "live.yaml")
+    return config.model_copy(
+        update={
+            "telemetry": config.telemetry.model_copy(
+                update={"file": tmp_path / "telemetry.latest.json"}
+            )
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("command", "save_name", "game_start_id"),
+    [
+        ("continue_game", "", ""),
+        ("load_game", "KenshiAgentScenario", ""),
+        ("new_game", "", "kae-03-broke-pair"),
+    ],
+)
+def test_title_transition_is_one_native_request_and_zero_desktop_input(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+    save_name: str,
+    game_start_id: str,
+) -> None:
+    async def scenario() -> None:
+        monkeypatch.setattr(
+            live_dev,
+            "new_command_id",
+            lambda: "cmd-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        )
+        config = _native_launch_config(tmp_path)
+        controller = LaunchController()
+        loaded = launch_snapshot(22, paused=False).model_copy(
+            update={
+                "identity_session_id": "session-world",
+                "controller_commands": NativeControlState(
+                    available=True,
+                    commands=[
+                        _title_transition_ack(
+                            command,
+                            save_name=save_name,
+                            game_start_id=game_start_id,
+                        )
+                    ],
+                ),
+            }
+        )
+        reader = LaunchTelemetry(_title_snapshot(), loaded)
+
+        result = await _dispatch_native_startup_command(
+            config,
+            reader,  # type: ignore[arg-type]
+            controller,
+            command=command,  # type: ignore[arg-type]
+            save_name=save_name,
+            game_start_id=game_start_id,
+            timeout=0.2,
+        )
+
+        request = NativeCommandRequest.model_validate_json(
+            (tmp_path / "native_command.request.json").read_bytes()
+        )
+        evidence = json.loads(
+            (tmp_path / "native_startup_transition.latest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert request.command == command
+        assert request.save_name == save_name
+        assert request.game_start_id == game_start_id
+        assert request.selected_character_ids == []
+        assert result.identity_session_id == "session-world"
+        assert evidence["request"]["command_id"] == request.command_id
+        assert evidence["acknowledgement"]["command_id"] == request.command_id
+        assert evidence["title_snapshot"]["identity_session_id"] == "session-title"
+        assert evidence["loaded_snapshot"]["identity_session_id"] == "session-world"
+        assert controller.actions == []
+        assert controller.lease_entries == 0
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+def test_title_transition_waits_for_fresh_native_title_authority(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A deleted desktop icon must not be able to break launching.
+    async def scenario() -> None:
+        monkeypatch.setattr(
+            live_dev,
+            "new_command_id",
+            lambda: "cmd-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        )
+        config = _native_launch_config(tmp_path)
+        controller = LaunchController()
+        stale = _title_snapshot(19)
+        title = _title_snapshot(20)
+        loaded = launch_snapshot(22, paused=False).model_copy(
+            update={
+                "identity_session_id": "session-world",
+                "controller_commands": NativeControlState(
+                    available=True,
+                    commands=[
+                        _title_transition_ack(
+                            "load_game",
+                            save_name="KenshiAgentScenario",
+                        )
+                    ],
+                ),
+            }
+        )
+        reader = LaunchTelemetry(stale, title, loaded)
+        reader.stale_reads = 1
 
-    The launch path accepted only a hand-made `RE_Kenshi.lnk` that nothing in
-    this repository creates, documents, or checks. Tidying it off a desktop
-    broke `./dev launch` after preflight had reported everything ready and a
-    display lease had already been taken.
-    """
+        result = await _dispatch_native_startup_command(
+            config,
+            reader,  # type: ignore[arg-type]
+            controller,
+            command="load_game",
+            save_name="KenshiAgentScenario",
+            timeout=0.5,
+        )
 
+        assert result.identity_session_id == "session-world"
+        assert controller.actions == []
+        assert controller.lease_entries == 0
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+def test_post_load_pause_is_native_and_never_acquires_input(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        config = _native_launch_config(tmp_path)
+        controller = LaunchController()
+        running = launch_snapshot(30, paused=False).model_copy(
+            update={
+                "identity_session_id": "session-world",
+                "controller_commands": NativeControlState(available=True),
+            }
+        )
+        paused = launch_snapshot(31, paused=True).model_copy(
+            update={
+                "identity_session_id": "session-world",
+                "controller_commands": NativeControlState(available=True),
+            }
+        )
+        reader = LaunchTelemetry(running, paused)
+
+        result = await _ensure_native_launch_pause(
+            config,
+            reader,  # type: ignore[arg-type]
+            controller,
+            timeout=0.2,
+        )
+
+        request = NativeCommandRequest.model_validate_json(
+            (tmp_path / "native_command.request.json").read_bytes()
+        )
+        assert request.command == "pause"
+        assert request.paused is True
+        assert result.game.paused is True
+        assert controller.actions == []
+        assert controller.lease_entries == 0
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+def test_supported_launch_contains_no_mouse_or_keyboard_delivery() -> None:
+    source = inspect.getsource(live_dev._perform_launch)
+
+    assert 'request_dialog_command(button_text="OK", control_id=1003)' in source
+
+    for forbidden in (
+        "ClickAction",
+        "KeyAction",
+        "HotkeyAction",
+        "_click",
+        "_execute_primitive",
+        "input_lease",
+    ):
+        assert forbidden not in source
+
+
+def test_game_executable_is_the_install_root_not_a_shortcut_or_archived_copy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     install = tmp_path / "Steam" / "steamapps" / "common" / "Kenshi"
-    (install / "RE_Kenshi").mkdir(parents=True)
-    executable = install / "RE_Kenshi" / "Kenshi_x64.exe"
+    install.mkdir(parents=True)
+    executable = install / "kenshi_x64.exe"
     executable.write_bytes(b"")
     monkeypatch.setenv("ProgramFiles(x86)", str(tmp_path))
-    monkeypatch.delenv("KENSHI_AGENT_SHORTCUT", raising=False)
-    monkeypatch.setattr(live_dev.Path, "home", classmethod(lambda cls: tmp_path / "nobody"))
+    monkeypatch.delenv("KENSHI_AGENT_EXECUTABLE", raising=False)
 
-    assert live_dev._shortcut() == executable
-    # The install root, not the patched executable's own folder, is where
-    # Kenshi resolves data, mods and RE_Kenshi.ini.
-    assert executable.parent.parent == install
+    assert _game_executable() == executable
 
 
-def test_an_operator_shortcut_still_wins_over_the_installed_executable(
+def test_game_executable_override_must_be_an_exact_exe(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    install = tmp_path / "Steam" / "steamapps" / "common" / "Kenshi"
-    (install / "RE_Kenshi").mkdir(parents=True)
-    (install / "RE_Kenshi" / "Kenshi_x64.exe").write_bytes(b"")
-    chosen = tmp_path / "my-launcher.lnk"
-    chosen.write_bytes(b"")
-    monkeypatch.setenv("ProgramFiles(x86)", str(tmp_path))
-    monkeypatch.setenv("KENSHI_AGENT_SHORTCUT", str(chosen))
+    shortcut = tmp_path / "RE_Kenshi.lnk"
+    shortcut.write_bytes(b"")
+    monkeypatch.setenv("KENSHI_AGENT_EXECUTABLE", str(shortcut))
 
-    assert live_dev._shortcut() == chosen
-
-
-def test_a_missing_launcher_names_every_place_it_looked(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("ProgramFiles(x86)", str(tmp_path))
-    monkeypatch.delenv("KENSHI_AGENT_SHORTCUT", raising=False)
-    monkeypatch.setattr(live_dev.Path, "home", classmethod(lambda cls: tmp_path / "nobody"))
-
-    with pytest.raises(FileNotFoundError, match="RE_Kenshi/Kenshi_x64.exe"):
-        live_dev._shortcut()
+    with pytest.raises(FileNotFoundError, match="exact .exe"):
+        _game_executable()

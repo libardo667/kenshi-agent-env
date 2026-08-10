@@ -12,16 +12,13 @@ import shutil
 import subprocess
 import sys
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from collections.abc import Callable, Iterator
 from contextlib import (
-    AbstractAsyncContextManager,
     AbstractContextManager,
-    asynccontextmanager,
     contextmanager,
     nullcontext,
 )
 from datetime import UTC, datetime
-from functools import partial
 from pathlib import Path
 from typing import Literal
 
@@ -31,33 +28,33 @@ from ..control.base import InputController, PrimitiveInputAction, WindowRect
 from ..control.calibration import validate_expected_client_size
 from ..control.capture import WindowCapture
 from ..control.win32 import Win32InputController
-from ..control_ownership import (
-    ControlOwnershipEvent,
-    ControlOwnershipEventType,
-    ControlOwnershipMachine,
-    ControlOwnershipState,
-)
 from ..core.observation import Observation
 from ..core.operation import (
     ClickAction,
+    ControlMode,
     HotkeyAction,
     KeyAction,
 )
 from ..core.scenario import MANAGED_SAVE_NAME, ScenarioFixtureManifest
 from ..core.telemetry import (
+    TITLE_SCREEN_NATIVE_COMMANDS,
     Disposition,
+    NativeCommandStatus,
+    NativeWireCommand,
     NormalizedPointerBounds,
     ScenarioIdentity,
     TelemetrySnapshot,
-    VisibleUIControl,
     window_close_point,
 )
+from ..core.transport import NativeCommandRequest, new_command_id
+from ..core.world import WorldStateRevision
 from ..display_lease import (
     DisplayLeaseError,
     DisplayTopologyController,
     external_display_lease,
 )
 from ..final_safe_state import FinalSafeStateStatus, ensure_final_safe_state
+from ..native_commands import write_native_command_request_atomic
 from ..scenario_validation import (
     ScenarioFixtureError,
     attest_loaded_scenario,
@@ -136,6 +133,12 @@ class LowPhysicalMemory(LaunchFailed):
         )
 
 
+def _normalize_control_label(value: str) -> str:
+    """Normalize captions used only by bounded recovery UI inspection."""
+
+    return " ".join(value.split()).casefold()
+
+
 def _config_path(args: argparse.Namespace) -> str | Path:
     if getattr(args, "config", None) is not None:
         return str(args.config)
@@ -144,125 +147,6 @@ def _config_path(args: argparse.Namespace) -> str | Path:
 
 def _windows_runtime() -> bool:
     return os.name == "nt"
-
-
-class _StartupInputGate:
-    """Yield launcher input, then visibly reclaim it after a quiet countdown."""
-
-    def __init__(
-        self,
-        controller: InputController,
-        *,
-        emergency_stop_key: str,
-        quiet_seconds: float,
-        countdown_seconds: float,
-        poll_seconds: float,
-        monotonic: Callable[[], float] = time.monotonic,
-        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
-    ) -> None:
-        self.controller = controller
-        self.emergency_stop_key = emergency_stop_key
-        self.poll_seconds = poll_seconds
-        self.monotonic = monotonic
-        self.sleep = sleep
-        self.machine = ControlOwnershipMachine(
-            quiet_seconds=quiet_seconds,
-            countdown_seconds=countdown_seconds,
-        )
-
-    def _check_emergency_stop(self) -> None:
-        if self.machine.state is ControlOwnershipState.DISARMED:
-            raise LaunchInterrupted(
-                "Kenshi startup automation remains disarmed by the emergency stop."
-            )
-        if not self.controller.emergency_stop_pressed(self.emergency_stop_key):
-            return
-        self.machine.disarm(
-            reason=(
-                f"Emergency stop {self.emergency_stop_key!r} pressed; launcher "
-                "takeover is permanently disarmed."
-            )
-        )
-        raise LaunchInterrupted(
-            f"Kenshi startup automation was permanently disarmed by "
-            f"{self.emergency_stop_key!r}."
-        )
-
-    @staticmethod
-    def _announce(events: tuple[ControlOwnershipEvent, ...]) -> None:
-        for event in events:
-            if event.event_type is ControlOwnershipEventType.COUNTDOWN:
-                print(
-                    "Launcher takeover in "
-                    f"{event.seconds_remaining}s; move the mouse or press a key "
-                    "to retain control."
-                )
-            elif event.event_type is ControlOwnershipEventType.READY:
-                print(
-                    "Launcher takeover countdown complete; revalidating current "
-                    "startup state."
-                )
-            elif (
-                event.event_type is ControlOwnershipEventType.CHANGED
-                and event.state is ControlOwnershipState.HUMAN_CONTROL
-            ):
-                print(
-                    "Human input detected; launcher yielded control and cancelled "
-                    "its pending input."
-                )
-
-    def _observe_human_input(self) -> bool:
-        self._check_emergency_stop()
-        detected = self.controller.continuous_user_input_detected()
-        if not detected:
-            return False
-        now = self.monotonic()
-        events = (
-            self.machine.yield_to_human(
-                now,
-                reason="Human input preempted Kenshi startup automation.",
-            )
-            if self.machine.state is ControlOwnershipState.AGENT_ACTIVE
-            else self.machine.advance(now, human_input=True)
-        )
-        self._announce(events)
-        return True
-
-    async def wait_for_turn(self) -> float:
-        """Wait without consuming startup timeout; F12 never auto-recovers."""
-
-        started = self.monotonic()
-        if (
-            not self._observe_human_input()
-            and self.machine.state is ControlOwnershipState.AGENT_ACTIVE
-        ):
-            return 0.0
-        while self.machine.state is not ControlOwnershipState.AGENT_ACTIVE:
-            await self.sleep(self.poll_seconds)
-            self._check_emergency_stop()
-            human_input = self.controller.continuous_user_input_detected()
-            events = self.machine.advance(
-                self.monotonic(),
-                human_input=human_input,
-            )
-            self._announce(events)
-        return self.monotonic() - started
-
-    async def _yield_input_lease(self) -> AsyncIterator[None]:
-        """Reacquire when input lands after the polite lease begins."""
-
-        while True:
-            await self.wait_for_turn()
-            async with self.controller.input_lease():
-                if self._observe_human_input():
-                    continue
-                yield
-                return
-
-    def input_lease(self) -> AbstractAsyncContextManager[None]:
-        """Expose the lease without hiding its decisions behind a decorator."""
-
-        return asynccontextmanager(self._yield_input_lease)()
 
 
 def _validate_safe_close_snapshot(
@@ -577,19 +461,9 @@ def _controller(
 def _abort_if_human_input(controller: InputController) -> None:
     if controller.continuous_user_input_detected():
         raise LaunchInterrupted(
-            "Kenshi startup automation stopped because human input was detected; "
-            "all remaining startup clicks were permanently cancelled."
+            "Kenshi desktop-safety action stopped because human input was detected; "
+            "no input was emitted."
         )
-
-
-async def _wait_for_startup_input(
-    controller: InputController,
-    input_gate: _StartupInputGate | None,
-) -> float:
-    if input_gate is not None:
-        return await input_gate.wait_for_turn()
-    _abort_if_human_input(controller)
-    return 0.0
 
 
 def _terminal_window_title(controller: InputController) -> str | None:
@@ -603,7 +477,6 @@ async def _wait_until(
     *,
     controller: InputController,
     health_check: Callable[[], None] | None = None,
-    input_gate: _StartupInputGate | None = None,
 ) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -617,7 +490,6 @@ async def _wait_until(
             raise LaunchFailed(
                 f"Kenshi startup stopped because the terminal window {title!r} appeared."
             )
-        deadline += await _wait_for_startup_input(controller, input_gate)
         try:
             if predicate():
                 return
@@ -641,50 +513,33 @@ def _plugin_ready(status_path: Path, launched_at: datetime) -> bool:
     return bool(state == "ready")
 
 
-def _re_kenshi_executable() -> Path | None:
-    """RE_Kenshi's patched launcher inside the Kenshi install, if present."""
+def _game_executable() -> Path:
+    """The installed game executable, never a shortcut or UI wrapper."""
 
-    program_files_x86 = os.environ.get("ProgramFiles(x86)")
-    if not program_files_x86:
-        return None
-    return (
-        Path(program_files_x86)
-        / "Steam"
-        / "steamapps"
-        / "common"
-        / "Kenshi"
-        / "RE_Kenshi"
-        / "Kenshi_x64.exe"
-    )
-
-
-def _shortcut() -> Path:
-    """What to start to bring up the RE_Kenshi launcher.
-
-    A desktop `.lnk` used to be the only accepted answer, which made the whole
-    live path depend on a hand-made shortcut that nothing in this repository
-    creates, documents, or checks. Deleting a cluttered desktop icon then broke
-    launching, after preflight had already reported everything ready and a
-    display lease had been taken. The installed executable is the durable
-    target; the shortcuts stay ahead of it so an operator's own launcher
-    arrangement still wins.
-    """
-
-    override = os.environ.get("KENSHI_AGENT_SHORTCUT")
-    candidates = [
-        Path(override) if override else None,
-        Path.home() / "OneDrive" / "Desktop" / "RE_Kenshi.lnk",
-        Path.home() / "Desktop" / "RE_Kenshi.lnk",
-        _re_kenshi_executable(),
-    ]
-    for candidate in candidates:
-        if candidate is not None and candidate.is_file():
-            return candidate
-    raise FileNotFoundError(
-        "No RE_Kenshi launcher was found. Expected a desktop RE_Kenshi.lnk, "
-        "the installed RE_Kenshi/Kenshi_x64.exe, or KENSHI_AGENT_SHORTCUT set "
-        "to a launcher path."
-    )
+    override = os.environ.get("KENSHI_AGENT_EXECUTABLE")
+    if override:
+        candidate = Path(override)
+    else:
+        program_files_x86 = os.environ.get("ProgramFiles(x86)")
+        if not program_files_x86:
+            raise FileNotFoundError(
+                "Windows ProgramFiles(x86) is unavailable; set "
+                "KENSHI_AGENT_EXECUTABLE to the exact Kenshi_x64.exe path."
+            )
+        candidate = (
+            Path(program_files_x86)
+            / "Steam"
+            / "steamapps"
+            / "common"
+            / "Kenshi"
+            / "kenshi_x64.exe"
+        )
+    if candidate.suffix.casefold() != ".exe" or not candidate.is_file():
+        raise FileNotFoundError(
+            "The native Kenshi executable was not found at "
+            f"{candidate}. Set KENSHI_AGENT_EXECUTABLE to the exact .exe path."
+        )
+    return candidate
 
 
 def _re_kenshi_settings_path() -> Path:
@@ -1016,10 +871,9 @@ def _validate_launch_preconditions(
 
 
 def _validate_resumable_launcher_rect(rect: WindowRect) -> None:
-    if rect.width <= 0 or rect.height <= 0 or rect.width >= 1200:
+    if rect.width <= 0 or rect.height <= 0:
         raise LaunchFailed(
-            "--resume-launcher requires the exact small RE_Kenshi pre-game "
-            "launcher window; no input was sent."
+            "--resume-launcher requires one measurable native Kenshi window."
         )
 
 
@@ -1054,20 +908,238 @@ def _telemetry_read(config: AppConfig) -> TelemetryReader:
     )
 
 
+def _native_request_path(config: AppConfig) -> Path:
+    return config.telemetry.file.parent / "native_command.request.json"
+
+
+def _native_startup_evidence_path(config: AppConfig) -> Path:
+    return config.telemetry.file.parent / "native_startup_transition.latest.json"
+
+
+def _native_request_for_snapshot(
+    snapshot: TelemetrySnapshot,
+    *,
+    command: NativeWireCommand,
+    save_name: str = "",
+    game_start_id: str = "",
+    paused: bool = False,
+) -> NativeCommandRequest:
+    if snapshot.identity_session_id is None:
+        raise LaunchFailed(
+            f"Native {command} requires an authoritative session identity."
+        )
+    return NativeCommandRequest(
+        schema_version="1.5",
+        command_id=new_command_id(),
+        command=command,
+        control_mode=ControlMode.NATIVE_ASSISTED,
+        identity_session_id=snapshot.identity_session_id,
+        based_on_revision=WorldStateRevision(
+            telemetry_sequence=snapshot.sequence,
+            capability_epoch=0,
+        ),
+        selected_character_ids=list(snapshot.selected_character_ids),
+        save_name=save_name,
+        game_start_id=game_start_id,
+        paused=paused,
+    )
+
+
+def _raise_if_native_rejected(
+    snapshot: TelemetrySnapshot,
+    request: NativeCommandRequest,
+) -> bool:
+    acknowledgement = snapshot.controller_commands.command_for(request.command_id)
+    if acknowledgement is None:
+        return False
+    if acknowledgement.status is NativeCommandStatus.REJECTED:
+        raise LaunchFailed(
+            f"Native {request.command} was rejected: {acknowledgement.reason}."
+        )
+    return True
+
+
+async def _dispatch_native_startup_command(
+    config: AppConfig,
+    reader: TelemetryReader,
+    controller: InputController,
+    *,
+    command: NativeWireCommand,
+    timeout: float,
+    save_name: str = "",
+    game_start_id: str = "",
+    health_check: Callable[[], None] | None = None,
+) -> TelemetrySnapshot:
+    """Issue one exact title transition without acquiring desktop input."""
+
+    if command not in TITLE_SCREEN_NATIVE_COMMANDS:
+        raise ValueError(f"{command!r} is not a native title-screen command.")
+    capability = f"control.{command}"
+    readiness_deadline = time.monotonic() + timeout
+    while True:
+        if health_check is not None:
+            health_check()
+        terminal_title = _terminal_window_title(controller)
+        if terminal_title is not None:
+            raise LaunchFailed(
+                f"Native {command} failed because {terminal_title!r} appeared."
+            )
+        try:
+            initial = reader.read()
+        except TelemetryReadError:
+            initial = None
+        if initial is not None and not initial.stale:
+            candidate = initial.snapshot
+            if (
+                not candidate.game.loaded
+                and candidate.ui.active_screen == "title"
+                and capability in candidate.capabilities
+                and candidate.controller_commands.available
+            ):
+                snapshot = candidate
+                break
+        if time.monotonic() >= readiness_deadline:
+            raise TimeoutError(
+                f"Timed out waiting for fresh native {command} title authority; "
+                "no startup request was written."
+            )
+        await asyncio.sleep(0.1)
+    request = _native_request_for_snapshot(
+        snapshot,
+        command=command,
+        save_name=save_name,
+        game_start_id=game_start_id,
+    )
+    # A title screen has no recipient selection. Enforce that truth at the
+    # launcher boundary even if a malformed producer ever publishes one.
+    if request.selected_character_ids:
+        raise LaunchFailed(
+            "Title telemetry unexpectedly named selected characters; no startup "
+            "request was written."
+        )
+    write_native_command_request_atomic(_native_request_path(config), request)
+
+    title_identity = snapshot.identity_session_id
+    saw_acceptance = False
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if health_check is not None:
+            health_check()
+        terminal_title = _terminal_window_title(controller)
+        if terminal_title is not None:
+            raise LaunchFailed(
+                f"Native {command} failed because {terminal_title!r} appeared."
+            )
+        try:
+            current = reader.read()
+        except TelemetryReadError:
+            await asyncio.sleep(0.1)
+            continue
+        if current.stale:
+            await asyncio.sleep(0.1)
+            continue
+        current_snapshot = current.snapshot
+        saw_acceptance = (
+            _raise_if_native_rejected(current_snapshot, request) or saw_acceptance
+        )
+        if (
+            current_snapshot.game.loaded
+            and bool(current_snapshot.roster)
+            and current_snapshot.identity_session_id != title_identity
+        ):
+            acknowledgement = current_snapshot.controller_commands.command_for(
+                request.command_id
+            )
+            if acknowledgement is None:
+                raise LaunchFailed(
+                    f"Native {command} loaded a new world session without "
+                    "publishing its cross-session acknowledgement."
+                )
+            _write_json_atomic(
+                _native_startup_evidence_path(config),
+                {
+                    "schema_version": 1,
+                    "captured_at": datetime.now(UTC).isoformat(),
+                    "request": request.model_dump(mode="json"),
+                    "acknowledgement": acknowledgement.model_dump(mode="json"),
+                    "title_snapshot": snapshot.model_dump(mode="json"),
+                    "loaded_snapshot": current_snapshot.model_dump(mode="json"),
+                },
+            )
+            return current_snapshot
+        await asyncio.sleep(0.1)
+    acceptance = " after native acceptance" if saw_acceptance else ""
+    raise TimeoutError(
+        f"Timed out waiting for {command} to produce a loaded player squad"
+        f"{acceptance}."
+    )
+
+
+async def _ensure_native_launch_pause(
+    config: AppConfig,
+    reader: TelemetryReader,
+    controller: InputController,
+    *,
+    timeout: float,
+    health_check: Callable[[], None] | None = None,
+) -> TelemetrySnapshot:
+    """Pause a freshly loaded world through the native request watcher."""
+
+    initial = reader.read()
+    if initial.stale:
+        raise LaunchFailed("Native post-load pause requires fresh telemetry.")
+    snapshot = initial.snapshot
+    if snapshot.game.paused is True:
+        return snapshot
+    if (
+        not snapshot.game.loaded
+        or snapshot.game.paused is not False
+        or "game.pause" not in snapshot.capabilities
+        or not snapshot.controller_commands.available
+    ):
+        raise LaunchFailed(
+            "Freshly loaded world does not expose the native pause contract."
+        )
+    request = _native_request_for_snapshot(snapshot, command="pause", paused=True)
+    write_native_command_request_atomic(_native_request_path(config), request)
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if health_check is not None:
+            health_check()
+        terminal_title = _terminal_window_title(controller)
+        if terminal_title is not None:
+            raise LaunchFailed(
+                f"Native post-load pause failed because {terminal_title!r} appeared."
+            )
+        try:
+            current = reader.read()
+        except TelemetryReadError:
+            await asyncio.sleep(0.1)
+            continue
+        if current.stale:
+            await asyncio.sleep(0.1)
+            continue
+        current_snapshot = current.snapshot
+        if current_snapshot.identity_session_id != request.identity_session_id:
+            raise LaunchFailed("Loaded-world identity changed during native pause.")
+        _raise_if_native_rejected(current_snapshot, request)
+        if (
+            current_snapshot.sequence > snapshot.sequence
+            and current_snapshot.game.paused is True
+        ):
+            return current_snapshot
+        await asyncio.sleep(0.1)
+    raise TimeoutError("Timed out waiting for the native post-load pause.")
+
+
 async def _execute_primitive(
     controller: InputController,
     action: PrimitiveInputAction,
-    *,
-    input_gate: _StartupInputGate | None = None,
 ) -> None:
-    if input_gate is None:
+    _abort_if_human_input(controller)
+    async with controller.input_lease():
         _abort_if_human_input(controller)
-        async with controller.input_lease():
-            _abort_if_human_input(controller)
-            receipt = await controller.execute(action)
-    else:
-        async with input_gate.input_lease():
-            receipt = await controller.execute(action)
+        receipt = await controller.execute(action)
     if not receipt.executed:
         raise RuntimeError(receipt.message)
 
@@ -1076,13 +1148,10 @@ async def _click(
     controller: InputController,
     x: float,
     y: float,
-    *,
-    input_gate: _StartupInputGate | None = None,
 ) -> None:
     await _execute_primitive(
         controller,
         ClickAction(x=x, y=y, hold_seconds=MYGUI_CLICK_HOLD_SECONDS),
-        input_gate=input_gate,
     )
 
 
@@ -1090,433 +1159,6 @@ async def _click(
 # cursor and activates nothing. Matches controls.control_activation_hold_seconds.
 MYGUI_CLICK_HOLD_SECONDS = 0.12
 
-
-def _normalize_control_label(value: str) -> str:
-    return " ".join(value.split()).casefold()
-
-
-def _unique_visible_control(
-    snapshot: TelemetrySnapshot,
-    labels: list[str],
-) -> VisibleUIControl | None:
-    if "ui.visible_controls" not in snapshot.capabilities:
-        return None
-    expected = {_normalize_control_label(label) for label in labels}
-    matches = [
-        control
-        for control in snapshot.ui.visible_controls or []
-        if _normalize_control_label(control.label) in expected
-    ]
-    return matches[0] if len(matches) == 1 else None
-
-
-def _fresh_semantic_control_visible(
-    reader: TelemetryReader,
-    labels: list[str],
-) -> bool:
-    result = reader.read()
-    return (
-        not result.stale
-        and _unique_visible_control(result.snapshot, labels) is not None
-    )
-
-
-def _game_start_carousel_state(
-    snapshot: TelemetrySnapshot,
-) -> tuple[VisibleUIControl, str] | None:
-    """Resolve the carousel's left arrow and current label by their geometry."""
-
-    if "ui.visible_controls" not in snapshot.capabilities:
-        return None
-    controls = snapshot.ui.visible_controls or []
-    left_matches = [
-        control
-        for control in controls
-        if control.role == "button"
-        and _normalize_control_label(control.label).endswith("_leftbutton")
-    ]
-    right_matches = [
-        control
-        for control in controls
-        if control.role == "button"
-        and _normalize_control_label(control.label).endswith("_rightbutton")
-    ]
-    if len(left_matches) != 1 or len(right_matches) != 1:
-        return None
-    left = left_matches[0]
-    right = right_matches[0]
-    left_x, _ = left.center
-    right_x, _ = right.center
-    if left_x >= right_x:
-        return None
-
-    min_arrow_y = min(left.bounds.min_y, right.bounds.min_y)
-    max_arrow_y = max(left.bounds.max_y, right.bounds.max_y)
-    labels = [
-        control
-        for control in controls
-        if control.role == "text"
-        and left_x < control.center[0] < right_x
-        and min_arrow_y <= control.center[1] <= max_arrow_y
-    ]
-    if len(labels) != 1:
-        return None
-    label = " ".join(labels[0].label.split())
-    if not label:
-        return None
-    return left, label
-
-
-async def _wait_for_game_start_carousel(
-    reader: TelemetryReader,
-    *,
-    timeout: float,
-    controller: InputController,
-    description: str,
-    health_check: Callable[[], None] | None = None,
-    previous_label: str | None = None,
-    minimum_sequence: int | None = None,
-    input_gate: _StartupInputGate | None = None,
-) -> tuple[VisibleUIControl, str, int]:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if health_check is not None:
-            health_check()
-        try:
-            title = _terminal_window_title(controller)
-        except (OSError, RuntimeError, ValueError):
-            title = None
-        if title is not None:
-            raise LaunchFailed(
-                f"Kenshi startup stopped because the terminal window {title!r} appeared."
-            )
-        deadline += await _wait_for_startup_input(controller, input_gate)
-        try:
-            result = reader.read()
-        except TelemetryReadError:
-            await asyncio.sleep(0.1)
-            continue
-        state = _game_start_carousel_state(result.snapshot)
-        changed = (
-            previous_label is None
-            or (
-                minimum_sequence is not None
-                and result.snapshot.sequence > minimum_sequence
-                and state is not None
-                and _normalize_control_label(state[1]) != previous_label
-            )
-        )
-        if not result.stale and state is not None and changed:
-            return state[0], state[1], result.snapshot.sequence
-        await asyncio.sleep(0.1)
-    raise TimeoutError(f"Timed out waiting for {description}.")
-
-
-async def _click_game_start_left(
-    controller: InputController,
-    reader: TelemetryReader,
-    *,
-    expected_left: VisibleUIControl,
-    expected_label: str,
-    input_gate: _StartupInputGate | None = None,
-) -> int:
-    """Click left only while the exact observed carousel state remains current."""
-
-    expected_normalized = _normalize_control_label(expected_label)
-    await _wait_for_startup_input(controller, input_gate)
-    initial = reader.read()
-    initial_state = (
-        None
-        if initial.stale
-        else _game_start_carousel_state(initial.snapshot)
-    )
-    if (
-        initial_state is None
-        or initial_state[0] != expected_left
-        or _normalize_control_label(initial_state[1]) != expected_normalized
-    ):
-        raise RuntimeError(
-            "Authored Game Start carousel changed before the input lease; "
-            "no pointer input was sent."
-        )
-
-    lease = (
-        input_gate.input_lease()
-        if input_gate is not None
-        else controller.input_lease()
-    )
-    async with lease:
-        if input_gate is None:
-            _abort_if_human_input(controller)
-        current = reader.read()
-        current_state = (
-            None
-            if current.stale
-            else _game_start_carousel_state(current.snapshot)
-        )
-        if (
-            current_state is None
-            or current_state[0] != expected_left
-            or _normalize_control_label(current_state[1]) != expected_normalized
-        ):
-            raise RuntimeError(
-                "Authored Game Start carousel changed inside the input lease; "
-                "no pointer input was sent."
-            )
-        x, y = current_state[0].center
-        receipt = await controller.execute(
-            ClickAction(x=x, y=y, hold_seconds=MYGUI_CLICK_HOLD_SECONDS)
-        )
-    if not receipt.executed:
-        raise RuntimeError(receipt.message)
-    return current.snapshot.sequence
-
-
-async def _click_semantic_control(
-    controller: InputController,
-    reader: TelemetryReader,
-    labels: list[str],
-    *,
-    input_gate: _StartupInputGate | None = None,
-) -> None:
-    await _wait_for_startup_input(controller, input_gate)
-    initial = reader.read()
-    if initial.stale:
-        raise RuntimeError("Semantic startup control requires fresh telemetry.")
-    control = _unique_visible_control(initial.snapshot, labels)
-    if control is None:
-        raise RuntimeError(
-            "Expected exactly one visible startup control matching "
-            f"{labels!r} on telemetry sequence {initial.snapshot.sequence}."
-        )
-
-    lease = (
-        input_gate.input_lease()
-        if input_gate is not None
-        else controller.input_lease()
-    )
-    async with lease:
-        if input_gate is None:
-            _abort_if_human_input(controller)
-        current = reader.read()
-        if current.stale:
-            raise RuntimeError(
-                "Semantic startup control became stale inside the input lease."
-            )
-        current_control = _unique_visible_control(current.snapshot, labels)
-        if current_control is None or current_control != control:
-            raise RuntimeError(
-                "Semantic startup control changed inside the input lease; no "
-                "pointer input was sent."
-            )
-        x, y = current_control.center
-        # Kenshi's MyGUI ignores an instantaneous press. This used to squeak
-        # through only because relative stepping walked the cursor to the target
-        # slowly; once the pointer began warping, a zero-duration click stopped
-        # registering and startup silently stalled on the title screen.
-        receipt = await controller.execute(
-            ClickAction(x=x, y=y, hold_seconds=MYGUI_CLICK_HOLD_SECONDS)
-        )
-    if not receipt.executed:
-        raise RuntimeError(receipt.message)
-
-
-async def _open_exact_scenario_save(
-    controller: InputController,
-    reader: TelemetryReader,
-    *,
-    load_control_labels: list[str],
-    save_control_label: str,
-    timeout: float,
-    health_check: Callable[[], None] | None = None,
-    input_gate: _StartupInputGate | None = None,
-) -> None:
-    """Open the load screen and one exact save row; never auto-Continue."""
-
-    await _wait_until(
-        lambda: (
-            not (result := reader.read()).stale
-            and _unique_visible_control(
-                result.snapshot,
-                load_control_labels,
-            )
-            is not None
-        ),
-        timeout,
-        "semantic Load Game control",
-        controller=controller,
-        health_check=health_check,
-        input_gate=input_gate,
-    )
-    await _click_semantic_control(
-        controller,
-        reader,
-        load_control_labels,
-        input_gate=input_gate,
-    )
-    await _wait_until(
-        lambda: (
-            not (result := reader.read()).stale
-            and _unique_visible_control(
-                result.snapshot,
-                [save_control_label],
-            )
-            is not None
-        ),
-        timeout,
-        f"exact scenario save control {save_control_label!r}",
-        controller=controller,
-        health_check=health_check,
-        input_gate=input_gate,
-    )
-    await _click_semantic_control(
-        controller,
-        reader,
-        [save_control_label],
-        input_gate=input_gate,
-    )
-
-
-async def _open_exact_authored_game_start(
-    controller: InputController,
-    reader: TelemetryReader,
-    *,
-    new_game_control_labels: list[str],
-    game_start_label: str,
-    begin_control_labels: list[str],
-    confirm_control_labels: list[str],
-    warning_confirm_control_labels: list[str],
-    max_carousel_steps: int,
-    timeout: float,
-    health_check: Callable[[], None] | None = None,
-    input_gate: _StartupInputGate | None = None,
-) -> None:
-    """Select one bundled Game Start through exact semantic controls."""
-
-    await _wait_until(
-        partial(_fresh_semantic_control_visible, reader, new_game_control_labels),
-        timeout,
-        "semantic New Game control",
-        controller=controller,
-        health_check=health_check,
-        input_gate=input_gate,
-    )
-    await _click_semantic_control(
-        controller,
-        reader,
-        new_game_control_labels,
-        input_gate=input_gate,
-    )
-
-    description = f"exact authored Game Start {game_start_label!r} carousel"
-    left, current_label, sequence = await _wait_for_game_start_carousel(
-        reader,
-        timeout=timeout,
-        controller=controller,
-        description=description,
-        health_check=health_check,
-        input_gate=input_gate,
-    )
-    target = _normalize_control_label(game_start_label)
-    seen = {_normalize_control_label(current_label)}
-    steps = 0
-    while _normalize_control_label(current_label) != target:
-        if steps >= max_carousel_steps:
-            raise LaunchFailed(
-                f"Authored Game Start {game_start_label!r} was not found within "
-                f"{max_carousel_steps} carousel transitions."
-            )
-        click_sequence = await _click_game_start_left(
-            controller,
-            reader,
-            expected_left=left,
-            expected_label=current_label,
-            input_gate=input_gate,
-        )
-        left, current_label, sequence = await _wait_for_game_start_carousel(
-            reader,
-            timeout=timeout,
-            controller=controller,
-            description=(
-                f"Game Start carousel to advance from {current_label!r}"
-            ),
-            health_check=health_check,
-            previous_label=_normalize_control_label(current_label),
-            minimum_sequence=max(sequence, click_sequence),
-            input_gate=input_gate,
-        )
-        steps += 1
-        normalized = _normalize_control_label(current_label)
-        if normalized in seen:
-            raise LaunchFailed(
-                f"Authored Game Start carousel cycled after {steps} transitions "
-                f"without reaching {game_start_label!r}."
-            )
-        seen.add(normalized)
-
-    for labels, stage_description in (
-        (begin_control_labels, "semantic Begin control"),
-        (confirm_control_labels, "semantic character Confirm control"),
-    ):
-        await _wait_until(
-            partial(_fresh_semantic_control_visible, reader, labels),
-            timeout,
-            stage_description,
-            controller=controller,
-            health_check=health_check,
-            input_gate=input_gate,
-        )
-        await _click_semantic_control(
-            controller,
-            reader,
-            labels,
-            input_gate=input_gate,
-        )
-    loaded = await _wait_for_loaded_or_semantic_control(
-        reader,
-        warning_confirm_control_labels,
-        timeout=timeout,
-        controller=controller,
-        health_check=health_check,
-        input_gate=input_gate,
-    )
-    if not loaded:
-        await _click_semantic_control(
-            controller,
-            reader,
-            warning_confirm_control_labels,
-            input_gate=input_gate,
-        )
-
-
-async def _wait_for_loaded_or_semantic_control(
-    reader: TelemetryReader,
-    labels: list[str],
-    *,
-    timeout: float,
-    controller: InputController,
-    health_check: Callable[[], None] | None = None,
-    input_gate: _StartupInputGate | None = None,
-) -> bool:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if health_check is not None:
-            health_check()
-        deadline += await _wait_for_startup_input(controller, input_gate)
-        try:
-            result = reader.read()
-        except TelemetryReadError:
-            await asyncio.sleep(0.1)
-            continue
-        if not result.stale:
-            if result.snapshot.game.loaded and bool(result.snapshot.roster):
-                return True
-            if _unique_visible_control(result.snapshot, labels) is not None:
-                return False
-        await asyncio.sleep(0.1)
-    raise TimeoutError(
-        "Timed out waiting for a loaded squad or the next semantic startup control."
-    )
 
 
 def _validate_calibrated_client_rect(
@@ -1556,7 +1198,6 @@ async def _observe_loaded_paused_health(
     *,
     duration_seconds: float,
     health_check: Callable[[], None] | None = None,
-    input_gate: _StartupInputGate | None = None,
 ) -> None:
     if duration_seconds <= 0:
         return
@@ -1577,7 +1218,6 @@ async def _observe_loaded_paused_health(
             raise LaunchFailed(
                 f"Post-load health observation failed because {title!r} appeared."
             )
-        deadline += await _wait_for_startup_input(controller, input_gate)
         try:
             result = reader.read()
         except TelemetryReadError as exc:
@@ -1607,7 +1247,6 @@ async def _perform_launch(
     config: AppConfig,
     controller: InputController,
     monitor: GpuTdrMonitor | None,
-    input_gate: _StartupInputGate,
     scenario_manifest: ScenarioFixtureManifest | None = None,
     game_start: AuthoredGameStart | None = None,
 ) -> None:
@@ -1615,33 +1254,29 @@ async def _perform_launch(
     _disable_re_kenshi_startup_panel(_re_kenshi_settings_path())
     launched_at = datetime.now(UTC)
     if not args.resume_launcher:
-        target = _shortcut()
-        if target.suffix.lower() == ".lnk":
-            # A shortcut carries its own working directory; overriding it would
-            # discard whatever the operator configured.
-            os.startfile(target)  # type: ignore[attr-defined]
-        else:
-            # Kenshi resolves data, mods and RE_Kenshi.ini against the install
-            # root, not against the patched executable's own folder.
-            os.startfile(target, cwd=str(target.parent.parent))  # type: ignore[attr-defined]
+        target = _game_executable()
+        # Start Kenshi's installed bootstrap. It resolves the settings and mod
+        # order, then RE_Kenshi replaces it with the patched child executable.
+        # A shortcut or direct archived-child launch is not an authority.
+        os.startfile(target, cwd=str(target.parent))  # type: ignore[attr-defined]
     else:
-        print("Resuming the existing verified RE_Kenshi pre-game launcher.")
+        print("Resuming the existing full-size native Kenshi window.")
     await _wait_until(
         lambda: controller.client_rect().width > 0,
         args.timeout,
-        "Kenshi launcher",
+        "Kenshi process window",
         controller=controller,
         health_check=health_check,
-        input_gate=input_gate,
     )
-    launcher_rect = controller.client_rect()
-    if launcher_rect.width < 1200:
-        await _execute_primitive(
-            controller,
-            KeyAction(key="enter"),
-            input_gate=input_gate,
+    if controller.client_rect().width < 1200:
+        controller.request_dialog_command(button_text="OK", control_id=1003)
+        await _wait_until(
+            lambda: controller.client_rect().width >= 1200,
+            args.timeout,
+            "native Kenshi settings-dialog handoff",
+            controller=controller,
+            health_check=health_check,
         )
-
     status_path = config.telemetry.file.parent / "plugin_status.json"
     await _wait_until(
         lambda: _plugin_ready(status_path, launched_at),
@@ -1649,143 +1284,54 @@ async def _perform_launch(
         "fresh telemetry plugin startup",
         controller=controller,
         health_check=health_check,
-        input_gate=input_gate,
-    )
-    await _wait_until(
-        lambda: controller.client_rect().width >= 1200,
-        args.timeout,
-        "full-size Kenshi window",
-        controller=controller,
-        health_check=health_check,
-        input_gate=input_gate,
     )
     await asyncio.sleep(2.0)
     if monitor is not None:
         monitor.raise_if_new(force=True)
-    await input_gate.wait_for_turn()
 
     if args.continue_game:
         reader = _telemetry_read(config)
         if scenario_manifest is not None:
-            await _open_exact_scenario_save(
-                controller,
+            await _dispatch_native_startup_command(
+                config,
                 reader,
-                load_control_labels=config.controls.startup_load_control_labels,
-                save_control_label=scenario_manifest.managed_save_name,
+                controller,
+                command="load_game",
+                save_name=scenario_manifest.managed_save_name,
                 timeout=args.timeout,
                 health_check=health_check,
-                input_gate=input_gate,
             )
         elif game_start is not None:
-            await _open_exact_authored_game_start(
-                controller,
+            await _dispatch_native_startup_command(
+                config,
                 reader,
-                new_game_control_labels=config.controls.startup_new_game_control_labels,
-                game_start_label=game_start.label,
-                begin_control_labels=config.controls.startup_begin_control_labels,
-                confirm_control_labels=config.controls.startup_confirm_control_labels,
-                warning_confirm_control_labels=(
-                    config.controls.startup_warning_confirm_control_labels
-                ),
-                max_carousel_steps=(
-                    config.controls.startup_game_start_max_carousel_steps
-                ),
+                controller,
+                command="new_game",
+                game_start_id=game_start.start_id,
                 timeout=args.timeout,
                 health_check=health_check,
-                input_gate=input_gate,
             )
         else:
-            save_control_labels = config.controls.startup_save_control_labels
-            await _wait_until(
-                lambda: (
-                    not (result := reader.read()).stale
-                    and _unique_visible_control(
-                        result.snapshot,
-                        config.controls.startup_continue_control_labels,
-                    )
-                    is not None
-                ),
-                args.timeout,
-                "semantic Continue control",
-                controller=controller,
-                health_check=health_check,
-                input_gate=input_gate,
-            )
-            await _click_semantic_control(
+            await _dispatch_native_startup_command(
+                config,
+                reader,
                 controller,
-                reader,
-                config.controls.startup_continue_control_labels,
-                input_gate=input_gate,
-            )
-            loaded = await _wait_for_loaded_or_semantic_control(
-                reader,
-                save_control_labels,
+                command="continue_game",
                 timeout=args.timeout,
-                controller=controller,
                 health_check=health_check,
-                input_gate=input_gate,
             )
-            if not loaded:
-                await _click_semantic_control(
-                    controller,
-                    reader,
-                    save_control_labels,
-                    input_gate=input_gate,
-                )
-
-        def game_loaded() -> bool:
-            try:
-                result = reader.read()
-            except TelemetryReadError:
-                return False
-            return (
-                not result.stale
-                and result.snapshot.game.loaded
-                and bool(result.snapshot.roster)
-            )
-
-        await _wait_until(
-            game_loaded,
-            args.timeout,
-            "loaded player squad",
-            controller=controller,
+        await _ensure_native_launch_pause(
+            config,
+            reader,
+            controller,
+            timeout=args.timeout,
             health_check=health_check,
-            input_gate=input_gate,
-        )
-        snapshot = reader.read().snapshot
-        if snapshot.game.paused is False:
-            await _execute_primitive(
-                controller,
-                KeyAction(key=config.controls.pause_key),
-                input_gate=input_gate,
-            )
-
-        def game_paused() -> bool:
-            try:
-                result = reader.read()
-            except TelemetryReadError:
-                return False
-            return (
-                not result.stale
-                and result.snapshot.game.loaded
-                and bool(result.snapshot.roster)
-                and result.snapshot.game.paused is True
-            )
-
-        await _wait_until(
-            game_paused,
-            args.timeout,
-            "causally confirmed paused game",
-            controller=controller,
-            health_check=health_check,
-            input_gate=input_gate,
         )
         await _observe_loaded_paused_health(
             reader,
             controller,
             duration_seconds=config.launch.post_load_health_seconds,
             health_check=health_check,
-            input_gate=input_gate,
         )
         if game_start is not None:
             result = reader.read()
@@ -1874,13 +1420,6 @@ async def _launch(
             )
             verify_installed_authored_starts(authored_bundle, _kenshi_root())
         controller = _controller(config)
-        input_gate = _StartupInputGate(
-            controller,
-            emergency_stop_key=config.safety.emergency_stop_key,
-            quiet_seconds=config.safety.human_control_quiet_seconds,
-            countdown_seconds=config.safety.takeover_countdown_seconds,
-            poll_seconds=config.safety.takeover_poll_seconds,
-        )
         try:
             terminal_window_title = _terminal_window_title(controller)
         except (OSError, RuntimeError, ValueError):
@@ -1960,25 +1499,14 @@ async def _launch(
 
     try:
         with display_context:
-            try:
-                await _perform_launch(
-                    args,
-                    config,
-                    controller,
-                    monitor,
-                    input_gate,
-                    scenario_manifest,
-                    game_start,
-                )
-            except LaunchInterrupted as exc:
-                safe_state = await _ensure_interrupted_safe_state(
-                    controller,
-                    _telemetry_read(config),
-                    pause_key=config.controls.pause_key,
-                    timeout_seconds=min(2.0, args.timeout),
-                )
-                print(f"{exc} Terminal safety: {safe_state}.", file=sys.stderr)
-                return 3
+            await _perform_launch(
+                args,
+                config,
+                controller,
+                monitor,
+                scenario_manifest,
+                game_start,
+            )
     except (
         DisplayLeaseError,
         FileNotFoundError,

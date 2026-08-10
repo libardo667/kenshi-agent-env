@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.4",
+  "schema_version": "1.5",
   "command_id": "cmd-13579bdf2468ace013579bdf2468ace0",
   "command": "regroup_with_squad_member",
   "control_mode": "native_assisted",
@@ -20,6 +20,8 @@
   "minimum_output_quantity": 1,
   "destination_id": "",
   "section_name": "",
+  "save_name": "",
+  "game_start_id": "",
   "slot_x": 0,
   "slot_y": 0,
   "paused": false,

@@ -8,9 +8,9 @@
 namespace KenshiAgentTelemetry
 {
     // A request crosses Python, an atomic file replace, and the Kenshi UI-thread
-    // hook. The plug-in notices the file replacement itself; the legacy hotkey
-    // remains an optional manual/diagnostic signal. At the 500 ms telemetry
-    // cadence the proven transport advanced by two snapshots in a live run.
+    // hook. The plug-in notices the file replacement itself; no keyboard or
+    // pointer trigger is part of dispatch. At the 500 ms telemetry cadence the
+    // proven transport advanced by two snapshots in a live run.
     // Four snapshots is the bounded allowance; every command still revalidates
     // current selection, target lifetime, role, UI state, and command-specific
     // authority natively.
@@ -47,6 +47,10 @@ namespace KenshiAgentTelemetry
         // the item through `InventorySection::getItemAt(x, y)`.
         std::string destinationId;
         std::string sectionName;
+        // Title-screen addresses are their own domains. SaveManager accepts an
+        // exact save name or an exact Game Start ID; neither is an entity.
+        std::string saveName;
+        std::string gameStartId;
         int slotX;
         int slotY;
         // Time control, which Kenshi owns directly: `GameWorld::userPause` and
@@ -80,6 +84,8 @@ namespace KenshiAgentTelemetry
         // the item through `InventorySection::getItemAt(x, y)`.
         std::string destinationId;
         std::string sectionName;
+        std::string saveName;
+        std::string gameStartId;
         int slotX;
         int slotY;
         std::vector<std::string> selectedCharacterIds;

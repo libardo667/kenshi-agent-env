@@ -1507,6 +1507,68 @@ int main(int argc, char** argv)
         return Fail("interface close lost its game-wide recipient shape");
     }
 
+    // Startup has no selected recipient. Continue is targetless; exact load
+    // and new-game requests retain identities from SaveManager's own address
+    // spaces rather than smuggling labels through targetId.
+    KenshiAgentTelemetry::NativeCommandRequest continueGame;
+    const std::string continuePayload =
+        ReadFile(prefix + "valid_continue_game_request.json");
+    if (continuePayload.empty() ||
+        !KenshiAgentTelemetry::ParseNativeCommandRequest(
+            continuePayload,
+            continueGame,
+            rejectionReason))
+    {
+        return Fail(
+            "valid native Continue request was rejected as " + rejectionReason);
+    }
+    if (continueGame.command != "continue_game" ||
+        !continueGame.selectedCharacterIds.empty() ||
+        !continueGame.saveName.empty() ||
+        !continueGame.gameStartId.empty())
+    {
+        return Fail("native Continue gained a synthetic startup address");
+    }
+
+    KenshiAgentTelemetry::NativeCommandRequest loadGame;
+    const std::string loadPayload =
+        ReadFile(prefix + "valid_load_game_request.json");
+    if (loadPayload.empty() ||
+        !KenshiAgentTelemetry::ParseNativeCommandRequest(
+            loadPayload,
+            loadGame,
+            rejectionReason))
+    {
+        return Fail(
+            "valid exact native load request was rejected as " + rejectionReason);
+    }
+    if (loadGame.command != "load_game" ||
+        loadGame.saveName != "KenshiAgentScenario" ||
+        !loadGame.gameStartId.empty())
+    {
+        return Fail("native load lost its exact save identity");
+    }
+
+    KenshiAgentTelemetry::NativeCommandRequest newGame;
+    const std::string newGamePayload =
+        ReadFile(prefix + "valid_new_game_request.json");
+    if (newGamePayload.empty() ||
+        !KenshiAgentTelemetry::ParseNativeCommandRequest(
+            newGamePayload,
+            newGame,
+            rejectionReason))
+    {
+        return Fail(
+            "valid exact native new-game request was rejected as " +
+            rejectionReason);
+    }
+    if (newGame.command != "new_game" ||
+        !newGame.saveName.empty() ||
+        newGame.gameStartId != "kae-03-broke-pair")
+    {
+        return Fail("native new game lost its exact Game Start identity");
+    }
+
     KenshiAgentTelemetry::NativeCommandRequest contextAction;
     const std::string contextActionPayload =
         ReadFile(prefix + "valid_context_action_request.json");
@@ -1918,6 +1980,32 @@ int main(int argc, char** argv)
     ++groupSelectedIt;
     if (groupSelectedIt->second.data() != "entity-companion")
         return Fail("serialized group acknowledgement reordered its selection basis");
+
+    KenshiAgentTelemetry::NativeCommandAcknowledgement titleAcknowledgement;
+    titleAcknowledgement.commandId =
+        "cmd-bbbbbbbbbbbbbbbbbbbbbbbbbbbbb004";
+    titleAcknowledgement.command = "load_game";
+    titleAcknowledgement.status = "accepted";
+    titleAcknowledgement.reason = "title_screen_action_issued";
+    titleAcknowledgement.saveName = "KenshiAgentScenario";
+    titleAcknowledgement.basedOnTelemetrySequence = 30;
+    titleAcknowledgement.acknowledgedAtTelemetrySequence = 31;
+    titleAcknowledgement.hasAcceptedSequence = true;
+    titleAcknowledgement.acceptedAtTelemetrySequence = 31;
+    const std::string titleSerialized =
+        KenshiAgentTelemetry::SerializeNativeCommandAcknowledgement(
+            titleAcknowledgement);
+    std::istringstream titleInput(titleSerialized);
+    boost::property_tree::ptree titleActual;
+    boost::property_tree::read_json(titleInput, titleActual);
+    if (!titleActual.get_child("selected_character_ids").empty() ||
+        titleActual.get<std::string>("save_name") !=
+            "KenshiAgentScenario" ||
+        !titleActual.get<std::string>("game_start_id").empty())
+    {
+        return Fail(
+            "serialized title acknowledgement invented a selected recipient");
+    }
 
     std::cout
         << "Native protocol fixtures and semantics passed."

@@ -9,8 +9,8 @@ run evidence, not in a second current protocol narrative.
 
 ```text
 telemetry protocol       2.0.0
-native request schema    1.4
-loaded-world capabilities 49
+native request schema    1.5
+loaded-world capabilities 50
 controller command records emitted by native at most one until 2026-09-20
 ```
 
@@ -93,14 +93,10 @@ update hooks watch the file's last-write time, wait one frame after a change so
 an atomic replacement cannot be read halfway through, and then parse and
 dispatch the request on Kenshi's UI thread.
 
-`Ctrl+Shift+F10` is no longer required to wake the plug-in. It remains an
-optional manual/diagnostic signal for `scripts/dispatch_native_command.py`.
-The current Python gameplay path still sends that short hotkey after publishing
-most native gameplay requests, so the supported path is presently redundant:
-file-change dispatch plus a compatibility trigger. Native pause and speed
-control use the file-change path without a hotkey. Startup, recovery, emergency
-stop, and host-safety paths may still use Windows input when the native side is
-absent or cannot be trusted to stop itself.
+Atomic replacement is the only dispatch signal. No keyboard or pointer trigger
+remains in either the plug-in or the supported Python path. Emergency stop and
+final host-safety fallback remain a deliberately separate input boundary when
+the native side cannot be trusted to stop itself.
 
 Every request carries:
 
@@ -118,6 +114,13 @@ terminal telemetry sequences where applicable. An acknowledgement proves what
 the plug-in accepted or observed at its terminal boundary; it is not by itself
 proof of an intended later world outcome.
 
+The title surface accepts `continue_game`, `load_game` with one exact save name,
+and `new_game` with one exact Game Start ID. A title transition begins a new
+identity session, so its accepted record is preserved through `GameWorld::resetGame`
+and becomes terminal as `world_session_loaded` in the first loaded-world frame.
+The supported launcher refuses a loaded session without that explicit cross-session
+acknowledgement.
+
 ## Current command surface
 
 The loaded-world protocol currently covers:
@@ -133,6 +136,10 @@ The loaded-world protocol currently covers:
 - pause and speed control; and
 - the diagnostic body-platoon probe.
 
+Before a world exists, the title protocol separately covers Continue, exact save
+load, and exact Game Start creation. The post-load pause uses the same request-file
+watcher.
+
 `shift_body_platoon` has no planner-visible operation definition. It is a
 diagnostic route, not a hidden fallback.
 
@@ -140,10 +147,10 @@ The wire name `approach_confirmed_vendor` is historical. Its current operation
 is `approach_dialogue_target`, and it may target any exact conscious,
 non-hostile character currently confirmed talkable.
 
-The native bridge still holds one active command. Selection is captured in the
-request but several native monitors still depend on the current selection, and
-separate retained commands for disjoint recipient groups are not implemented.
-Those open limits are tracked in the
+The native bridge temporarily retains at most one record until 2026-09-20.
+Selection is captured in the request but several native monitors still depend on
+the current selection, and separate retained commands for disjoint recipient groups
+are not implemented. Those open limits are tracked in the
 [Protocol 2.0 world-model decision](../../docs/PROTOCOL_2_WORLD_MODEL_DECISION.md).
 
 ## Reverse-engineered subsystem authority
@@ -187,17 +194,19 @@ not install into Kenshi.
 
 ## Output paths
 
-By default the plug-in writes:
+By default the plug-in and supported launcher exchange/write:
 
 ```text
 %LOCALAPPDATA%\KenshiAgent\telemetry.latest.json
 %LOCALAPPDATA%\KenshiAgent\plugin_status.json
 %LOCALAPPDATA%\KenshiAgent\native_command.request.json
+%LOCALAPPDATA%\KenshiAgent\native_startup_transition.latest.json
 ```
 
 Set `KENSHI_AGENT_TELEMETRY_DIR` before launching Kenshi to override the folder.
-The parent of an override must already exist; the plug-in creates only the final
-folder component.
+The parent of an override must already exist; the live stack creates only the
+final folder component. `native_startup_transition.latest.json` is the launcher's
+exact title-request/ack/loaded handoff capture, not a second protocol producer.
 
 ## Evidence classification
 
@@ -206,10 +215,10 @@ folder component.
 - The hook, protocol, command, inventory-model, simplified-pricing, and body
   shift paths above are present in the current source and in the configured
   KenshiLib declarations they call.
-- Protocol 2.0.0 and the 49-entry loaded-world capability manifest are embedded
+- Protocol 2.0.0 and the 50-entry loaded-world capability manifest are embedded
   into the native build inputs.
-- The file-change watcher and the optional hotkey both dispatch through the same
-  request parser and command handler.
+- Atomic request replacement is the sole dispatch signal; neither plug-in nor
+  supported Python path contains a trigger hotkey.
 
 ### Test-proven
 
@@ -225,6 +234,16 @@ folder component.
   [checkpoint](../../docs/CHECKPOINT.md) for the measured result.
 
 ### Live-proven
+
+`native-launch-20260810T024659Z` proves the public fresh-launch path against
+built and installed DLL SHA-256
+`c8e3da7572b2074db55c941acd1ff26bdc4d302a6b8c8f62bd20b10e9b55e083`.
+It preserves title sequence 2, the exact `load_game("KenshiAgentScenario")`
+request, the terminal cross-session `world_session_loaded` acknowledgement in
+loaded sequence 37, the native pause acknowledgement, plural-selection scenario
+attestation, and advancing loaded-paused health through sequence 350. The reduced
+artifact is
+[`docs/reconstruction/native_launch_20260810.json`](../../docs/reconstruction/native_launch_20260810.json).
 
 `player-topology-20260809T161112Z` proves the current producer against built and
 installed DLL SHA-256
@@ -280,8 +299,6 @@ request delivery or an acknowledgement.
   restored membership, primary, and selection but reset the active tab.
 - Several group-recipient, delayed-continuation, session-reset, and retained
   order lifecycle conclusions remain unproven.
-- The native recovery close command is not a planner-visible general close
-  operation.
 - Body shift lacks a complete named operation bundle even though a manual live
   dispatch informed the implementation.
 - Alternate host configurations and long-duration stability require their own

@@ -90,6 +90,12 @@ class InputController(ABC):
         title = self.target_window_title()
         return [title] if title else []
 
+    def request_dialog_command(self, *, button_text: str, control_id: int) -> None:
+        """Invoke one exact native dialog command without synthesizing input."""
+
+        del button_text, control_id
+        raise RuntimeError("This controller cannot route native dialog commands.")
+
     def observed_calibration_identity(self) -> CalibrationIdentity:
         """Report only calibration facts this backend can actually read.
 

@@ -41,6 +41,7 @@ def verify_scenario_snapshot(
         "roster.basic",
         "roster.indoors",
         "roster.health",
+        "primary.character",
     }
     missing = required_capabilities - set(snapshot.capabilities)
     if missing:
@@ -50,11 +51,21 @@ def verify_scenario_snapshot(
         )
 
     selected = snapshot.selected_characters()
-    if len(selected) != 1:
+    if not selected:
         raise ScenarioFixtureError(
-            "Scenario verification requires exactly one selected character."
+            "Scenario verification requires at least one selected character."
         )
-    character = selected[0]
+    if snapshot.primary_character_id not in {
+        character.id for character in selected
+    }:
+        raise ScenarioFixtureError(
+            "Scenario verification requires the primary character to be selected."
+        )
+    character = next(
+        character
+        for character in selected
+        if character.id == snapshot.primary_character_id
+    )
     if character.indoors is None:
         raise ScenarioFixtureError(
             "roster.indoors is unavailable for the selected character."

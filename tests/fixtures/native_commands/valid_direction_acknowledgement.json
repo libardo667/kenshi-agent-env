@@ -10,6 +10,8 @@
   "minimum_output_quantity": 1,
   "destination_id": "",
   "section_name": "",
+  "save_name": "",
+  "game_start_id": "",
   "slot_x": 0,
   "slot_y": 0,
   "selected_character_ids": [

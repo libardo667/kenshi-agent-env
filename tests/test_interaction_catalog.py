@@ -173,6 +173,20 @@ def test_diagnostic_only_routes_are_exactly_the_reviewed_set() -> None:
     assert DIAGNOSTIC_ONLY_NATIVE_COMMANDS <= set(all_native_command_names())
 
 
+def test_launch_only_routes_are_exactly_the_native_title_surface() -> None:
+    from kenshi_agent.tooling.interaction_catalog import (
+        LAUNCH_ONLY_NATIVE_COMMANDS,
+        all_native_command_names,
+    )
+
+    assert LAUNCH_ONLY_NATIVE_COMMANDS == {
+        "continue_game",
+        "load_game",
+        "new_game",
+    }
+    assert LAUNCH_ONLY_NATIVE_COMMANDS <= set(all_native_command_names())
+
+
 def test_no_operation_can_issue_a_diagnostic_only_route() -> None:
     """The exemption is only honest while nothing agent-reachable uses it."""
 

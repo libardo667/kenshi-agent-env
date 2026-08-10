@@ -73,6 +73,7 @@ def _snapshot(
             "roster.basic",
             "roster.indoors",
             "roster.health",
+            "primary.character",
         ],
         game=GameState(
             loaded=True,
@@ -245,6 +246,30 @@ def test_snapshot_verification_covers_all_declared_axes() -> None:
     night = _scenario(time_of_day="night")
     with pytest.raises(ScenarioFixtureError, match="time_of_day"):
         verify_scenario_snapshot(_snapshot(), night)
+
+
+def test_snapshot_verification_uses_selected_primary_with_plural_selection() -> None:
+    snapshot = _snapshot(roster_size=2).model_copy(
+        update={"selected_character_ids": ["character-0", "character-1"]}
+    )
+    scenario = _scenario(party="squad")
+
+    observed = verify_scenario_snapshot(snapshot, scenario)
+
+    assert observed.selected_character_id == "character-0"
+    assert observed.party_size == 2
+
+
+def test_snapshot_verification_rejects_unselected_primary() -> None:
+    snapshot = _snapshot(roster_size=2).model_copy(
+        update={
+            "primary_character_id": "character-1",
+            "selected_character_ids": ["character-0"],
+        }
+    )
+
+    with pytest.raises(ScenarioFixtureError, match="primary character to be selected"):
+        verify_scenario_snapshot(snapshot, _scenario(party="squad"))
 
 
 @pytest.mark.parametrize(

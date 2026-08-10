@@ -1,26 +1,24 @@
 {
   "schema_version": "1.5",
-  "command_id": "cmd-0123456789abcdef0123456789abcdef",
-  "command": "move_in_direction",
+  "command_id": "cmd-bbbbbbbbbbbbbbbbbbbbbbbbbbbbb002",
+  "command": "load_game",
   "control_mode": "native_assisted",
   "identity_session_id": "session-0000000000000001-0000000000000001",
   "based_on_revision": {
-    "telemetry_sequence": 7,
+    "telemetry_sequence": 21,
     "frame_sequence": null,
-    "capability_epoch": 2,
-    "observed_at_monotonic": 10.0
+    "capability_epoch": 0,
+    "observed_at_monotonic": 0.0
   },
-  "selected_character_ids": [
-    "entity-selected"
-  ],
+  "selected_character_ids": [],
   "target_id": "",
   "context_action": "",
-  "bearing_degrees": 90.0,
-  "distance_units": 250.0,
+  "bearing_degrees": 0.0,
+  "distance_units": 0.0,
   "minimum_output_quantity": 1,
   "destination_id": "",
   "section_name": "",
-  "save_name": "",
+  "save_name": "KenshiAgentScenario",
   "game_start_id": "",
   "slot_x": 0,
   "slot_y": 0,

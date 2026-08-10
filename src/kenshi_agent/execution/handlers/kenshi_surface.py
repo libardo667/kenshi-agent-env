@@ -31,7 +31,6 @@ from ...core.operation import (
     GAME_SPEED_MULTIPLIER_BY_GEAR,
     Action,
     ControlMode,
-    HotkeyAction,
     KeyAction,
     PauseAction,
     PointerActionClass,
@@ -63,10 +62,6 @@ NATIVE_COMMAND_REQUEST_FILE = "native_command.request.json"
 NATIVE_COMMAND_ACK_TIMEOUT_SECONDS = 2.0
 NATIVE_COMMAND_POLL_SECONDS = 0.025
 NATIVE_DIALOGUE_SETTLE_SECONDS = 1.0
-NATIVE_COMMAND_TRIGGER = HotkeyAction(
-    keys=["ctrl", "shift", "f10"],
-    hold_seconds=0.08,
-)
 
 class LiveCapturePort(Protocol):
     def capture(self, sequence: int) -> CapturedFrame: ...
@@ -516,7 +511,7 @@ class KenshiControlSurface:
         if not identity_session_id:
             raise RuntimeError("Native time control requires an identity session.")
         request = NativeCommandRequest(
-            schema_version="1.4",
+            schema_version="1.5",
             command_id=new_command_id(),
             command=wire_command,
             control_mode=ControlMode.NATIVE_ASSISTED,
@@ -945,7 +940,11 @@ class KenshiControlSurface:
             )
             request_path = self.telemetry_reader.path.parent / NATIVE_COMMAND_REQUEST_FILE
             native_commands.write_native_command_request_atomic(request_path, request)
-            primitive_count, messages = await self.run_primitives((NATIVE_COMMAND_TRIGGER,))
+            primitive_count = 0
+            messages = [
+                "Published the atomic native request; the game-thread file watcher "
+                "dispatches it without desktop input."
+            ]
             acknowledgement = await self._wait_for_native_acknowledgement(request)
         acknowledgement_message = (
             f"Native acknowledgement {acknowledgement.status.value!r} "
@@ -1400,7 +1399,7 @@ class KenshiControlSurface:
         telemetry = observation.telemetry
         assert telemetry is not None and telemetry.identity_session_id
         return NativeCommandRequest(
-            schema_version="1.4",
+            schema_version="1.5",
             command_id=command.command_id,
             command=wire_command,
             control_mode=ControlMode.NATIVE_ASSISTED,

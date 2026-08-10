@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Dispatch one native command and read its acknowledgement, for diagnosis.
 
-The plug-in reads its request file only when the fixed trigger hotkey fires, so
-writing the file is not dispatching. This does both through the same primitive
-path the agent uses, which is the difference between testing the transport and
-testing a JSON file.
+The plug-in watches atomic request-file replacement on the game thread. Writing
+one strictly validated document is dispatch; this diagnostic then reads the
+matching acknowledgement without acquiring desktop input.
 
 Diagnostic tooling: it drives one command against a live session and prints
 what came back. It is not a second execution path - it holds no input lease
@@ -14,7 +13,6 @@ discipline of its own and must never be used inside a run.
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import sys
 import time
@@ -24,16 +22,12 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from kenshi_agent.config import load_config  # noqa: E402
-from kenshi_agent.control.base import HotkeyAction  # noqa: E402
 from kenshi_agent.core.transport import NativeCommandRequest, new_command_id  # noqa: E402
 from kenshi_agent.core.world import WorldStateRevision  # noqa: E402
 from kenshi_agent.native_commands import (  # noqa: E402
     write_native_command_request_atomic,
 )
 from kenshi_agent.telemetry import TelemetryReader  # noqa: E402
-from kenshi_agent.tooling.live_dev import _controller  # noqa: E402
-
-TRIGGER = HotkeyAction(keys=["ctrl", "shift", "f10"])
 
 
 def main() -> int:
@@ -51,6 +45,8 @@ def main() -> int:
     # a planner and a model in the loop to press the button.
     parser.add_argument("--destination-id", default="")
     parser.add_argument("--section-name", default="")
+    parser.add_argument("--save-name", default="")
+    parser.add_argument("--game-start-id", default="")
     parser.add_argument("--slot-x", type=int, default=0)
     parser.add_argument("--slot-y", type=int, default=0)
     parser.add_argument("--bearing-degrees", type=float, default=0.0)
@@ -83,7 +79,7 @@ def main() -> int:
 
     command_id = new_command_id()
     request = NativeCommandRequest(
-        schema_version="1.4",
+        schema_version="1.5",
         command_id=command_id,
         command=args.command,  # type: ignore[arg-type]
         control_mode="native_assisted",
@@ -104,6 +100,8 @@ def main() -> int:
         minimum_output_quantity=args.minimum_output_quantity,
         destination_id=args.destination_id,
         section_name=args.section_name,
+        save_name=args.save_name,
+        game_start_id=args.game_start_id,
         slot_x=args.slot_x,
         slot_y=args.slot_y,
         paused=args.paused,
@@ -115,17 +113,6 @@ def main() -> int:
         request,
     )
     print(f"wrote request {command_id} for {args.command}")
-
-    # Built exactly as the supported live path builds it, so the trigger
-    # travels the same focus, politeness, and restore discipline.
-    controller = _controller(config)
-
-    async def send_trigger() -> None:
-        async with controller.input_lease():
-            await controller.execute(TRIGGER)
-
-    asyncio.run(send_trigger())
-    print("sent the native command trigger")
 
     deadline = time.monotonic() + args.timeout
     while time.monotonic() < deadline:

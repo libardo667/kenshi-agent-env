@@ -101,6 +101,40 @@ def test_python_accepts_game_wide_interface_close_with_empty_selection() -> None
     assert request.target_id == ""
 
 
+@pytest.mark.parametrize(
+    ("fixture", "command", "save_name", "game_start_id"),
+    [
+        ("valid_continue_game_request.json", "continue_game", "", ""),
+        (
+            "valid_load_game_request.json",
+            "load_game",
+            "KenshiAgentScenario",
+            "",
+        ),
+        (
+            "valid_new_game_request.json",
+            "new_game",
+            "",
+            "kae-03-broke-pair",
+        ),
+    ],
+)
+def test_python_accepts_exact_native_startup_request_fixtures(
+    fixture: str,
+    command: str,
+    save_name: str,
+    game_start_id: str,
+) -> None:
+    request = NativeCommandRequest.model_validate_json(
+        (FIXTURES / fixture).read_bytes()
+    )
+
+    assert request.command == command
+    assert request.selected_character_ids == []
+    assert request.save_name == save_name
+    assert request.game_start_id == game_start_id
+
+
 def test_python_accepts_exact_context_action_request_fixture() -> None:
     request = NativeCommandRequest.model_validate_json(
         (FIXTURES / "valid_context_action_request.json").read_bytes()

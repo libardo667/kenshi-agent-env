@@ -140,14 +140,15 @@ namespace KenshiAgentTelemetry
                command == "survey_local_resources";
     }
 
-    // The main menu, before any world exists. `./dev launch` reaches it by
-    // clicking pixels, which is the last synthesized mouse in this project;
-    // these are the handlers those buttons call. `new_game` is absent on
-    // purpose -- KenshiLib marks `TitleScreen::newGame` `no_addr`, so there is
-    // no symbol behind it.
+    // The main menu, before any world exists. Continue uses the title handler;
+    // exact save and Game Start identities go through SaveManager. This keeps
+    // the whole supported launch path native even though TitleScreen::newGame
+    // itself has no exported address.
     bool NativeCommandDrivesTitleScreen(const std::string& command)
     {
-        return command == "continue_game" || command == "load_game";
+        return command == "continue_game" ||
+               command == "load_game" ||
+               command == "new_game";
     }
 
     // One planner-owned exit for the blocking interface families the controller
@@ -178,7 +179,9 @@ namespace KenshiAgentTelemetry
     bool NativeCommandAllowsEmptySelection(const std::string& command)
     {
         return command == "shift_into_body" ||
-               command == "close_active_interface";
+               command == "close_active_interface" ||
+               NativeCommandControlsTime(command) ||
+               NativeCommandDrivesTitleScreen(command);
     }
 
     bool NativeCommandNamesTarget(const std::string& command)
@@ -243,6 +246,44 @@ namespace KenshiAgentTelemetry
             const bool lower = character >= 'a' && character <= 'z';
             const bool digit = character >= '0' && character <= '9';
             if (!lower && !digit && character != '_')
+                return false;
+        }
+        return true;
+    }
+
+    bool IsValidSaveName(const std::string& value)
+    {
+        if (value.empty() || value.size() > 80)
+            return false;
+        const unsigned char first = static_cast<unsigned char>(value[0]);
+        if (!std::isalnum(first))
+            return false;
+        for (size_t index = 1; index < value.size(); ++index)
+        {
+            const unsigned char character =
+                static_cast<unsigned char>(value[index]);
+            if (!std::isalnum(character) &&
+                character != ' ' &&
+                character != '.' &&
+                character != '_' &&
+                character != '-')
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool IsValidGameStartId(const std::string& value)
+    {
+        if (value.empty() || value.size() > 80)
+            return false;
+        for (size_t index = 0; index < value.size(); ++index)
+        {
+            const char character = value[index];
+            const bool lower = character >= 'a' && character <= 'z';
+            const bool digit = character >= '0' && character <= '9';
+            if (!lower && !digit && (index == 0 || character != '-'))
                 return false;
         }
         return true;
@@ -349,6 +390,8 @@ namespace KenshiAgentTelemetry
             "minimum_output_quantity",
             "destination_id",
             "section_name",
+            "save_name",
+            "game_start_id",
             "slot_x",
             "slot_y",
             "paused",
@@ -387,6 +430,8 @@ namespace KenshiAgentTelemetry
             request.destinationId =
                 root.get<std::string>("destination_id", "");
             request.sectionName = root.get<std::string>("section_name", "");
+            request.saveName = root.get<std::string>("save_name", "");
+            request.gameStartId = root.get<std::string>("game_start_id", "");
             request.slotX = root.get<int>("slot_x", -1);
             request.slotY = root.get<int>("slot_y", -1);
             request.pauseRequested = root.get<bool>("paused", false);
@@ -404,7 +449,7 @@ namespace KenshiAgentTelemetry
                 rejectionReason = "malformed_request";
                 return false;
             }
-            if (root.get<std::string>("schema_version") != "1.4" ||
+            if (root.get<std::string>("schema_version") != "1.5" ||
                 !IsValidCommandId(request.commandId) ||
                 request.command.empty() ||
                 request.command.size() > 80 ||
@@ -418,6 +463,8 @@ namespace KenshiAgentTelemetry
                 request.minimumOutputQuantity > 5 ||
                 request.destinationId.size() > 200 ||
                 request.sectionName.size() > 80 ||
+                request.saveName.size() > 80 ||
+                request.gameStartId.size() > 80 ||
                 request.slotX < 0 ||
                 request.slotY < 0)
             {
@@ -494,12 +541,38 @@ namespace KenshiAgentTelemetry
             const bool isTimeControl =
                 NativeCommandControlsTime(request.command);
             const bool isTitleScreen =
-                NativeCommandDrivesTitleScreen(request.command) ||
+                NativeCommandDrivesTitleScreen(request.command);
+            const bool isWindowClose =
                 NativeCommandClosesWindows(request.command);
             const bool isBuildingExit =
-                !isDirection && !isTargeted && !isTimeControl && !isTitleScreen &&
+                !isDirection && !isTargeted && !isTimeControl &&
+                !isTitleScreen && !isWindowClose &&
                 IsKnownNativeCommand(request.command);
             if (isTitleScreen)
+            {
+                if (!request.targetId.empty() ||
+                    request.bearingDegrees != 0.0 ||
+                    request.distanceUnits != 0.0 ||
+                    request.quantity != 0)
+                {
+                    rejectionReason = "malformed_request";
+                    return false;
+                }
+                if ((request.command == "continue_game" &&
+                     (!request.saveName.empty() ||
+                      !request.gameStartId.empty())) ||
+                    (request.command == "load_game" &&
+                     (!IsValidSaveName(request.saveName) ||
+                      !request.gameStartId.empty())) ||
+                    (request.command == "new_game" &&
+                     (!request.saveName.empty() ||
+                      !IsValidGameStartId(request.gameStartId))))
+                {
+                    rejectionReason = "malformed_request";
+                    return false;
+                }
+            }
+            else if (isWindowClose)
             {
                 if (!request.targetId.empty() ||
                     request.bearingDegrees != 0.0 ||
@@ -614,6 +687,12 @@ namespace KenshiAgentTelemetry
                 rejectionReason = "malformed_request";
                 return false;
             }
+            if (!isTitleScreen &&
+                (!request.saveName.empty() || !request.gameStartId.empty()))
+            {
+                rejectionReason = "malformed_request";
+                return false;
+            }
         }
         catch (const std::exception&)
         {
@@ -652,6 +731,10 @@ namespace KenshiAgentTelemetry
              << JsonEscape(acknowledgement.destinationId) << "\",";
         json << "\"section_name\":\""
              << JsonEscape(acknowledgement.sectionName) << "\",";
+        json << "\"save_name\":\""
+             << JsonEscape(acknowledgement.saveName) << "\",";
+        json << "\"game_start_id\":\""
+             << JsonEscape(acknowledgement.gameStartId) << "\",";
         json << "\"slot_x\":" << acknowledgement.slotX << ",";
         json << "\"slot_y\":" << acknowledgement.slotY << ",";
         json << "\"selected_character_ids\":[";
@@ -668,7 +751,7 @@ namespace KenshiAgentTelemetry
                      << "\"";
             }
         }
-        else
+        else if (!acknowledgement.selectedCharacterId.empty())
         {
             json << "\""
                  << JsonEscape(acknowledgement.selectedCharacterId)

@@ -75,6 +75,7 @@
 #include <kenshi/Town.h>
 #include <kenshi/PlayerInterface.h>
 #include <kenshi/RootObject.h>
+#include <kenshi/SaveManager.h>
 #include <kenshi/ShopTrader.h>
 #include <kenshi/gui/DialogueWindow.h>
 #include <kenshi/gui/ProspectingWindow.h>
@@ -312,7 +313,6 @@ namespace
     unsigned long long g_sequence = 0;
     DWORD g_lastSnapshotTick = 0;
     bool g_sampling = false;
-    bool g_approachVendorHotkeyWasDown = false;
     unsigned long long g_processGeneration = 0;
     unsigned long long g_sessionGeneration = 0;
     KenshiAgentTelemetry::StableCharacterIdentityRegistry
@@ -325,6 +325,10 @@ namespace
     NativeCommandAcknowledgement
         g_nativeAcknowledgements[MAX_NATIVE_ACKNOWLEDGEMENTS];
     unsigned int g_nativeAcknowledgementCount = 0;
+    // A title transition changes identity sessions before the ordinary
+    // snapshot cadence can publish its accepted record. Retain exactly that
+    // one record through reset(s) until the first loaded-world frame emits it.
+    bool g_titleTransitionAcknowledgementPending = false;
     ActiveNativeCommand g_activeNativeCommand;
     // Body-shift probe only: the last body released out of the active
     // roster, so it can be seized back without searching a roster it left.
@@ -363,19 +367,37 @@ namespace
 
     void ResetSessionState()
     {
+        NativeCommandAcknowledgement titleTransitionAcknowledgement;
+        const bool preserveTitleTransitionAcknowledgement =
+            g_titleTransitionAcknowledgementPending &&
+            g_nativeAcknowledgementCount > 0;
+        if (preserveTitleTransitionAcknowledgement)
+        {
+            titleTransitionAcknowledgement =
+                g_nativeAcknowledgements[g_nativeAcknowledgementCount - 1];
+        }
         ++g_sessionGeneration;
         if (g_sessionGeneration == 0)
             g_sessionGeneration = 1;
         g_playerCharacterIdentityRegistry.Clear();
         g_trackedShopTraderCount = 0;
         g_shopTraderRegistryOverflow = false;
-        g_approachVendorHotkeyWasDown = false;
         g_nativeCommandSequence = 0;
         g_lastNativeCommand.clear();
         g_lastNativeCommandResult.clear();
         g_lastNativeCommandTarget.clear();
         g_lastNativeCommandTargetId.clear();
         g_nativeAcknowledgementCount = 0;
+        if (preserveTitleTransitionAcknowledgement)
+        {
+            g_nativeAcknowledgements[0] = titleTransitionAcknowledgement;
+            g_nativeAcknowledgementCount = 1;
+            g_nativeCommandSequence = 1;
+            g_lastNativeCommand = titleTransitionAcknowledgement.command;
+            g_lastNativeCommandResult = titleTransitionAcknowledgement.reason;
+            g_lastNativeCommandTargetId =
+                titleTransitionAcknowledgement.targetId;
+        }
         KenshiAgentTelemetry::UpdateRuntimeContextMenuTargetOwnership(
             g_runtimeContextMenuTarget,
             false,
@@ -805,6 +827,8 @@ namespace
         // out of the same inventory.
         acknowledgement.destinationId = request.destinationId;
         acknowledgement.sectionName = request.sectionName;
+        acknowledgement.saveName = request.saveName;
+        acknowledgement.gameStartId = request.gameStartId;
         acknowledgement.slotX = request.slotX;
         acknowledgement.slotY = request.slotY;
         acknowledgement.selectedCharacterId =
@@ -884,6 +908,22 @@ namespace
             g_activeNativeCommand.stallWindow);
         KenshiAgentTelemetry::ResetNativeOutdoorConfirmationWindow(
             g_activeNativeCommand.outdoorWindow);
+    }
+
+    void CompletePendingTitleTransitionAcknowledgement()
+    {
+        if (!g_titleTransitionAcknowledgementPending ||
+            g_nativeAcknowledgementCount == 0)
+        {
+            return;
+        }
+        NativeCommandAcknowledgement& acknowledgement =
+            g_nativeAcknowledgements[g_nativeAcknowledgementCount - 1];
+        acknowledgement.status = "completed";
+        acknowledgement.reason = "world_session_loaded";
+        acknowledgement.hasTerminalSequence = true;
+        acknowledgement.terminalAtTelemetrySequence = g_sequence + 1;
+        g_lastNativeCommandResult = acknowledgement.reason;
     }
 
     std::string UtcNowIso8601()
@@ -7292,7 +7332,8 @@ namespace
         json << "\"identity_session_id\":\""
              << IdentitySessionId() << "\",";
         json << "\"capabilities\":[\"ui.visible_controls\","
-                "\"control.continue_game\",\"control.load_game\"],";
+                "\"control.continue_game\",\"control.load_game\","
+                "\"control.new_game\"],";
         json << "\"game\":{\"loaded\":false},";
         json << "\"ui\":{";
         json << "\"active_screen\":\"title\",";
@@ -7465,16 +7506,7 @@ namespace
         // terrain and interactable streaming aligned with native movement.
         MaintainCameraFollowForActiveCommand(player);
         MonitorActiveNativeCommand(player);
-        const bool approachVendorHotkeyDown =
-            (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0 &&
-            (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0 &&
-            (GetAsyncKeyState(VK_F10) & 0x8000) != 0;
-        // Either signal dispatches: the file changing, or the hotkey, which is
-        // retained for `scripts/dispatch_native_command.py` and manual probing.
-        const bool hotkeyPressed =
-            approachVendorHotkeyDown && !g_approachVendorHotkeyWasDown;
-        g_approachVendorHotkeyWasDown = approachVendorHotkeyDown;
-        if (NativeCommandRequestChanged() || hotkeyPressed)
+        if (NativeCommandRequestChanged())
             ProcessNativeCommandRequest(player);
 
         const DWORD now = GetTickCount();
@@ -7485,7 +7517,11 @@ namespace
                 KenshiAgentTelemetry::TELEMETRY_SNAPSHOT_INTERVAL_MS)
         {
             g_lastSnapshotTick = now;
+            CompletePendingTitleTransitionAcknowledgement();
             Sample(player, false);
+            // The snapshot just published the title-transition acknowledgement
+            // beside the new session. Later resets must not carry it again.
+            g_titleTransitionAcknowledgementPending = false;
         }
     }
 
@@ -7530,23 +7566,45 @@ namespace
             RejectNativeCommand(request, "title_screen_absent");
             return;
         }
-        TitleScreenActionFunction press =
-            request.command == "continue_game"
-                ? TitleScreenReach::ResolveContinue()
-                : TitleScreenReach::ResolveLoad();
-        if (press == NULL)
+        TitleScreenActionFunction press = NULL;
+        SaveManager* saves = NULL;
+        if (request.command == "continue_game")
         {
-            RejectNativeCommand(request, "title_screen_action_unavailable");
-            return;
+            press = TitleScreenReach::ResolveContinue();
+            if (press == NULL)
+            {
+                RejectNativeCommand(request, "title_screen_action_unavailable");
+                return;
+            }
         }
-        // The handlers take the widget that raised the event and Kenshi's own
-        // buttons pass their own; nothing here identifies a sender, so NULL is
-        // the honest argument rather than a widget invented to look like one.
-        press(titleScreen, NULL);
+        else
+        {
+            saves = SaveManager::getSingleton();
+            if (saves == NULL)
+            {
+                RejectNativeCommand(request, "save_manager_unavailable");
+                return;
+            }
+        }
+        // Accepted means Kenshi received the transition request. The next
+        // loaded-world telemetry is the proof that it completed; GameWorld
+        // reset intentionally starts a new identity session. This exact record
+        // is carried into the first loaded-world frame, then retired.
         AddNativeAcknowledgement(
-            request, "accepted", "title_screen_action_pressed", true, true);
+            request, "accepted", "title_screen_action_issued", true, false);
+        g_titleTransitionAcknowledgementPending = true;
         g_lastNativeCommand = request.command;
-        g_lastNativeCommandResult = "title_screen_action_pressed";
+        g_lastNativeCommandResult = "title_screen_action_issued";
+        if (press != NULL)
+        {
+            // The handler takes the widget that raised the event. There is no
+            // synthetic widget here, so NULL is the exact honest argument.
+            press(titleScreen, NULL);
+        }
+        else if (request.command == "load_game")
+            saves->load(request.saveName);
+        else
+            saves->newGame(request.gameStartId);
     }
 
     void TitleScreenUpdateHook(TitleScreen* titleScreen)

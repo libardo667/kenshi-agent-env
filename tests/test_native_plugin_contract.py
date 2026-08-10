@@ -56,7 +56,8 @@ def test_native_plugin_exports_nearby_character_and_ui_signals() -> None:
     assert "target->hasDialogue()" in source
     assert "ProcessNativeCommandRequest" in source
     assert "newPlayerTaskSelectedCharacters" in source
-    assert "VK_F10" in source
+    assert "VK_F10" not in source
+    assert "if (NativeCommandRequestChanged())" in source
     assert "AppendVector3(json, targetPosition)" in source
     assert "target->isOnScreen" in source
     assert "target->getVisible()" in source
@@ -164,6 +165,16 @@ def test_native_plugin_exports_bounded_visible_semantic_ui_controls() -> None:
     # do, which now includes pressing its own menu.
     assert '\\"ui.visible_controls\\"' in source
     assert '\\"control.continue_game\\"' in source
+    assert '\\"control.load_game\\"' in source
+    assert '\\"control.new_game\\"' in source
+    assert "SaveManager::getSingleton()" in source
+    assert "saves->load(request.saveName)" in source
+    assert "saves->newGame(request.gameStartId)" in source
+    assert "g_titleTransitionAcknowledgementPending = true" in source
+    assert "preserveTitleTransitionAcknowledgement" in source
+    assert "CompletePendingTitleTransitionAcknowledgement();" in source
+    assert 'acknowledgement.reason = "world_session_loaded"' in source
+    assert "g_titleTransitionAcknowledgementPending = false" in source
     assert '"game\\\":{\\\"loaded\\\":false}' in source
     assert '"source\\\":\\\"kenshilib-plugin-title\\\"' in source
     assert "GetRealAddress(&TitleScreen::_NV_update)" in source

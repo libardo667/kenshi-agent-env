@@ -54,6 +54,35 @@ def select_unique_window(matches: list[tuple[int, str]], title_filter: str) -> i
     return matches[0][0]
 
 
+def select_unique_dialog_control(
+    controls: list[tuple[int, str, str, int, bool]],
+    *,
+    button_text: str,
+    control_id: int,
+) -> int:
+    """Resolve one visible native Button by both caption and control id."""
+
+    matches = [
+        hwnd
+        for hwnd, class_name, text, candidate_id, visible in controls
+        if visible
+        and class_name == "Button"
+        and text == button_text
+        and candidate_id == control_id
+    ]
+    if not matches:
+        raise WindowNotFoundError(
+            f"No visible native Button {button_text!r} with control id "
+            f"{control_id} was found."
+        )
+    if len(matches) > 1:
+        raise AmbiguousWindowError(
+            f"Multiple visible native Buttons {button_text!r} with control id "
+            f"{control_id} were found."
+        )
+    return matches[0]
+
+
 def resolve_screen_point(
     x: float, y: float, space: CoordinateSpace, rect: WindowRect
 ) -> tuple[int, int]:
@@ -429,6 +458,53 @@ class Win32InputController(InputController):
 
         hwnd = self._find_window()
         if not self.user32.PostMessageW(hwnd, 0x0010, 0, 0):  # WM_CLOSE
+            raise getattr(ctypes, "WinError")()  # noqa: B009 - Windows-only
+
+    def request_dialog_command(self, *, button_text: str, control_id: int) -> None:
+        """Route one exact Win32 dialog command without mouse or keyboard input."""
+
+        parent = self._find_window()
+        enum_proc_type = getattr(ctypes, "WINFUNCTYPE")(  # noqa: B009 - Windows-only
+            wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
+        )
+        controls: list[tuple[int, str, str, int, bool]] = []
+
+        def window_text(hwnd: int) -> str:
+            length = self.user32.GetWindowTextLengthW(hwnd)
+            buffer = ctypes.create_unicode_buffer(length + 1)
+            self.user32.GetWindowTextW(hwnd, buffer, length + 1)
+            return buffer.value
+
+        def callback(hwnd: int, _: int) -> bool:
+            class_buffer = ctypes.create_unicode_buffer(256)
+            self.user32.GetClassNameW(hwnd, class_buffer, len(class_buffer))
+            controls.append(
+                (
+                    int(hwnd),
+                    class_buffer.value,
+                    window_text(hwnd),
+                    int(self.user32.GetDlgCtrlID(hwnd)),
+                    bool(self.user32.IsWindowVisible(hwnd)),
+                )
+            )
+            return True
+
+        callback_ref = enum_proc_type(callback)
+        self.user32.EnumChildWindows(parent, callback_ref, 0)
+        button = select_unique_dialog_control(
+            controls,
+            button_text=button_text,
+            control_id=control_id,
+        )
+        # BN_CLICKED is zero, so wParam is the exact control id. This routes
+        # through the dialog's own MFC command handler; it is not SendInput and
+        # neither cursor nor keyboard state is touched.
+        if not self.user32.PostMessageW(
+            parent,
+            0x0111,  # WM_COMMAND
+            control_id,
+            button,
+        ):
             raise getattr(ctypes, "WinError")()  # noqa: B009 - Windows-only
 
     def client_rect(self) -> WindowRect:

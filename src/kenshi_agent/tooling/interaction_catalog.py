@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..affordances import AFFORDANCE_ADAPTERS
+from ..core.telemetry import TITLE_SCREEN_NATIVE_COMMANDS
 from ..core.transport import NativeCommandRequest
 from ..operation_definitions import (
     OPERATION_DEFINITION_LIST,
@@ -105,19 +106,25 @@ else. Adding a name here is a deliberate, reviewed act, and the set is asserted
 exactly - a second entry cannot arrive quietly.
 """
 
+LAUNCH_ONLY_NATIVE_COMMANDS: frozenset[str] = frozenset(
+    TITLE_SCREEN_NATIVE_COMMANDS
+)
+"""Wire commands owned by launch orchestration before a world exists."""
+
 
 def native_command_names() -> tuple[str, ...]:
     """Every native command an operation may issue.
 
-    Diagnostic-only routes are excluded: they are answerable by the plug-in but
-    unreachable by the agent, so demanding an owning operation for them would
-    force a real operation into existence to satisfy a catalog.
+    Diagnostic-only and launch-only routes are excluded: they are answerable by
+    the plug-in but unreachable as planner operations, so demanding an owning
+    operation for them would force a fake gameplay operation into existence.
     """
 
     return tuple(
         name
         for name in all_native_command_names()
         if name not in DIAGNOSTIC_ONLY_NATIVE_COMMANDS
+        and name not in LAUNCH_ONLY_NATIVE_COMMANDS
     )
 
 

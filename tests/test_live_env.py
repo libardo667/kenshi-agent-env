@@ -615,7 +615,7 @@ class NativePulseTelemetry(PulseTelemetry):
         self.selected_character_ids = ["entity-selected"]
         # Called before each read, so a command delivered by the request file
         # alone is answered. The plug-in dispatches on the file changing as
-        # well as on the trigger hotkey, and time control uses only the file --
+        # well as on the file watcher, and time control uses only the file --
         # a double that answers exclusively on a keystroke cannot represent a
         # command that sends none.
         self.on_read: Callable[[], None] | None = None
@@ -875,7 +875,7 @@ class NativeAckController(PulseController):
         *,
         status: NativeCommandStatus = NativeCommandStatus.ACCEPTED,
         acknowledgement_command_id: str | None = None,
-        open_dialogue_on_hotkey: bool = False,
+        open_dialogue_on_dispatch: bool = False,
         complete_map_travel_on_unpause: bool = False,
         reason: str | None = None,
     ) -> None:
@@ -883,12 +883,13 @@ class NativeAckController(PulseController):
         self.request_path = request_path
         self.status = status
         self.acknowledgement_command_id = acknowledgement_command_id
-        self.open_dialogue_on_hotkey = open_dialogue_on_hotkey
+        self.open_dialogue_on_dispatch = open_dialogue_on_dispatch
         self.complete_map_travel_on_unpause = complete_map_travel_on_unpause
         self.reason = reason
-        self.request_seen_before_hotkey = False
+        self.request_seen_by_watcher = False
         self.request: NativeCommandRequest | None = None
         self.time_control_request: NativeCommandRequest | None = None
+        self.acknowledged_command_ids: set[str] = set()
 
     def acknowledge_unsent_request(self) -> None:
         """Answer a request that arrived by file alone, as the plug-in does."""
@@ -898,97 +899,79 @@ class NativeAckController(PulseController):
         pending = NativeCommandRequest.model_validate_json(
             self.request_path.read_bytes()
         )
-        if (
-            self.time_control_request is not None
-            and pending.command_id == self.time_control_request.command_id
-        ):
+        if pending.command_id in self.acknowledged_command_ids:
             return
-        if pending.command not in {"pause", "set_speed"}:
-            return
-        # Kept apart from `self.request`, which is the operation's own request
-        # and what tests inspect. Time control now travels the same file, and
-        # folding the two together made a pause look like the order under test.
-        self.time_control_request = pending
+        self.acknowledged_command_ids.add(pending.command_id)
         basis = pending.based_on_revision.telemetry_sequence
         assert basis is not None
         sequence = max(self.telemetry.sequence + 1, basis + 1)
-        if pending.command == "pause":
-            self.telemetry.paused = pending.paused
+        if pending.command in {"pause", "set_speed"}:
+            # Kept apart from `self.request`, which is the operation's own
+            # request and what tests inspect.
+            self.time_control_request = pending
+            if pending.command == "pause":
+                self.telemetry.paused = pending.paused
+            else:
+                self.telemetry.paused = False
+            status = NativeCommandStatus.COMPLETED
+            reason = (
+                ("world_paused" if pending.paused else "world_running")
+                if pending.command == "pause"
+                else "world_speed_set"
+            )
         else:
-            self.telemetry.paused = False
+            self.request_seen_by_watcher = True
+            self.request = pending
+            if self.open_dialogue_on_dispatch:
+                self.telemetry.dialogue_target_id = pending.target_id
+            status = self.status
+            reason = self.reason or (
+                "issued"
+                if status == NativeCommandStatus.ACCEPTED
+                else status.value
+            )
+        accepted_sequence = (
+            None if status == NativeCommandStatus.REJECTED else sequence
+        )
+        terminal_sequence = (
+            sequence
+            if status
+            in {
+                NativeCommandStatus.REJECTED,
+                NativeCommandStatus.CANCELLED,
+                NativeCommandStatus.COMPLETED,
+            }
+            else None
+        )
         self.telemetry.controller_commands = NativeControlState(
             available=True,
             commands=[
                 NativeCommandAcknowledgement(
-                    command_id=pending.command_id,
-                    command=pending.command,
-                    status=NativeCommandStatus.COMPLETED,
-                    reason=(
-                        ("world_paused" if pending.paused else "world_running")
-                        if pending.command == "pause"
-                        else "world_speed_set"
+                    command_id=(
+                        self.acknowledgement_command_id or pending.command_id
                     ),
+                    command=pending.command,
+                    status=status,
+                    reason=reason,
+                    target_id=pending.target_id,
+                    context_action=pending.context_action,
+                    bearing_degrees=pending.bearing_degrees,
+                    distance_units=pending.distance_units,
+                    minimum_output_quantity=pending.minimum_output_quantity,
+                    destination_id=pending.destination_id,
+                    section_name=pending.section_name,
+                    save_name=pending.save_name,
+                    game_start_id=pending.game_start_id,
                     selected_character_ids=pending.selected_character_ids,
                     based_on_telemetry_sequence=basis,
                     acknowledged_at_telemetry_sequence=sequence,
-                    accepted_at_telemetry_sequence=sequence,
-                    terminal_at_telemetry_sequence=sequence,
+                    accepted_at_telemetry_sequence=accepted_sequence,
+                    terminal_at_telemetry_sequence=terminal_sequence,
                 )
             ],
         )
 
     async def execute(self, action: PrimitiveInputAction) -> ActionReceipt:
-        if isinstance(action, HotkeyAction):
-            assert self.request_path.is_file()
-            self.request_seen_before_hotkey = True
-            self.request = NativeCommandRequest.model_validate_json(self.request_path.read_bytes())
-            request = self.request
-            if self.open_dialogue_on_hotkey:
-                self.telemetry.dialogue_target_id = request.target_id
-            basis = request.based_on_revision.telemetry_sequence
-            assert basis is not None
-            acknowledgement_sequence = max(self.telemetry.sequence + 1, basis + 1)
-            accepted_sequence = (
-                None if self.status == NativeCommandStatus.REJECTED else acknowledgement_sequence
-            )
-            terminal_sequence = (
-                acknowledgement_sequence
-                if self.status
-                in {
-                    NativeCommandStatus.REJECTED,
-                    NativeCommandStatus.CANCELLED,
-                    NativeCommandStatus.COMPLETED,
-                }
-                else None
-            )
-            self.telemetry.controller_commands = NativeControlState(
-                available=True,
-                commands=[
-                    NativeCommandAcknowledgement(
-                        command_id=(self.acknowledgement_command_id or request.command_id),
-                        command=request.command,
-                        status=self.status,
-                        reason=(
-                            self.reason
-                            or (
-                                "issued"
-                                if self.status == NativeCommandStatus.ACCEPTED
-                                else self.status.value
-                            )
-                        ),
-                        target_id=request.target_id,
-                        context_action=request.context_action,
-                        bearing_degrees=request.bearing_degrees,
-                        distance_units=request.distance_units,
-                        minimum_output_quantity=request.minimum_output_quantity,
-                        selected_character_ids=request.selected_character_ids,
-                        based_on_telemetry_sequence=basis,
-                        acknowledged_at_telemetry_sequence=acknowledgement_sequence,
-                        accepted_at_telemetry_sequence=accepted_sequence,
-                        terminal_at_telemetry_sequence=terminal_sequence,
-                    )
-                ],
-            )
         receipt = await super().execute(action)
         if (
             self.complete_map_travel_on_unpause
@@ -1026,7 +1009,7 @@ def native_vendor_environment(
     *,
     status: NativeCommandStatus = NativeCommandStatus.ACCEPTED,
     acknowledgement_command_id: str | None = None,
-    open_dialogue_on_hotkey: bool = False,
+    open_dialogue_on_dispatch: bool = False,
     complete_map_travel_on_unpause: bool = False,
     reason: str | None = None,
 ) -> tuple[LiveEnvironment, NativePulseTelemetry, NativeAckController]:
@@ -1038,7 +1021,7 @@ def native_vendor_environment(
         request_path,
         status=status,
         acknowledgement_command_id=acknowledgement_command_id,
-        open_dialogue_on_hotkey=open_dialogue_on_hotkey,
+        open_dialogue_on_dispatch=open_dialogue_on_dispatch,
         complete_map_travel_on_unpause=complete_map_travel_on_unpause,
         reason=reason,
     )
@@ -1102,7 +1085,7 @@ def test_squad_member_selection_uses_exact_native_identity_without_pointer_input
         assert controller.request.command == "select_squad_member"
         assert controller.request.selected_character_ids == ["entity-selected"]
         assert controller.request.target_id == "entity-ruka"
-        assert [action.kind for action in controller.actions] == ["hotkey"]
+        assert controller.actions == []
         assert transition.receipt.native_acknowledgement is not None
         assert transition.receipt.native_acknowledgement.status is NativeCommandStatus.COMPLETED
         assert transition.receipt.semantic is not None
@@ -1184,13 +1167,13 @@ def test_native_character_movement_carries_the_complete_selected_group(
 
 
 
-def test_native_vendor_request_precedes_hotkey_and_matching_later_ack(
+def test_native_vendor_request_is_seen_by_watcher_before_matching_later_ack(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
         environment, telemetry, controller = native_vendor_environment(
             tmp_path,
-            open_dialogue_on_hotkey=True,
+            open_dialogue_on_dispatch=True,
         )
         initial = await environment.reset()
         command = CommandDispatchContext(
@@ -1205,7 +1188,7 @@ def test_native_vendor_request_precedes_hotkey_and_matching_later_ack(
             command=command,
         )
 
-        assert controller.request_seen_before_hotkey
+        assert controller.request_seen_by_watcher
         assert controller.request is not None
         assert controller.request.command_id == command.command_id
         assert controller.request.based_on_revision.telemetry_sequence is not None
@@ -1214,7 +1197,7 @@ def test_native_vendor_request_precedes_hotkey_and_matching_later_ack(
         )
         assert controller.request.selected_character_ids == ["entity-selected"]
         assert controller.request.target_id == "entity-vendor"
-        assert [action.kind for action in controller.actions] == ["hotkey"]
+        assert controller.actions == []
         assert telemetry.paused is True
         assert transition.receipt.accepted
         assert transition.receipt.executed
@@ -1234,7 +1217,7 @@ def test_native_vendor_dispatch_accepts_same_telemetry_without_capture_basis(
     async def scenario() -> None:
         environment, _, controller = native_vendor_environment(
             tmp_path,
-            open_dialogue_on_hotkey=True,
+            open_dialogue_on_dispatch=True,
         )
         initial = await environment.reset()
         command = CommandDispatchContext(
@@ -1276,7 +1259,7 @@ def test_native_vendor_dispatch_rebases_an_older_authorized_revision(
     async def scenario() -> None:
         environment, _, controller = native_vendor_environment(
             tmp_path,
-            open_dialogue_on_hotkey=True,
+            open_dialogue_on_dispatch=True,
         )
         initial = await environment.reset()
         sequence = initial.world_revision.telemetry_sequence
@@ -1355,7 +1338,7 @@ def test_old_native_ack_cannot_satisfy_new_command(
                 ),
             )
 
-        assert [action.kind for action in controller.actions] == ["hotkey"]
+        assert controller.actions == []
         assert telemetry.paused is True
 
     asyncio.run(scenario())
@@ -1382,7 +1365,7 @@ def test_definitive_native_rejection_does_not_start_movement(
             command=command,
         )
 
-        assert [action.kind for action in controller.actions] == ["hotkey"]
+        assert controller.actions == []
         assert telemetry.paused is True
         assert not transition.receipt.accepted
         assert not transition.receipt.executed
@@ -1536,7 +1519,7 @@ def test_semantic_approach_adopts_an_already_active_order_for_the_same_target(
             ),
         )
 
-        # No second native order: the hotkey was never pressed and no request
+        # No second native order: the request was not rewritten and no request
         # file was written by this dispatch.
         assert not [a for a in controller.actions if isinstance(a, HotkeyAction)]
         assert controller.request is None
@@ -1574,7 +1557,7 @@ def test_semantic_approach_issues_one_order_when_none_is_active(tmp_path: Path) 
         )
 
         hotkeys = [a for a in controller.actions if isinstance(a, HotkeyAction)]
-        assert len(hotkeys) == 1, "exactly one pathing order per option lifecycle"
+        assert len(hotkeys) == 0, "file-watch dispatch must not synthesize a hotkey"
         assert controller.request is not None
         assert controller.request.target_id == "entity-vendor"
         assert controller.request.selected_character_ids == [
@@ -1623,7 +1606,7 @@ def test_context_action_issues_exact_native_resource_task_without_world_click(
 
         assert not [action for action in controller.actions if isinstance(action, ClickAction)]
         assert (
-            len([action for action in controller.actions if isinstance(action, HotkeyAction)]) == 1
+            len([action for action in controller.actions if isinstance(action, HotkeyAction)]) == 0
         )
         assert controller.request is not None
         assert controller.request.command == "perform_context_action"
@@ -1726,7 +1709,7 @@ def test_first_aid_uses_the_same_exact_semantic_native_route(tmp_path: Path) -> 
 
         assert not [action for action in controller.actions if isinstance(action, ClickAction)]
         assert (
-            len([action for action in controller.actions if isinstance(action, HotkeyAction)]) == 1
+            len([action for action in controller.actions if isinstance(action, HotkeyAction)]) == 0
         )
         assert controller.request is not None
         assert controller.request.command == "perform_context_action"
@@ -1762,7 +1745,7 @@ def test_resource_production_issues_exact_monitored_native_command(
 
         assert not [action for action in controller.actions if isinstance(action, ClickAction)]
         assert (
-            len([action for action in controller.actions if isinstance(action, HotkeyAction)]) == 1
+            len([action for action in controller.actions if isinstance(action, HotkeyAction)]) == 0
         )
         assert controller.request is not None
         assert controller.request.command == "produce_resource_output"
@@ -1805,7 +1788,7 @@ def test_visible_nearby_dialogue_target_still_uses_native_talk_order(
 
         assert not [action for action in controller.actions if isinstance(action, ClickAction)]
         hotkeys = [action for action in controller.actions if isinstance(action, HotkeyAction)]
-        assert len(hotkeys) == 1
+        assert len(hotkeys) == 0
         assert controller.request is not None
         assert controller.request.command == "approach_confirmed_vendor"
         assert controller.request.target_id == "entity-vendor"
@@ -1823,7 +1806,7 @@ def test_paused_native_talk_stops_before_movement_pulse_when_dialogue_opens(
     async def scenario() -> None:
         environment, telemetry, controller = native_vendor_environment(
             tmp_path,
-            open_dialogue_on_hotkey=True,
+            open_dialogue_on_dispatch=True,
         )
         environment.controls_config = environment.controls_config.model_copy(
             update={
@@ -1953,7 +1936,7 @@ def test_map_travel_issues_one_exact_order_and_establishes_five_x(
         assert controller.request.target_id == "entity-known-town"
         assert telemetry.paused is False
         assert telemetry.speed_multiplier == 5.0
-        assert [action.kind for action in controller.actions] == ["hotkey", "key", "key"]
+        assert [action.kind for action in controller.actions] == ["key", "key"]
 
     asyncio.run(scenario())
 
@@ -2056,7 +2039,6 @@ def test_squad_regroup_issues_one_global_exact_order_and_establishes_five_x(
         assert telemetry.paused is False
         assert telemetry.speed_multiplier == 5.0
         assert [action.kind for action in controller.actions] == [
-            "hotkey",
             "key",
             "key",
         ]
@@ -2130,7 +2112,7 @@ def test_map_arrival_terminal_wins_race_with_running_confirmation(
         assert acknowledgement.status is NativeCommandStatus.COMPLETED
         assert acknowledgement.reason == "map_destination_reached"
         assert telemetry.paused is True
-        assert [action.kind for action in controller.actions] == ["hotkey", "key"]
+        assert [action.kind for action in controller.actions] == ["key"]
 
     asyncio.run(scenario())
 
@@ -2218,7 +2200,7 @@ def test_continuous_native_movement_starts_a_paused_world_without_repausing(
         )
 
         assert telemetry.paused is False
-        assert [action.kind for action in controller.actions] == ["hotkey", "key"]
+        assert [action.kind for action in controller.actions] == ["key"]
         assert "Started the paused world" in transition.receipt.message
 
     asyncio.run(scenario())
@@ -2249,7 +2231,7 @@ def test_continuous_native_handoff_uses_idempotent_speed_key_not_pointer_unpause
         )
 
         assert telemetry.paused is False
-        assert [action.kind for action in controller.actions] == ["hotkey", "key"]
+        assert [action.kind for action in controller.actions] == ["key"]
         assert controller.actions[-1] == KeyAction(key="f2")
         assert "speed gear 1" in transition.receipt.message
 
@@ -2317,7 +2299,7 @@ def test_direction_does_not_adopt_an_active_order_for_another_vector(
         assert controller.request is not None
         assert controller.request.command_id == "cmd-" + "f" * 32
         assert (
-            len([action for action in controller.actions if isinstance(action, HotkeyAction)]) == 1
+            len([action for action in controller.actions if isinstance(action, HotkeyAction)]) == 0
         )
 
     asyncio.run(scenario())
@@ -2371,7 +2353,7 @@ def test_a_recipient_change_during_the_lease_writes_no_request(tmp_path: Path) -
 
     The command is authorized for one pair and dispatched after selection has
     become somebody else. Nothing may reach the game: not the request file, not
-    the hotkey that tells the plug-in to read it.
+    the atomic file replacement observed by the plug-in.
     """
 
     async def scenario() -> None:

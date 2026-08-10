@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.4",
+  "schema_version": "1.5",
   "command_id": "cmd-0123456789abcdef0123456789abcdef",
   "command": "close_active_interface",
   "control_mode": "native_assisted",
@@ -18,6 +18,8 @@
   "minimum_output_quantity": 1,
   "destination_id": "",
   "section_name": "",
+  "save_name": "",
+  "game_start_id": "",
   "slot_x": 0,
   "slot_y": 0,
   "paused": false,

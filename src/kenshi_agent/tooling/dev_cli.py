@@ -268,7 +268,7 @@ def build_parser(
     launch.add_argument(
         "--resume-launcher",
         action="store_true",
-        help="Resume one verified pre-game launcher left by an interruption.",
+        help="Resume one verified native Kenshi window left by an interruption.",
     )
     _add_display_option(launch)
     launch.set_defaults(preflight_only=False)

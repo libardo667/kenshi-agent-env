@@ -1251,14 +1251,22 @@ class NativeCommandStatus(StrEnum):
 NATIVE_COMMANDS_CARRYING_DIRECTION: frozenset[str] = frozenset({"move_in_direction"})
 
 NATIVE_COMMANDS_ALLOWING_EMPTY_SELECTION: frozenset[str] = frozenset(
-    {"shift_into_body", "close_active_interface"}
+    {
+        "shift_into_body",
+        "close_active_interface",
+        "continue_game",
+        "load_game",
+        "new_game",
+        "pause",
+        "set_speed",
+    }
 )
 """Commands whose meaning does not require a selected character recipient.
 
-A body shift names the body it acts on. Closing the active interface is
-game-wide UI cleanup. Both must remain reachable when the selection is empty;
-all selection-addressed commands still refuse a basis with nobody to receive
-the operation.
+A body shift names the body it acts on. Closing the active interface and clock
+control are game-wide. Title transitions precede any roster. These must remain
+reachable when selection is empty; selection-addressed commands still refuse a
+basis with nobody to receive the operation.
 """
 
 # Commands whose meaning is incomplete without naming which action to take.
@@ -1320,6 +1328,8 @@ def require_consistent_wire_shape(
     minimum_output_quantity: int,
     destination_id: str = "",
     section_name: str = "",
+    save_name: str = "",
+    game_start_id: str = "",
 ) -> None:
     """Reject a native request or acknowledgement whose fields contradict it."""
 
@@ -1358,6 +1368,20 @@ def require_consistent_wire_shape(
             raise ValueError(f"a {command} {subject} requires a source section")
     elif destination_id or section_name:
         raise ValueError(f"only a transfer {subject} may name a destination or a section")
+    if command == "load_game":
+        if not save_name:
+            raise ValueError(f"a load_game {subject} requires an exact save name")
+        if game_start_id:
+            raise ValueError(f"a load_game {subject} must not name a Game Start")
+    elif command == "new_game":
+        if not game_start_id:
+            raise ValueError(f"a new_game {subject} requires an exact Game Start ID")
+        if save_name:
+            raise ValueError(f"a new_game {subject} must not name a save")
+    elif save_name or game_start_id:
+        raise ValueError(
+            f"only load_game or new_game {subject}s may carry startup identities"
+        )
     if command != "produce_resource_output" and minimum_output_quantity != 1:
         raise ValueError("only resource production may request a larger output quantity")
 
@@ -1372,6 +1396,9 @@ def require_consistent_wire_shape(
 # could not read back, and the readback failure invalidated the whole
 # telemetry snapshot rather than one field.
 NativeWireCommand = Literal[
+    "continue_game",
+    "load_game",
+    "new_game",
     "approach_confirmed_vendor",
     "move_to_character",
     "select_squad_member",
@@ -1410,6 +1437,15 @@ NativeWireCommand = Literal[
     "survey_local_resources",
 ]
 
+TITLE_SCREEN_NATIVE_COMMANDS: frozenset[NativeWireCommand] = frozenset(
+    {
+        "continue_game",
+        "load_game",
+        "new_game",
+    }
+)
+"""Native routes owned by launch orchestration before a world exists."""
+
 
 class NativeCommandAcknowledgement(StrictModel):
     command_id: str = Field(pattern=r"^cmd-[0-9a-f]{32}$")
@@ -1431,6 +1467,19 @@ class NativeCommandAcknowledgement(StrictModel):
     # item rather than a cell label scraped from a widget.
     destination_id: str = Field(default="", max_length=200)
     section_name: str = Field(default="", max_length=80)
+    # Exact durable identities for title-screen transitions. A label scraped
+    # from a button is not a save address, and a carousel caption is not the
+    # Game Start ID accepted by SaveManager.
+    save_name: str = Field(
+        default="",
+        max_length=80,
+        pattern=r"^(?:|[A-Za-z0-9][A-Za-z0-9 ._-]{0,79})$",
+    )
+    game_start_id: str = Field(
+        default="",
+        max_length=80,
+        pattern=r"^(?:|[a-z0-9][a-z0-9-]{0,79})$",
+    )
     slot_x: int = Field(default=0, ge=0)
     slot_y: int = Field(default=0, ge=0)
     # Body-shift commands truthfully echo an empty selection after
@@ -1462,6 +1511,8 @@ class NativeCommandAcknowledgement(StrictModel):
             minimum_output_quantity=self.minimum_output_quantity,
             destination_id=self.destination_id,
             section_name=self.section_name,
+            save_name=self.save_name,
+            game_start_id=self.game_start_id,
         )
 
         if self.status == NativeCommandStatus.REJECTED:

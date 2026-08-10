@@ -1,0 +1,160 @@
+{
+  "schema_version": 1,
+  "evidence_id": "native-launch-20260810T024659Z",
+  "captured_at": "2026-08-10T02:49:57.611Z",
+  "classification": "live_proven",
+  "manifest": {
+    "repository_parent": "344b39291f6db80f9dea762e9c9a1c10c7d80cb7",
+    "telemetry_protocol": "2.0.0",
+    "native_request_schema": "1.5",
+    "public_command": "./dev launch --scenario native-launch-exact-load-20260810 --timeout 180",
+    "scenario_id": "native-launch-exact-load-20260810",
+    "scenario_fixture_digest": "105fc162134f60379812a246f1e2e00c3f8d24e935b49ef1213068ca3f3787c3",
+    "managed_save_name": "KenshiAgentScenario",
+    "installed_dll_sha256": "c8e3da7572b2074db55c941acd1ff26bdc4d302a6b8c8f62bd20b10e9b55e083"
+  },
+  "launcher_delivery": {
+    "process_target": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\kenshi_x64.exe",
+    "settings_handoff": {
+      "mechanism": "Win32 WM_COMMAND",
+      "button_text": "OK",
+      "control_id": 1003
+    },
+    "mouse_or_keyboard_delivery": false,
+    "input_lease_acquired": false,
+    "source_and_test_basis": "The supported launch function contains no ClickAction, KeyAction, HotkeyAction, controller.execute, or input_lease call; the exact native dialog command and all three title routes have ordinary passing tests."
+  },
+  "request": {
+    "schema_version": "1.5",
+    "command_id": "cmd-cb9e883e499b4e19b2f05ac4cd71adc4",
+    "command": "load_game",
+    "control_mode": "native_assisted",
+    "identity_session_id": "session-86e1d06475f99b1e-0000000000000001",
+    "based_on_telemetry_sequence": 2,
+    "selected_character_ids": [],
+    "save_name": "KenshiAgentScenario",
+    "game_start_id": ""
+  },
+  "acknowledgement": {
+    "command_id": "cmd-cb9e883e499b4e19b2f05ac4cd71adc4",
+    "command": "load_game",
+    "status": "completed",
+    "reason": "world_session_loaded",
+    "save_name": "KenshiAgentScenario",
+    "selected_character_ids": [],
+    "based_on_telemetry_sequence": 2,
+    "acknowledged_at_telemetry_sequence": 3,
+    "accepted_at_telemetry_sequence": 3,
+    "terminal_at_telemetry_sequence": 3
+  },
+  "decisive_frames": {
+    "title": {
+      "sequence": 2,
+      "captured_at": "2026-08-10T02:46:59.143Z",
+      "source": "kenshilib-plugin-title",
+      "identity_session_id": "session-86e1d06475f99b1e-0000000000000001",
+      "game_loaded": false,
+      "capabilities": [
+        "ui.visible_controls",
+        "control.continue_game",
+        "control.load_game",
+        "control.new_game"
+      ],
+      "controller_commands": []
+    },
+    "loaded_transition": {
+      "sequence": 37,
+      "captured_at": "2026-08-10T02:47:20.968Z",
+      "source": "kenshilib-plugin",
+      "identity_session_id": "session-86e1d06475f99b1e-0000000000000002",
+      "game_loaded": true,
+      "game_paused": false,
+      "money": 20000,
+      "primary_character_id": "entity-86e1d06475f99b1e-0000000000000002-00000001-00000000-00000000-00000002-8aaa4b00",
+      "selected_character_ids": [
+        "entity-86e1d06475f99b1e-0000000000000002-00000001-00000000-00000000-00000001-d830c600",
+        "entity-86e1d06475f99b1e-0000000000000002-00000001-00000000-00000000-00000002-8aaa4b00"
+      ],
+      "roster_names": [
+        "Zill",
+        "Slowline"
+      ],
+      "controller_command": "cmd-cb9e883e499b4e19b2f05ac4cd71adc4"
+    },
+    "final_paused_health": {
+      "sequence": 350,
+      "captured_at": "2026-08-10T02:49:57.611Z",
+      "identity_session_id": "session-86e1d06475f99b1e-0000000000000002",
+      "game_loaded": true,
+      "game_paused": true,
+      "pause_command_id": "cmd-404cbf34cb904d3483bd72096bdebea3",
+      "pause_status": "completed",
+      "pause_reason": "world_paused",
+      "pause_terminal_at_telemetry_sequence": 38
+    }
+  },
+  "scenario_attestation": {
+    "verified_at": "2026-08-10T02:48:06.595532Z",
+    "identity_session_id": "session-86e1d06475f99b1e-0000000000000002",
+    "loaded_sequence": 127,
+    "selected_primary_character_id": "entity-86e1d06475f99b1e-0000000000000002-00000001-00000000-00000000-00000002-8aaa4b00",
+    "indoors": false,
+    "in_combat": false,
+    "money": 20000,
+    "party_size": 2,
+    "minute_of_day": 1238
+  },
+  "omitted_raw_files": [
+    {
+      "path": "%LOCALAPPDATA%\\KenshiAgent\\native_startup_transition.latest.json",
+      "sha256": "cd8e11ff5afe381ee044e38ef86df2483f80fa47c542065c9c9906dbdeb658d5"
+    },
+    {
+      "path": "%LOCALAPPDATA%\\KenshiAgent\\scenarios\\current_attestation.json",
+      "sha256": "47557e03d5332a00aabb9c54c842aa90d3ff183b3395a3fe2df0fa3526154b0a"
+    },
+    {
+      "path": "%LOCALAPPDATA%\\KenshiAgent\\scenarios\\fixtures\\native-launch-exact-load-20260810\\manifest.json",
+      "sha256": "bf46e70e0b86bb783c699396ec609a75d80dcf8b3c1117d643677c5facba7c44"
+    },
+    {
+      "path": "%LOCALAPPDATA%\\KenshiAgent\\telemetry.latest.json at sequence 350",
+      "sha256": "bc09622f29018120ac14e5e1bb3013448d0b5621ba48f7b49535964ee8eaa5b1"
+    },
+    {
+      "path": "%LOCALAPPDATA%\\KenshiAgent\\native_command.request.json after native pause",
+      "sha256": "ca9eb5a30a7e220ed4747b9ac7764373f6fc38d6bbd552f86445a58009949b88"
+    },
+    {
+      "path": "%LOCALAPPDATA%\\KenshiAgent\\plugin_status.json",
+      "sha256": "5b74738b83b421bf301792e74dca76c0c5470fa66d283a5fd29ccabbe1a62341"
+    }
+  ],
+  "native_artifacts": {
+    "pre_cutover": {
+      "path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260810-native-launch\\pre-cutover\\KenshiAgentTelemetry.dll",
+      "sha256": "f68f63889ad29bcb63a267bdbd746f56f200357dda193e58fee608223fa68913",
+      "size": 425472
+    },
+    "native_launch_final": {
+      "path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\backups\\native\\20260810-native-launch\\native-launch-final\\KenshiAgentTelemetry.dll",
+      "sha256": "c8e3da7572b2074db55c941acd1ff26bdc4d302a6b8c8f62bd20b10e9b55e083",
+      "size": 430080
+    },
+    "installed": {
+      "path": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll",
+      "sha256": "c8e3da7572b2074db55c941acd1ff26bdc4d302a6b8c8f62bd20b10e9b55e083",
+      "size": 430080
+    },
+    "native_conformance_exe": {
+      "path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\build\\native\\bin\\NativeCommandProtocolTests.exe",
+      "sha256": "c0138500b6105beebda3e95eab920ba8495d707db272ae1ee69611aa9e7c3ab2",
+      "size": 311808,
+      "result": "Native protocol fixtures and semantics passed."
+    }
+  },
+  "final_disposition": {
+    "status": "live_proven",
+    "summary": "The public launcher started the installed Kenshi bootstrap, routed the exact native settings-dialog command, published an exact load_game request from a fresh title session, observed a terminal cross-session world_session_loaded acknowledgement in the new loaded session, paused through the native request watcher, passed plural-selection scenario attestation, and observed advancing loaded-paused health telemetry. No supported launch branch emitted mouse or keyboard input."
+  }
+}

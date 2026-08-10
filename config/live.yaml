@@ -164,22 +164,6 @@ controls:
   # measured at this exact client size. A mismatch must emit no pointer input.
   calibrated_client_width: 1920
   calibrated_client_height: 1080
-  # Startup uses exact current MyGUI labels and their live exported bounds.
-  # These are not fixed coordinates and remain valid across client sizes.
-  startup_continue_control_labels:
-    - Continue
-  startup_new_game_control_labels:
-    - New Game
-  startup_begin_control_labels:
-    - Begin
-  startup_confirm_control_labels:
-    - Confirm
-  startup_game_start_max_carousel_steps: 64
-  startup_load_control_labels:
-    - Load Game
-    - Load
-  startup_save_control_labels:
-    - autosave1
   # One pathing order, then up to this much bounded walking, re-pausing after
   # every pulse so the operator always has a stopping point.
   native_approach_max_seconds: 40.0

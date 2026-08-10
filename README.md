@@ -9,9 +9,12 @@ records what happened.
 
 The model does not write key presses, screen coordinates, native commands, or retry
 loops. Gameplay actions offered to the model go through the native mod and do not use
-mouse coordinates. Python currently sends a short hotkey after publishing most
-native command requests; Windows input is also used to start and recover the game and
-for host-safety operations.
+mouse coordinates. Native requests dispatch when their atomic request file changes;
+there is no trigger hotkey. The supported launcher starts Kenshi's installed
+bootstrap, routes its exact Win32 dialog command without synthesizing input, and uses
+native title commands for Continue, exact save load, and exact Game Start creation.
+Emergency stop and final host-safety fallback remain a separate input boundary when
+the native side cannot be trusted to stop itself.
 
 This is experimental software for supervised runs with disposable saves. It is not
 a general-purpose Kenshi bot.
@@ -74,18 +77,18 @@ for each operation is recorded in
 
 There are still important limits:
 
-- The mod currently tracks only one active command. It cannot yet track separate
-  commands for different groups at the same time.
+- `controller_commands.commands` is already plural. The native producer may retain
+  at most one record only during the explicitly temporary bridge period ending
+  **2026-09-20**; consumers do not depend on that cardinality.
 - Some group behavior is still unproven, including group dialogue participation,
   mixed-building exits, threat-response scope, and delayed map-travel continuation
   after changing selection.
 - Many controls visible in Kenshi are intentionally not offered to the model. The old
   pointer-based gameplay handlers were removed instead of being kept as a fallback.
-- A native recovery command can close a trade window, but general window closing is
-  not a planner action.
+- `close_active_interface` is planner-visible when fresh telemetry proves a blocking
+  Prospecting, dialogue, modal, inventory, stats, or management interface.
 
-The remaining plural controller-command shape for the next breaking boundary
-is in the
+The exact Protocol 2.0 ownership and temporary producer limit are recorded in the
 [Protocol 2.0 world-model decision](docs/PROTOCOL_2_WORLD_MODEL_DECISION.md).
 
 ## How a run works
@@ -160,7 +163,9 @@ Then prepare and check the host:
 
 `./dev doctor` only checks the system; it does not send input. `./dev launch` stops if
 the required Steam login, graphics profile, display, memory, telemetry, or requested
-start state cannot be confirmed.
+start state cannot be confirmed. Launch itself does not take over the mouse or
+keyboard: the settings handoff is a strict native `WM_COMMAND`, and title/load/pause
+transitions are request-file commands handled by the mod.
 
 ## Run the agent live
 
@@ -188,8 +193,10 @@ To let the agent act, use a disposable save and choose `live`:
   --control live
 ```
 
-The live path asks for explicit confirmation before taking desktop control. Press
-F12 for an emergency stop. Ordinary human input hands control back to the operator.
+The live action path asks for explicit confirmation before entering its supervised
+control session. Launch does not take desktop input. Press F12 for an emergency stop;
+ordinary human input hands any active supervised control session back to the
+operator.
 
 If a run or terminal is interrupted, use:
 

@@ -12,6 +12,7 @@ from kenshi_agent.control.win32 import (
     relative_drag_steps,
     relative_pointer_delta,
     resolve_screen_point,
+    select_unique_dialog_control,
     select_unique_window,
     wheel_delta_data,
 )
@@ -129,6 +130,37 @@ def test_per_monitor_dpi_awareness_falls_back_for_older_windows() -> None:
 
     assert enable_per_monitor_dpi_awareness(user32)
     assert user32.calls == 1
+
+
+def test_native_dialog_control_requires_exact_visible_button_and_id() -> None:
+    controls = [
+        (10, "Button", "OK", 1003, True),
+        (11, "Button", "OK", 1, True),
+        (12, "Static", "OK", 1003, True),
+        (13, "Button", "OK", 1003, False),
+    ]
+
+    assert select_unique_dialog_control(
+        controls,
+        button_text="OK",
+        control_id=1003,
+    ) == 10
+
+
+def test_native_dialog_control_rejects_absent_or_ambiguous_match() -> None:
+    with pytest.raises(RuntimeError, match="No visible native Button"):
+        select_unique_dialog_control([], button_text="OK", control_id=1003)
+
+    duplicate = [
+        (10, "Button", "OK", 1003, True),
+        (11, "Button", "OK", 1003, True),
+    ]
+    with pytest.raises(RuntimeError, match="Multiple visible native Buttons"):
+        select_unique_dialog_control(
+            duplicate,
+            button_text="OK",
+            control_id=1003,
+        )
 
 
 def test_virtual_desktop_normalization_supports_negative_origin() -> None:

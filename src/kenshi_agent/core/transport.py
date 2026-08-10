@@ -112,7 +112,7 @@ class CommandDispatchContext(StrictModel):
 
 
 class NativeCommandRequest(StrictModel):
-    schema_version: Literal["1.4"]
+    schema_version: Literal["1.5"]
     command_id: str = Field(pattern=r"^cmd-[0-9a-f]{32}$")
     command: NativeWireCommand
     control_mode: Literal[ControlMode.NATIVE_ASSISTED]
@@ -136,6 +136,19 @@ class NativeCommandRequest(StrictModel):
     # item rather than a cell label scraped from a widget.
     destination_id: str = Field(default="", max_length=200)
     section_name: str = Field(default="", max_length=80)
+    # Startup commands use Kenshi's exact save and Game Start identities. They
+    # are separate from gameplay target_id so no consumer can mistake a menu
+    # label for an entity handle or overload one address space with another.
+    save_name: str = Field(
+        default="",
+        max_length=80,
+        pattern=r"^(?:|[A-Za-z0-9][A-Za-z0-9 ._-]{0,79})$",
+    )
+    game_start_id: str = Field(
+        default="",
+        max_length=80,
+        pattern=r"^(?:|[a-z0-9][a-z0-9-]{0,79})$",
+    )
     slot_x: int = Field(default=0, ge=0)
     slot_y: int = Field(default=0, ge=0)
     # Time control, which Kenshi owns through `GameWorld::userPause` and
@@ -167,6 +180,8 @@ class NativeCommandRequest(StrictModel):
             minimum_output_quantity=self.minimum_output_quantity,
             destination_id=self.destination_id,
             section_name=self.section_name,
+            save_name=self.save_name,
+            game_start_id=self.game_start_id,
         )
         return self
 
