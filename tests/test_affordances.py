@@ -332,10 +332,60 @@ def test_group_selection_can_issue_broadcast_orders_and_still_narrow() -> None:
         if offer.operation_kind
         in {"perform_context_action", "produce_resource_output"}
     )
-    assert "1 operator slots" in resource_descriptions
-    assert bark.id in resource_descriptions
+    assert "1/1 operator slots occupied" in resource_descriptions
+    assert bark.id not in resource_descriptions
     assert plant.id not in resource_descriptions
-    assert "not proof of operator acceptance" in resource_descriptions
+    assert "do not prove acceptance" in resource_descriptions
+
+
+def test_resource_offer_descriptions_bound_complete_long_operator_sets() -> None:
+    first_id = f"entity-{'a' * 180}"
+    second_id = f"entity-{'b' * 180}"
+    first = CharacterState(id=first_id, name="First")
+    second = CharacterState(id=second_id, name="Second")
+    resource = WorldTarget(
+        id="resource-copper",
+        name="Copper Resource",
+        kind="natural_resource",
+        position=Vec3(x=10, y=0, z=20),
+        distance=25,
+        context_actions=[ContextActionKind.OPERATE],
+        default_task="operate_machinery",
+        operator_capacity=2,
+        current_operator_ids=[first.id, second.id],
+        current_operators_complete=True,
+        output_inventory_complete=True,
+    )
+    observation = _observation(
+        capabilities=[
+            "control.perform_context_action",
+            "control.produce_resource_output",
+            "game.pause",
+            "identity.stable_handles",
+            "world.context_targets",
+            "world.resource_operators",
+        ],
+        roster=[first, second],
+        targets=[resource],
+        primary_character_id=first.id,
+        selected_character_ids=[first.id, second.id],
+    )
+
+    resource_offers = [
+        offer
+        for offer in offered_affordances(observation)
+        if offer.operation_kind
+        in {"perform_context_action", "produce_resource_output"}
+    ]
+
+    assert {offer.operation_kind for offer in resource_offers} == {
+        "perform_context_action",
+        "produce_resource_output",
+    }
+    assert all(len(offer.description) <= 500 for offer in resource_offers)
+    assert all("2/2 operator slots occupied" in offer.description for offer in resource_offers)
+    assert all(first.id not in offer.description for offer in resource_offers)
+    assert all(second.id not in offer.description for offer in resource_offers)
 
 
 def test_resource_operations_are_withheld_without_complete_engine_state() -> None:

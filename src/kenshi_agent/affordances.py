@@ -489,13 +489,13 @@ def _context_order_description(
     """
 
     if order == ContextActionKind.OPERATE and target.kind == "natural_resource":
+        occupied_slots = len(target.current_operator_ids)
         return (
-            f"Ask the selection to operate {target.name!r} indefinitely. Kenshi has "
-            f"{target.operator_capacity} operator slots and currently accepts only "
-            f"{target.current_operator_ids!r}; selection and queued work are not proof "
-            "of operator acceptance. Output collects inside the resource and reaches "
-            "nobody's inventory. To collect ore, use produce_resource_output, pair "
-            "the resource with an inventory, and transfer the output slot."
+            f"Assign the selection to operate {target.name!r} indefinitely "
+            f"({occupied_slots}/{target.operator_capacity} operator slots occupied). "
+            "Selection and queued work do not prove acceptance. Output stays in the "
+            "resource; use produce_resource_output, then pair inventories and transfer "
+            "the output slot to collect it."
         )
     return f"Issue {order.value!r} to {target.name!r}."
 
@@ -1145,17 +1145,17 @@ def _native_and_composite_offers(
                 and target.output_inventory_complete
             ):
                 continue
+            occupied_slots = len(target.current_operator_ids)
             yield _offer(
                 observation,
                 source=AffordanceSource.NATIVE_OPERATION,
                 semantic="produce_resource_output",
                 description=(
-                    f"Ask the selection to work {target.name!r} only until its output "
-                    f"inventory contains stock, then release controller-owned work. "
-                    f"Kenshi has {target.operator_capacity} operator slots and currently "
-                    f"accepts {target.current_operator_ids!r}; selected or queued "
-                    "characters are not reported as operators. This produces output "
-                    "but does not move it into a squad inventory."
+                    f"Work {target.name!r} only until output stock exists, then release "
+                    f"controller-owned work ({occupied_slots}/{target.operator_capacity} "
+                    "operator slots occupied). Selection and queued work do not prove "
+                    "acceptance. Output stays in the resource; pair inventories and "
+                    "transfer the output slot to collect it."
                 ),
                 operation_kind="produce_resource_output",
                 target=AffordanceTarget(

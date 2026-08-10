@@ -10,7 +10,7 @@ longer guesses window geometry or drives a pointer.
 ## Repository and authority
 
 ```text
-parent commit          8e9927f7475c4d8058272ae8da3380b76090c69b
+parent commit          17812916988d2c6abb1a33cd7c57916364fc90fc
 integration branch     main
 starting remote        origin/main at 1d53e57e787309975e75b710eba96b22d1feb12d
 starting tree          clean
@@ -161,6 +161,19 @@ was paused on the unobstructed world screen. The run had no rejected or aborted
 plans; final cleanup reported `input_attempted=false` and
 `input_executed=false`. The committed reduced artifact is
 `game_sources/research/prospecting_window/live_evidence/prospecting-dialogue-lifecycle-20260810.json`.
+
+The first clean 120-turn attempt,
+`protocol-2-native-survival-soak-20260810-r2`, exercised that corrected survey
+lifecycle and began resource work without a native crash. It stopped at turn 2
+for a deterministic host-side contract failure: planner offer prose embedded
+the complete engine operator-ID list, and two normal Protocol 2.0 stable IDs
+made `AffordanceOffer.description` exceed its 500-character bound. Resource
+offers now render only exact occupied/capacity counts; the typed operator IDs
+remain in telemetry and are no longer duplicated into prose. A regression uses
+two 187-character IDs, requires both resource operations to remain offered,
+requires both descriptions to fit the bound, and rejects either ID appearing
+in either description. This is test-proven soak readiness, not evidence of a
+completed long run; a fresh 120-turn attempt remains required.
 
 ## DLL artifacts and exact reinstall commands
 
