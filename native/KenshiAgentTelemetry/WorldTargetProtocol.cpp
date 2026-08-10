@@ -88,7 +88,6 @@ namespace KenshiAgentTelemetry
     namespace AdvertisedTaskSource
     {
         const char* const MENU = "menu";
-        const char* const ODDS = "odds";
     }
 
     AdvertisedTask::AdvertisedTask(
@@ -111,8 +110,6 @@ namespace KenshiAgentTelemetry
         {
             if (it->value != task.value)
                 continue;
-            if (task.source == AdvertisedTaskSource::MENU)
-                it->source = task.source;
             return;
         }
         tasks.push_back(task);

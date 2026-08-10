@@ -30,12 +30,12 @@ HARDCODED WORLD-TARGET SURFACE
   asks Kenshi what a target affords - it states what it already
   decided. Coverage is bounded by the plug-in, not by exploration.
 
-MECHANISM AVAILABLE
-  getPlayerTaskProbability call sites: 6
-  Kenshi answers, per exact task and exact target, whether the player
-  may issue it. Iterating a bounded task vocabulary against each
-  nearby target replaces the literals above with the game's own
-  answer, and makes the frontier fill in as the agent moves.
+DISCOVERY MECHANISM ACTIVE
+  ProbeMenuOrders call sites: 10
+  Kenshi's own context-menu builder answers which orders apply to
+  each exact target. The full TaskType vocabulary labels those raw
+  values; only bespoke typed context-action routing remains bounded
+  by the literals above.
 
 WITNESSED TARGET KINDS
   natural_resource

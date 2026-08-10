@@ -53,11 +53,9 @@ def _quoted_lines(values: tuple[str, ...]) -> list[str]:
 def export_task_type_vocabulary_header(output_dir: Path) -> Path:
     """Carry Kenshi's own task vocabulary into the plug-in as source-derived data.
 
-    The plug-in currently states what a target affords, using two hardcoded
-    string literals. It should ask, and the API to ask with -
-    `getPlayerTaskProbability(TaskType, target, out)` - needs a list of task
-    values to iterate. That list must come from the game, not from a curated
-    guess, or the ceiling simply moves rather than lifting.
+    Kenshi's context menu returns raw task values. The names used in telemetry
+    and command requests must come from the game, not from a curated guess, or
+    the discoverable surface acquires a second vocabulary.
 
     `game_sources/kenshi/TaskType.h` is a verbatim capture of KenshiLib's enum,
     already parsed for the parity report. This emits the same entries as C++
@@ -77,7 +75,7 @@ def export_task_type_vocabulary_header(output_dir: Path) -> Path:
         "// Generated from game_sources/kenshi/TaskType.h; edits are overwritten.",
         "// Upper-bound vocabulary of Kenshi task types. Membership here does not",
         "// mean a task is player-orderable against any given target; it means the",
-        "// value exists and may be probed. Kenshi answers the actual question.",
+        "// value exists and may be advertised. Kenshi answers the actual question.",
         "",
         "namespace KenshiAgentTelemetry",
         "{",

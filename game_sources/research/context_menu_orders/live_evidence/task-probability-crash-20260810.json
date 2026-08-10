@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "kind": "reduced_crash_evidence",
+  "run_id": "live-soak-native-launch-20260810-r1",
+  "source_run": "runs/live-soak-native-launch-20260810-r1",
+  "source_crash_archive": "runs/crashes/20260810T083036.594547Z",
+  "manifest": {
+    "scenario_id": "native-launch-exact-load-20260810",
+    "scenario_fixture_digest": "105fc162134f60379812a246f1e2e00c3f8d24e935b49ef1213068ca3f3787c3",
+    "requested_turns": 120,
+    "completed_turns": 11,
+    "control_mode": "native_assisted",
+    "terminal_disposition": "Kenshi entered terminal window 'Kenshi has crashed'; frozen telemetry could not prove a safe pause.",
+    "binary_provenance": {
+      "loaded_executable": {
+        "path": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\RE_Kenshi\\kenshi_x64.exe",
+        "size_bytes": 36713984,
+        "sha256": "504b362cde850d56afb1cea6f5b7b0ee014d9dd7b47e188599d91c804502cd3e"
+      },
+      "built_dll": {
+        "path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\build\\native\\bin\\KenshiAgentTelemetry.dll",
+        "size_bytes": 430080,
+        "sha256": "c8e3da7572b2074db55c941acd1ff26bdc4d302a6b8c8f62bd20b10e9b55e083"
+      },
+      "installed_dll": {
+        "path": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll",
+        "size_bytes": 430080,
+        "sha256": "c8e3da7572b2074db55c941acd1ff26bdc4d302a6b8c8f62bd20b10e9b55e083"
+      },
+      "matching_pdb": {
+        "path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\build\\native\\bin\\KenshiAgentTelemetry.pdb",
+        "size_bytes": 11127808,
+        "sha256": "6ecac286b8972f791c873db4fada4e81f1e6fcd0205a3985e00a0756343be28b"
+      }
+    }
+  },
+  "request_and_acknowledgement": {
+    "ambient_reader": "No native command requested getPlayerTaskProbability. The telemetry publisher called it while enumerating advertised tasks for nearby_entities.",
+    "in_flight_gameplay_request": {
+      "command_id": "cmd-7ea33a1a77854dcf8df4e5c33089d77a",
+      "command": "travel_to_map_destination",
+      "destination": "Squin",
+      "status": "accepted",
+      "reason": "issued",
+      "accepted_at_telemetry_sequence": 348,
+      "terminal_at_telemetry_sequence": null
+    },
+    "ambient_reader_acknowledgement": "None; an internal telemetry read has no command acknowledgement."
+  },
+  "decisive_telemetry_frames": [
+    {
+      "telemetry_sequence": 353,
+      "location_name": "The Hub",
+      "nearby_entity_count": 0,
+      "selected_position": {"x": -50743.5, "z": 2733.6},
+      "travel_status": "issued"
+    },
+    {
+      "telemetry_sequence": 465,
+      "location_name": "Squin",
+      "nearby_entity_count": 0,
+      "selected_position": {"x": -60335.3, "z": 15630.6},
+      "travel_status": "issued"
+    },
+    {
+      "telemetry_sequence": 470,
+      "location_name": "Squin",
+      "nearby_entity_count": 3,
+      "nearby_entities": [
+        {"name": "Hundred Guardian", "distance": 274.5596},
+        {"name": "Hundred Guardian", "distance": 246.3706},
+        {"name": "Hundred Guardian", "distance": 239.6569}
+      ],
+      "selected_position": {"x": -61122.7, "z": 16060.1},
+      "travel_status": "issued",
+      "disposition": "Last complete telemetry before the process crashed."
+    }
+  ],
+  "crash": {
+    "exception_code": "0xc0000005",
+    "access": "read",
+    "address_read": "0x8",
+    "exception_address": "0x00007ff67e927d86",
+    "game_module_base": "0x00007ff67e690000",
+    "game_rva": "0x297d86",
+    "fault_instruction": "cmp qword ptr [rcx+0x8], 0",
+    "fault_register_rcx": "0x0",
+    "resolved_stack": [
+      "kenshi_x64.exe+0x297d86",
+      "kenshi_x64.exe+0x7f5b2b after its call through the PICK_LOCK_ON_SHACKLES branch",
+      "KenshiAgentTelemetry.dll+0x9c89 after PlayerInterface::getPlayerTaskProbability",
+      "KenshiAgentTelemetry.dll+0x1c9a4 after the nearby_entities advertised-task probe"
+    ],
+    "task_value": 201,
+    "task_name": "PICK_LOCK_ON_SHACKLES",
+    "source_mapping": {
+      "faulting_reader": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp in the former all-vocabulary probability loop",
+      "ambient_caller": "native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp nearby_entities serialization",
+      "mapping_method": "Matching DLL and PDB plus PE disassembly and minidump register/stack decoding."
+    },
+    "historical_replication": [
+      {
+        "archive": "runs/crashes/20260806T004424.025432Z/crashDump1.0.65_x64.zip",
+        "exception": "0xc0000005 read 0x8",
+        "game_rva": "0x297d86",
+        "game_return_rva": "0x7f5b2b",
+        "last_location": "Squin",
+        "last_nearby_entities": "five Hundred Guardians"
+      },
+      {
+        "archive": "runs/crashes/20260806T191335.503575Z/crashDump1.0.65_x64.zip",
+        "exception": "0xc0000005 read 0x8",
+        "game_rva": "0x297d86",
+        "game_return_rva": "0x7f5b2b",
+        "last_location": "Squin",
+        "last_nearby_entities": "five Hundred Guardians"
+      }
+    ]
+  },
+  "omitted_raw_file_hashes": [
+    {
+      "path": "runs/crashes/20260810T083036.594547Z/manifest.json",
+      "size_bytes": 4968,
+      "sha256": "5626cd2ad129210beb3f5911d0b66c837720af95b6d590c5c598af0ec2bc70bb"
+    },
+    {
+      "path": "runs/crashes/20260810T083036.594547Z/crashDump1.0.65_x64.zip",
+      "size_bytes": 226445,
+      "sha256": "46a3d08cd9213446005caf98666f7b9615fa87a68bd18a925c5a9b20d6779d19"
+    },
+    {
+      "path": "runs/crashes/20260810T083036.594547Z/telemetry.latest.json",
+      "size_bytes": 39803,
+      "sha256": "f76234c24fdd77f2bcccd872860006d9216ea758d0c4076d2599ef2388225df3"
+    },
+    {
+      "path": "runs/crashes/20260810T083036.594547Z/live_frame_000000.png",
+      "size_bytes": 1142032,
+      "sha256": "5b1d006474752831c121235d1d0c78e18a670402d36b91ac3ade757377b94b7b"
+    },
+    {
+      "path": "runs/live-soak-native-launch-20260810-r1/events.jsonl",
+      "size_bytes": 8722018,
+      "sha256": "9a91eeab35bb1104316c45b3856c10acfa1acb74246350e1bb04a6ce285e03b8"
+    }
+  ],
+  "final_disposition": {
+    "cause": "The ambient probability reader called a task-specific game path against a character whose required internal object was null. RootObject::isValid did not make that API safe.",
+    "fix_boundary": "Remove every project call to getPlayerTaskProbability and reject odds-sourced telemetry. Use the muted context-menu builder for publication, generic dispatch revalidation, first-aid discovery, and first-aid dispatch revalidation.",
+    "not_the_cause": "The Prospecting Results window remained open during the final travel, but identical retained crashes predate that window sequence and have the same native fault path. Its lifecycle is a separate defect.",
+    "withheld": "The exact one of three guardian stable IDs corresponding to the minidump target pointer cannot be recovered from the retained data."
+  }
+}

@@ -1805,7 +1805,7 @@ int main(int argc, char** argv)
         KenshiAgentTelemetry::AdvertisedTask(
             87,
             "OPERATE_MACHINERY",
-            KenshiAgentTelemetry::AdvertisedTaskSource::ODDS));
+            KenshiAgentTelemetry::AdvertisedTaskSource::MENU));
     const std::string probedResourceSerialized =
         KenshiAgentTelemetry::SerializeNaturalResourceTarget(probedResource);
     std::string probedResourceExpected = probedResourcePayload;
@@ -1821,8 +1821,8 @@ int main(int argc, char** argv)
             "serialized probed natural resource diverged from fixture");
     }
 
-    // Two probes answer for the same target and disagree in both directions,
-    // so the union has to keep every task while keeping the better evidence.
+    // A menu should not duplicate one task value even if Kenshi returns it more
+    // than once.
     {
         std::vector<KenshiAgentTelemetry::AdvertisedTask> merged;
         KenshiAgentTelemetry::MergeAdvertisedTask(
@@ -1830,7 +1830,7 @@ int main(int argc, char** argv)
             KenshiAgentTelemetry::AdvertisedTask(
                 26,
                 "LOOT_TARGET",
-                KenshiAgentTelemetry::AdvertisedTaskSource::ODDS));
+                KenshiAgentTelemetry::AdvertisedTaskSource::MENU));
         KenshiAgentTelemetry::MergeAdvertisedTask(
             merged,
             KenshiAgentTelemetry::AdvertisedTask(
@@ -1843,23 +1843,17 @@ int main(int argc, char** argv)
                 16,
                 "ATTACK_ENEMIES",
                 KenshiAgentTelemetry::AdvertisedTaskSource::MENU));
-        KenshiAgentTelemetry::MergeAdvertisedTask(
-            merged,
-            KenshiAgentTelemetry::AdvertisedTask(
-                16,
-                "ATTACK_ENEMIES",
-                KenshiAgentTelemetry::AdvertisedTaskSource::ODDS));
         if (merged.size() != 2)
             return Fail("advertised task merge did not deduplicate by value");
         if (merged[0].value != 26 ||
             merged[0].source != KenshiAgentTelemetry::AdvertisedTaskSource::MENU)
         {
-            return Fail("menu evidence did not upgrade an odds-sourced task");
+            return Fail("menu task provenance was not preserved");
         }
         if (merged[1].value != 16 ||
             merged[1].source != KenshiAgentTelemetry::AdvertisedTaskSource::MENU)
         {
-            return Fail("odds evidence downgraded a menu-sourced task");
+            return Fail("second menu task was not preserved");
         }
     }
 

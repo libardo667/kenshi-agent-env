@@ -5,23 +5,20 @@ the binding surface, `TaskType.h` bounds the order vocabulary. Context actions
 were supposed to work the same way, reconciling witnessed runtime menus against
 wired semantic routes.
 
-They do not, and running the agent longer will not fix it. The plug-in does not
-ask Kenshi what a target affords. It emits two hardcoded answers:
+The typed `context_actions` projection still emits two hardcoded answers:
 
     natural_resource -> ["operate"]        WorldTargetProtocol.cpp
     squad_character  -> ["first_aid"]      KenshiAgentTelemetry.cpp
 
-Those literals are the entire world-target surface. Three wired pairs out of a
-291-entry vocabulary is not evidence of a young witness set; it is the ceiling
-of what the current export can ever produce. An agent can walk past a hundred
-distinguishable objects and learn nothing, because nothing asks.
+Those literals are the entire routed context-action surface. Three wired pairs
+out of a 291-entry vocabulary is not evidence of a young witness set; it is the
+ceiling of what that projection can ever produce.
 
-The mechanism to lift the ceiling already exists in the plug-in and is already
-called: `PlayerInterface::getPlayerTaskProbability(TaskType, target, out)`.
-Kenshi itself answers whether the player can issue one exact task to one exact
-target. It is currently invoked with a single hardcoded `FIRST_AID_ORDER`.
-Iterating a bounded task vocabulary against each nearby target turns discovery
-from something a human notices into something the export states.
+The generic advertised-task path does ask Kenshi: `ProbeMenuOrders` invokes the
+real context-menu builder with only its renderer muted. Its integer results are
+named through the full source-derived TaskType vocabulary. That is the active
+mechanism for discovering what one exact target affords; the hardcoded surface
+above measures only which of those findings have bespoke context-action routes.
 
 This module derives the ceiling rather than asserting it, so it stops being
 true the moment the plug-in stops hardcoding.
@@ -54,8 +51,8 @@ _HARDCODED_SURFACE = re.compile(
 )
 _ACTION_LITERAL = re.compile(r'\\"([a-z_]+)\\"')
 
-# The API that can replace the hardcoding, and where it is already used.
-TASK_PROBABILITY_API = "getPlayerTaskProbability"
+# The authoritative reader that lifts target-order discovery above literals.
+CONTEXT_MENU_PROBE = "ProbeMenuOrders"
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,7 +71,7 @@ class CoverageFrontier:
     witnessed_pairs: tuple[tuple[str, int], ...]
     wired_pairs: tuple[tuple[str, int], ...]
     witnessed_target_kinds: tuple[str, ...]
-    task_probability_call_sites: int
+    context_menu_probe_call_sites: int
 
     @property
     def emittable_target_kinds(self) -> tuple[str, ...]:
@@ -129,8 +126,8 @@ def _hardcoded_surfaces() -> tuple[HardcodedSurface, ...]:
     return tuple(sorted(found, key=lambda item: (item.target_kind, item.source)))
 
 
-def _task_probability_call_sites() -> int:
-    return sum(_read(path).count(TASK_PROBABILITY_API) for path in NATIVE_TARGET_SOURCES)
+def _context_menu_probe_call_sites() -> int:
+    return sum(_read(path).count(CONTEXT_MENU_PROBE) for path in NATIVE_TARGET_SOURCES)
 
 
 def assess_coverage_frontier() -> CoverageFrontier:
@@ -150,7 +147,7 @@ def assess_coverage_frontier() -> CoverageFrontier:
         witnessed_pairs=tuple(witnessed_pairs),
         wired_pairs=tuple(sorted(CONTEXT_ACTION_DECISIONS)),
         witnessed_target_kinds=tuple(sorted({witness.target_kind for witness in witnesses})),
-        task_probability_call_sites=_task_probability_call_sites(),
+        context_menu_probe_call_sites=_context_menu_probe_call_sites(),
     )
 
 
@@ -271,12 +268,12 @@ def render_coverage_frontier(frontier: CoverageFrontier) -> list[str]:
     lines.extend(
         (
             "",
-            "MECHANISM AVAILABLE",
-            f"  {TASK_PROBABILITY_API} call sites: {frontier.task_probability_call_sites}",
-            "  Kenshi answers, per exact task and exact target, whether the player",
-            "  may issue it. Iterating a bounded task vocabulary against each",
-            "  nearby target replaces the literals above with the game's own",
-            "  answer, and makes the frontier fill in as the agent moves.",
+            "DISCOVERY MECHANISM ACTIVE",
+            f"  {CONTEXT_MENU_PROBE} call sites: {frontier.context_menu_probe_call_sites}",
+            "  Kenshi's own context-menu builder answers which orders apply to",
+            "  each exact target. The full TaskType vocabulary labels those raw",
+            "  values; only bespoke typed context-action routing remains bounded",
+            "  by the literals above.",
             "",
             "WITNESSED TARGET KINDS",
         )

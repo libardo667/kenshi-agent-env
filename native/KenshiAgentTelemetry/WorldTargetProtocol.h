@@ -7,21 +7,15 @@
 
 namespace KenshiAgentTelemetry
 {
-    // How Kenshi was asked. The answers are not equally trustworthy, and a list
-    // that mixes them without saying which is which is a list nobody can debug
-    // -- three separate calls were each mistaken for "what applies here" before
-    // provenance existed to tell them apart.
+    // How Kenshi was asked. Provenance remains explicit so a future reader
+    // cannot silently introduce another proxy for "what applies here".
     //
     //   menu - Kenshi's own context-menu builder produced this order for this
     //          target. Not a proxy for the answer, the answer: it is exactly
     //          what a player sees when they right-click.
-    //   odds - `getPlayerTaskProbability` returned a success chance above zero.
-    //          Sound when it fires, but silent for every order Kenshi renders
-    //          no percentage beside, so absence here means nothing at all.
     namespace AdvertisedTaskSource
     {
         extern const char* const MENU;
-        extern const char* const ODDS;
     }
 
     // One task Kenshi says the current selection may issue to one exact target.
@@ -43,12 +37,7 @@ namespace KenshiAgentTelemetry
         std::string source;
     };
 
-    // Union by task value, with `menu` outranking `odds`.
-    //
-    // The two probes overlap and disagree in both directions, so neither can be
-    // subtracted from the other. Reporting the union keeps every order Kenshi
-    // admitted to, and keeping the stronger provenance means a target that the
-    // menu vouched for never gets recorded under the weaker evidence.
+    // Deduplicate the context menu by task value while preserving its order.
     void MergeAdvertisedTask(
         std::vector<AdvertisedTask>& tasks,
         const AdvertisedTask& task);

@@ -452,11 +452,10 @@ ContextActionKind.OPERATE = ContextActionKind("operate")
 
 
 class AdvertisedTaskSource(StrEnum):
-    """How Kenshi was asked, because the answers are not equally trustworthy.
+    """How Kenshi was asked.
 
-    Three separate engine calls were each mistaken for "what applies here"
-    before provenance existed to tell them apart, and the cost was a day of
-    live diagnosis against a list nobody could attribute.
+    The only accepted authority is the context-menu builder. Keeping the source
+    explicit prevents a future proxy from entering the wire unnoticed.
     """
 
     MENU = "menu"
@@ -467,23 +466,14 @@ class AdvertisedTaskSource(StrEnum):
     muted.
     """
 
-    ODDS = "odds"
-    """`getPlayerTaskProbability` returned a success chance above zero.
-
-    Sound when it fires, and silent for every order Kenshi renders no
-    percentage beside - measured live it reported KIDNAP_ORDER and
-    STEALTH_KNOCKOUT on a cannibal whose menu offered attacking instead. Its
-    absence therefore means nothing at all.
-    """
-
 
 class AdvertisedTask(StrictModel):
     """One task Kenshi confirms the current selection may issue to a target.
 
     The value and name are the game's own; mapping either onto a controller
     semantic is the operation registry's job, not this model's. `source` records
-    which engine call vouched for it, so a wrong offer stays attributable to the
-    evidence that produced it.
+    that the context-menu builder vouched for it; other sources fail strict
+    validation instead of becoming compatibility affordances.
     """
 
     value: int = Field(ge=0)

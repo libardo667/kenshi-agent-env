@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from kenshi_agent.tooling.coverage_frontier import (
+    CONTEXT_MENU_PROBE,
     NATIVE_TARGET_SOURCES,
-    TASK_PROBABILITY_API,
     assess_coverage_frontier,
     render_coverage_frontier,
 )
@@ -47,22 +47,22 @@ def test_the_emittable_surface_bounds_coverage_not_the_witness_set() -> None:
 
 
 def test_the_lifting_mechanism_is_present_in_the_plugin() -> None:
-    """`getPlayerTaskProbability` already exists; it is called with one task."""
+    """The exact context-menu reader, not an inferred predicate, is active."""
 
     frontier = assess_coverage_frontier()
 
-    assert frontier.task_probability_call_sites >= 1
+    assert frontier.context_menu_probe_call_sites >= 1
     combined = "".join(
         path.read_text(encoding="utf-8", errors="replace") for path in NATIVE_TARGET_SOURCES
     )
-    assert TASK_PROBABILITY_API in combined
+    assert CONTEXT_MENU_PROBE in combined
 
 
 def test_render_names_the_ceiling_and_the_mechanism() -> None:
     body = "\n".join(render_coverage_frontier(assess_coverage_frontier()))
 
     assert "HARDCODED WORLD-TARGET SURFACE" in body
-    assert "MECHANISM AVAILABLE" in body
+    assert "DISCOVERY MECHANISM ACTIVE" in body
     assert "natural_resource" in body
     assert "first_aid" in body
 

@@ -37,8 +37,8 @@ The eventual dispatch is declared as
 `PlayerInterface::newPlayerTaskSelectedCharacters(...)` at RVA `0x7F93F0`.
 Current native source hooks both menu entry points, reads `orders`, re-probes at
 dispatch, and calls that task entry point only after the exact task remains
-advertised. Exact repository locations are machine-checked from
-`call_sites.json`.
+advertised. None of the three rejected candidate predicates remains a project
+call site. Exact repository locations are machine-checked from `call_sites.json`.
 
 ## Source inference
 

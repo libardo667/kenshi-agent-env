@@ -33,11 +33,51 @@
       "request": "Query getPlayerTaskProbability across the TaskType vocabulary for that exact target and compare positive results with the visible right-click menu.",
       "acknowledgement": "No native acknowledgement existed for this diagnostic.",
       "later_engine_evidence": "The odds getter returned KIDNAP_ORDER and STEALTH_KNOCKOUT; the menu offered ATTACK_ENEMIES and FOCUSED_MELEE_ATTACK and neither odds-bearing task.",
-      "final_disposition": "Retained only as an additional odds source; rejected as a replacement for the menu-derived set.",
+      "final_disposition": "Rejected and removed. It supplied false affordances absent from the player-visible menu and later caused a dump-proven ambient telemetry crash while evaluating PICK_LOCK_ON_SHACKLES against a nearby character.",
       "evidence_source": "Repository commit ce9a232337d7cae3248e8ad7e994bddef35e6c5e and its retained source rationale; no exact run bundle survives.",
       "remaining_uncertainty": [
         "The exact executable and installed DLL hashes at probe time were not captured.",
         "The visible-menu comparison was not preserved as a frame or typed bundle."
+      ]
+    },
+    {
+      "id": "task_probability_nearby_character_crash",
+      "kind": "crash",
+      "observed_on": "2026-08-10",
+      "kenshi_version": "1.0.65 x64",
+      "executable_sha256_at_probe": "504b362cde850d56afb1cea6f5b7b0ee014d9dd7b47e188599d91c804502cd3e",
+      "installed_dll_sha256_at_probe": "c8e3da7572b2074db55c941acd1ff26bdc4d302a6b8c8f62bd20b10e9b55e083",
+      "run_bundle": "runs/live-soak-native-launch-20260810-r1",
+      "durable_reduced_evidence": "game_sources/research/context_menu_orders/live_evidence/task-probability-crash-20260810.json",
+      "pre_dispatch_state": "A 120-turn native-assisted soak was travelling from The Hub to Squin. Nearby character count changed from zero to three as Hundred Guardians streamed in; ambient telemetry probed their advertised tasks.",
+      "request": "No gameplay request invoked the failing API. Telemetry serialization speculatively enumerated the entire 291-entry TaskType vocabulary against a nearby character and reached task 201 PICK_LOCK_ON_SHACKLES.",
+      "acknowledgement": "None. This was an ambient reader call, not a native command. The in-flight travel command remained accepted/issued when telemetry froze at sequence 470.",
+      "later_engine_evidence": "The minidump records access violation 0xc0000005 reading address 0x8 at kenshi_x64.exe RVA 0x297d86. The stack returns through getPlayerTaskProbability, the telemetry DLL probability loop, and nearby_entities serialization. Two retained 2026-08-06 dumps have the identical game RVA, null-plus-eight read, game return RVA, and telemetry-DLL caller class at Squin.",
+      "final_disposition": "Delete getPlayerTaskProbability as an affordance reader at every project call site. Retain the muted context-menu builder as the sole target-order authority; do not blacklist only task 201.",
+      "evidence_source": "Reduced evidence committed at game_sources/research/context_menu_orders/live_evidence/task-probability-crash-20260810.json from the exact ignored run and archived crash bundle.",
+      "remaining_uncertainty": [
+        "The minidump target pointer cannot be mapped to one of the three stable guardian IDs, so the exact individual is withheld.",
+        "The crash proves this API path unsafe; it does not prove every context-menu target and state is side-effect-free."
+      ]
+    },
+    {
+      "id": "task_probability_removal_squin_regression",
+      "kind": "live_probe",
+      "observed_on": "2026-08-10",
+      "kenshi_version": "1.0.65 x64",
+      "executable_sha256_at_probe": "504b362cde850d56afb1cea6f5b7b0ee014d9dd7b47e188599d91c804502cd3e",
+      "installed_dll_sha256_at_probe": "51226226dd80710ff16e5ef86708b750b6594bf0576b620d73b630f1775dfdf3",
+      "run_bundle": "runs/squin-probability-removal-regression-20260810-r1",
+      "durable_reduced_evidence": "game_sources/research/context_menu_orders/live_evidence/task-probability-removal-squin-regression-20260810.json",
+      "pre_dispatch_state": "The exact native-launch scenario loaded at The Hub with two selected characters. The replacement DLL and installed mod were hash-identical and the replacement binary contained no getPlayerTaskProbability import string.",
+      "request": "The agent issued native travel_to_map_destination for Squin. After arrival and populated nearby-character publication, it issued one exact approach_confirmed_vendor request against a streamed character target.",
+      "acknowledgement": "Travel was accepted at telemetry sequence 166 and completed at 296 with map_destination_reached. The character request was accepted at 348 and completed at 353 with exact_dialogue_target_open.",
+      "later_engine_evidence": "Squin telemetry reached 17 nearby characters and later remained fresh at sequence 448 with 16 nearby characters and six dialogue targets. That is 152 telemetry sequences after arrival and 95 after the character interaction; no crash bundle was created before deliberate shutdown, and final cleanup confirmed pause at sequence 449.",
+      "final_disposition": "Bounded live regression passes for removal of the ambient task-probability crash path. Preserve the broader context-menu feature as source-proven because this run does not exhaust every target and task state.",
+      "evidence_source": "Reduced evidence committed at game_sources/research/context_menu_orders/live_evidence/task-probability-removal-squin-regression-20260810.json from the exact ignored run bundle.",
+      "remaining_uncertainty": [
+        "One bounded populated-town pass cannot establish long-duration safety across every target and task state.",
+        "Human-input preemption caused a separate run-level cleanup timeout before final cleanup confirmed pause, so the overall run objective has no success disposition."
       ]
     },
     {
@@ -101,13 +141,13 @@
     {
       "id": "portable_probe_semantics",
       "kind": "portable_test",
-      "observed_on": "2026-08-09",
+      "observed_on": "2026-08-10",
       "kenshi_version": "No live executable loaded",
       "executable_sha256_at_probe": null,
       "installed_dll_sha256_at_probe": null,
       "run_bundle": null,
       "pre_dispatch_state": "Portable and compiled tests construct synthetic advertised-task lists and request fixtures without starting Kenshi.",
-      "request": "Exercise source tagging, menu-over-odds precedence, deduplication, probe completeness, binding, and acknowledgement parsing.",
+      "request": "Exercise strict menu-only source validation, deduplication, probe completeness, binding, and acknowledgement parsing.",
       "acknowledgement": "Synthetic fixture acknowledgements only.",
       "later_engine_evidence": "None; these tests do not load or observe the engine.",
       "final_disposition": "Test-proves repository semantics only and cannot upgrade a Kenshi behavior claim.",

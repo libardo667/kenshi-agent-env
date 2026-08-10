@@ -1,15 +1,16 @@
-# Checkpoint: fully native launch and save load
+# Checkpoint: remove the unsafe task-probability oracle
 
-This slice removes the supported launcher's mouse and keyboard machinery. The
-installed Kenshi bootstrap, its native settings dialog, the title screen, exact
-save/Game Start transitions, post-load pause, and causal evidence now form one
-strict launch path. Pointer-based gameplay fallbacks remain deleted; emergency
-stop and final host-safety fallback remain a deliberately separate boundary.
+This slice removes `PlayerInterface::getPlayerTaskProbability` from the native
+producer and deletes odds-derived affordances from Protocol 2.0. Character
+orders are now discovered and revalidated only through Kenshi's muted context
+menu, while resource-operation capacity retains its independent structural
+authority. The removal closes the repeated native crash class instead of
+blacklisting the one task value that happened to expose it first.
 
 ## Repository and authority
 
 ```text
-parent commit          344b39291f6db80f9dea762e9c9a1c10c7d80cb7
+parent commit          645ca30e585423b3e839354bcb7ed12d3b1cbcbf
 integration branch     main
 starting remote        origin/main at 1d53e57e787309975e75b710eba96b22d1feb12d
 starting tree          clean
@@ -18,14 +19,32 @@ request schema         1.5
 declared capabilities  50 loaded-world + 4 title-screen
 ```
 
-The current authorities are `src/kenshi_agent/tooling/live_dev.py`,
-`src/kenshi_agent/core/transport.py`, and
-`native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp`. Protocol 2.0 remains
+The current authorities are `native/KenshiAgentTelemetry/KenshiAgentTelemetry.cpp`,
+`native/KenshiAgentTelemetry/WorldTargetProtocol.cpp`, and
+`src/kenshi_agent/core/telemetry.py`. Protocol 2.0 remains
 strict: there is no reader for `TelemetrySnapshot.squad`, `native_control`,
 `NativeControlState.active_command_id`, or the former `acknowledgements` shape.
 Every consumer reads plural `controller_commands.commands`. The native producer
 may retain at most one record only until **2026-09-20**; that temporary
 producer-side exception must be deleted by the deadline.
+
+## Removed probability oracle
+
+- The producer no longer iterates all task vocabulary values through
+  `getPlayerTaskProbability`. The API has no project call site and supplies no
+  Protocol 2.0 evidence.
+- `AdvertisedTaskSource` now admits only `menu`; generated schemas reject
+  `odds`, and the old source has no compatibility reader.
+- Generic character orders, first aid, discovered target actions, and nearby
+  entity actions all use `ProbeMenuOrders`. Dispatch revalidates the exact
+  task against a fresh menu probe.
+- Resource operation remains available through exact resource type, capacity,
+  and current-operator state. Contextual menu orders remain supplementary
+  evidence, not capacity authority.
+- The reduced crash artifact under
+  `game_sources/research/context_menu_orders/live_evidence/` records the exact
+  dump signature, decisive telemetry, binaries, request and acknowledgement,
+  omitted-file hashes, replications, and final disposition.
 
 ## Native launch contract
 
@@ -78,9 +97,11 @@ cross-session acknowledgement; and `_perform_launch` contains no click, key,
 hotkey, primitive-input, or input-lease delivery.
 
 Build- and installed-proven: the Release x64 native fixture executable reported
-`Native protocol fixtures and semantics passed.` The preserved final DLL,
-current build, and installed mod have identical SHA-256. The pre-cutover DLL is
-preserved separately for exact rollback.
+`Native protocol fixtures and semantics passed.` The replacement build, staged
+mod, installed mod, and preserved replacement have identical SHA-256. The old
+installed DLL contains the decorated `getPlayerTaskProbability` import string;
+the replacement DLL does not. The pre-removal DLL is preserved separately for
+exact rollback.
 
 Live-proven: `./dev launch --title --timeout 120` reached a fresh Protocol 2.0
 title without physical input. A separate fresh Continue run loaded a new world
@@ -96,15 +117,26 @@ The reduced committed artifact
 title/load/pause frames, request, terminal cross-session acknowledgement,
 scenario attestation, hashes for omitted raw files, and final disposition.
 
+The bounded regression run
+`squin-probability-removal-regression-20260810-r1` then travelled natively from
+The Hub to Squin. Travel completed at telemetry sequence 296 with 16 nearby
+characters; the run reached 17, completed an exact character-target interaction
+at sequence 353, and continued publishing through sequence 448 without a crash.
+Final cleanup confirmed pause at 449 before deliberate close. Its reduced
+artifact preserves the requests, acknowledgements, decisive frames, installed
+binary, omitted-file hashes, run-level cleanup caveat, and final disposition.
+
 ## DLL artifacts and exact reinstall commands
 
 ```text
-pre-cutover DLL sha256   f68f63889ad29bcb63a267bdbd746f56f200357dda193e58fee608223fa68913
-pre-cutover DLL size     425472
-native-launch DLL sha256 c8e3da7572b2074db55c941acd1ff26bdc4d302a6b8c8f62bd20b10e9b55e083
-native-launch DLL size   430080
-installed parity         YES
-conformance exe sha256   c0138500b6105beebda3e95eab920ba8495d707db272ae1ee69611aa9e7c3ab2
+pre-removal DLL sha256   c8e3da7572b2074db55c941acd1ff26bdc4d302a6b8c8f62bd20b10e9b55e083
+pre-removal DLL size     430080
+replacement DLL sha256   51226226dd80710ff16e5ef86708b750b6594bf0576b620d73b630f1775dfdf3
+replacement DLL size     429056
+replacement PDB sha256   a2fe570e8a76129cd597c4382e75c4a6d3d1545e07558d5a895ea8a6a06c6ec2
+replacement PDB size     11127808
+installed/staged parity  YES
+conformance exe sha256   637cf2c0951f35caddd8f405f331301be7ed5e439a074564a5a686a91288700e
 conformance exe size     311808
 ```
 
@@ -120,16 +152,16 @@ Install the current build directly:
 Copy-Item -LiteralPath 'C:\Users\levib\AppData\Local\KenshiAgent\build\native\bin\KenshiAgentTelemetry.dll' -Destination 'C:\Program Files (x86)\Steam\steamapps\common\Kenshi\mods\KenshiAgentTelemetry\KenshiAgentTelemetry.dll' -Force
 ```
 
-Reinstall the preserved native-launch artifact:
+Reinstall the preserved probability-oracle-removal artifact:
 
 ```powershell
-Copy-Item -LiteralPath 'C:\Users\levib\AppData\Local\KenshiAgent\backups\native\20260810-native-launch\native-launch-final\KenshiAgentTelemetry.dll' -Destination 'C:\Program Files (x86)\Steam\steamapps\common\Kenshi\mods\KenshiAgentTelemetry\KenshiAgentTelemetry.dll' -Force
+Copy-Item -LiteralPath 'C:\Users\levib\AppData\Local\KenshiAgent\backups\native\20260810-probability-oracle-removal\replacement\KenshiAgentTelemetry.dll' -Destination 'C:\Program Files (x86)\Steam\steamapps\common\Kenshi\mods\KenshiAgentTelemetry\KenshiAgentTelemetry.dll' -Force
 ```
 
-Rollback this slice to the preserved pre-cutover Protocol 2.0 DLL:
+Rollback this slice to the preserved crash-reproducing Protocol 2.0 DLL:
 
 ```powershell
-Copy-Item -LiteralPath 'C:\Users\levib\AppData\Local\KenshiAgent\backups\native\20260810-native-launch\pre-cutover\KenshiAgentTelemetry.dll' -Destination 'C:\Program Files (x86)\Steam\steamapps\common\Kenshi\mods\KenshiAgentTelemetry\KenshiAgentTelemetry.dll' -Force
+Copy-Item -LiteralPath 'C:\Users\levib\AppData\Local\KenshiAgent\backups\native\20260810-probability-oracle-removal\pre-cutover\KenshiAgentTelemetry.dll' -Destination 'C:\Program Files (x86)\Steam\steamapps\common\Kenshi\mods\KenshiAgentTelemetry\KenshiAgentTelemetry.dll' -Force
 ```
 
 ## Withheld and named follow-on work

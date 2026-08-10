@@ -257,26 +257,14 @@ def test_non_combat_orders_travel_the_same_path(order: str) -> None:
     assert result.bound is True
 
 
-def test_the_evidence_for_an_order_reaches_the_receipt() -> None:
-    """A bound order records which probe vouched for it.
-
-    The two probes disagree in both directions, so "Kenshi advertised it" is
-    not a single claim. An order that binds and then fails to take must be
-    attributable to its evidence from the receipt alone, not from a rerun.
-    """
+def test_the_menu_authority_for_an_order_reaches_the_receipt() -> None:
+    """A bound order records that the real menu path vouched for it."""
 
     observation = _world(
         _person(
             "e-bandit",
             "Hungry bandit",
-            tasks=[
-                AdvertisedTask(value=9, name="CHOOSE_ENEMY_AND_ATTACK", source=MENU),
-                AdvertisedTask(
-                    value=125,
-                    name="KIDNAP_ORDER",
-                    source=AdvertisedTaskSource.ODDS,
-                ),
-            ],
+            tasks=[AdvertisedTask(value=9, name="CHOOSE_ENEMY_AND_ATTACK", source=MENU)],
         )
     )
 
@@ -284,41 +272,15 @@ def test_the_evidence_for_an_order_reaches_the_receipt() -> None:
         PerformCharacterOrderAction(target_id="e-bandit", order="choose_enemy_and_attack"),
         observation,
     )
-    kidnap = bind_perform_character_order(
-        PerformCharacterOrderAction(target_id="e-bandit", order="kidnap_order"),
-        observation,
-    )
-
     assert attack.bound is True
     assert "evidence: menu" in attack.reason
-    assert kidnap.bound is True
-    assert "evidence: odds" in kidnap.reason
 
 
-def test_both_probes_answering_for_one_person_offer_the_union() -> None:
-    """Neither probe can be subtracted from the other, so nothing is dropped.
+def test_probability_only_compatibility_source_is_rejected() -> None:
+    """A retired probability result cannot re-enter through old telemetry."""
 
-    The odds getter reported KIDNAP_ORDER on a cannibal whose own menu offered
-    attacking and not kidnapping. Preferring either source alone loses real
-    orders, so the offer is the union of what both admitted to.
-    """
-
-    observation = _world(
-        _person(
-            "e-bandit",
-            "Hungry bandit",
-            tasks=[
-                AdvertisedTask(value=16, name="ATTACK_ENEMIES", source=MENU),
-                AdvertisedTask(
-                    value=125,
-                    name="KIDNAP_ORDER",
-                    source=AdvertisedTaskSource.ODDS,
-                ),
-            ],
-        )
-    )
-
-    assert _semantics(observation) == {"attack_enemies", "kidnap_order"}
+    with pytest.raises(ValueError):
+        AdvertisedTask(value=125, name="KIDNAP_ORDER", source="odds")
 
 
 def test_an_order_kenshi_never_advertised_has_no_evidence() -> None:

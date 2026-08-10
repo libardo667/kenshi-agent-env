@@ -2,7 +2,7 @@
   "$defs": {
     "AdvertisedTask": {
       "additionalProperties": false,
-      "description": "One task Kenshi confirms the current selection may issue to a target.\n\nThe value and name are the game's own; mapping either onto a controller\nsemantic is the operation registry's job, not this model's. `source` records\nwhich engine call vouched for it, so a wrong offer stays attributable to the\nevidence that produced it.",
+      "description": "One task Kenshi confirms the current selection may issue to a target.\n\nThe value and name are the game's own; mapping either onto a controller\nsemantic is the operation registry's job, not this model's. `source` records\nthat the context-menu builder vouched for it; other sources fail strict\nvalidation instead of becoming compatibility affordances.",
       "properties": {
         "value": {
           "minimum": 0,
@@ -28,10 +28,9 @@
       "type": "object"
     },
     "AdvertisedTaskSource": {
-      "description": "How Kenshi was asked, because the answers are not equally trustworthy.\n\nThree separate engine calls were each mistaken for \"what applies here\"\nbefore provenance existed to tell them apart, and the cost was a day of\nlive diagnosis against a list nobody could attribute.",
+      "description": "How Kenshi was asked.\n\nThe only accepted authority is the context-menu builder. Keeping the source\nexplicit prevents a future proxy from entering the wire unnoticed.",
       "enum": [
-        "menu",
-        "odds"
+        "menu"
       ],
       "title": "AdvertisedTaskSource",
       "type": "string"

@@ -28,8 +28,10 @@ portable_test_refs:
   - portable_probe_semantics
 live_probe_ids:
   - character_order_goal_adoption
+  - task_probability_removal_squin_regression
 crash_ids:
   - problem_check_world_load_crashes
+  - task_probability_nearby_character_crash
 contradiction_ids:
   - selection_filter_admits_every_task
   - odds_and_menu_disagree
@@ -52,25 +54,27 @@ For the exact binary and library fingerprints above, KenshiLib declares separate
 menu-construction and menu-drawing entry points. Current native source calls the
 saved `ContextMenu::showContextMenu` implementation under a guard, suppresses
 `ContextMenuGUI::show`, copies the resulting `ContextMenu::orders`, and uses the
-same combined probe again before dispatch. The candidate predicate signatures,
+same menu probe again before dispatch. The candidate predicate signatures,
 their RVAs, and the final task-dispatch entry point are recorded rather than
 being implied by prose.
 
 ## Test-proven
 
-Portable tests prove project-owned vocabulary mapping, evidence-source
-preservation, menu-over-odds precedence, “not probed” handling, binding, and
-wire validation. The compiled native fixture proves the same merge semantics.
+Portable tests prove project-owned vocabulary mapping, menu-only source
+validation, “not probed” handling, binding, and wire validation. The compiled
+native fixture proves the same menu serialization and deduplication semantics.
 Neither test class loads Kenshi, validates the ABI, or proves a world change.
 
 ## Live-proven
 
-Historical sessions observed predicate disagreement, gameplay-facing side
-effects, two crashes, target-specific offers, and later exact task adoption.
-Those observations remain recorded in `dynamic_observations.json`, but no exact
-run bundle preserves the required pre-state, request ids, acknowledgements,
-later sequences, and binary hashes. They therefore inform the implementation
-without supporting a durable `live_proven` repository classification.
+The 2026-08-10 soak and crash archive durably prove that the probability reader
+crashed during ambient nearby-character publication. Its reduced artifact pins
+the exact run, installed DLL, decisive telemetry, dump exception and stack, and
+hashes of omitted raw files. A second exact Squin run with the replacement DLL
+reached 17 nearby characters, completed an exact character-target interaction,
+and kept publishing through sequence 448 without a crash. That bounded result
+live-proves the regression trigger but does not upgrade every context-menu order
+or eventual outcome to `live_proven`.
 
 ## Withheld
 

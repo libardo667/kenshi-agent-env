@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "kind": "reduced_live_regression_evidence",
+  "run_id": "squin-probability-removal-regression-20260810-r1",
+  "source_run": "runs/squin-probability-removal-regression-20260810-r1",
+  "manifest": {
+    "scenario_id": "native-launch-exact-load-20260810",
+    "scenario_fixture_digest": "105fc162134f60379812a246f1e2e00c3f8d24e935b49ef1213068ca3f3787c3",
+    "objective": "Travel directly to Squin using the native travel operation. Do not trade, survey, or perform optional actions. After Squin is reached, remain there long enough for nearby characters to stream in, then report success.",
+    "requested_turns": 20,
+    "completed_action_attempts": 10,
+    "control_mode": "native_assisted",
+    "run_level_success": null,
+    "run_stop_reason": "Human-input preemption began cleanup; the run-level cleanup timed out before a causal pause, then final cleanup confirmed pause at telemetry sequence 449.",
+    "regression_disposition": "Passed the bounded crash regression independently of the run-level objective disposition.",
+    "binary_provenance": {
+      "loaded_executable": {
+        "path": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\RE_Kenshi\\kenshi_x64.exe",
+        "size_bytes": 36713984,
+        "sha256": "504b362cde850d56afb1cea6f5b7b0ee014d9dd7b47e188599d91c804502cd3e"
+      },
+      "built_dll": {
+        "path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\build\\native\\bin\\KenshiAgentTelemetry.dll",
+        "size_bytes": 429056,
+        "sha256": "51226226dd80710ff16e5ef86708b750b6594bf0576b620d73b630f1775dfdf3"
+      },
+      "installed_dll": {
+        "path": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll",
+        "size_bytes": 429056,
+        "sha256": "51226226dd80710ff16e5ef86708b750b6594bf0576b620d73b630f1775dfdf3"
+      },
+      "matching_pdb": {
+        "path": "C:\\Users\\levib\\AppData\\Local\\KenshiAgent\\build\\native\\bin\\KenshiAgentTelemetry.pdb",
+        "size_bytes": 11127808,
+        "sha256": "a2fe570e8a76129cd597c4382e75c4a6d3d1545e07558d5a895ea8a6a06c6ec2"
+      }
+    }
+  },
+  "request_and_acknowledgement": {
+    "travel": {
+      "command_id": "cmd-1c97c720c9cb4c029a4f4ce366762d6e",
+      "command": "travel_to_map_destination",
+      "destination": "Squin",
+      "based_on_telemetry_sequence": 165,
+      "accepted_at_telemetry_sequence": 166,
+      "accepted_status": "accepted",
+      "accepted_reason": "issued",
+      "terminal_at_telemetry_sequence": 296,
+      "terminal_status": "completed",
+      "terminal_reason": "map_destination_reached"
+    },
+    "populated_character_interaction": {
+      "command_id": "cmd-c36a69825756496bab9d904695f88056",
+      "command": "approach_confirmed_vendor",
+      "target_id": "entity-bec48b82c75666ff-0000000000000002-00000001-00000000-00000000-00000001-9dfd7a00",
+      "based_on_telemetry_sequence": 347,
+      "accepted_at_telemetry_sequence": 348,
+      "accepted_status": "accepted",
+      "accepted_reason": "issued",
+      "terminal_at_telemetry_sequence": 353,
+      "terminal_status": "completed",
+      "terminal_reason": "exact_dialogue_target_open"
+    }
+  },
+  "decisive_telemetry_frames": [
+    {
+      "telemetry_sequence": 166,
+      "frame_sequence": 1,
+      "location_name": "The Hub",
+      "inside_town_walls": false,
+      "nearby_entity_count": 5,
+      "dialogue_target_count": 1,
+      "selected_position": {"x": -51153.37, "y": 1531.699, "z": 3056.965},
+      "travel_status": "accepted"
+    },
+    {
+      "telemetry_sequence": 296,
+      "frame_sequence": 1,
+      "location_name": "Squin",
+      "inside_town_walls": true,
+      "nearby_entity_count": 16,
+      "dialogue_target_count": 6,
+      "selected_position": {"x": -62454.19, "y": 324.9329, "z": 16341.66},
+      "travel_status": "completed",
+      "travel_reason": "map_destination_reached"
+    },
+    {
+      "telemetry_sequence": 347,
+      "frame_sequence": 3,
+      "location_name": "Squin",
+      "inside_town_walls": true,
+      "nearby_entity_count": 17,
+      "dialogue_target_count": 6,
+      "selected_position": {"x": -62447.46, "y": 325.0058, "z": 16350.43},
+      "disposition": "Fresh populated-town frame immediately before a character-target command."
+    },
+    {
+      "telemetry_sequence": 353,
+      "frame_sequence": 3,
+      "location_name": "Squin",
+      "inside_town_walls": true,
+      "nearby_entity_count": 16,
+      "dialogue_target_count": 6,
+      "selected_position": {"x": -62573.48, "y": 331.8166, "z": 16260.27},
+      "character_interaction_status": "completed",
+      "character_interaction_reason": "exact_dialogue_target_open"
+    },
+    {
+      "telemetry_sequence": 448,
+      "frame_sequence": 8,
+      "location_name": "Squin",
+      "inside_town_walls": true,
+      "nearby_entity_count": 16,
+      "dialogue_target_count": 6,
+      "selected_position": {"x": -62569.5, "y": 331.6004, "z": 16247.24},
+      "disposition": "Last run observation: 152 telemetry sequences after arrival and 95 after the completed character interaction, with the populated nearby-character publisher still advancing."
+    },
+    {
+      "telemetry_sequence": 449,
+      "disposition": "Final cleanup confirmed the game paused before deliberate process close."
+    }
+  ],
+  "omitted_raw_file_hashes": [
+    {
+      "path": "runs/squin-probability-removal-regression-20260810-r1/events.jsonl",
+      "size_bytes": 7486210,
+      "sha256": "5c80b4b57d8dc254568b8dce5b0400f69f58f13e4e49b9f583404f8b1454917e"
+    },
+    {
+      "path": "runs/squin-probability-removal-regression-20260810-r1/frames/live_frame_000008.png",
+      "size_bytes": 1695447,
+      "sha256": "8c27b2babed9a05724101f83a6d0522a2d4c3d4a51273b3958833061a99c7da2"
+    }
+  ],
+  "final_disposition": {
+    "live_result": "The replacement DLL crossed the former Squin/populated-nearby-character trigger without a crash. It reached 17 nearby characters, completed one exact character-target interaction, and continued publishing through telemetry sequence 448 before deliberate shutdown.",
+    "crash_archive": "No crash archive was created during this run; the newest retained crash archive remained the pre-fix 20260810T083036.594547Z bundle.",
+    "source_result": "The replacement binary contains no getPlayerTaskProbability import string; the pre-cutover binary does. Repository source has no project call site.",
+    "withheld": "One bounded pass does not prove every target, task, or long-duration state safe. The run-level objective result is not success because human-input cleanup preempted it; that separate control disposition is not upgraded by this crash regression."
+  }
+}

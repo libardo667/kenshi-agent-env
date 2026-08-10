@@ -4,7 +4,7 @@
 // Generated from game_sources/kenshi/TaskType.h; edits are overwritten.
 // Upper-bound vocabulary of Kenshi task types. Membership here does not
 // mean a task is player-orderable against any given target; it means the
-// value exists and may be probed. Kenshi answers the actual question.
+// value exists and may be advertised. Kenshi answers the actual question.
 
 namespace KenshiAgentTelemetry
 {

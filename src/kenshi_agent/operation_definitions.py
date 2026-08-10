@@ -723,10 +723,9 @@ def bind_perform_character_order(
             f"Kenshi does not currently offer {action.order!r} on {target.name!r} "
             f"({target.id}). Offered: {', '.join(offered) if offered else 'nothing'}."
         )
-    # Which probe vouched for it travels into the reason. When an order binds
-    # and then fails to take, the receipt already says whether the game's own
-    # menu offered it or only the odds getter did, so the disagreement is
-    # attributable without a second live run.
+    # The authority travels into the reason. A receipt therefore proves the
+    # game's own context menu offered the order rather than merely saying
+    # "Kenshi advertised it" without naming the reader.
     sources = ", ".join(sorted(target.order_evidence(action.order)))
     return BoundNamedTarget(
         reason=(

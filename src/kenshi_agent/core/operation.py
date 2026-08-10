@@ -492,12 +492,12 @@ class ShiftIntoBodyAction(StrictModel):
 class PerformCharacterOrderAction(StrictModel):
     """Issue one order Kenshi already says this person affords.
 
-    Deliberately one operation rather than a verb per gameplay action. Kenshi
-    answers `getPlayerTaskProbability` for every task in its own vocabulary
-    against a given target, so which orders apply to a bandit, a corpse, or a
-    downed squadmate is the engine's judgment, arriving in telemetry as
-    `advertised_tasks`. Attacking, looting, and first aid are then the same
-    operation with a different name on it.
+    Deliberately one operation rather than a verb per gameplay action. The
+    plug-in asks Kenshi to build the exact context menu it would show for the
+    target while muting only the renderer. Which orders apply to a bandit, a
+    corpse, or a downed squadmate is therefore the engine's judgment, arriving
+    in telemetry as `advertised_tasks`. Attacking, looting, and first aid are
+    then the same operation with a different name on it.
 
     The alternative -- one typed action per verb, each with its own eligibility
     fence -- means re-deriving in Python what the game already computed, and

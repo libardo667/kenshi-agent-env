@@ -1527,19 +1527,9 @@ namespace
             defaultTaskOperatesMachinery);
     }
 
-    // Ask Kenshi what the current selection may order this exact target to do.
-    //
-    // This replaces guessing. The plug-in used to state a target's affordances
-    // as fixed literals, which capped discovery at whatever had been written
-    // down: an agent could walk past anything and learn nothing, because
-    // nothing asked. `getPlayerTaskProbability` is the game's own answer, and
-    // the vocabulary iterated here is generated from Kenshi's TaskType enum
-    // rather than curated, so the ceiling is the game's rather than ours.
-    //
-    // `isOrderValidForSelection` is checked first because it is a cheap
-    // selection-level filter, and it is the same pair the existing first-aid
-    // route already uses to authorize a dispatch.
-    // The wire names an order the way the telemetry advertised it: the
+    // Resolve one order name from the same source-derived vocabulary used to
+    // label Kenshi's context-menu values. The wire names an order the way the
+    // telemetry advertised it: the
     // vocabulary name, lowercased. Resolving here keeps raw task numbers off
     // the wire, so a command stays readable in a run bundle a year from now.
     bool ResolveAdvertisedTaskName(const std::string& name, TaskType& resolved)
@@ -1660,49 +1650,16 @@ namespace
         return true;
     }
 
-    // Everything a target affords, from every source that will answer for it.
-    //
-    // The menu is asked first and its answers outrank the odds probe, but the
-    // odds probe is still run: the two disagree in both directions, so neither
-    // can be subtracted from the other. `isOrderValidForSelection` is not
-    // consulted, because a filter that admits all 291 only makes a wrong answer
-    // unattributable.
-    //
-    // One function for people and objects alike. The split into two probes was
-    // an artefact of `checkPlayerOrderForProblems` being safe on characters and
-    // fatal on arbitrary RootObjects; the menu takes a RootObject* and treats
-    // a bandit, a mining node and a door the same way, which is what let the
-    // split go.
-    // Returns whether the menu could be asked. A probe that could not run is
-    // not a denial, and the two must stay distinguishable at dispatch.
-    bool ProbeAdvertisedTasks(
-        PlayerInterface* player,
-        RootObject* target,
-        std::vector<KenshiAgentTelemetry::AdvertisedTask>& advertised)
+    bool HasAdvertisedTask(
+        const std::vector<KenshiAgentTelemetry::AdvertisedTask>& advertised,
+        TaskType expected)
     {
-        if (player == NULL || target == NULL)
-            return false;
-        const bool menuAsked = ProbeMenuOrders(player, target, advertised);
-        unsigned int vocabularyCount = 0;
-        const KenshiAgentTelemetry::TaskTypeVocabularyEntry* vocabulary =
-            KenshiAgentTelemetry::TaskTypeVocabulary(vocabularyCount);
-        for (unsigned int index = 0; index < vocabularyCount; ++index)
+        for (unsigned int index = 0; index < advertised.size(); ++index)
         {
-            const TaskType task =
-                static_cast<TaskType>(vocabulary[index].value);
-            float probability = 0.0f;
-            if (!player->getPlayerTaskProbability(task, target, probability))
-                continue;
-            if (!(probability > 0.0f))
-                continue;
-            KenshiAgentTelemetry::MergeAdvertisedTask(
-                advertised,
-                KenshiAgentTelemetry::AdvertisedTask(
-                    vocabulary[index].value,
-                    vocabulary[index].name,
-                    KenshiAgentTelemetry::AdvertisedTaskSource::ODDS));
+            if (advertised[index].value == static_cast<int>(expected))
+                return true;
         }
-        return menuAsked;
+        return false;
     }
 
     // One completed prospecting survey, held until the next replaces it.
@@ -2202,7 +2159,8 @@ namespace
                 ++probes;
 
                 std::vector<KenshiAgentTelemetry::AdvertisedTask> advertised;
-                ProbeAdvertisedTasks(player, object, advertised);
+                const bool advertisedTasksProbed =
+                    ProbeMenuOrders(player, object, advertised);
 
                 if (!first)
                     json << ",";
@@ -2215,7 +2173,7 @@ namespace
                      << Distance(object->getPosition(), selectedPosition) << ",";
                 KenshiAgentTelemetry::AppendAdvertisedTasks(
                     json,
-                    true,
+                    advertisedTasksProbed,
                     advertised);
                 json << "}";
             }
@@ -2258,7 +2216,8 @@ namespace
             ++probes;
 
             std::vector<KenshiAgentTelemetry::AdvertisedTask> advertised;
-            ProbeAdvertisedTasks(player, object, advertised);
+            const bool advertisedTasksProbed =
+                ProbeMenuOrders(player, object, advertised);
 
             if (!first)
                 json << ",";
@@ -2269,7 +2228,10 @@ namespace
             json << "\"category\":\"" << ObjectCategoryName(object) << "\",";
             json << "\"distance\":"
                  << Distance(object->getPosition(), selectedPosition) << ",";
-            KenshiAgentTelemetry::AppendAdvertisedTasks(json, true, advertised);
+            KenshiAgentTelemetry::AppendAdvertisedTasks(
+                json,
+                advertisedTasksProbed,
+                advertised);
             json << "}";
         }
 
@@ -5054,31 +5016,15 @@ namespace
                         : "target_lifetime_changed");
                 return;
             }
-            // Kenshi is the authority on whether this order applies to this
-            // target, and it is asked again here rather than trusting the
-            // offer: a target that stopped affording the order between
-            // publication and dispatch must be refused, not ordered at.
-            //
-            // It is asked with the same function that published the offer.
-            // This check used to be `isOrderValidForSelection` plus
-            // `getPlayerTaskProbability`, which meant dispatch and publication
-            // consulted different oracles -- and since the odds getter reports
-            // nothing for attacking or looting, it would have rejected every
-            // order this path exists to carry, under a reason code that named
-            // the target rather than the disagreement.
+            // Kenshi's context menu is the authority on whether this order
+            // applies to this target, and it is asked again here rather than
+            // trusting the offer. Publication and dispatch deliberately consult
+            // the same game-owned answer.
             std::vector<KenshiAgentTelemetry::AdvertisedTask> dispatchTasks;
             const bool menuAsked =
-                ProbeAdvertisedTasks(player, target, dispatchTasks);
-            bool stillAdvertised = false;
-            for (unsigned int index = 0; index < dispatchTasks.size(); ++index)
-            {
-                if (dispatchTasks[index].value ==
-                    static_cast<int>(orderedTask))
-                {
-                    stillAdvertised = true;
-                    break;
-                }
-            }
+                ProbeMenuOrders(player, target, dispatchTasks);
+            const bool stillAdvertised =
+                HasAdvertisedTask(dispatchTasks, orderedTask);
             if (!stillAdvertised)
             {
                 // A probe that could not run is not a denial. Saying so keeps
@@ -5166,15 +5112,16 @@ namespace
                         : "target_lifetime_changed");
                 return;
             }
-            float taskProbability = 0.0f;
-            if (!player->isOrderValidForSelection(FIRST_AID_ORDER) ||
-                !player->getPlayerTaskProbability(
-                    FIRST_AID_ORDER,
-                    target,
-                    taskProbability) ||
-                !(taskProbability > 0.0f))
+            std::vector<KenshiAgentTelemetry::AdvertisedTask> advertised;
+            const bool menuAsked =
+                ProbeMenuOrders(player, target, advertised);
+            if (!HasAdvertisedTask(advertised, FIRST_AID_ORDER))
             {
-                RejectNativeCommand(request, "context_action_unavailable");
+                RejectNativeCommand(
+                    request,
+                    menuAsked
+                        ? "context_action_unavailable"
+                        : "order_probe_unavailable");
                 return;
             }
             Character* selected = selectedHandle.getCharacter();
@@ -7028,11 +6975,15 @@ namespace
                 const bool probeThisTarget =
                     probeIds.find(targetId) != probeIds.end();
                 std::vector<KenshiAgentTelemetry::AdvertisedTask> advertised;
+                bool advertisedTasksProbed = false;
                 if (probeThisTarget)
-                    ProbeAdvertisedTasks(player, target, advertised);
+                {
+                    advertisedTasksProbed =
+                        ProbeMenuOrders(player, target, advertised);
+                }
                 KenshiAgentTelemetry::AppendAdvertisedTasks(
                     json,
-                    probeThisTarget,
+                    advertisedTasksProbed,
                     advertised);
                 json << "}";
             }
@@ -7084,11 +7035,9 @@ namespace
         if (player != NULL &&
             selected != NULL &&
             selected->isValid() &&
-            characters != NULL &&
-            player->isOrderValidForSelection(FIRST_AID_ORDER))
+            characters != NULL)
         {
             const Ogre::Vector3 selectedPosition = selected->getPosition();
-            unsigned int probedSquadTargets = 0;
             for (unsigned int index = 0; index < characters->size(); ++index)
             {
                 Character* target = (*characters)[index];
@@ -7098,12 +7047,11 @@ namespace
                 {
                     continue;
                 }
-                float taskProbability = 0.0f;
-                if (!player->getPlayerTaskProbability(
-                        FIRST_AID_ORDER,
-                        target,
-                        taskProbability) ||
-                    !(taskProbability > 0.0f))
+                std::vector<KenshiAgentTelemetry::AdvertisedTask> advertised;
+                const bool menuAsked =
+                    ProbeMenuOrders(player, target, advertised);
+                if (!menuAsked ||
+                    !HasAdvertisedTask(advertised, FIRST_AID_ORDER))
                 {
                     continue;
                 }
@@ -7125,19 +7073,9 @@ namespace
                      << Distance(targetPosition, selectedPosition) << ",";
                 json << "\"context_actions\":[\"first_aid\"],";
                 json << "\"default_task\":\"first_aid\",";
-                std::vector<KenshiAgentTelemetry::AdvertisedTask> advertised;
-                const bool probeSquadTarget =
-                    KenshiAgentTelemetry::IsWithinTargetProbeBudget(
-                        probedSquadTargets,
-                        MAX_PROBED_WORLD_TARGETS);
-                if (probeSquadTarget)
-                {
-                    ++probedSquadTargets;
-                    ProbeAdvertisedTasks(player, target, advertised);
-                }
                 KenshiAgentTelemetry::AppendAdvertisedTasks(
                     json,
-                    probeSquadTarget,
+                    true,
                     advertised);
                 json << "}";
             }
@@ -7205,8 +7143,10 @@ namespace
                 if (found == candidateObjects.end())
                     continue;
                 ++probedTargets;
-                it->advertisedTasksProbed = true;
-                ProbeAdvertisedTasks(player, found->second, it->advertisedTasks);
+                it->advertisedTasksProbed = ProbeMenuOrders(
+                    player,
+                    found->second,
+                    it->advertisedTasks);
             }
             for (std::vector<NaturalResourceTargetSnapshot>::const_iterator it =
                      targets.begin();
