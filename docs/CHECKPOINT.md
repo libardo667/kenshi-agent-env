@@ -10,7 +10,7 @@ purchases, and bodyguard hire.
 ## Repository and authority
 
 ```text
-parent commit          72dddb637a4ff8c456eefb620cd8fd9186c4235a
+parent commit          3432b558c7d07dd0e42b412e4c89ff383f68dc34
 integration branch     main
 starting tree          clean
 producer protocol      2.0.0
@@ -39,9 +39,19 @@ claim simultaneous active gameplay-command ownership.
   `produce_resource_output`, whose native monitor owns exact accepted-operator
   admission, advances the complete observed output total by one up to five,
   waits for that exact threshold, and releases controller-owned work.
-- The productive command establishes gear 3 / 5x through the native
-  `set_speed` command. No speed key, pause key, pointer action, or input lease is
+- The productive command enforces gear 1 / 1x throughout approach. It may
+  establish gear 3 / 5x only after later engine-owned resource state contains
+  an exact command recipient in `current_operator_ids`. If that positive gate
+  withdraws, the command returns to 1x; every terminal and cancellation also
+  restores 1x. Command acceptance, selection, queues, activity, and animation
+  are not stationary-work evidence.
+- Long map travel and squad regroup enforce gear 1 / 1x even if a prior state
+  was running faster. No speed key, pause key, pointer action, or input lease is
   used in a healthy native-assisted session.
+- Planner-authored `set_speed` now offers only gear 1. Safety and the live
+  runtime independently reject direct gears 2 and 3, and the auditable
+  heuristic normalizes faster playback to 1x instead of accelerating. Faster
+  gears are exclusively operation-owned behind an exact stationary/local gate.
 - Native time control completes synchronously without replacing or mutating the
   active monitored gameplay command. Both records remain independently
   addressable in the plural retained-command collection.
@@ -75,7 +85,13 @@ Source- and focused-test-proven:
   and contains no `PublishedNativeCommandRecord` singleton bridge;
 - clock dispatch is admitted while one gameplay command is active without
   mutating that command's ownership fields;
-- productive mining selects 5x natively and emits zero desktop primitives;
+- productive mining stays at 1x without exact operator admission, enters 5x
+  only while an exact recipient remains admitted, restores 1x on gate
+  withdrawal, terminal, and cancellation, and emits zero desktop primitives;
+- long map travel and squad regroup explicitly downshift to and retain 1x;
+- the generic speed affordance is normal-speed-only, direct faster live actions
+  fail before native dispatch, and the fallback heuristic downshifts rather
+  than accelerating;
 - natural resources no longer advertise the indefinite generic operation;
 - remote, same-owner, non-primary, stale, and unknown-distance trade requests
   fail before rendering;
@@ -180,6 +196,51 @@ frame proves character-editor mode absent. Source, strict models, shared wire
 fixture, portable tests, compiled conformance, and installed parity are proven;
 the new command's live outcome remains explicitly unproven.
 
+Run `protocol-2-native-survival-soak-20260810-r8` reached 37 turns before the
+Kenshi process exited. The Windows minidump reports exception `0xe06d7363` and
+its captured stack passes through `KERNELBASE`,
+`RenderSystem_Direct3D11_x64`, `OgreMain_x64`, and `Plugin_Terrain_x64`, with
+no project DLL frame in the captured stack. Kenshi's exact log reports a
+`D3D11HardwareBuffer` failure and DXGI `0x887A0006` (`device hung`). Older July
+27, July 29, and August 2 dumps share this D3D11/Ogre family. This is evidence
+of renderer instability, not proof that 5x world streaming caused the crash.
+
+Because accelerated world streaming is a plausible pressure multiplier, the
+current candidate narrows high playback to exact stationary resource work.
+Source and focused tests prove the phase policy above. Every native request is
+also archived by command ID in the ignored run bundle before its one-slot
+transport file is published, so clock acknowledgements retain their exact
+request-side multiplier evidence.
+
+Targeted run `playback-phase-policy-20260810-r4` restored and attested the Ruka
+fixture, then completed one Small Copper operation in one planner turn. The
+productive request was accepted at sequence 152 while the resource was
+1,886.769 units away and `current_operator_ids` was empty. Archived 1x request
+`cmd-cee6e8778fcd4521994e7340fd6b0b64` completed at sequence 153. The exact
+recipient first appeared in the operator set at sequence 252, 69.509 units from
+the resource; only then did archived 5x request
+`cmd-44c096e3ea4e40bb8417c90217e0ce04` complete at sequence 253.
+
+One Copper existed with the operator still admitted at sequence 324. Admission
+withdrew while the productive command remained accepted at sequence 325;
+archived cleanup request `cmd-1dcf5a433064488599ed8abdd1b1b8e6`
+restored 1x at sequence 326, before productive command
+`cmd-0567b93531ec4e8fbd77e6c4efe48343` completed
+`resource_output_ready_task_released` at sequence 327. Its action receipt
+reported zero primitive actions. Final native pause was confirmed at sequence
+331 with `input_attempted=false` and `input_executed=false`, and Kenshi closed
+from a fresh paused idle state.
+
+The committed reduced artifact
+`docs/reconstruction/playback_phase_policy_20260810.json` contains the exact
+manifest, all productive and clock requests, acknowledgements, decisive
+telemetry, raw bundle hashes, final disposition, and withheld claims. Attempt
+r2 is explicitly excluded: an unsolicited dialogue opened after operator
+admission, paused the world, and caused `world_paused` cancellation; no human,
+emergency, terminal-window, or safety-supervisor preemption caused that pause.
+Native recovery closed the dialogue before shutdown. That ambient-dialogue
+interaction remains a follow-on, not evidence against the playback policy.
+
 ## DLL artifacts and exact commands
 
 Both sides of the installation are preserved:
@@ -218,9 +279,10 @@ Copy-Item -LiteralPath 'C:\Users\levib\AppData\Local\KenshiAgent\backups\native\
 
 ## Completion boundary
 
-The named targeted live regression proves:
+The completed mining/trade regression proves:
 
-1. exact productive mining creates output under native 5x playback;
+1. exact productive mining creates output under native 5x playback under the
+   former always-fast policy;
 2. the output is collected into the selected character's inventory;
 3. the character travels to a local vendor interaction distance;
 4. the Barman trade request was not dispatched until after physical approach;
@@ -231,14 +293,19 @@ The named targeted live regression proves:
 6. no mouse, pointer, keyboard, false acknowledgement, or planner wait loop was
    used.
 
-The current goal is complete only after a fresh run reaches all 120 turns, its
+The playback-policy slice is proven by `playback-phase-policy-20260810-r4`:
+1x approach, exact accepted-operator admission before 5x, 1x restoration before
+the productive terminal leaves the handler, exact output, zero desktop input,
+and final native pause all have later engine evidence.
+
+The larger soak remains incomplete until a fresh run reaches all 120 turns, its
 bundle is audited for crashes, early stops, rejected or aborted actions,
 primitive desktop input, and final safe state, and Kenshi is closed cleanly.
 
 ## Verification
 
-The complete portable gate passed on 2026-08-10 for the semantic-only
-unique-target candidate before the next live attempt:
+The complete portable gate passed on 2026-08-10 for the playback-policy and
+durable native-request-archive candidate before the r4 live proof:
 
 ```bash
 UV_CACHE_DIR=/tmp/kae-uv-cache ./dev verify-portable

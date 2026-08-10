@@ -19,6 +19,7 @@ from ...core.operation import (
     SelectDialogueOptionAction,
     TransferItemAction,
 )
+from ...core.telemetry import NativeCommandAcknowledgement, TelemetrySnapshot
 from ...core.transport import (
     ActionReceipt,
     CommandDispatchContext,
@@ -28,6 +29,29 @@ from ...input_boundary import ExecutionToken
 from ..types import OperationHandler
 from .kenshi_surface import KenshiControlSurface
 from .movement import AtomicMovementHandler, NativeMovementHandler
+
+
+def _selected_resource_operator_is_active(
+    telemetry: TelemetrySnapshot,
+    acknowledgement: NativeCommandAcknowledgement,
+) -> bool:
+    """Whether Kenshi has admitted any exact command recipient to this resource.
+
+    A positive member of the engine-owned operator set is sufficient evidence
+    even if enumeration is incomplete. Selection, an accepted command, queued
+    work, activity text, and animation are deliberately irrelevant here.
+    """
+
+    targets = [
+        target
+        for target in telemetry.world_targets
+        if target.id == acknowledgement.target_id
+        and target.kind == "natural_resource"
+    ]
+    if len(targets) != 1:
+        return False
+    selected = set(acknowledgement.selected_character_ids)
+    return bool(selected.intersection(targets[0].current_operator_ids))
 
 
 class ResourceMechanicsPort(Protocol):
@@ -305,7 +329,12 @@ class KenshiResourceMechanics:
             wire_command=native_commands.NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND,
             require_dialogue_target=False,
             minimum_output_quantity=action.minimum_output_quantity,
-            running_speed_gear=3,
+            # Command acceptance may still mean a long approach. Traverse at
+            # normal speed and accelerate only after the later engine-owned
+            # accepted-operator set proves that work is local and stationary.
+            running_speed_gear=1,
+            stationary_speed_gear=3,
+            stationary_phase_ready=_selected_resource_operator_is_active,
         )
 
 

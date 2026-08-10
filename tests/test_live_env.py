@@ -4,7 +4,6 @@ from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
 
 import pytest
 from operation_test_support import execute_operation
@@ -477,23 +476,16 @@ def test_live_observation_reports_human_input_and_emergency_stop(
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize(
-    ("speed", "multiplier"),
-    [(1, 1.0), (2, 3.0), (3, 5.0)],
-)
-def test_set_speed_starts_a_paused_world_without_touching_the_keyboard(
+def test_set_speed_starts_a_paused_world_at_one_x_without_touching_the_keyboard(
     tmp_path: Path,
-    speed: Literal[1, 2, 3],
-    multiplier: float,
 ) -> None:
-    """A paused world ends up running at the requested gear, natively.
+    """The direct live clock surface is now normal-speed-only and native.
 
     This replaces a test that asserted the keystroke composite -- f2 first to
     resume, then the gear key -- which existed because Kenshi's speed keys
     select a rate without resuming. `GameWorld::setGameSpeed` plus `userPause`
-    does both, so the invariant survives and the ordering rule that lived above
-    the engine does not. The keyboard assertion is the point of the new one:
-    zero keys, and the multiplier carried on the wire.
+    does both. Faster native gears are exercised only inside the resource
+    operation's exact stationary gate tests below.
     """
 
     async def scenario() -> None:
@@ -502,7 +494,7 @@ def test_set_speed_starts_a_paused_world_without_touching_the_keyboard(
         telemetry.paused = True
 
         await environment.reset()
-        transition = await execute_operation(environment, SetSpeedAction(speed=speed))
+        transition = await execute_operation(environment, SetSpeedAction(speed=1))
 
         assert [
             action.key for action in controller.actions if isinstance(action, KeyAction)
@@ -510,8 +502,27 @@ def test_set_speed_starts_a_paused_world_without_touching_the_keyboard(
         assert transition.receipt.primitive_actions == 0
         assert controller.time_control_request is not None
         assert controller.time_control_request.command == "set_speed"
-        assert controller.time_control_request.speed_multiplier == multiplier
+        assert controller.time_control_request.speed_multiplier == 1.0
         assert telemetry.paused is False
+
+    asyncio.run(scenario())
+
+
+def test_direct_faster_live_playback_is_rejected_before_native_dispatch(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(tmp_path)
+        telemetry.capabilities = ["game.pause", "game.speed"]
+        telemetry.paused = False
+        telemetry.speed_multiplier = 1.0
+
+        await environment.reset()
+        with pytest.raises(RuntimeError, match="Direct faster playback is disabled"):
+            await execute_operation(environment, SetSpeedAction(speed=3))
+
+        assert controller.time_control_request is None
+        assert controller.actions == []
 
     asyncio.run(scenario())
 
@@ -596,6 +607,7 @@ class NativePulseTelemetry(PulseTelemetry):
         self.path = path
         self.capabilities = [
             "game.pause",
+            "game.speed",
             "control.approach_vendor",
             "identity.stable_handles",
             "nearby.characters",
@@ -619,6 +631,7 @@ class NativePulseTelemetry(PulseTelemetry):
         self.known_map_destinations: list[KnownMapDestination] = []
         self.selected_character_id = "entity-selected"
         self.selected_character_ids = ["entity-selected"]
+        self.resource_operator_ids: list[str] = []
         # Called before each read, so a command delivered by the request file
         # alone is answered. The plug-in dispatches on the file changing as
         # well as on the file watcher, and time control uses only the file --
@@ -710,7 +723,7 @@ class NativePulseTelemetry(PulseTelemetry):
                         default_task="operate_machinery",
                         mining_resource_level=0.8,
                         operator_capacity=1,
-                        current_operator_ids=[],
+                        current_operator_ids=self.resource_operator_ids,
                         current_operators_complete=True,
                         output_inventory_complete=True,
                         screen_position=self.world_target_screen_position,
@@ -888,6 +901,8 @@ class NativeAckController(PulseController):
         complete_deferred_survey: bool = False,
         complete_deferred_character_order: bool = False,
         complete_deferred_trade_window: bool = False,
+        resource_operator_on_dispatch: bool = False,
+        complete_resource_after_stationary_speed: bool = False,
         reason: str | None = None,
     ) -> None:
         super().__init__(telemetry)
@@ -899,10 +914,15 @@ class NativeAckController(PulseController):
         self.complete_deferred_survey = complete_deferred_survey
         self.complete_deferred_character_order = complete_deferred_character_order
         self.complete_deferred_trade_window = complete_deferred_trade_window
+        self.resource_operator_on_dispatch = resource_operator_on_dispatch
+        self.complete_resource_after_stationary_speed = (
+            complete_resource_after_stationary_speed
+        )
         self.reason = reason
         self.request_seen_by_watcher = False
         self.request: NativeCommandRequest | None = None
         self.time_control_request: NativeCommandRequest | None = None
+        self.time_control_requests: list[NativeCommandRequest] = []
         self.acknowledged_command_ids: set[str] = set()
 
     def acknowledge_unsent_request(self) -> None:
@@ -981,6 +1001,7 @@ class NativeAckController(PulseController):
             # Kept apart from `self.request`, which is the operation's own
             # request and what tests inspect.
             self.time_control_request = pending
+            self.time_control_requests.append(pending)
             if pending.command == "pause":
                 self.telemetry.paused = pending.paused
             else:
@@ -1010,6 +1031,14 @@ class NativeAckController(PulseController):
                 if status == NativeCommandStatus.ACCEPTED
                 else status.value
             )
+            if (
+                self.resource_operator_on_dispatch
+                and pending.command == "produce_resource_output"
+                and status is NativeCommandStatus.ACCEPTED
+            ):
+                self.telemetry.resource_operator_ids = list(
+                    pending.selected_character_ids
+                )
         accepted_sequence = (
             None if status == NativeCommandStatus.REJECTED else sequence
         )
@@ -1049,6 +1078,28 @@ class NativeAckController(PulseController):
                 )
             existing_commands = updated_commands
             self.telemetry.paused = True
+        if (
+            self.complete_resource_after_stationary_speed
+            and pending.command == "set_speed"
+            and pending.speed_multiplier == 5.0
+            and self.request is not None
+            and self.request.command == "produce_resource_output"
+        ):
+            updated_commands = []
+            for existing in existing_commands:
+                if existing.command_id != self.request.command_id:
+                    updated_commands.append(existing)
+                    continue
+                updated_commands.append(
+                    existing.model_copy(
+                        update={
+                            "status": NativeCommandStatus.COMPLETED,
+                            "reason": "resource_output_ready_task_released",
+                            "terminal_at_telemetry_sequence": sequence,
+                        }
+                    )
+                )
+            existing_commands = updated_commands
         while len(existing_commands) >= 16:
             protected_id = self.request.command_id if self.request is not None else None
             remove_index = next(
@@ -1136,6 +1187,8 @@ def native_vendor_environment(
     complete_deferred_survey: bool = False,
     complete_deferred_character_order: bool = False,
     complete_deferred_trade_window: bool = False,
+    resource_operator_on_dispatch: bool = False,
+    complete_resource_after_stationary_speed: bool = False,
     reason: str | None = None,
 ) -> tuple[LiveEnvironment, NativePulseTelemetry, NativeAckController]:
     telemetry_path = tmp_path / "telemetry.latest.json"
@@ -1151,6 +1204,10 @@ def native_vendor_environment(
         complete_deferred_survey=complete_deferred_survey,
         complete_deferred_character_order=complete_deferred_character_order,
         complete_deferred_trade_window=complete_deferred_trade_window,
+        resource_operator_on_dispatch=resource_operator_on_dispatch,
+        complete_resource_after_stationary_speed=(
+            complete_resource_after_stationary_speed
+        ),
         reason=reason,
     )
     telemetry.on_read = controller.acknowledge_unsent_request
@@ -1970,14 +2027,16 @@ def test_resource_production_issues_exact_monitored_native_command(
     asyncio.run(scenario())
 
 
-def test_resource_production_establishes_fastest_playback_without_desktop_input(
+def test_resource_production_accelerates_only_after_operator_admission_and_restores_one_x(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
         environment, telemetry, controller = native_vendor_environment(
             tmp_path,
             status=NativeCommandStatus.ACCEPTED,
-            reason="context_task_active",
+            reason="issued",
+            resource_operator_on_dispatch=True,
+            complete_resource_after_stationary_speed=True,
         )
         environment.controls_config = environment.controls_config.model_copy(
             update={"require_paused_between_actions": False}
@@ -2000,10 +2059,212 @@ def test_resource_production_establishes_fastest_playback_without_desktop_input(
         assert controller.request.command == "produce_resource_output"
         assert controller.actions == []
         assert telemetry.paused is False
-        assert telemetry.speed_multiplier == 5.0
+        assert telemetry.speed_multiplier == 1.0
         assert controller.time_control_request is not None
         assert controller.time_control_request.command == "set_speed"
-        assert controller.time_control_request.speed_multiplier == 5.0
+        assert controller.time_control_request.speed_multiplier == 1.0
+        assert [
+            request.speed_multiplier for request in controller.time_control_requests
+        ] == [1.0, 5.0, 1.0]
+        archived_requests = {
+            request.command_id: request
+            for path in (tmp_path / "native_requests").glob("*.json")
+            for request in [
+                NativeCommandRequest.model_validate_json(path.read_text(encoding="utf-8"))
+            ]
+        }
+        assert controller.request.command_id in archived_requests
+        assert archived_requests[controller.request.command_id] == controller.request
+        assert [
+            archived_requests[request.command_id].speed_multiplier
+            for request in controller.time_control_requests
+        ] == [1.0, 5.0, 1.0]
+        acknowledgement = transition.receipt.native_acknowledgement
+        assert acknowledgement is not None
+        assert acknowledgement.status is NativeCommandStatus.COMPLETED
+        assert acknowledgement.reason == "resource_output_ready_task_released"
+        assert "Later engine evidence proved the stationary work phase" in (
+            transition.receipt.message
+        )
+        assert "Restored normal 1x playback" in transition.receipt.message
+
+    asyncio.run(scenario())
+
+
+def test_resource_production_cancellation_restores_one_x_after_stationary_speed(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(
+            tmp_path,
+            status=NativeCommandStatus.ACCEPTED,
+            reason="issued",
+            resource_operator_on_dispatch=True,
+        )
+        environment.controls_config = environment.controls_config.model_copy(
+            update={"require_paused_between_actions": False}
+        )
+        initial = await environment.reset()
+        action = ProduceResourceOutputAction(target_id="entity-copper")
+        task = asyncio.create_task(
+            execute_operation(
+                environment,
+                action,
+                command=CommandDispatchContext(
+                    command_id="cmd-" + "5" * 32,
+                    based_on_revision=initial.world_revision,
+                    **_authorized_for(initial, action),
+                ),
+            )
+        )
+
+        for _ in range(100):
+            if telemetry.speed_multiplier == 5.0:
+                break
+            await asyncio.sleep(0.005)
+        assert telemetry.speed_multiplier == 5.0
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert telemetry.speed_multiplier == 1.0
+        assert controller.actions == []
+        assert [
+            request.speed_multiplier for request in controller.time_control_requests
+        ] == [1.0, 5.0, 1.0]
+
+    asyncio.run(scenario())
+
+
+def test_resource_production_remains_at_one_x_without_operator_admission(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(
+            tmp_path,
+            status=NativeCommandStatus.ACCEPTED,
+            reason="issued",
+        )
+        environment.controls_config = environment.controls_config.model_copy(
+            update={"require_paused_between_actions": False}
+        )
+        telemetry.speed_multiplier = 5.0
+        initial = await environment.reset()
+        action = ProduceResourceOutputAction(target_id="entity-copper")
+        task = asyncio.create_task(
+            execute_operation(
+                environment,
+                action,
+                command=CommandDispatchContext(
+                    command_id="cmd-" + "7" * 32,
+                    based_on_revision=initial.world_revision,
+                    **_authorized_for(initial, action),
+                ),
+            )
+        )
+
+        for _ in range(100):
+            if controller.request is not None and telemetry.speed_multiplier == 1.0:
+                break
+            await asyncio.sleep(0.005)
+        assert controller.request is not None
+        assert controller.request.command == "produce_resource_output"
+        assert telemetry.resource_operator_ids == []
+        assert telemetry.speed_multiplier == 1.0
+        await asyncio.sleep(0.05)
+        assert telemetry.speed_multiplier == 1.0
+        assert [
+            request.speed_multiplier for request in controller.time_control_requests
+        ] == [1.0]
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert telemetry.speed_multiplier == 1.0
+        assert controller.actions == []
+        assert [
+            request.speed_multiplier for request in controller.time_control_requests
+        ] == [1.0]
+
+    asyncio.run(scenario())
+
+
+def test_resource_production_downgrades_when_operator_gate_withdraws(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(
+            tmp_path,
+            status=NativeCommandStatus.ACCEPTED,
+            reason="issued",
+            resource_operator_on_dispatch=True,
+        )
+        environment.controls_config = environment.controls_config.model_copy(
+            update={"require_paused_between_actions": False}
+        )
+        initial = await environment.reset()
+        action = ProduceResourceOutputAction(target_id="entity-copper")
+        task = asyncio.create_task(
+            execute_operation(
+                environment,
+                action,
+                command=CommandDispatchContext(
+                    command_id="cmd-" + "6" * 32,
+                    based_on_revision=initial.world_revision,
+                    **_authorized_for(initial, action),
+                ),
+            )
+        )
+
+        for _ in range(100):
+            if telemetry.speed_multiplier == 5.0:
+                break
+            await asyncio.sleep(0.005)
+        assert telemetry.speed_multiplier == 5.0
+
+        telemetry.resource_operator_ids = []
+        for _ in range(100):
+            if telemetry.speed_multiplier == 1.0:
+                break
+            await asyncio.sleep(0.005)
+        assert telemetry.speed_multiplier == 1.0
+
+        telemetry.resource_operator_ids = ["entity-selected"]
+        for _ in range(100):
+            if telemetry.speed_multiplier == 5.0:
+                break
+            await asyncio.sleep(0.005)
+        assert telemetry.speed_multiplier == 5.0
+
+        assert controller.request is not None
+        active = telemetry.controller_commands.command_for(
+            controller.request.command_id
+        )
+        assert active is not None
+        telemetry.controller_commands = NativeControlState(
+            available=True,
+            commands=[
+                command.model_copy(
+                    update={
+                        "status": NativeCommandStatus.COMPLETED,
+                        "reason": "resource_output_ready_task_released",
+                        "terminal_at_telemetry_sequence": telemetry.sequence + 1,
+                    }
+                )
+                if command.command_id == active.command_id
+                else command
+                for command in telemetry.controller_commands.commands
+            ],
+        )
+        transition = await asyncio.wait_for(task, timeout=1.0)
+
+        assert transition.receipt.executed
+        assert telemetry.speed_multiplier == 1.0
+        assert [
+            request.speed_multiplier for request in controller.time_control_requests
+        ] == [1.0, 5.0, 1.0, 5.0, 1.0]
 
     asyncio.run(scenario())
 
@@ -2282,7 +2543,7 @@ def test_direction_request_is_targetless_and_revalidates_its_own_capabilities(
     asyncio.run(scenario())
 
 
-def test_map_travel_issues_one_exact_order_and_establishes_five_x(
+def test_map_travel_issues_one_exact_order_and_enforces_one_x(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
@@ -2307,6 +2568,8 @@ def test_map_travel_issues_one_exact_order_and_establishes_five_x(
                 "require_paused_between_actions": False,
             }
         )
+        telemetry.paused = False
+        telemetry.speed_multiplier = 5.0
         initial = await environment.reset()
 
         transition = await execute_operation(
@@ -2331,11 +2594,11 @@ def test_map_travel_issues_one_exact_order_and_establishes_five_x(
         assert controller.request.command == "travel_to_map_destination"
         assert controller.request.target_id == "entity-known-town"
         assert telemetry.paused is False
-        assert telemetry.speed_multiplier == 5.0
+        assert telemetry.speed_multiplier == 1.0
         assert controller.actions == []
         assert controller.time_control_request is not None
         assert controller.time_control_request.command == "set_speed"
-        assert controller.time_control_request.speed_multiplier == 5.0
+        assert controller.time_control_request.speed_multiplier == 1.0
 
     asyncio.run(scenario())
 
@@ -2390,7 +2653,7 @@ def test_map_travel_carries_the_complete_selected_squad_basis(
     asyncio.run(scenario())
 
 
-def test_squad_regroup_issues_one_global_exact_order_and_establishes_five_x(
+def test_squad_regroup_issues_one_global_exact_order_and_enforces_one_x(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
@@ -2436,10 +2699,10 @@ def test_squad_regroup_issues_one_global_exact_order_and_establishes_five_x(
         assert controller.request.selected_character_ids == ["entity-selected"]
         assert controller.request.target_id == "entity-ruka"
         assert telemetry.paused is False
-        assert telemetry.speed_multiplier == 5.0
+        assert telemetry.speed_multiplier == 1.0
         assert controller.actions == []
         assert controller.time_control_request is not None
-        assert controller.time_control_request.speed_multiplier == 5.0
+        assert controller.time_control_request.speed_multiplier == 1.0
 
     asyncio.run(scenario())
 

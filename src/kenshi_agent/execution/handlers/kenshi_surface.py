@@ -68,6 +68,11 @@ NATIVE_COMMAND_ACK_TIMEOUT_SECONDS = 2.0
 NATIVE_COMMAND_POLL_SECONDS = 0.025
 NATIVE_DIALOGUE_SETTLE_SECONDS = 1.0
 
+StationaryPlaybackGate = Callable[
+    [TelemetrySnapshot, NativeCommandAcknowledgement],
+    bool,
+]
+
 class LiveCapturePort(Protocol):
     def capture(self, sequence: int) -> CapturedFrame: ...
 
@@ -86,6 +91,7 @@ class LiveExternalPort(Protocol):
     quicksave_stable_seconds: float
     quicksave_timeout_seconds: float
     run_id: str
+    run_dir: Path
     control_mode: ControlMode
     _step_index: int
     _capture_sequence: int
@@ -494,6 +500,34 @@ class KenshiControlSurface:
             return False
         return not result.stale and bool(result.snapshot.identity_session_id)
 
+    def _publish_native_command_request(
+        self,
+        request_path: Path,
+        request: NativeCommandRequest,
+    ) -> None:
+        """Archive the exact request before publishing it to Kenshi.
+
+        The transport file is intentionally a one-slot mailbox and is therefore
+        overwritten by the next command. A live run needs durable request-side
+        evidence to interpret later retained acknowledgements, especially for
+        clock commands whose acknowledgement does not repeat the requested
+        multiplier. Keep one immutable-by-command-id copy inside the ignored run
+        bundle before the external side effect can occur.
+        """
+
+        archive_path = self._port.run_dir / "native_requests" / f"{request.command_id}.json"
+        if archive_path.exists():
+            archived = NativeCommandRequest.model_validate_json(
+                archive_path.read_text(encoding="utf-8")
+            )
+            if archived != request:
+                raise RuntimeError(
+                    "A native command_id was reused with a different request payload."
+                )
+        else:
+            native_commands.write_native_command_request_atomic(archive_path, request)
+        native_commands.write_native_command_request_atomic(request_path, request)
+
     async def _dispatch_time_control(
         self,
         wire_command: NativeWireCommand,
@@ -526,7 +560,7 @@ class KenshiControlSurface:
             **wire_fields,  # type: ignore[arg-type]
         )
         request_path = self.telemetry_reader.path.parent / NATIVE_COMMAND_REQUEST_FILE
-        native_commands.write_native_command_request_atomic(request_path, request)
+        self._publish_native_command_request(request_path, request)
         return await self._wait_for_native_acknowledgement(request)
 
     async def apply_pause_request(
@@ -877,6 +911,8 @@ class KenshiControlSurface:
         accepted_is_terminal_error: bool = False,
         minimum_output_quantity: int = 1,
         running_speed_gear: int = 1,
+        stationary_speed_gear: int | None = None,
+        stationary_phase_ready: StationaryPlaybackGate | None = None,
         expected_actor_id: str | None = None,
         context_action: ContextActionKind | None = None,
         task_started_reasons: frozenset[str] = frozenset(),
@@ -884,6 +920,10 @@ class KenshiControlSurface:
         await_terminal_without_playback: bool = False,
         deferred_terminal_timeout_seconds: float = NATIVE_COMMAND_ACK_TIMEOUT_SECONDS,
     ) -> ActionReceipt:
+        if (stationary_speed_gear is None) != (stationary_phase_ready is None):
+            raise RuntimeError(
+                "Stationary playback requires both a speed gear and an exact phase gate."
+            )
         adopted = (
             self._active_native_order_for(
                 wire_command=wire_command,
@@ -934,7 +974,7 @@ class KenshiControlSurface:
                 context_action=context_action,
             )
             request_path = self.telemetry_reader.path.parent / NATIVE_COMMAND_REQUEST_FILE
-            native_commands.write_native_command_request_atomic(request_path, request)
+            self._publish_native_command_request(request_path, request)
             primitive_count = 0
             messages = [
                 "Published the atomic native request; the game-thread file watcher "
@@ -948,6 +988,8 @@ class KenshiControlSurface:
         messages.append(acknowledgement_message)
 
         if acknowledgement.status == NativeCommandStatus.REJECTED:
+            if stationary_speed_gear is not None:
+                await self._restore_normal_playback_if_running(messages)
             return ActionReceipt(
                 action=action,
                 command_id=command.command_id,
@@ -970,6 +1012,8 @@ class KenshiControlSurface:
             acknowledgement.status is NativeCommandStatus.COMPLETED
             and acknowledgement.reason in task_started_reasons
         ):
+            if stationary_speed_gear is not None:
+                await self._restore_normal_playback_if_running(messages)
             return self._accepted_native_terminal_receipt(
                 action=action,
                 command=command,
@@ -1052,6 +1096,8 @@ class KenshiControlSurface:
                 messages=messages,
                 semantic=semantic,
                 running_speed_gear=running_speed_gear,
+                stationary_speed_gear=stationary_speed_gear,
+                stationary_phase_ready=stationary_phase_ready,
             )
         receipt = await self.run_movement_pulse(
             action,
@@ -1090,12 +1136,15 @@ class KenshiControlSurface:
         messages: list[str],
         semantic: SemanticActionReceipt | None,
         running_speed_gear: int,
+        stationary_speed_gear: int | None,
+        stationary_phase_ready: StationaryPlaybackGate | None,
     ) -> ActionReceipt:
         """Establish running playback or accept a racing native terminal."""
 
         paused = self._fresh_pause_state()
         if paused is None:
             raise RuntimeError("Native movement cannot determine whether Kenshi is paused.")
+        established_speed_gear: int | None = None
         try:
             if paused:
                 running_count, playback_terminal = await self._establish_native_running_state(
@@ -1125,11 +1174,13 @@ class KenshiControlSurface:
                     "Started the paused world at speed gear 1; the monitored option "
                     "now owns the running movement."
                 )
-            if running_speed_gear != 1:
+                established_speed_gear = 1
+            if running_speed_gear != established_speed_gear:
                 primitive_count += await self._establish_playback_gear(running_speed_gear)
+                expected = GAME_SPEED_MULTIPLIER_BY_GEAR[running_speed_gear]
                 messages.append(
-                    "Established controller-owned 5x playback speed for the "
-                    "monitored operation."
+                    f"Established controller-owned {expected:g}x playback for "
+                    "the operation's movement phase."
                 )
         except RuntimeError:
             terminal = self._fresh_matching_native_acknowledgement(acknowledgement)
@@ -1154,6 +1205,19 @@ class KenshiControlSurface:
                 acknowledgement=acknowledgement,
                 semantic=semantic,
             )
+        if stationary_speed_gear is not None and stationary_phase_ready is not None:
+            return await self._continue_native_order_with_stationary_playback(
+                action=action,
+                command=command,
+                started=started,
+                acknowledgement=acknowledgement,
+                primitive_count=primitive_count,
+                messages=messages,
+                semantic=semantic,
+                movement_speed_gear=running_speed_gear,
+                stationary_speed_gear=stationary_speed_gear,
+                stationary_phase_ready=stationary_phase_ready,
+            )
         return ActionReceipt(
             action=action,
             command_id=command.command_id,
@@ -1171,6 +1235,131 @@ class KenshiControlSurface:
             native_acknowledgement=acknowledgement,
             semantic=semantic,
         )
+
+    async def _continue_native_order_with_stationary_playback(
+        self,
+        *,
+        action: Action,
+        command: CommandDispatchContext,
+        started: datetime,
+        acknowledgement: NativeCommandAcknowledgement,
+        primitive_count: int,
+        messages: list[str],
+        semantic: SemanticActionReceipt | None,
+        movement_speed_gear: int,
+        stationary_speed_gear: int,
+        stationary_phase_ready: StationaryPlaybackGate,
+    ) -> ActionReceipt:
+        """Accelerate only while later engine evidence proves stationary work.
+
+        Acceptance of a command proves dispatch, not locality. A resource order
+        can remain accepted for a long cross-zone walk before Kenshi admits any
+        recipient to the resource's operator set. Keep that phase at the normal
+        movement gear, enter the faster gear only while the caller's exact
+        engine-owned gate is true, and restore movement speed before every
+        terminal or cancellation leaves this coroutine.
+        """
+
+        current = acknowledgement
+        stationary_speed_attempted = False
+        stationary_speed_active = False
+        stationary_multiplier = GAME_SPEED_MULTIPLIER_BY_GEAR[stationary_speed_gear]
+        movement_multiplier = GAME_SPEED_MULTIPLIER_BY_GEAR[movement_speed_gear]
+        try:
+            while current.status is NativeCommandStatus.ACCEPTED:
+                try:
+                    result = self.telemetry_reader.read()
+                except TelemetryReadError:
+                    result = None
+                if result is not None and not result.stale:
+                    later = self._matching_native_acknowledgement(
+                        result.snapshot,
+                        current,
+                    )
+                    if later is not None:
+                        current = later
+                    if current.status is not NativeCommandStatus.ACCEPTED:
+                        break
+                    stationary_ready = stationary_phase_ready(
+                        result.snapshot,
+                        current,
+                    )
+                    if stationary_ready and not stationary_speed_active:
+                        stationary_speed_attempted = True
+                        primitive_count += await self._establish_playback_gear(
+                            stationary_speed_gear
+                        )
+                        stationary_speed_active = True
+                        messages.append(
+                            "Later engine evidence proved the stationary work phase; "
+                            f"established {stationary_multiplier:g}x playback."
+                        )
+                    elif not stationary_ready and stationary_speed_active:
+                        primitive_count += await self._establish_playback_gear(
+                            movement_speed_gear
+                        )
+                        stationary_speed_active = False
+                        messages.append(
+                            "The stationary-work gate withdrew while the command "
+                            f"remained active; restored {movement_multiplier:g}x "
+                            "movement playback."
+                        )
+                await asyncio.sleep(NATIVE_COMMAND_POLL_SECONDS)
+        finally:
+            if stationary_speed_attempted:
+                primitive_count += await asyncio.shield(
+                    self._restore_normal_playback_if_running(messages)
+                )
+
+        messages.append(
+            "Native stationary operation reached terminal "
+            f"{current.status.value!r}: {current.reason}."
+        )
+        return self._accepted_native_terminal_receipt(
+            action=action,
+            command=command,
+            started=started,
+            primitive_count=primitive_count,
+            messages=messages,
+            acknowledgement=current,
+            semantic=semantic,
+        )
+
+    async def _restore_normal_playback_if_running(
+        self,
+        messages: list[str],
+    ) -> int:
+        """Restore 1x without ever turning a paused world back on."""
+
+        try:
+            result = self.telemetry_reader.read()
+        except TelemetryReadError as exc:
+            raise RuntimeError(
+                "Cannot verify normal playback cleanup because telemetry is unavailable."
+            ) from exc
+        if result.stale:
+            raise RuntimeError(
+                "Cannot verify normal playback cleanup from stale telemetry."
+            )
+        game = result.snapshot.game
+        if game.paused is True:
+            messages.append(
+                "Kenshi was already paused; stationary playback cleanup did not unpause it."
+            )
+            return 0
+        if game.paused is not False:
+            raise RuntimeError(
+                "Cannot verify normal playback cleanup because pause state is unknown."
+            )
+        normal = GAME_SPEED_MULTIPLIER_BY_GEAR[1]
+        if game.speed_multiplier == normal:
+            messages.append("Kenshi already reported normal 1x playback at cleanup.")
+            return 0
+        primitive_count = await self._establish_playback_gear(1)
+        messages.append(
+            "Restored normal 1x playback before leaving the stationary operation."
+        )
+        return primitive_count
 
     async def _continue_native_approach(
         self,

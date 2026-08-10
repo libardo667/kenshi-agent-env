@@ -319,7 +319,7 @@ def test_live_pause_requires_known_current_state() -> None:
 
 
 def test_set_speed_unpause_requires_explicit_profile_authority() -> None:
-    action = SetSpeedAction(speed=3)
+    action = SetSpeedAction(speed=1)
     paused = Observation(
         run_id="run",
         step_index=0,
@@ -335,6 +335,23 @@ def test_set_speed_unpause_requires_explicit_profile_authority() -> None:
 
     enabled = safety_config().model_copy(update={"allow_live_unpause_actions": True})
     assert OperationPolicy(enabled).validate(action, paused) == action
+
+
+def test_direct_faster_live_playback_is_blocked_even_when_unpause_is_allowed() -> None:
+    action = SetSpeedAction(speed=3)
+    running = Observation(
+        run_id="run",
+        step_index=0,
+        mode="live",
+        telemetry=TelemetrySnapshot(
+            capabilities=["game.pause", "game.speed"],
+            game=GameState(loaded=True, paused=False, speed_multiplier=1.0),
+        ),
+    )
+    enabled = safety_config().model_copy(update={"allow_live_unpause_actions": True})
+
+    with pytest.raises(SafetyViolation, match="Direct faster playback is blocked"):
+        OperationPolicy(enabled).validate(action, running)
 
 
 @pytest.mark.parametrize(
@@ -553,4 +570,3 @@ def trade_in_progress_observation() -> Observation:
             )
         }
     )
-

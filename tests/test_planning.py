@@ -1635,8 +1635,19 @@ def test_builtin_heuristic_emits_a_two_step_continuous_plan() -> None:
     output = asyncio.run(HeuristicPlanner().decide(current))
 
     assert isinstance(output, PlanEnvelope)
-    assert [step.step_id for step in output.steps] == ["resume", "accelerate"]
+    assert [step.step_id for step in output.steps] == ["resume"]
     assert output.based_on_revision.same_snapshot_as(current.world_revision)
+
+
+def test_builtin_heuristic_normalizes_faster_playback_instead_of_accelerating() -> None:
+    current = observation(paused=False, speed=5.0)
+
+    output = asyncio.run(HeuristicPlanner().decide(current))
+
+    assert isinstance(output, PlanEnvelope)
+    assert [step.step_id for step in output.steps] == ["normalize_speed"]
+    assert isinstance(output.steps[0].action, SetSpeedAction)
+    assert output.steps[0].action.speed == 1
 
 
 def test_scripted_adapter_parses_continuous_plan(

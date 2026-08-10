@@ -394,16 +394,19 @@ def _runtime_offers(observation: Observation) -> Iterable[AffordanceOffer]:
             yield _offer(
                 observation,
                 source=AffordanceSource.RUNTIME,
-                semantic="set_game_speed",
-                description="Choose an exact Kenshi playback gear.",
+                semantic="restore_normal_speed",
+                description=(
+                    "Restore or retain normal 1x playback. Faster playback is "
+                    "owned only by operations with an exact stationary/local gate."
+                ),
                 operation_kind="set_speed",
                 parameters=(
                     AffordanceParameterSpec(
                         name="speed",
                         kind=AffordanceParameterKind.INTEGER,
-                        description="Playback gear: 1 normal, 2 fast, 3 fastest.",
+                        description="Playback gear 1 (normal) only.",
                         minimum=1,
-                        maximum=3,
+                        maximum=1,
                     ),
                 ),
             )
@@ -1257,7 +1260,8 @@ def _native_and_composite_offers(
                 source=AffordanceSource.NATIVE_OPERATION,
                 semantic="produce_resource_output",
                 description=(
-                    f"Travel/path to and work {target.name!r} at fastest playback until "
+                    f"Travel/path to {target.name!r} at 1x, then work at fastest "
+                    "playback only after exact operator admission, until "
                     f"its exact output total reaches {minimum_output_quantity}, one more "
                     f"than the observed {output_quantity}, then release "
                     f"controller-owned work ({occupied_slots}/{target.operator_capacity} "

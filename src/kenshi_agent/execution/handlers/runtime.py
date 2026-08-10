@@ -333,4 +333,10 @@ class KenshiRuntimeMechanics:
         self, action: Action, started: datetime, command: CommandDispatchContext | None
     ) -> ActionReceipt:
         del command
-        return await self._surface.apply_playback_speed(cast(SetSpeedAction, action), started)
+        typed = cast(SetSpeedAction, action)
+        if typed.speed != 1:
+            raise RuntimeError(
+                "Direct faster playback is disabled; only an operation-owned exact "
+                "stationary/local phase may accelerate."
+            )
+        return await self._surface.apply_playback_speed(typed, started)

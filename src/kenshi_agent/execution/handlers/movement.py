@@ -715,7 +715,10 @@ class KenshiMovementMechanics:
             continue_until_terminal=True,
             wire_command=native_commands.NATIVE_MAP_TRAVEL_WIRE_COMMAND,
             require_dialogue_target=False,
-            running_speed_gear=3,
+            # Long travel is the highest world-streaming-pressure phase. The
+            # runtime enforces 1x even if a previous stationary operation left
+            # the game running faster.
+            running_speed_gear=1,
         )
 
     async def _execute_squad_regroup(
@@ -749,7 +752,7 @@ class KenshiMovementMechanics:
             continue_until_terminal=True,
             wire_command=native_commands.NATIVE_SQUAD_REGROUP_WIRE_COMMAND,
             require_dialogue_target=False,
-            running_speed_gear=3,
+            running_speed_gear=1,
             expected_actor_id=action.actor_id,
         )
 

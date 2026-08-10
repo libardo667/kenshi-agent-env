@@ -2394,7 +2394,11 @@ PAUSE_DEFINITION = _runtime_control_definition(
 SET_SPEED_DEFINITION = _runtime_control_definition(
     kind="set_speed",
     operation_type=SetSpeedAction,
-    summary="Request one exact Kenshi playback gear.",
+    summary=(
+        "Restore exact normal 1x playback. Direct faster gears are not live "
+        "authorable; an operation may own them only behind its exact local or "
+        "stationary phase gate."
+    ),
     handler_key="runtime.set_speed",
     interaction=global_ui(milestone=CompletionMilestone.WORLD_OUTCOME_OBSERVED),
 )
@@ -2557,6 +2561,9 @@ PRODUCE_RESOURCE_OUTPUT_DEFINITION = OperationDefinition(
         "resource output inventory reaches its requested exact threshold. Current "
         "operators come only from "
         "Kenshi's accepted-operator set; selection and queued work are not acceptance. "
+        "The approach remains at 1x, 5x playback is permitted only while an exact "
+        "selected recipient remains in that accepted-operator set, and the runtime "
+        "restores 1x before every terminal. "
         "Work issued by this option is fully cleared before its terminal; an already "
         "accepted selected operator is adopted and left player-owned."
     ),
@@ -2571,6 +2578,7 @@ PRODUCE_RESOURCE_OUTPUT_DEFINITION = OperationDefinition(
             NATIVE_CONTEXT_TARGETS_CAPABILITY,
             NATIVE_RESOURCE_OPERATOR_STATE_CAPABILITY,
             "game.pause",
+            "game.speed",
             "identity.stable_handles",
         }
     ),
@@ -2932,7 +2940,7 @@ REGROUP_WITH_SQUAD_MEMBER_DEFINITION = OperationDefinition(
     summary=(
         "Bring one exact selected actor to one distinct current squadmate. The "
         "character adapter binds the current actor and exact target; native code owns global squad "
-        "lookup, container-stable identity, pathing, 5x playback, moving-target "
+        "lookup, container-stable identity, normal-speed pathing, moving-target "
         "tracking, arrival, and a confirmed terminal pause."
     ),
     argument_source=(
@@ -3025,8 +3033,8 @@ TRAVEL_TO_MAP_DESTINATION_DEFINITION = OperationDefinition(
         "discovered. Native code re-resolves the marker, selects Kenshi's "
         "direction-dependent gate waypoint, continues through a gated entrance, "
         "aligns the follow camera behind the route, and owns arrival until exact "
-        "current-town evidence is usable. The controller runs long travel at 5x "
-        "and pauses at the terminal boundary."
+        "current-town evidence is usable. The controller enforces normal 1x "
+        "playback throughout world-streaming travel."
     ),
     argument_source=(
         "destination_id must be copied exactly from a known_map_destinations "

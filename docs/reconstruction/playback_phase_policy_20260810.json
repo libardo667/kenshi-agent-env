@@ -1,0 +1,281 @@
+{
+  "schema_version": 1,
+  "conclusion": "Protocol 2.0 live resource production remained at native 1x through a long approach, entered 5x only after the exact selected recipient appeared in the resource's engine-owned operator set, restored 1x when that gate withdrew, and reached the exact output-and-task-release terminal without desktop input.",
+  "captured_at_utc": "2026-08-10T21:11:44Z",
+  "source_parent_revision": "3432b558c7d07dd0e42b412e4c89ff383f68dc34",
+  "manifest": {
+    "run_id": "playback-phase-policy-20260810-r4",
+    "public_command": "./dev run --scenario ruka-recruited-survival-soak-20260810 --objective <one Small Copper Resource production operation> --steps 1 --run-id playback-phase-policy-20260810-r4 --control live",
+    "objective": "Produce exactly one additional resource item from the currently observed Small Copper Resource. Select produce_resource_output directly. Do not collect, trade, travel to another town, recruit, enter dialogue, or perform any unrelated action; stop after the one productive operation reaches its exact terminal.",
+    "scenario_attestation": {
+      "scenario_id": "ruka-recruited-survival-soak-20260810",
+      "save_id": "kenshi-ruka-recruit-20260810",
+      "fixture_digest": "96d3a749a5a85bb9e44b064e2516da25c3faeb45812364ccfe11637c6ec9c917",
+      "managed_save_name": "KenshiAgentScenario",
+      "identity_session_id": "session-947910626f66accb-0000000000000002",
+      "environment": "indoor",
+      "danger": "safe",
+      "economy": "funded",
+      "party": "squad",
+      "time_of_day": "day"
+    },
+    "producer_protocol": "2.0.0",
+    "control_mode": "native_assisted",
+    "steps_completed": 1,
+    "plan_failures": {
+      "rejected": 0,
+      "aborted": 0,
+      "patch_rejected": 0,
+      "advisory_discarded": 0
+    }
+  },
+  "native_artifact": {
+    "change_in_this_slice": "none; the playback policy and durable request archive are Python runtime changes",
+    "installed_path": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Kenshi\\mods\\KenshiAgentTelemetry\\KenshiAgentTelemetry.dll",
+    "installed_sha256": "7aae1d50a36f8fdd6ddfbf43392632ebfd597b3306ef3c9c0af14b53fc5a6b42",
+    "installed_size_bytes": 440320,
+    "artifact_and_reinstall_authority": "docs/reconstruction/character_editor_confirmation_20260810.json"
+  },
+  "entities": {
+    "recipient": {
+      "id": "entity-947910626f66accb-0000000000000002-00000001-00000000-00000000-00000003-42ddb580",
+      "name": "Ruka"
+    },
+    "resource": {
+      "id": "entity-947910626f66accb-0000000000000002-00000000-000008d3-00002b67-000012aa-1363f300",
+      "name": "Small Copper Resource"
+    }
+  },
+  "requests_and_acknowledgements": [
+    {
+      "purpose": "issue one exact productive operation",
+      "archived_request_path": "runs/playback-phase-policy-20260810-r4/native_requests/cmd-0567b93531ec4e8fbd77e6c4efe48343.json",
+      "request": {
+        "command_id": "cmd-0567b93531ec4e8fbd77e6c4efe48343",
+        "command": "produce_resource_output",
+        "based_on_telemetry_sequence": 151,
+        "target_id": "entity-947910626f66accb-0000000000000002-00000000-000008d3-00002b67-000012aa-1363f300",
+        "selected_character_ids": [
+          "entity-947910626f66accb-0000000000000002-00000001-00000000-00000000-00000003-42ddb580"
+        ],
+        "minimum_output_quantity": 1
+      },
+      "accepted": {
+        "status": "accepted",
+        "reason": "issued",
+        "acknowledged_at_telemetry_sequence": 152,
+        "accepted_at_telemetry_sequence": 152
+      },
+      "terminal": {
+        "status": "completed",
+        "reason": "resource_output_ready_task_released",
+        "terminal_at_telemetry_sequence": 327
+      }
+    },
+    {
+      "purpose": "enforce 1x for the approach",
+      "archived_request_path": "runs/playback-phase-policy-20260810-r4/native_requests/cmd-cee6e8778fcd4521994e7340fd6b0b64.json",
+      "request": {
+        "command_id": "cmd-cee6e8778fcd4521994e7340fd6b0b64",
+        "command": "set_speed",
+        "speed_multiplier": 1.0,
+        "based_on_telemetry_sequence": 152
+      },
+      "terminal": {
+        "status": "completed",
+        "reason": "world_speed_set",
+        "terminal_at_telemetry_sequence": 153
+      }
+    },
+    {
+      "purpose": "enter 5x only after exact accepted-operator admission",
+      "archived_request_path": "runs/playback-phase-policy-20260810-r4/native_requests/cmd-44c096e3ea4e40bb8417c90217e0ce04.json",
+      "request": {
+        "command_id": "cmd-44c096e3ea4e40bb8417c90217e0ce04",
+        "command": "set_speed",
+        "speed_multiplier": 5.0,
+        "based_on_telemetry_sequence": 252
+      },
+      "gate": {
+        "telemetry_sequence": 252,
+        "resource_distance": 69.509,
+        "current_operator_ids": [
+          "entity-947910626f66accb-0000000000000002-00000001-00000000-00000000-00000003-42ddb580"
+        ]
+      },
+      "terminal": {
+        "status": "completed",
+        "reason": "world_speed_set",
+        "terminal_at_telemetry_sequence": 253
+      }
+    },
+    {
+      "purpose": "restore 1x after the operator gate withdrew and before productive terminal",
+      "archived_request_path": "runs/playback-phase-policy-20260810-r4/native_requests/cmd-1dcf5a433064488599ed8abdd1b1b8e6.json",
+      "request": {
+        "command_id": "cmd-1dcf5a433064488599ed8abdd1b1b8e6",
+        "command": "set_speed",
+        "speed_multiplier": 1.0,
+        "based_on_telemetry_sequence": 325
+      },
+      "gate_withdrawal": {
+        "telemetry_sequence": 325,
+        "current_operator_ids": [],
+        "resource_output": [
+          {
+            "name": "Copper",
+            "quantity": 1,
+            "item_type": 4
+          }
+        ],
+        "productive_command_status": "accepted"
+      },
+      "terminal": {
+        "status": "completed",
+        "reason": "world_speed_set",
+        "terminal_at_telemetry_sequence": 326
+      },
+      "later_productive_terminal_sequence": 327
+    },
+    {
+      "purpose": "final native safety pause",
+      "archived_request_path": "runs/playback-phase-policy-20260810-r4/native_requests/cmd-2374916eff1b41889494b22555f12b51.json",
+      "request": {
+        "command_id": "cmd-2374916eff1b41889494b22555f12b51",
+        "command": "pause",
+        "paused": true,
+        "based_on_telemetry_sequence": 330
+      },
+      "terminal": {
+        "status": "completed",
+        "reason": "world_paused",
+        "terminal_at_telemetry_sequence": 331
+      }
+    }
+  ],
+  "decisive_telemetry": [
+    {
+      "sequence": 152,
+      "meaning": "productive command accepted while the distant approach had no accepted operator",
+      "resource_distance": 1886.769,
+      "current_operator_ids": [],
+      "resource_output_quantity": 0
+    },
+    {
+      "sequence": 153,
+      "meaning": "the archived 1x approach request reached exact world_speed_set",
+      "resource_distance": 1879.182,
+      "current_operator_ids": []
+    },
+    {
+      "sequence": 251,
+      "meaning": "the long approach remained at the first clock command with no accepted operator",
+      "resource_distance": 83.948,
+      "current_operator_ids": [],
+      "retained_speed_command_ids": [
+        "cmd-cee6e8778fcd4521994e7340fd6b0b64"
+      ]
+    },
+    {
+      "sequence": 252,
+      "meaning": "the exact recipient first appeared in the engine-owned operator set",
+      "resource_distance": 69.509,
+      "current_operator_ids": [
+        "entity-947910626f66accb-0000000000000002-00000001-00000000-00000000-00000003-42ddb580"
+      ],
+      "resource_output_quantity": 0
+    },
+    {
+      "sequence": 253,
+      "meaning": "the separately archived 5x work request reached exact world_speed_set after admission",
+      "productive_command_status": "accepted",
+      "current_operator_count": 1
+    },
+    {
+      "sequence": 324,
+      "meaning": "one exact output existed while the recipient was still admitted",
+      "productive_command_status": "accepted",
+      "current_operator_count": 1,
+      "resource_output_quantity": 1
+    },
+    {
+      "sequence": 325,
+      "meaning": "operator withdrawal preceded the cleanup clock request and productive terminal",
+      "productive_command_status": "accepted",
+      "current_operator_ids": [],
+      "resource_output_quantity": 1
+    },
+    {
+      "sequence": 326,
+      "meaning": "the separately archived cleanup 1x request reached exact world_speed_set",
+      "productive_command_status": "accepted",
+      "resource_output_quantity": 1
+    },
+    {
+      "sequence": 327,
+      "meaning": "the productive command reached exact output-and-task-release terminal only after 1x cleanup",
+      "productive_command": "cmd-0567b93531ec4e8fbd77e6c4efe48343 completed/resource_output_ready_task_released",
+      "current_operator_ids": [],
+      "resource_output_quantity": 1
+    }
+  ],
+  "action_and_final_disposition": {
+    "primitive_actions": 0,
+    "action_executed": true,
+    "causal_revision_advanced": true,
+    "action_started_at_utc": "2026-08-10T21:09:16.574064Z",
+    "action_finished_at_utc": "2026-08-10T21:10:44.666093Z",
+    "action_terminal_revision": 328,
+    "plan_completed": true,
+    "final_safe_state": {
+      "status": "pause_confirmed",
+      "initial_sequence": 330,
+      "confirmed_sequence": 331,
+      "input_attempted": false,
+      "input_executed": false
+    },
+    "process_close": "Kenshi closed from a fresh paused idle state."
+  },
+  "omitted_raw_artifacts": [
+    {
+      "path": "runs/playback-phase-policy-20260810-r4/events.jsonl",
+      "size_bytes": 6224791,
+      "sha256": "e11e7f8eb49c9ee362fba4a0878688c215121a6e92e0b7623a02dbafc1a30b6f"
+    },
+    {
+      "path": "runs/playback-phase-policy-20260810-r4/frames/live_frame_000001.png",
+      "size_bytes": 2538131,
+      "sha256": "48cc0fe9614caa56cd2112b1dc01ae591bd177e61c3583ddf1fc1be8f59039af"
+    },
+    {
+      "path": "runs/playback-phase-policy-20260810-r4/frames/live_frame_000002.png",
+      "size_bytes": 1932746,
+      "sha256": "2f74681d52f442d81b5a4ccfaa0db68b826c90596db9baf88bcc8efcc95486c7"
+    }
+  ],
+  "archived_request_hashes": {
+    "cmd-0567b93531ec4e8fbd77e6c4efe48343": "cca6a7c204388f95d20ef918f890271c0a4b0b25bafcc5556838f965b3c6945d",
+    "cmd-cee6e8778fcd4521994e7340fd6b0b64": "8a146f5bca0bacda44f8cc14bcedebd2b5970c1cb5e205b3f095e08e8a2f9710",
+    "cmd-44c096e3ea4e40bb8417c90217e0ce04": "761b6f7a4d250b26727c073ee28453bac6c6870a9437f315337c220c5faed262",
+    "cmd-1dcf5a433064488599ed8abdd1b1b8e6": "2b2c22353aa6c8996434c89b00ea7597f0972b5fc8d36e3bde93a9590aed4352",
+    "cmd-2374916eff1b41889494b22555f12b51": "14e36d458db4ab2a85ee45b932f058ee00d0812375922b8e50c02ad6ab11e584"
+  },
+  "excluded_attempts": [
+    {
+      "run_id": "playback-phase-policy-20260810-r2",
+      "disposition": "excluded from the successful policy conclusion",
+      "reason": "An unsolicited engine dialogue opened at sequence 241 and paused the world after operator admission; the productive command later cancelled world_paused. The run had no human-input, emergency, host-terminal, or safety-supervisor preemption. Native recovery closed the dialogue before process shutdown."
+    },
+    {
+      "run_id": "playback-phase-policy-20260810-r3",
+      "disposition": "no operation dispatched",
+      "reason": "The requested full-size Copper Resource was not in the current offer set, so the planner selected noop."
+    }
+  ],
+  "withheld_conclusions": [
+    "The r8 renderer crash is not proven to have been caused by 5x world streaming.",
+    "Normal-speed map travel and squad regroup are source- and test-proven in this slice but were not separately live-proven by r4.",
+    "The removal of direct planner-authored gears 2 and 3 is source- and test-proven after r4; r4 live-proves the operation-owned resource phase rather than that negative generic boundary.",
+    "This run does not define how an unsolicited dialogue should suspend, cancel, or resume an otherwise valid resource operation."
+  ]
+}

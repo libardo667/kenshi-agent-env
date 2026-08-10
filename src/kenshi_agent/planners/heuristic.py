@@ -84,18 +84,21 @@ class HeuristicPlanner(Planner):
                     timeout_seconds=2.0,
                     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
                     on_success=(
-                        "accelerate"
+                        "normalize_speed"
                         if telemetry.game.speed_multiplier is not None
-                        and telemetry.game.speed_multiplier < 3
+                        and telemetry.game.speed_multiplier != 1.0
                         else None
                     ),
                 )
             )
-        if telemetry.game.speed_multiplier is not None and telemetry.game.speed_multiplier < 3:
+        if (
+            telemetry.game.speed_multiplier is not None
+            and telemetry.game.speed_multiplier != 1.0
+        ):
             steps.append(
                 PlanStep(
-                    step_id="accelerate",
-                    action=SetSpeedAction(speed=3),
+                    step_id="normalize_speed",
+                    action=SetSpeedAction(speed=1),
                     preconditions=[
                         cls._field_condition(
                             ConditionPath.TELEMETRY_GAME_PAUSED,
@@ -106,7 +109,7 @@ class HeuristicPlanner(Planner):
                     success_conditions=[
                         cls._field_condition(
                             ConditionPath.TELEMETRY_GAME_SPEED_MULTIPLIER,
-                            3.0,
+                            1.0,
                             "game.speed",
                         )
                     ],
@@ -121,7 +124,7 @@ class HeuristicPlanner(Planner):
             schema_version="1.0",
             plan_id=f"heuristic_setup_{observation.step_index}",
             plan_version=1,
-            objective="Resume and accelerate a causally observed stable world.",
+            objective="Resume a causally observed stable world at normal playback.",
             control_mode=observation.control_mode,
             based_on_revision=observation.world_revision,
             assumptions=[

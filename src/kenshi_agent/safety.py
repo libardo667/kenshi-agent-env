@@ -228,6 +228,11 @@ class OperationPolicy:
                     "use a bounded movement pulse."  # mutation: reason
                 )
         if isinstance(action, SetSpeedAction) and observation.mode == "live":
+            if action.speed != 1:
+                raise SafetyViolation(
+                    "Direct faster playback is blocked; only an operation-owned "
+                    "exact stationary/local phase may accelerate."
+                )
             telemetry = observation.telemetry
             if (
                 telemetry is None

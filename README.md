@@ -32,10 +32,11 @@ The current action set covers:
 - buying, selling, looting, collecting resource output, and moving items between
   open inventories through Kenshi's own inventory code;
 - reading exact resource operator capacity and accepted identities, starting or
-  adopting productive resource work at native fastest playback, and monitoring
-  until exact output inventory exists;
+  adopting productive resource work with 1x approach and accepted-operator-gated
+  fastest playback, and monitoring until exact output inventory exists;
 - reading a local resource survey;
-- pausing, changing game speed, bounded observation waits, and stopping a run;
+- pausing, restoring normal game speed, operation-gated stationary acceleration,
+  bounded observation waits, and stopping a run;
 - electively shifting into an eligible nearby body; the operation is authorable
   with an empty roster, while live end-to-end recovery after true total party
   loss remains unproven; and
@@ -87,6 +88,16 @@ resource `operate` or planner-authored `wait`. The committed
 [reduced evidence artifact](docs/reconstruction/native_mining_local_trade_20260810.json)
 preserves exact requests, acknowledgements, decisive telemetry, binary identity,
 raw-file hashes, and the movement-stall caveat.
+
+The later `playback-phase-policy-20260810-r4` run proves the narrower playback
+policy: a 1,887-unit resource approach remained at 1x while accepted-operator
+state was empty, 5x began only after Ruka appeared in the resource's exact
+operator set, and a separate 1x request completed before the productive
+terminal. The runtime now archives every exact native request in its ignored run
+bundle before publication; the committed
+[reduced playback artifact](docs/reconstruction/playback_phase_policy_20260810.json)
+preserves those request payloads, matching acknowledgements, decisive frames,
+raw hashes, and the excluded interrupted attempts.
 
 There are still important limits:
 

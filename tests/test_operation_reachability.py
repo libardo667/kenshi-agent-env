@@ -96,7 +96,7 @@ def test_a_running_world_offers_pause_speed_and_wait_instead() -> None:
     semantics = _semantics(_paused_observation(paused=False))
 
     assert "pause_game" in semantics
-    assert "set_game_speed" in semantics
+    assert "restore_normal_speed" in semantics
     assert "wait" in semantics
     # Resuming an already-running world is not a choice worth offering.
     assert "resume_game" not in semantics

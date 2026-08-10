@@ -485,6 +485,7 @@ def test_reviewed_resource_target_is_an_exact_productive_affordance() -> None:
                 "control.perform_context_action",
                 "control.produce_resource_output",
                 "game.pause",
+                "game.speed",
                 "identity.stable_handles",
             ],
             game=GameState(loaded=True, paused=True),

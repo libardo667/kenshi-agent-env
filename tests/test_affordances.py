@@ -391,6 +391,7 @@ def test_group_selection_can_issue_broadcast_orders_and_still_narrow() -> None:
             "control.produce_resource_output",
             "control.select_squad_member",
             "game.pause",
+            "game.speed",
             "identity.stable_handles",
             "roster.basic",
             "world.context_targets",
@@ -453,6 +454,7 @@ def test_resource_offer_descriptions_bound_complete_long_operator_sets() -> None
             "control.perform_context_action",
             "control.produce_resource_output",
             "game.pause",
+            "game.speed",
             "identity.stable_handles",
             "world.context_targets",
             "world.resource_operators",
@@ -501,6 +503,7 @@ def test_resource_offer_produces_one_more_than_exact_observed_output() -> None:
         capabilities=[
             "control.produce_resource_output",
             "game.pause",
+            "game.speed",
             "identity.stable_handles",
             "world.context_targets",
             "world.resource_operators",
@@ -527,7 +530,8 @@ def test_resource_offer_produces_one_more_than_exact_observed_output() -> None:
         "target_id": resource.id,
         "minimum_output_quantity": 2,
     }
-    assert "Travel/path to and work 'Copper Resource'" in offers[0].description
+    assert "Travel/path to 'Copper Resource' at 1x" in offers[0].description
+    assert "only after exact operator admission" in offers[0].description
     assert "reaches 2, one more than the observed 1" in offers[0].description
     bound = bind_affordance(selection_for(offers[0]), observation)
     assert bound.operation.minimum_output_quantity == 2
@@ -576,6 +580,7 @@ def test_planner_requires_exact_target_only_when_a_semantic_is_ambiguous() -> No
         capabilities=[
             "control.produce_resource_output",
             "game.pause",
+            "game.speed",
             "identity.stable_handles",
             "world.context_targets",
             "world.resource_operators",
@@ -633,6 +638,7 @@ def test_resource_production_is_withheld_while_exact_output_is_full() -> None:
         capabilities=[
             "control.produce_resource_output",
             "game.pause",
+            "game.speed",
             "identity.stable_handles",
             "world.context_targets",
             "world.resource_operators",
@@ -674,6 +680,7 @@ def test_resource_operations_are_withheld_without_complete_engine_state() -> Non
             "control.perform_context_action",
             "control.produce_resource_output",
             "game.pause",
+            "game.speed",
             "identity.stable_handles",
             "world.context_targets",
             "world.resource_operators",
@@ -689,6 +696,41 @@ def test_resource_operations_are_withheld_without_complete_engine_state() -> Non
     }
     assert "perform_context_action" not in operation_kinds
     assert "produce_resource_output" not in operation_kinds
+
+
+def test_resource_production_is_withheld_without_native_speed_control() -> None:
+    actor = CharacterState(id="entity-bark", name="Bark")
+    resource = WorldTarget(
+        id="resource-copper",
+        name="Copper Resource",
+        kind="natural_resource",
+        position=Vec3(x=10, y=0, z=20),
+        distance=25,
+        context_actions=[ContextActionKind.OPERATE],
+        default_task="operate_machinery",
+        operator_capacity=1,
+        current_operator_ids=[],
+        current_operators_complete=True,
+        output_inventory_complete=True,
+    )
+    observation = _observation(
+        capabilities=[
+            "control.produce_resource_output",
+            "game.pause",
+            "identity.stable_handles",
+            "world.context_targets",
+            "world.resource_operators",
+        ],
+        roster=[actor],
+        targets=[resource],
+        primary_character_id=actor.id,
+        selected_character_ids=[actor.id],
+    )
+
+    assert not any(
+        offer.operation_kind == "produce_resource_output"
+        for offer in offered_affordances(observation)
+    )
 
 
 def test_resource_output_and_inventory_pair_are_both_offered() -> None:
@@ -717,6 +759,7 @@ def test_resource_output_and_inventory_pair_are_both_offered() -> None:
             "control.open_trade_window",
             "control.produce_resource_output",
             "game.pause",
+            "game.speed",
             "identity.stable_handles",
             "world.context_targets",
             "world.resource_operators",
@@ -849,10 +892,22 @@ def test_runtime_wait_offer_exposes_live_safe_bounds() -> None:
     waits = [
         offer for offer in offered_affordances(observation) if offer.operation_kind == "wait"
     ]
+    speeds = [
+        offer
+        for offer in offered_affordances(observation)
+        if offer.operation_kind == "set_speed"
+    ]
     assert len(waits) == 1
     assert len(waits[0].parameters) == 1
     assert waits[0].parameters[0].minimum == 0
     assert waits[0].parameters[0].maximum == 8
+    assert len(speeds) == 1
+    assert speeds[0].semantic == "restore_normal_speed"
+    assert len(speeds[0].parameters) == 1
+    assert speeds[0].parameters[0].minimum == 1
+    assert speeds[0].parameters[0].maximum == 1
+    assert "operation" in speeds[0].description
+    assert "stationary/local gate" in speeds[0].description
 
 
 
