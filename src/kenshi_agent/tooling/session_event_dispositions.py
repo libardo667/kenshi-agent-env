@@ -155,6 +155,12 @@ APPROVED_OPEN_SINKS: tuple[OpenSink, ...] = (
     ),
     OpenSink(
         "kenshi_agent/session_log.py",
+        "SessionLogger._separate_unterminated_tail",
+        "reviewed_non_event.write",
+        "'\\n'",
+    ),
+    OpenSink(
+        "kenshi_agent/session_log.py",
         "SessionLogger.write",
         "reviewed_non_event.write",
         "line + '\\n'",

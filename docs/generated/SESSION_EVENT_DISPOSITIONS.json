@@ -544,7 +544,7 @@
   "schema_version": 1,
   "source_inventory": {
     "event_type_count": 89,
-    "fingerprint": "14f7ae0a0cc64ed1d05f064a00f53107e6d58ab41a02367cfdc97e14cd208f4c",
+    "fingerprint": "232a934c595657d6189d9ab39dc347b4af711d86814fc071ec263e51da3ad60b",
     "open_string_sinks": [
       {
         "expression": "event_type",
@@ -599,6 +599,12 @@
         "owner": "RunCoordinator._plan_event",
         "sink_kind": "session_logger.write",
         "source_file": "kenshi_agent/run_coordinator.py"
+      },
+      {
+        "expression": "'\\n'",
+        "owner": "SessionLogger._separate_unterminated_tail",
+        "sink_kind": "reviewed_non_event.write",
+        "source_file": "kenshi_agent/session_log.py"
       },
       {
         "expression": "line + '\\n'",

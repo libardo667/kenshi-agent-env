@@ -1,151 +1,143 @@
-# Checkpoint: EvoGen session-event disposition inventory
+# Checkpoint: Run-local session event sequence
 
-Goal 9 freezes the current Kenshi Agent Environment session-event vocabulary
-before any exporter or logger migration is attempted. The inventory is derived
-from the source that can reach `SessionLogger.write`; a separate reviewed
-authority assigns every discovered event exactly one EvoGen disposition.
+Goal 10 gives every newly written KAE session-log record a logger-owned,
+one-based `event_sequence`. The number records serialized log order only. It is
+not an environment step, telemetry revision, charged planner turn, dispatch
+acknowledgement, or proof that the world changed.
 
-This is a source and test checkpoint. It makes no new live-game claim, changes
-no environment or evaluator behavior, and does not convert the logger to an
-EvoGen trajectory.
+This is a logger, compatibility, and test checkpoint. It changes no gameplay,
+environment, evaluator, native-controller, or overlay behavior and makes no new
+live-game claim.
 
 ## Repository and authority
 
 ```text
-parent commit          a18af271634a767f90a9e9356f1f8bbc50411e8f
+parent commit          b8544b88b8c610f2859298308b0adaca290c9ddc
 integration branch     main
 starting tree          clean
-EvoGen counterpart     f53298ff15ca1bfc2c9559c8c77568b153c5649e
+EvoGen counterpart     cf70589f91add9c9dbe6affd11866b20d2690642
+source plan revision   2026-08-10T21:25:08.835Z
 producer protocol      2.0.0
 disposition schema     1
 ```
 
-The preceding KAE stage closed the 120-turn native survival soak and
-human-facing charged-turn overlay at the parent commit. Its run and recovery
-fixture claims remain in that committed checkpoint history; G09 neither
-extends nor weakens them.
+The parent commit is the completed G09 source-event inventory. It remains the
+authority for which session events exist and how they map toward EvoGen. G10
+adds record identity without changing that 89-event semantic denominator.
 
-## Source-derived denominator
+## Serialized order contract
 
-The current source-local denominator is **89 outer session event types** across
-**127 producer records**. The extractor follows direct logger writes and the
-current wrapper/callback routes through `PlanEventRecorder`, operation
-progress, monitored options, budget reservation, continuity reads, and control
-ownership. Repeated producer records remain in the canonical AST fingerprint,
-so adding another emission of an already known event still stales the generated
-artifact.
+`SessionLogger` owns the next sequence for one run. A fresh log starts at 1.
+Sequence allocation, JSON serialization, the append, and the immediate flush
+share one lock, so the order in `events.jsonl` is the sequence order even when
+many producer threads write at the same gameplay step.
 
-The generated inventory also retains every reviewed string boundary. Seven are
-open event-type pass-through sinks whose current in-repository callers resolve
-to the 89-event denominator. Nine are reviewed non-event writes such as native
-request files, telemetry snapshots, speech input, and console output. A new
-writer receiver or logger alias therefore fails closed instead of escaping a
-name-based scan.
+The logger retires a sequence before attempting I/O. This matters when a write
+or flush failure is ambiguous about whether bytes reached the file: a later
+write cannot reuse an identity that may already be present. Normal successful
+writes remain contiguous; an uncertain failed write may leave a gap rather
+than a duplicate.
 
-`SessionLogger.write(event_type: str)` itself remains an open string API. G09
-does not pretend this makes the global event domain closed; it proves the
-current in-repository producers and names the open boundary explicitly.
+The existing append API is continuation-safe for one `SessionLogger` lifecycle
+at a time:
 
-## Reviewed dispositions
+- existing records for the same run seed the next value;
+- legacy records without `event_sequence` retain their positions when the next
+  value is chosen;
+- a complete final JSON object without a newline is preserved and terminated;
+- a provably invalid unterminated crash tail is removed before appending; and
+- records belonging to another run do not advance this run's local counter.
 
-Every event has exactly one of four dispositions in
-`docs/reconstruction/session_event_dispositions.json`. The generated artifact
-at `docs/generated/SESSION_EVENT_DISPOSITIONS.json` combines that reviewed
-authority with the source records and fingerprint.
+Production already creates a new run directory with `exist_ok=False` and shares
+one logger object throughout the runtime. G10 does not claim coordination
+between two logger objects or processes writing the same path, nor `fsync`
+power-loss durability.
 
-The 89 rows divide into:
+## Separate gameplay and telemetry fields
 
-- **22 exact EvoGen events.** Run start/finalization, observations and world
-  deltas, typed decisions, action receipts, later outcomes, bounded recovery,
-  and concrete failures map to explicit EvoGen event kinds.
-- **54 subject-only raw evidence events.** These retain KAE ontology and
-  lifecycle evidence without claiming a one-to-one normalized meaning.
-- **9 derived summaries.** Planner, plan-outcome, safety, and world-state
-  aggregates remain diagnostic summaries rather than trajectory transitions.
-- **4 intentionally ignored normalized events.** Campaign scope belongs in run
-  metadata, while action-budget reserve/commit/release records are internal
-  accounting rather than capability events.
+`step_index` remains a distinct nullable gameplay field. Several session events
+can share one step, and run-level events can have no step. Nested telemetry
+sequence values remain subject evidence and can repeat across several log
+records. The overlay continues to derive human-facing charged turns from
+budget reserve/commit/release events; it does not display `event_sequence` as a
+turn or world revision.
 
-The map is conservative at the causal boundaries:
+The focused concurrency proof writes 1,024 events from eight threads. Every
+event uses `step_index=7` and the same nested telemetry revision. The test
+requires all producer identities to survive, and requires file-order sequences
+to be exactly `1..1024`. A separate committed fixture records sequences `1..4`
+across a nullable run record and three events sharing step 7 and telemetry
+revision 42.
 
-- `planner_context_prepared` is not an exact affordance set because missing
-  telemetry or preparation failure can make an apparent empty set incomplete;
-- input-boundary events are not exact bindings without joining the full
-  operation and target;
-- `continuity_receipt` and `fieldbook_receipt` multiplex accepted writes,
-  rejected writes, and no-ops, so they are not unconditional memory updates;
-- ownership events require payload-state interpretation before they can prove
-  human intervention;
-- `world_state_event` is a heterogeneous nested journal, not a dispatch event;
-- plan, option, and affordance success does not prove a world or goal effect;
-  and
-- KAE currently has no exact outer event for native dispatch, `goal_blocked`,
-  or `goal_achieved`.
+## Backward readability
 
-## Freshness and adversarial proof
+`SessionEvent.event_sequence` is optional and positive when present. That lets
+the typed outer-record contract accept the new field while still validating
+legacy dictionary-payload records that omit it. The 45-record
+`live_reporting_surface` fixture deliberately remains unchanged and contains
+no `event_sequence`; replay, metrics, reporting, overlay, and context-menu
+readers continue to consume outer records as ordinary mappings and ignore
+unknown or absent sequence metadata.
 
-The source inventory uses deterministic AST records containing stable source
-paths, owners, sink kinds, event types, and canonical open-boundary
-expressions. It contains no line numbers, timestamps, or Git hashes. Comment
-and blank-line changes preserve the fingerprint; producer, owner, sink,
-open-boundary, or event-domain changes do not.
+The new fixture lives at
+`tests/fixtures/session_logs/event_sequence.jsonl`. Historical ignored
+`runs/*/events.jsonl` files were not rewritten.
 
-Focused tests prove that:
+## G09 freshness after the logger migration
 
-- the reviewed and generated event sets are exactly the 89 source events;
-- a new direct event or plain/annotated control-ownership enum value fails
-  until reviewed;
-- unresolved and partially resolved dynamic producers fail closed;
-- missing, payload-only, splatted, direct-alias, bound-method, destructured,
-  assigned-`getattr`, and renamed operation-progress routes cannot evade the
-  inventory;
-- duplicate and extra semantic rows are rejected;
-- function defaults and decorators remain inside the scanned source boundary;
-- duplicate resolved emissions change the source fingerprint even when the
-  event-name set does not, while duplicate open boundaries fail freshness; and
-- comment-only source changes do not create false freshness churn.
+The source-derived denominator remains **89 event types** and **127 producer
+records**. The logger's crash-tail separator is a new reviewed non-event write,
+so the generated artifact now records **17 open boundaries**: seven event-type
+pass-throughs and ten reviewed non-event writes. Its source fingerprint is
+`232a934c595657d6189d9ab39dc347b4af711d86814fc071ec263e51da3ad60b`.
 
-Raman independently reviewed all 89 semantic dispositions against the KAE
-payload producers and EvoGen event meanings and found no G09 blocker. The
-review preserves downstream constraints: digest observations remain
-incomplete, `world_state_update` is delta metadata rather than a complete
-effect, overloaded receipts require payload-aware filtering, and no current
-event proves native dispatch, `goal_blocked`, or `goal_achieved`.
+No disposition row changed. The generated artifact was refreshed through the
+checked-in exporter, and the G09 freshness tests continue to fail closed on
+unreviewed events, aliases, or writer boundaries.
 
-Lovelace and Gauss independently attacked the source denominator and freshness
-boundary. Their initial reviews found mixed-condition, malformed/splatted,
-duplicate-open-sink, function-default, annotated-enum, bound-method,
-destructured, and dynamic-`getattr` escapes. The corrected extractor names the
-existing `OperationExecutionService.submit` bound callback explicitly, and
-both final re-reviews pass the repaired 89-event / 127-record / 16-open-boundary
-candidate. Candidate-author tests were not used as certification.
+## Adversarial review and withheld claims
 
-The portable gate now regenerates this artifact before schemas, documentation,
-and the full suite. Stale bytes or an incomplete reviewed authority fail the
-same local and hosted gate used by the rest of KAE.
+Lamport, Hoare, and Dijkstra independently audited writer lifecycle, consumer
+compatibility, and the concurrency falsifier before implementation. Their
+candidate review found two real defects: sequence reuse after an ambiguous
+flush failure and retention of an invalid final crash fragment. Both received
+dedicated regression tests and narrow logger repairs. Lamport reran the exact
+failure probes and passed the repaired candidate; the full portable gate also
+passed afterward.
+
+The following remain explicitly withheld:
+
+- event sequence does not certify dispatch, acceptance, completion, a world
+  effect, goal progress, or goal achievement;
+- it is not a global, cross-run, cross-process, telemetry, or gameplay clock;
+- G10 does not add an EvoGen exporter or trajectory envelope;
+- G11 generation-manifest and provenance work remains unstarted; and
+- no live process, save, DLL, or game state was changed to prove this slice.
 
 ## Completion boundary and next goal
 
-G09 changes no `SessionLogger` signature, event payload, fixture, protocol,
-runtime behavior, environment behavior, or evaluator behavior. In particular,
-there is still no logger-owned serialized event sequence. That migration and
-its concurrency stress proof belong to G10; source log sequence must remain
-distinct from environment step index and telemetry revision.
+G10 stops after the logger migration is independently reviewed, the complete
+portable gate passes, this checkpoint is committed on `main`, the public push
+is clean, and hosted CI is green. Only then may the central EvoGen plan ratchet
+mark G10 complete and name G11 as the sole next goal.
 
-G12 still owns a dedicated authoritative affordance-set event, and G14 owns the
-production KAE exporter. This inventory is their reviewed input, not an early
-implementation of either goal.
+G11 owns generation provenance, effective configuration, secrets exclusion,
+and the generation manifest. G12 still owns the authoritative planner-visible
+affordance-set event, and G14 owns the production KAE exporter.
 
 ## Verification
 
 ```bash
-UV_CACHE_DIR=/tmp/kae-uv-cache uv run --frozen --extra dev pytest -q \
-  tests/test_session_event_dispositions.py tests/test_checkpoint_freshness.py
+UV_CACHE_DIR=/tmp/kae-uv-cache uv run --frozen --extra dev pytest -p no:cacheprovider -q \
+  tests/test_session_log.py tests/test_session_event_dispositions.py \
+  tests/test_checkpoint_freshness.py tests/test_overlay.py tests/test_replay.py \
+  tests/test_metrics.py
 UV_CACHE_DIR=/tmp/kae-uv-cache ./dev verify-portable
 git diff --check
 ```
 
-The focused disposition/freshness suite and the complete portable gate pass on
-the final G09 candidate. The portable gate includes locked dependency sync,
-Ruff, strict mypy, research validation, event-map/schema/document generation,
-the full pytest suite, and whitespace checks.
+The focused logger, compatibility, disposition, replay, overlay, and evaluator
+tests pass on the repaired candidate. The complete portable gate also passes:
+locked dependency sync, Ruff, strict mypy over 150 source files, research
+validation, event-map/schema/document freshness, the full pytest suite, and
+whitespace checks. Hosted CI remains the post-push completion authority.

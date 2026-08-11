@@ -251,6 +251,7 @@ class Transition(StrictModel):
 
 class SessionEvent(StrictModel):
     event_type: str
+    event_sequence: int | None = Field(default=None, ge=1)
     run_id: str
     step_index: int | None = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
