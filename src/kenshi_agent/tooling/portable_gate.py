@@ -29,6 +29,17 @@ CHECKS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ),
     ),
     (
+        "session event disposition generation",
+        (
+            "uv",
+            "run",
+            "--frozen",
+            "--no-sync",
+            "python",
+            "scripts/export_session_event_dispositions.py",
+        ),
+    ),
+    (
         "schema generation",
         (
             "uv",

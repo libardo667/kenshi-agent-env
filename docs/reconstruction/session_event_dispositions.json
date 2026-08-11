@@ -1,0 +1,539 @@
+{
+  "schema_version": 1,
+  "events": [
+    {
+      "source_event_type": "action_outcome",
+      "disposition": "exact_evogen_event",
+      "evogen_kind": "outcome_observation",
+      "rationale": "The typed outcome joins pre-dispatch and later observation evidence and preserves changed, no-op, not-executed, and unknown assessments."
+    },
+    {
+      "source_event_type": "action_receipt",
+      "disposition": "exact_evogen_event",
+      "evogen_kind": "execution_receipt",
+      "rationale": "The payload is the typed ActionReceipt at the execution boundary; acceptance and execution remain separate from later world effect."
+    },
+    {
+      "source_event_type": "action_rejected",
+      "disposition": "exact_evogen_event",
+      "evogen_kind": "error",
+      "rationale": "action_rejected is a concrete KAE failure or rejection record; normalize it as error without promoting it to goal_blocked."
+    },
+    {
+      "source_event_type": "advisor_cancelled",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain advisor_cancelled as KAE advisor lifecycle evidence; it is not a subject action, world observation, or memory mutation by name alone."
+    },
+    {
+      "source_event_type": "advisor_completed",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain advisor_completed as KAE advisor lifecycle evidence; it is not a subject action, world observation, or memory mutation by name alone."
+    },
+    {
+      "source_event_type": "advisor_failed",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain advisor_failed as KAE advisor lifecycle evidence; it is not a subject action, world observation, or memory mutation by name alone."
+    },
+    {
+      "source_event_type": "advisor_queued",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain advisor_queued as KAE advisor lifecycle evidence; it is not a subject action, world observation, or memory mutation by name alone."
+    },
+    {
+      "source_event_type": "advisor_request_queued",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain advisor_request_queued as KAE advisor lifecycle evidence; it is not a subject action, world observation, or memory mutation by name alone."
+    },
+    {
+      "source_event_type": "advisor_requested",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain advisor_requested as KAE advisor lifecycle evidence; it is not a subject action, world observation, or memory mutation by name alone."
+    },
+    {
+      "source_event_type": "advisor_result",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain advisor_result as KAE advisor lifecycle evidence; it is not a subject action, world observation, or memory mutation by name alone."
+    },
+    {
+      "source_event_type": "advisor_suppressed",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain advisor_suppressed as KAE advisor lifecycle evidence; it is not a subject action, world observation, or memory mutation by name alone."
+    },
+    {
+      "source_event_type": "advisor_task_failed",
+      "disposition": "exact_evogen_event",
+      "evogen_kind": "error",
+      "rationale": "advisor_task_failed is a concrete KAE failure or rejection record; normalize it as error without promoting it to goal_blocked."
+    },
+    {
+      "source_event_type": "affordance_receipt",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain the selected affordance lifecycle as KAE evidence; it is not the complete planner-visible affordance set and is not execution proof."
+    },
+    {
+      "source_event_type": "agent_takeover_cancelled",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain agent_takeover_cancelled as KAE ownership evidence; payload state and surrounding events are required before projecting human intervention or recovery."
+    },
+    {
+      "source_event_type": "agent_takeover_countdown",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain agent_takeover_countdown as KAE ownership evidence; payload state and surrounding events are required before projecting human intervention or recovery."
+    },
+    {
+      "source_event_type": "agent_takeover_ready",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain agent_takeover_ready as KAE ownership evidence; payload state and surrounding events are required before projecting human intervention or recovery."
+    },
+    {
+      "source_event_type": "campaign_scope",
+      "disposition": "intentionally_ignored",
+      "evogen_kind": null,
+      "rationale": "Campaign identity belongs in EvoGen run/generation metadata, not as a normalized trajectory event."
+    },
+    {
+      "source_event_type": "concurrent_planner_discarded",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain concurrent_planner_discarded as KAE plan/option lifecycle evidence; progress, success, failure, or completion here does not independently prove a world or goal effect."
+    },
+    {
+      "source_event_type": "continuity_receipt",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain the typed KAE continuity receipt because accepted writes, rejected writes, and no-ops share this event type; status-aware projection is required."
+    },
+    {
+      "source_event_type": "continuity_store_failed",
+      "disposition": "exact_evogen_event",
+      "evogen_kind": "error",
+      "rationale": "continuity_store_failed is a concrete KAE failure or rejection record; normalize it as error without promoting it to goal_blocked."
+    },
+    {
+      "source_event_type": "control_handback_resume_failed",
+      "disposition": "exact_evogen_event",
+      "evogen_kind": "error",
+      "rationale": "control_handback_resume_failed is a concrete KAE failure or rejection record; normalize it as error without promoting it to goal_blocked."
+    },
+    {
+      "source_event_type": "control_handback_resumed",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain the KAE handback fact; it needs the associated receipt and later outcome before any normalized recovery or intervention claim."
+    },
+    {
+      "source_event_type": "control_ownership_changed",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain the state transition because only some payload states prove human intervention; the event name alone is insufficient."
+    },
+    {
+      "source_event_type": "decision",
+      "disposition": "exact_evogen_event",
+      "evogen_kind": "decision",
+      "rationale": "The payload contains a typed reflex or safety PlannerDecision authored against the current observation."
+    },
+    {
+      "source_event_type": "fieldbook_read",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain fieldbook_read as KAE continuity/read evidence; reads and lifecycle acknowledgements are not unconditional EvoGen memory updates."
+    },
+    {
+      "source_event_type": "fieldbook_read_completed",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain fieldbook_read_completed as KAE continuity/read evidence; reads and lifecycle acknowledgements are not unconditional EvoGen memory updates."
+    },
+    {
+      "source_event_type": "fieldbook_receipt",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain the typed KAE fieldbook receipt because accepted writes, rejected writes, and no-ops share this event type; status-aware projection is required."
+    },
+    {
+      "source_event_type": "input_boundary_rejected",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain the fresh lease-bound rejection evidence; the record requires a join with the plan action to carry the complete operation and target needed for an exact binding."
+    },
+    {
+      "source_event_type": "input_boundary_revalidated",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain the fresh lease-bound validation evidence; the record requires a join with the plan action to carry the complete operation and target needed for an exact binding."
+    },
+    {
+      "source_event_type": "memory_read",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain memory_read as KAE continuity/read evidence; reads and lifecycle acknowledgements are not unconditional EvoGen memory updates."
+    },
+    {
+      "source_event_type": "memory_read_completed",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain memory_read_completed as KAE continuity/read evidence; reads and lifecycle acknowledgements are not unconditional EvoGen memory updates."
+    },
+    {
+      "source_event_type": "observation",
+      "disposition": "exact_evogen_event",
+      "evogen_kind": "observation",
+      "rationale": "This is the runtime observation record. Digest observations remain explicitly incomplete in raw payload and are not promoted to replay proof."
+    },
+    {
+      "source_event_type": "observation_rejected",
+      "disposition": "exact_evogen_event",
+      "evogen_kind": "error",
+      "rationale": "observation_rejected is a concrete KAE failure or rejection record; normalize it as error without promoting it to goal_blocked."
+    },
+    {
+      "source_event_type": "operation_handler_error",
+      "disposition": "exact_evogen_event",
+      "evogen_kind": "error",
+      "rationale": "operation_handler_error is a concrete KAE failure or rejection record; normalize it as error without promoting it to goal_blocked."
+    },
+    {
+      "source_event_type": "option_cancelled",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain option_cancelled as KAE plan/option lifecycle evidence; progress, success, failure, or completion here does not independently prove a world or goal effect."
+    },
+    {
+      "source_event_type": "option_failed",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain option_failed as KAE plan/option lifecycle evidence; progress, success, failure, or completion here does not independently prove a world or goal effect."
+    },
+    {
+      "source_event_type": "option_interrupted",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain option_interrupted as KAE plan/option lifecycle evidence; progress, success, failure, or completion here does not independently prove a world or goal effect."
+    },
+    {
+      "source_event_type": "option_prepared",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain option_prepared as KAE plan/option lifecycle evidence; progress, success, failure, or completion here does not independently prove a world or goal effect."
+    },
+    {
+      "source_event_type": "option_progress",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain option_progress as KAE plan/option lifecycle evidence; progress, success, failure, or completion here does not independently prove a world or goal effect."
+    },
+    {
+      "source_event_type": "option_started",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain option_started as KAE plan/option lifecycle evidence; progress, success, failure, or completion here does not independently prove a world or goal effect."
+    },
+    {
+      "source_event_type": "option_succeeded",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain option_succeeded as KAE plan/option lifecycle evidence; progress, success, failure, or completion here does not independently prove a world or goal effect."
+    },
+    {
+      "source_event_type": "order_disposition_observed",
+      "disposition": "exact_evogen_event",
+      "evogen_kind": "outcome_observation",
+      "rationale": "This is later engine-owned order evidence for the same command and remains distinct from the earlier execution receipt."
+    },
+    {
+      "source_event_type": "plan_aborted",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain plan_aborted as KAE plan/option lifecycle evidence; progress, success, failure, or completion here does not independently prove a world or goal effect."
+    },
+    {
+      "source_event_type": "plan_accepted",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain plan_accepted as KAE plan/option lifecycle evidence; progress, success, failure, or completion here does not independently prove a world or goal effect."
+    },
+    {
+      "source_event_type": "plan_budget_committed",
+      "disposition": "intentionally_ignored",
+      "evogen_kind": null,
+      "rationale": "Internal action-budget accounting is retained by KAE but intentionally omitted from the normalized capability trajectory."
+    },
+    {
+      "source_event_type": "plan_budget_released",
+      "disposition": "intentionally_ignored",
+      "evogen_kind": null,
+      "rationale": "Internal action-budget accounting is retained by KAE but intentionally omitted from the normalized capability trajectory."
+    },
+    {
+      "source_event_type": "plan_budget_reserved",
+      "disposition": "intentionally_ignored",
+      "evogen_kind": null,
+      "rationale": "Internal action-budget accounting is retained by KAE but intentionally omitted from the normalized capability trajectory."
+    },
+    {
+      "source_event_type": "plan_completed",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain plan_completed as KAE plan/option lifecycle evidence; progress, success, failure, or completion here does not independently prove a world or goal effect."
+    },
+    {
+      "source_event_type": "plan_execution_cancelled",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain cancellation provenance; cancellation is neither a world effect nor a goal-level terminal."
+    },
+    {
+      "source_event_type": "plan_interrupt_staged",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain plan_interrupt_staged as KAE plan/option lifecycle evidence; progress, success, failure, or completion here does not independently prove a world or goal effect."
+    },
+    {
+      "source_event_type": "plan_outcome",
+      "disposition": "derived_summary",
+      "evogen_kind": null,
+      "rationale": "Typed terminal summary aggregated from plan lifecycle records; it is not independent world-effect evidence."
+    },
+    {
+      "source_event_type": "plan_patch_rejected",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain plan_patch_rejected as KAE plan/option lifecycle evidence; progress, success, failure, or completion here does not independently prove a world or goal effect."
+    },
+    {
+      "source_event_type": "plan_patch_requested",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain plan_patch_requested as KAE plan/option lifecycle evidence; progress, success, failure, or completion here does not independently prove a world or goal effect."
+    },
+    {
+      "source_event_type": "plan_patch_staged",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain plan_patch_staged as KAE plan/option lifecycle evidence; progress, success, failure, or completion here does not independently prove a world or goal effect."
+    },
+    {
+      "source_event_type": "plan_patched",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain plan_patched as KAE plan/option lifecycle evidence; progress, success, failure, or completion here does not independently prove a world or goal effect."
+    },
+    {
+      "source_event_type": "plan_proposed",
+      "disposition": "exact_evogen_event",
+      "evogen_kind": "decision",
+      "rationale": "The payload retains the planner-authored typed plan and its causal basis, so it is a decision projection rather than execution proof."
+    },
+    {
+      "source_event_type": "plan_rebased",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain plan_rebased as KAE plan/option lifecycle evidence; progress, success, failure, or completion here does not independently prove a world or goal effect."
+    },
+    {
+      "source_event_type": "plan_rejected",
+      "disposition": "exact_evogen_event",
+      "evogen_kind": "error",
+      "rationale": "plan_rejected is a concrete KAE failure or rejection record; normalize it as error without promoting it to goal_blocked."
+    },
+    {
+      "source_event_type": "plan_started",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain plan_started as KAE plan/option lifecycle evidence; progress, success, failure, or completion here does not independently prove a world or goal effect."
+    },
+    {
+      "source_event_type": "plan_step_cancelled",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain plan_step_cancelled as KAE plan/option lifecycle evidence; progress, success, failure, or completion here does not independently prove a world or goal effect."
+    },
+    {
+      "source_event_type": "plan_step_failed",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain plan_step_failed as KAE plan/option lifecycle evidence; progress, success, failure, or completion here does not independently prove a world or goal effect."
+    },
+    {
+      "source_event_type": "plan_step_interrupted",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain plan_step_interrupted as KAE plan/option lifecycle evidence; progress, success, failure, or completion here does not independently prove a world or goal effect."
+    },
+    {
+      "source_event_type": "plan_step_progress",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain plan_step_progress as KAE plan/option lifecycle evidence; progress, success, failure, or completion here does not independently prove a world or goal effect."
+    },
+    {
+      "source_event_type": "plan_step_ready",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain plan_step_ready as KAE plan/option lifecycle evidence; progress, success, failure, or completion here does not independently prove a world or goal effect."
+    },
+    {
+      "source_event_type": "plan_step_started",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain plan_step_started as KAE plan/option lifecycle evidence; progress, success, failure, or completion here does not independently prove a world or goal effect."
+    },
+    {
+      "source_event_type": "plan_step_succeeded",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain plan_step_succeeded as KAE plan/option lifecycle evidence; progress, success, failure, or completion here does not independently prove a world or goal effect."
+    },
+    {
+      "source_event_type": "planner_context_prepared",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain the prepared context and offered/withheld diagnostics, but missing telemetry or preparation failure can make the apparent set incomplete; G12 owns a dedicated affordance-set contract."
+    },
+    {
+      "source_event_type": "planner_error",
+      "disposition": "exact_evogen_event",
+      "evogen_kind": "error",
+      "rationale": "planner_error is a concrete KAE failure or rejection record; normalize it as error without promoting it to goal_blocked."
+    },
+    {
+      "source_event_type": "planner_non_progress",
+      "disposition": "derived_summary",
+      "evogen_kind": null,
+      "rationale": "Runtime-derived repeated-plan/non-progress summary; retain for diagnosis without relabeling it as a direct goal failure."
+    },
+    {
+      "source_event_type": "planner_output_rejected",
+      "disposition": "exact_evogen_event",
+      "evogen_kind": "error",
+      "rationale": "planner_output_rejected is a concrete KAE failure or rejection record; normalize it as error without promoting it to goal_blocked."
+    },
+    {
+      "source_event_type": "planner_transport",
+      "disposition": "derived_summary",
+      "evogen_kind": null,
+      "rationale": "Provider transport diagnostics summarize a model call and do not express subject behavior."
+    },
+    {
+      "source_event_type": "replan_stalled",
+      "disposition": "exact_evogen_event",
+      "evogen_kind": "error",
+      "rationale": "replan_stalled is a concrete KAE failure or rejection record; normalize it as error without promoting it to goal_blocked."
+    },
+    {
+      "source_event_type": "run_finished",
+      "disposition": "exact_evogen_event",
+      "evogen_kind": "run_finished",
+      "rationale": "This is the exact run finalization record and does not by itself prove a goal effect."
+    },
+    {
+      "source_event_type": "run_finished_safety",
+      "disposition": "derived_summary",
+      "evogen_kind": null,
+      "rationale": "Final pause-verification summary derives from cleanup evidence and remains separate from run finalization."
+    },
+    {
+      "source_event_type": "run_started",
+      "disposition": "exact_evogen_event",
+      "evogen_kind": "run_started",
+      "rationale": "The runtime emits the run ceiling, control mode, and scenario attestation at the run boundary; this is the exact EvoGen run_started role."
+    },
+    {
+      "source_event_type": "safety_cleanup_completed",
+      "disposition": "exact_evogen_event",
+      "evogen_kind": "recovery",
+      "rationale": "This is emitted only after fresh causal evidence confirms the bounded safety recovery completed."
+    },
+    {
+      "source_event_type": "safety_cleanup_failed",
+      "disposition": "exact_evogen_event",
+      "evogen_kind": "error",
+      "rationale": "safety_cleanup_failed is a concrete KAE failure or rejection record; normalize it as error without promoting it to goal_blocked."
+    },
+    {
+      "source_event_type": "safety_cleanup_started",
+      "disposition": "exact_evogen_event",
+      "evogen_kind": "recovery",
+      "rationale": "This records the start of a bounded runtime recovery attempt without claiming it completed."
+    },
+    {
+      "source_event_type": "safety_pause_already_confirmed",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain safety_pause_already_confirmed as KAE safety lifecycle evidence; preemption and supervision do not by themselves prove recovery, error, or goal termination."
+    },
+    {
+      "source_event_type": "safety_preempted",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain safety_preempted as KAE safety lifecycle evidence; preemption and supervision do not by themselves prove recovery, error, or goal termination."
+    },
+    {
+      "source_event_type": "safety_supervisor_finished",
+      "disposition": "derived_summary",
+      "evogen_kind": null,
+      "rationale": "Aggregate safety-supervisor counters summarize the run rather than one trajectory transition."
+    },
+    {
+      "source_event_type": "safety_supervisor_preempted",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain safety_supervisor_preempted as KAE safety lifecycle evidence; preemption and supervision do not by themselves prove recovery, error, or goal termination."
+    },
+    {
+      "source_event_type": "safety_supervisor_replan_requested",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain safety_supervisor_replan_requested as KAE safety lifecycle evidence; preemption and supervision do not by themselves prove recovery, error, or goal termination."
+    },
+    {
+      "source_event_type": "safety_supervisor_terminal",
+      "disposition": "derived_summary",
+      "evogen_kind": null,
+      "rationale": "Terminal safety summary derives from the cleanup lifecycle and does not replace its evidence records."
+    },
+    {
+      "source_event_type": "strategic_planner_call",
+      "disposition": "derived_summary",
+      "evogen_kind": null,
+      "rationale": "Planner timing and output-shape summary retained for diagnostics, not a planner decision payload."
+    },
+    {
+      "source_event_type": "strategic_planner_cancelled",
+      "disposition": "derived_summary",
+      "evogen_kind": null,
+      "rationale": "Planner cancellation summary retained for diagnostics, not a world or decision event."
+    },
+    {
+      "source_event_type": "world_state_event",
+      "disposition": "subject_only_raw_evidence",
+      "evogen_kind": null,
+      "rationale": "Retain the heterogeneous nested world journal in raw payload; nested command and plan-state names are not outer dispatch, receipt, or outcome events."
+    },
+    {
+      "source_event_type": "world_state_finished",
+      "disposition": "derived_summary",
+      "evogen_kind": null,
+      "rationale": "Aggregate world-state-store metrics summarize the run and are not an observation."
+    },
+    {
+      "source_event_type": "world_state_update",
+      "disposition": "exact_evogen_event",
+      "evogen_kind": "observation_delta",
+      "rationale": "This records a later world revision, changed paths, and loss/truncation status; it is an observation_delta, not an action outcome."
+    }
+  ]
+}
