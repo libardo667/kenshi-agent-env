@@ -433,6 +433,74 @@ def build_parser(
         help="Install the canonical live configuration's reversible graphics settings.",
     )
 
+    generation = commands.add_parser(
+        "generation-manifest",
+        help="Write a deterministic, redacted generation provenance manifest.",
+        description=(
+            "Write one exact KAE generation identity without launching or contacting Kenshi."
+        ),
+        formatter_class=formatter,
+    )
+    generation.add_argument(
+        "--config",
+        type=Path,
+        default=Path(LIVE_CONFIG),
+        help=argparse.SUPPRESS,
+    )
+    generation.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="Atomic JSON output path; its parent directory must already exist.",
+    )
+    generation.add_argument(
+        "--prompt-file",
+        type=Path,
+        help="Exact planner prompt override to identify.",
+    )
+    generation.add_argument(
+        "--advisor-corpus-file",
+        type=Path,
+        help="Exact advisor strategy corpus override to identify.",
+    )
+    generation.add_argument(
+        "--scenario-attestation",
+        type=Path,
+        help="Verified scenario attestation whose exact fixture still exists.",
+    )
+    generation.add_argument(
+        "--game-start",
+        help=(
+            "Exact checked-in authored Game Start ID; recorded separately from "
+            "scenario/save identity."
+        ),
+    )
+    generation.add_argument(
+        "--script-file",
+        type=Path,
+        help="Required exact decision script when planner.kind is scripted.",
+    )
+    generation.add_argument(
+        "--kenshi-executable",
+        type=Path,
+        help="Optional observed Kenshi executable to compare with research authority.",
+    )
+    generation.add_argument(
+        "--built-dll",
+        type=Path,
+        help="Optional native build output to hash.",
+    )
+    generation.add_argument(
+        "--staged-dll",
+        type=Path,
+        help="Optional staged DLL override; repository staging is checked by default.",
+    )
+    generation.add_argument(
+        "--installed-dll",
+        type=Path,
+        help="Optional exact DLL loaded by Kenshi to hash.",
+    )
+
     return parser
 
 

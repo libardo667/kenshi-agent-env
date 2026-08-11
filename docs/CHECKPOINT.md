@@ -1,143 +1,169 @@
-# Checkpoint: Run-local session event sequence
+# Checkpoint: Exact runnable-system generation manifest
 
-Goal 10 gives every newly written KAE session-log record a logger-owned,
-one-based `event_sequence`. The number records serialized log order only. It is
-not an environment step, telemetry revision, charged planner turn, dispatch
-acknowledgement, or proof that the world changed.
+Goal 11 adds a read-only `./dev generation-manifest` command that records the
+stable identity and provenance of the exact runnable KAE system. The manifest
+uses EvoGen's serialized `GenerationManifest` envelope while keeping all
+Kenshi-specific collection logic in KAE.
 
-This is a logger, compatibility, and test checkpoint. It changes no gameplay,
-environment, evaluator, native-controller, or overlay behavior and makes no new
-live-game claim.
+This is a tooling, schema, and evidence checkpoint. It does not launch Kenshi,
+dispatch a command, mutate a save, install a DLL, or claim that a running world
+changed.
 
 ## Repository and authority
 
 ```text
-parent commit          b8544b88b8c610f2859298308b0adaca290c9ddc
+parent commit          7e25459c992572b0f102297420f7117fbc2146d7
 integration branch     main
 starting tree          clean
-EvoGen counterpart     cf70589f91add9c9dbe6affd11866b20d2690642
+EvoGen counterpart     303701c078ead81f1886933d10faa5d0891fac8d
 source plan revision   2026-08-10T21:25:08.835Z
+manifest schema        1
 producer protocol      2.0.0
-disposition schema     1
+memory schema          4
 ```
 
-The parent commit is the completed G09 source-event inventory. It remains the
-authority for which session events exist and how they map toward EvoGen. G10
-adds record identity without changing that 89-event semantic denominator.
+The parent commit is the completed G10 session-event-sequence slice. G11 adds
+generation provenance only. It does not alter the runtime plane, planner
+behavior, evaluator, native controller, telemetry semantics, or proof rules.
 
-## Serialized order contract
+## Stable generation identity
 
-`SessionLogger` owns the next sequence for one run. A fresh log starts at 1.
-Sequence allocation, JSON serialization, the append, and the immediate flush
-share one lock, so the order in `events.jsonl` is the sequence order even when
-many producer threads write at the same gameplay step.
+The command builds a strict typed manifest, serializes canonical sorted compact
+JSON, and hashes every top-level field except `generation_id`. Two materially
+identical invocations therefore write byte-identical manifests with the same
+identity. The recorded timestamp comes from the source commit rather than the
+wall clock.
 
-The logger retires a sequence before attempting I/O. This matters when a write
-or flush failure is ambiguous about whether bytes reached the file: a later
-write cannot reuse an identity that may already be present. Normal successful
-writes remain contiguous; an uncertain failed write may leave a gap rather
-than a duplicate.
+Source identity includes the full Git commit and a content digest for tracked
+changes and untracked files. The requested output is excluded lexically, so
+writing the manifest inside the checkout does not make its own identity drift.
+The writer rejects symlink outputs, symlinked parents, and existing non-files;
+publication uses a flushed, fsynced, same-directory temporary file followed by
+an atomic replace.
 
-The existing append API is continuation-safe for one `SessionLogger` lifecycle
-at a time:
+Focused falsifiers prove that each required semantic change produces a new
+identity: planner or advisor model, raw prompt or strategy corpus, operation
+definition, protocol schema, and installed DLL bytes. Reordered schema keys do
+not change identity. Missing and unreadable artifacts remain distinct typed
+states rather than being collapsed into empty content.
 
-- existing records for the same run seed the next value;
-- legacy records without `event_sequence` retain their positions when the next
-  value is chosen;
-- a complete final JSON object without a newline is preserved and terminated;
-- a provably invalid unterminated crash tail is removed before appending; and
-- records belonging to another run do not advance this run's local counter.
+## Recorded provenance
 
-Production already creates a new run directory with `exist_ok=False` and shares
-one logger object throughout the runtime. G10 does not claim coordination
-between two logger objects or processes writing the same path, nor `fsync`
-power-loss durability.
+The manifest records:
 
-## Separate gameplay and telemetry fields
+- Git commit, dirty state, and a redacted content fingerprint;
+- the raw `uv.lock` digest;
+- the active planner and advisor route identifiers, including disabled advisor
+  state, plus a required script digest for the scripted planner;
+- raw system-prompt and strategy-corpus evidence and the rendered output-policy
+  prompt digest;
+- a redacted effective-config digest;
+- typed protocol, schema, evidence-semantics, memory, native-source, and
+  manifest versions plus canonical exported-schema digests;
+- both the generated operation-definition document digest and a semantic
+  projection of the live operation registry;
+- the canonical proof-ledger digest;
+- independently typed scenario-fixture and authored-start identities;
+- target Kenshi executable/version evidence and optional observed executable
+  evidence; and
+- independent source, header, built, staged, and installed native-binary
+  evidence with parity conclusions only when both compared artifacts exist.
 
-`step_index` remains a distinct nullable gameplay field. Several session events
-can share one step, and run-level events can have no step. Nested telemetry
-sequence values remain subject evidence and can repeat across several log
-records. The overlay continues to derive human-facing charged turns from
-budget reserve/commit/release events; it does not display `event_sequence` as a
-turn or world revision.
+The generated JSON schema at `schemas/generation_manifest.schema.json` and the
+generated development-command reference are maintained by the existing schema
+and documentation exporters and participate in their freshness gates.
 
-The focused concurrency proof writes 1,024 events from eight threads. Every
-event uses `step_index=7` and the same nested telemetry revision. The test
-requires all producer identities to survive, and requires file-order sequences
-to be exactly `1..1024`. A separate committed fixture records sequences `1..4`
-across a nullable run record and three events sharing step 7 and telemetry
-revision 42.
+## Redaction and fail-closed boundaries
 
-## Backward readability
+Configuration references are inspected before interpolation. Only the exact
+reviewed KAE environment-variable allowlist may affect the effective-config
+digest; credential-like and unknown references fail closed, including nested
+default interpolation. Paths become role markers, arbitrary strings are
+hashed, and mutable telemetry, memory, runtime scenario, and attestation
+payloads are excluded from effective configuration because they have their own
+typed authorities.
 
-`SessionEvent.event_sequence` is optional and positive when present. That lets
-the typed outer-record contract accept the new field while still validating
-legacy dictionary-payload records that omit it. The 45-record
-`live_reporting_surface` fixture deliberately remains unchanged and contains
-no `event_sequence`; replay, metrics, reporting, overlay, and context-menu
-readers continue to consume outer records as ordinary mappings and ignore
-unknown or absent sequence metadata.
+Model identifiers are a deliberately narrow reviewed projection. Path-like,
+credential-like, malformed, or overlong values fail closed. The command does
+not load `.env`, enumerate the process environment, serialize API keys, or let
+unrelated variables such as `HOME` affect the identity. Tests exercise both
+identity invariance and absence of secret values, credential names, and host
+paths in serialized output.
 
-The new fixture lives at
-`tests/fixtures/session_logs/event_sequence.jsonl`. Historical ignored
-`runs/*/events.jsonl` files were not rewritten.
+Scenario and authored-start evidence are separate lineage channels and may
+coexist. Scenario evidence distinguishes a manually declared identifier, a
+configured attestation, and a verified CLI fixture; volatile session,
+sequence, observation-time, and runtime telemetry fields do not enter stable
+identity. Authored-start evidence separately hashes the selected typed start,
+canonical bundle manifest, and mod payload.
 
-## G09 freshness after the logger migration
+## Native and game-version evidence
 
-The source-derived denominator remains **89 event types** and **127 producer
-records**. The logger's crash-tail separator is a new reviewed non-event write,
-so the generated artifact now records **17 open boundaries**: seven event-type
-pass-throughs and ten reviewed non-event writes. Its source fingerprint is
-`232a934c595657d6189d9ab39dc347b4af711d86814fc071ec263e51da3ad60b`.
+File hashes establish only byte identity. The manifest preserves built, staged,
+and installed DLL evidence independently, including absent and unreadable
+states, rather than choosing one file as authoritative or asserting parity
+without a comparison. Kenshi evidence likewise separates the typed research
+target from an optionally observed executable and reports a match only when
+both are available.
 
-No disposition row changed. The generated artifact was refreshed through the
-checked-in exporter, and the G09 freshness tests continue to fail closed on
-unreviewed events, aliases, or writer boundaries.
+The capability digest currently names KAE's generated native
+`GameplayCapabilities.json` authority. Metadata marks this projection as
+provisional until G13. Although the complete output validates against EvoGen's
+serialized `GenerationManifest` model, G11 does **not** claim an EvoGen
+`CapabilityManifest` CAS object or subject-conformance/bootstrap readiness.
 
-## Adversarial review and withheld claims
+## Independent review and withheld claims
 
-Lamport, Hoare, and Dijkstra independently audited writer lifecycle, consumer
-compatibility, and the concurrency falsifier before implementation. Their
-candidate review found two real defects: sequence reuse after an ambiguous
-flush failure and retention of an invalid final crash fragment. Both received
-dedicated regression tests and narrow logger repairs. Lamport reran the exact
-failure probes and passed the repaired candidate; the full portable gate also
-passed afterward.
+Shannon mapped every source authority, Dwork audited configuration and secret
+boundaries, and Merkle designed the identity falsifiers before implementation.
+Hopper expanded the executable falsifier suite. Saltzer's security review found
+and then verified repairs for model-ID leakage, symlink/path handling,
+external-target mutation, and absent-versus-unreadable evidence. Knuth's
+contract review verified all required authority fields, mutation behavior,
+generated-artifact freshness, local CLI behavior, and exact parsing through
+EvoGen's current `GenerationManifest` model.
 
 The following remain explicitly withheld:
 
-- event sequence does not certify dispatch, acceptance, completion, a world
-  effect, goal progress, or goal achievement;
-- it is not a global, cross-run, cross-process, telemetry, or gameplay clock;
-- G10 does not add an EvoGen exporter or trajectory envelope;
-- G11 generation-manifest and provenance work remains unstarted; and
-- no live process, save, DLL, or game state was changed to prove this slice.
+- a digest does not prove runtime loading, command acceptance, completion, a
+  world effect, goal progress, or goal achievement;
+- a matching executable or DLL hash does not identify a running process;
+- G11 does not create the authoritative planner-visible affordance-set event;
+- G11 does not complete the G13 subject adapter or its capability-manifest CAS;
+- G11 does not export production trajectories to EvoGen; and
+- no live process, save, DLL installation, or game state was changed to prove
+  this slice.
 
 ## Completion boundary and next goal
 
-G10 stops after the logger migration is independently reviewed, the complete
+G11 stops after the command and schema are independently reviewed, the complete
 portable gate passes, this checkpoint is committed on `main`, the public push
 is clean, and hosted CI is green. Only then may the central EvoGen plan ratchet
-mark G10 complete and name G11 as the sole next goal.
+mark G11 complete and name G12 as the sole next goal.
 
-G11 owns generation provenance, effective configuration, secrets exclusion,
-and the generation manifest. G12 still owns the authoritative planner-visible
-affordance-set event, and G14 owns the production KAE exporter.
+G12 owns one authoritative planner-visible affordance-set event. G13 still owns
+the KAE subject adapter and permanent capability-manifest authority, and G14
+owns the production trajectory exporter.
 
 ## Verification
 
 ```bash
-UV_CACHE_DIR=/tmp/kae-uv-cache uv run --frozen --extra dev pytest -p no:cacheprovider -q \
-  tests/test_session_log.py tests/test_session_event_dispositions.py \
-  tests/test_checkpoint_freshness.py tests/test_overlay.py tests/test_replay.py \
-  tests/test_metrics.py
+UV_CACHE_DIR=/tmp/kae-uv-cache uv run --frozen --no-sync pytest \
+  -p no:cacheprovider -q tests/test_generation_manifest.py \
+  tests/test_docs_hygiene.py tests/test_dev_entrypoint.py \
+  tests/test_live_dev.py tests/test_native_provenance.py \
+  tests/test_checkpoint_freshness.py
+RUFF_CACHE_DIR=/tmp/kae-ruff-g11 UV_CACHE_DIR=/tmp/kae-uv-cache \
+  uv run --frozen --no-sync ruff check .
+UV_CACHE_DIR=/tmp/kae-uv-cache MYPY_CACHE_DIR=/tmp/kae-mypy-g11 \
+  uv run --frozen --no-sync mypy src
 UV_CACHE_DIR=/tmp/kae-uv-cache ./dev verify-portable
 git diff --check
 ```
 
-The focused logger, compatibility, disposition, replay, overlay, and evaluator
-tests pass on the repaired candidate. The complete portable gate also passes:
-locked dependency sync, Ruff, strict mypy over 150 source files, research
-validation, event-map/schema/document freshness, the full pytest suite, and
-whitespace checks. Hosted CI remains the post-push completion authority.
+The focused manifest, redaction, mutation, CLI, native-provenance,
+generated-artifact, and checkpoint tests pass on the independently reviewed
+candidate. The complete portable gate also passes: locked environment, Ruff,
+strict mypy over 152 source files, research validation, disposition/schema/doc
+regeneration, the full pytest suite, architecture checks, and whitespace
+checks. Hosted CI remains the post-push completion authority.

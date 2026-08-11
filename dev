@@ -228,6 +228,24 @@ def main(argv: list[str] | None = None) -> int:
         from kenshi_agent.tooling.portable_gate import run_portable_gate
 
         return run_portable_gate(REPO_DIR)
+    if args.command == "generation-manifest":
+        # The wrapper deliberately has no third-party imports so every help
+        # page works before setup. Execute the typed manifest command inside
+        # the already locked project environment, still entirely on WSL.
+        return subprocess.run(
+            (
+                "uv",
+                "run",
+                "--frozen",
+                "--no-sync",
+                "python",
+                "-m",
+                "kenshi_agent.tooling.generation_manifest",
+                *raw_argv[1:],
+            ),
+            cwd=REPO_DIR,
+            check=False,
+        ).returncode
     if args.command == "tui":
         try:
             return _run_tui(args, environment=os.environ.copy())

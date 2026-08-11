@@ -1,0 +1,617 @@
+{
+  "$defs": {
+    "ArtifactEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "enum": [
+            "present",
+            "absent",
+            "unreadable"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sha256"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "title": "ArtifactEvidence",
+      "type": "object"
+    },
+    "AuthoredGameStart": {
+      "additionalProperties": false,
+      "properties": {
+        "start_id": {
+          "pattern": "^[a-z0-9][a-z0-9-]{0,79}$",
+          "title": "Start Id",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "money": {
+          "minimum": 0,
+          "title": "Money",
+          "type": "integer"
+        },
+        "party_size": {
+          "maximum": 30,
+          "minimum": 1,
+          "title": "Party Size",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start_id",
+        "label",
+        "money",
+        "party_size"
+      ],
+      "title": "AuthoredGameStart",
+      "type": "object"
+    },
+    "AuthoredStartEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "enum": [
+            "present",
+            "absent"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "start": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AuthoredGameStart"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "bundle_manifest_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bundle Manifest Sha256"
+        },
+        "bundle_mod_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bundle Mod Sha256"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "title": "AuthoredStartEvidence",
+      "type": "object"
+    },
+    "CapabilityManifestAuthority": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "native_gameplay_capabilities",
+          "default": "native_gameplay_capabilities",
+          "title": "Kind",
+          "type": "string"
+        },
+        "scope": {
+          "const": "native",
+          "default": "native",
+          "title": "Scope",
+          "type": "string"
+        },
+        "provisional_until_goal": {
+          "const": "G13",
+          "default": "G13",
+          "title": "Provisional Until Goal",
+          "type": "string"
+        }
+      },
+      "title": "CapabilityManifestAuthority",
+      "type": "object"
+    },
+    "ExecutableIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "product": {
+          "minLength": 1,
+          "title": "Product",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        },
+        "architecture": {
+          "minLength": 1,
+          "title": "Architecture",
+          "type": "string"
+        },
+        "steam_build_id": {
+          "pattern": "^[0-9]+$",
+          "title": "Steam Build Id",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "product",
+        "version",
+        "architecture",
+        "steam_build_id",
+        "sha256"
+      ],
+      "title": "ExecutableIdentity",
+      "type": "object"
+    },
+    "GenerationMetadata": {
+      "additionalProperties": false,
+      "properties": {
+        "manifest_schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Manifest Schema Version",
+          "type": "integer"
+        },
+        "config_redaction_schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Config Redaction Schema Version",
+          "type": "integer"
+        },
+        "git": {
+          "$ref": "#/$defs/GitEvidence"
+        },
+        "protocol": {
+          "$ref": "#/$defs/ProtocolEvidence"
+        },
+        "strategy_corpus": {
+          "$ref": "#/$defs/ArtifactEvidence"
+        },
+        "scenario": {
+          "$ref": "#/$defs/ScenarioEvidence"
+        },
+        "authored_start": {
+          "$ref": "#/$defs/AuthoredStartEvidence"
+        },
+        "kenshi": {
+          "$ref": "#/$defs/KenshiVersionEvidence"
+        },
+        "native": {
+          "$ref": "#/$defs/NativeEvidence"
+        },
+        "memory_schema_version": {
+          "minimum": 1,
+          "title": "Memory Schema Version",
+          "type": "integer"
+        },
+        "operation_count": {
+          "minimum": 1,
+          "title": "Operation Count",
+          "type": "integer"
+        },
+        "capability_manifest_authority": {
+          "$ref": "#/$defs/CapabilityManifestAuthority"
+        }
+      },
+      "required": [
+        "git",
+        "protocol",
+        "strategy_corpus",
+        "scenario",
+        "authored_start",
+        "kenshi",
+        "native",
+        "memory_schema_version",
+        "operation_count"
+      ],
+      "title": "GenerationMetadata",
+      "type": "object"
+    },
+    "GitEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "commit": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Commit",
+          "type": "string"
+        },
+        "dirty": {
+          "title": "Dirty",
+          "type": "boolean"
+        },
+        "material_dirty_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Material Dirty Sha256"
+        }
+      },
+      "required": [
+        "commit",
+        "dirty"
+      ],
+      "title": "GitEvidence",
+      "type": "object"
+    },
+    "KenshiVersionEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "repository_target": {
+          "$ref": "#/$defs/ExecutableIdentity"
+        },
+        "observed_executable": {
+          "$ref": "#/$defs/ArtifactEvidence"
+        },
+        "observed_matches_repository_target": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed Matches Repository Target"
+        }
+      },
+      "required": [
+        "repository_target",
+        "observed_executable"
+      ],
+      "title": "KenshiVersionEvidence",
+      "type": "object"
+    },
+    "NativeEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/ArtifactEvidence"
+        },
+        "generated_capability_header": {
+          "$ref": "#/$defs/ArtifactEvidence"
+        },
+        "built": {
+          "$ref": "#/$defs/ArtifactEvidence"
+        },
+        "staged": {
+          "$ref": "#/$defs/ArtifactEvidence"
+        },
+        "installed": {
+          "$ref": "#/$defs/ArtifactEvidence"
+        },
+        "built_matches_installed": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Built Matches Installed"
+        },
+        "staged_matches_installed": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Staged Matches Installed"
+        }
+      },
+      "required": [
+        "source",
+        "generated_capability_header",
+        "built",
+        "staged",
+        "installed"
+      ],
+      "title": "NativeEvidence",
+      "type": "object"
+    },
+    "ProtocolEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "versions": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Versions",
+          "type": "object"
+        },
+        "schema_digests": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Schema Digests",
+          "type": "object"
+        }
+      },
+      "required": [
+        "versions",
+        "schema_digests"
+      ],
+      "title": "ProtocolEvidence",
+      "type": "object"
+    },
+    "ScenarioEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "enum": [
+            "present",
+            "absent"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "authority": {
+          "anyOf": [
+            {
+              "enum": [
+                "declared",
+                "configured_attestation",
+                "verified_fixture"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Authority"
+        },
+        "identity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScenarioIdentity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "fixture_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fixture Sha256"
+        },
+        "managed_save_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Managed Save Name"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "title": "ScenarioEvidence",
+      "type": "object"
+    },
+    "ScenarioIdentity": {
+      "additionalProperties": false,
+      "description": "One declared game situation, tied to the exact save used to reproduce it.",
+      "properties": {
+        "scenario_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$",
+          "title": "Scenario Id",
+          "type": "string"
+        },
+        "save_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$",
+          "title": "Save Id",
+          "type": "string"
+        },
+        "environment": {
+          "enum": [
+            "indoor",
+            "outdoor"
+          ],
+          "title": "Environment",
+          "type": "string"
+        },
+        "danger": {
+          "enum": [
+            "hostile",
+            "safe"
+          ],
+          "title": "Danger",
+          "type": "string"
+        },
+        "economy": {
+          "enum": [
+            "broke",
+            "funded"
+          ],
+          "title": "Economy",
+          "type": "string"
+        },
+        "party": {
+          "enum": [
+            "solo",
+            "squad"
+          ],
+          "title": "Party",
+          "type": "string"
+        },
+        "time_of_day": {
+          "enum": [
+            "day",
+            "night"
+          ],
+          "title": "Time Of Day",
+          "type": "string"
+        }
+      },
+      "required": [
+        "scenario_id",
+        "save_id",
+        "environment",
+        "danger",
+        "economy",
+        "party",
+        "time_of_day"
+      ],
+      "title": "ScenarioIdentity",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A KAE-owned model with EvoGen's exact serialized top-level fields.",
+  "properties": {
+    "generation_id": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Generation Id",
+      "type": "string"
+    },
+    "parent_generation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parent Generation Id"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "subject": {
+      "const": "kenshi-agent-env",
+      "default": "kenshi-agent-env",
+      "title": "Subject",
+      "type": "string"
+    },
+    "source_ref": {
+      "title": "Source Ref",
+      "type": "string"
+    },
+    "capability_manifest_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Capability Manifest Digest",
+      "type": "string"
+    },
+    "artifact_digests": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Artifact Digests",
+      "type": "object"
+    },
+    "models": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Models",
+      "type": "object"
+    },
+    "prompts": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Prompts",
+      "type": "object"
+    },
+    "config": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Config",
+      "type": "object"
+    },
+    "metadata": {
+      "$ref": "#/$defs/GenerationMetadata"
+    }
+  },
+  "required": [
+    "generation_id",
+    "created_at",
+    "source_ref",
+    "capability_manifest_digest",
+    "artifact_digests",
+    "models",
+    "prompts",
+    "config",
+    "metadata"
+  ],
+  "title": "GenerationManifest",
+  "type": "object"
+}

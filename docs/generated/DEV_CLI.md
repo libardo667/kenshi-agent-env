@@ -6,12 +6,12 @@ Regenerate with `python scripts/export_docs.py`.
 ## `./dev`
 
 ```text
-usage: ./dev [-h] {verify-portable,doctor,launch,run,tui,telemetry,affordances,snapshot,recover,stop,scenario,setup} ...
+usage: ./dev [-h] {verify-portable,doctor,launch,run,tui,telemetry,affordances,snapshot,recover,stop,scenario,setup,generation-manifest} ...
 
 Safe, state-aware Kenshi live development. Use 'run' for the normal launch-and-agent workflow.
 
 positional arguments:
-  {verify-portable,doctor,launch,run,tui,telemetry,affordances,snapshot,recover,stop,scenario,setup}
+  {verify-portable,doctor,launch,run,tui,telemetry,affordances,snapshot,recover,stop,scenario,setup,generation-manifest}
     verify-portable           Run the complete reproducible gate without touching Windows or Kenshi.
     doctor                    Check every launch prerequisite without sending input.
     launch                    Launch Kenshi without starting an agent.
@@ -24,6 +24,7 @@ positional arguments:
     stop                      Safely pause and close Kenshi.
     scenario                  Manage reproducible starts and immutable save fixtures.
     setup                     Apply an explicit reversible host repair.
+    generation-manifest       Write a deterministic, redacted generation provenance manifest.
 
 options:
   -h, --help                  show this help message and exit
@@ -250,4 +251,29 @@ usage: ./dev setup graphics [-h]
 
 options:
   -h, --help  show this help message and exit
+```
+
+## `./dev generation-manifest`
+
+```text
+usage: ./dev generation-manifest [-h] --output OUTPUT [--prompt-file PROMPT_FILE] [--advisor-corpus-file ADVISOR_CORPUS_FILE] [--scenario-attestation SCENARIO_ATTESTATION] [--game-start GAME_START] [--script-file SCRIPT_FILE] [--kenshi-executable KENSHI_EXECUTABLE] [--built-dll BUILT_DLL] [--staged-dll STAGED_DLL] [--installed-dll INSTALLED_DLL]
+
+Write one exact KAE generation identity without launching or contacting Kenshi.
+
+options:
+  -h, --help                  show this help message and exit
+  --output OUTPUT             Atomic JSON output path; its parent directory must already exist.
+  --prompt-file PROMPT_FILE   Exact planner prompt override to identify. (default: None)
+  --advisor-corpus-file ADVISOR_CORPUS_FILE
+                              Exact advisor strategy corpus override to identify. (default: None)
+  --scenario-attestation SCENARIO_ATTESTATION
+                              Verified scenario attestation whose exact fixture still exists. (default: None)
+  --game-start GAME_START     Exact checked-in authored Game Start ID; recorded separately from scenario/save identity. (default: None)
+  --script-file SCRIPT_FILE   Required exact decision script when planner.kind is scripted. (default: None)
+  --kenshi-executable KENSHI_EXECUTABLE
+                              Optional observed Kenshi executable to compare with research authority. (default: None)
+  --built-dll BUILT_DLL       Optional native build output to hash. (default: None)
+  --staged-dll STAGED_DLL     Optional staged DLL override; repository staging is checked by default. (default: None)
+  --installed-dll INSTALLED_DLL
+                              Optional exact DLL loaded by Kenshi to hash. (default: None)
 ```
