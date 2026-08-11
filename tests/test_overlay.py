@@ -211,6 +211,115 @@ def test_overlay_coalesces_progress_for_one_option_without_hiding_decisions() ->
     assert feed.operation(changed, "step 13 | ... 8.0 closer") == "append"
 
 
+def test_overlay_numbers_every_committed_turn_not_environment_steps() -> None:
+    feed = OverlayFeedState()
+
+    feed.annotate_turn(
+        {
+            "event_type": "run_started",
+            "payload": {"max_steps": 120},
+        }
+    )
+    first = feed.annotate_turn(
+        {
+            "event_type": "strategic_planner_call",
+            "step_index": 7,
+            "payload": {"planner_latency_seconds": 1.0, "output_type": "PlanEnvelope"},
+        }
+    )
+    assert "turn 001/120 | THINKING" in (format_event(first) or "")
+
+    # A zero-input noop still spends the first turn even though the durable
+    # environment step remains seven.
+    feed.annotate_turn(
+        {
+            "event_type": "plan_budget_reserved",
+            "step_index": 7,
+            "payload": {},
+        }
+    )
+    receipt = feed.annotate_turn(
+        {
+            "event_type": "action_receipt",
+            "step_index": 7,
+            "payload": {"accepted": True, "message": "Re-evaluate current evidence."},
+        }
+    )
+    assert "turn 001/120 | DONE" in (format_event(receipt) or "")
+    feed.annotate_turn(
+        {
+            "event_type": "plan_budget_committed",
+            "step_index": 7,
+            "payload": {},
+        }
+    )
+
+    second = feed.annotate_turn(
+        {
+            "event_type": "strategic_planner_call",
+            "step_index": 7,
+            "payload": {"planner_latency_seconds": 1.0, "output_type": "PlanEnvelope"},
+        }
+    )
+    assert "turn 002/120 | THINKING" in (format_event(second) or "")
+
+
+def test_overlay_reuses_turn_number_when_action_budget_is_released() -> None:
+    feed = OverlayFeedState()
+    feed.annotate_turn(
+        {
+            "event_type": "run_started",
+            "payload": {"max_steps": 3},
+        }
+    )
+    feed.annotate_turn({"event_type": "plan_budget_reserved", "payload": {}})
+    feed.annotate_turn({"event_type": "plan_budget_released", "payload": {}})
+
+    retried = feed.annotate_turn(
+        {
+            "event_type": "strategic_planner_call",
+            "step_index": 0,
+            "payload": {"planner_latency_seconds": 0.1, "output_type": "PlanEnvelope"},
+        }
+    )
+    assert "turn 1/3 | THINKING" in (format_event(retried) or "")
+
+
+def test_overlay_zero_action_finish_does_not_claim_a_completed_turn() -> None:
+    feed = OverlayFeedState()
+    feed.annotate_turn(
+        {
+            "event_type": "run_started",
+            "payload": {"max_steps": 120},
+        }
+    )
+
+    finished = feed.annotate_turn(
+        {
+            "event_type": "run_finished",
+            "payload": {"steps_completed": 0},
+        }
+    )
+
+    assert feed.turns_completed == 0
+    assert feed.current_turn is None
+    assert "display_turn_index" not in finished
+
+
+def test_overlay_rejects_boolean_turn_counts() -> None:
+    feed = OverlayFeedState()
+
+    started = feed.annotate_turn(
+        {
+            "event_type": "run_started",
+            "payload": {"max_steps": True},
+        }
+    )
+
+    assert feed.max_turns is None
+    assert "display_turn_index" not in started
+
+
 def test_companion_uses_free_space_beside_terminal_without_resizing_it() -> None:
     layout = companion_layout(
         WindowRect(0, 0, 1200, 900),

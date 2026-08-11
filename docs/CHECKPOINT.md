@@ -10,7 +10,7 @@ purchases, and bodyguard hire.
 ## Repository and authority
 
 ```text
-parent commit          3432b558c7d07dd0e42b412e4c89ff383f68dc34
+parent commit          741b0071ac62217eb51a77d09addd0aa4bb7ecc7
 integration branch     main
 starting tree          clean
 producer protocol      2.0.0
@@ -241,6 +241,51 @@ emergency, terminal-window, or safety-supervisor preemption caused that pause.
 Native recovery closed the dialogue before shutdown. That ambient-dialogue
 interaction remains a follow-on, not evidence against the playback policy.
 
+Run `protocol-2-native-survival-soak-20260810-r9` reached the full 120-action
+ceiling without a process crash. The durable environment index ended at 78,
+not because the run ended early, but because 36 noops, three advisor
+consultations, and three fieldbook reads each consumed a turn without
+publishing an environment transition. The run recorded 120 committed action
+budgets, zero `plan_rejected` or `action_rejected` events, and eight accepted
+plans that later aborted. Ten observation publications were independently
+rejected after a world-state revision regression. Final cleanup confirmed a
+native pause at telemetry sequence 4409. There was no `shift_into_body`
+operation or native request.
+
+The soak exposed a human-reporting error: the companion overlay labelled
+events with `Observation.step_index`, so several charged turns visibly reused
+the same `step NN` label. The overlay now derives a one-based `turn N/limit`
+from the authoritative `plan_budget_reserved`, `plan_budget_committed`, and
+`plan_budget_released` lifecycle. A released reservation reuses its number;
+every committed noop, advisor consultation, fieldbook read, native action, and
+uncertain delivery advances it. Durable event records and their environment
+indices are unchanged. Replaying the complete r9 stream through the new feed
+state rendered at least one overlay row for every distinct turn from `001/120`
+through `120/120`, with the final feed state at `120/120`.
+
+The same run also exposed uncorrected gameplay-model gaps. A Small Copper
+Resource inside Squin advertised mechanical `operate` evidence without any
+ownership, faction, private-property, or crime-risk field, after which the
+three-character squad was beaten and jailed. The native producer explicitly
+warns that imprisonment and enslavement are not exported even though optional
+model fields exist; the planner inferred prison from the rendered cage,
+`Locked` state, bounty, and prison tutorial instead. It could author a resource
+survey while every squad member was comatose, and a premature building-exit
+attempt ended `movement_stalled`. It then waited at 1x through the ceiling
+rather than shifting bodies. These are findings, not repaired claims in the
+overlay slice.
+
+After the run, the user accelerated time: Zill and Slowline recovered and were
+released while Ruka remained imprisoned and not fully recovered. The user
+saved that state as `ruka-imprisoned`. It is the intended next recovery
+checkpoint. After Kenshi closed from a fresh paused idle state, the exact save
+was captured as immutable scenario `ruka-imprisoned-recovery-20260810` with
+save identity `ruka-imprisoned-20260810` and fixture digest
+`71c83278200ddf1608e6d2a4a539fd5b9597d3f3c5215d93e6f21eb41b828a83`.
+Fixture loading reverified all 58 files and 5,621,059 bytes. The recovery facts
+remain user-observed rather than live-attested until a later fixture-doctor
+restore reads the snapshot through telemetry.
+
 ## DLL artifacts and exact commands
 
 Both sides of the installation are preserved:
@@ -298,9 +343,12 @@ The playback-policy slice is proven by `playback-phase-policy-20260810-r4`:
 the productive terminal leaves the handler, exact output, zero desktop input,
 and final native pause all have later engine evidence.
 
-The larger soak remains incomplete until a fresh run reaches all 120 turns, its
-bundle is audited for crashes, early stops, rejected or aborted actions,
-primitive desktop input, and final safe state, and Kenshi is closed cleanly.
+The larger soak reached all 120 charged turns in r9, did not crash or stop
+early, and ended in a confirmed native pause. Its eight aborts and prison-state
+findings remain explicit follow-on work rather than being erased by the
+completed ceiling. After the user continued and saved the prison recovery,
+Kenshi closed through the supported native stop path from a fresh paused idle
+state.
 
 ## Verification
 
@@ -315,3 +363,9 @@ It covered locked dependency sync, Ruff, strict mypy across 149 source files,
 research-package validation, schema and generated-document freshness, the full
 pytest suite, and whitespace checks. The Release build command above separately
 ran native fixture/conformance coverage before installation and the live run.
+
+Focused overlay tests and a replay of the complete r9 event stream pass for the
+turn-numbering change: the replay rendered all 120 distinct human turns. The
+complete portable gate also passes, including Ruff, strict mypy over 149 source
+files, research validation, schema and generated-document freshness, the full
+pytest suite, and whitespace checks.

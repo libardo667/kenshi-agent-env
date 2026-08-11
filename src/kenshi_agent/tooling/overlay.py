@@ -55,10 +55,56 @@ def owner_process_is_alive(owner_pid: int) -> bool:
 
 @dataclass(slots=True)
 class OverlayFeedState:
-    """Coalesce high-frequency progress samples into one visible feed row."""
+    """Track human-facing turns and coalesce high-frequency progress rows.
+
+    ``Observation.step_index`` advances only when the environment publishes a
+    transition.  The run ceiling counts committed action budgets instead, so a
+    noop, advisor consultation, or fieldbook read is still one turn even when
+    the environment step stays unchanged.  The overlay follows that budget
+    lifecycle: reservations name the pending one-based turn, commits advance
+    it, and released reservations reuse it.
+    """
 
     progress_id: str | None = None
     rendered_progress: str | None = None
+    max_turns: int | None = None
+    turns_completed: int = 0
+    current_turn: int | None = None
+
+    def annotate_turn(self, record: dict[str, Any]) -> dict[str, Any]:
+        """Attach the exact human turn without changing the durable event."""
+
+        event_type = record.get("event_type")
+        payload = record.get("payload") or {}
+        if event_type == "run_started":
+            maximum = payload.get("max_steps")
+            self.max_turns = maximum if type(maximum) is int and maximum > 0 else None
+            self.turns_completed = 0
+            self.current_turn = 1 if self.max_turns is not None else None
+        elif event_type in {"strategic_planner_call", "decision"}:
+            if self.current_turn is None or self.current_turn <= self.turns_completed:
+                self.current_turn = self.turns_completed + 1
+        elif event_type == "plan_budget_reserved":
+            self.current_turn = self.turns_completed + 1
+        elif event_type == "plan_budget_committed":
+            if self.current_turn is None or self.current_turn <= self.turns_completed:
+                self.current_turn = self.turns_completed + 1
+            self.turns_completed = self.current_turn
+        elif event_type == "plan_budget_released":
+            self.current_turn = self.turns_completed + 1
+        elif event_type == "run_finished":
+            completed = payload.get("steps_completed")
+            if type(completed) is int and completed >= 0:
+                self.turns_completed = completed
+                self.current_turn = completed if completed > 0 else None
+
+        if self.current_turn is None or self.max_turns is None:
+            return record
+        return {
+            **record,
+            "display_turn_index": self.current_turn,
+            "display_turn_limit": self.max_turns,
+        }
 
     def operation(
         self,
@@ -206,7 +252,21 @@ def _step_action_label(step_payload: dict[str, Any]) -> str:
 def format_event(record: dict[str, Any]) -> str | None:
     event_type = record.get("event_type")
     step_index = record.get("step_index")
-    step = f"step {step_index:02d}" if isinstance(step_index, int) else "run"
+    turn_index = record.get("display_turn_index")
+    turn_limit = record.get("display_turn_limit")
+    if (
+        isinstance(turn_index, int)
+        and turn_index > 0
+        and isinstance(turn_limit, int)
+        and turn_limit > 0
+    ):
+        width = len(str(turn_limit))
+        step = f"turn {turn_index:0{width}d}/{turn_limit}"
+    else:
+        # Records without a turn annotation, including standalone formatter
+        # calls, retain their original evidence label.  Live overlay playback
+        # decorates current events from the action-budget lifecycle above.
+        step = f"step {step_index:02d}" if isinstance(step_index, int) else "run"
     payload = record.get("payload") or {}
 
     if event_type == "run_started":
@@ -550,6 +610,7 @@ def show_overlay(
                     offset = handle.tell()
                     try:
                         record = json.loads(line)
+                        record = feed_state.annotate_turn(record)
                         rendered = format_event(record)
                     except (json.JSONDecodeError, KeyError, TypeError, ValueError):
                         continue
