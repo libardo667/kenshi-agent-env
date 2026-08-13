@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from ..affordances import enumerate_affordance_set
 from ..core.observation import Observation
 from ..core.operation import StopAction
 from ..core.planner_context import AuthoredPlannerContext
@@ -63,6 +64,10 @@ class ScriptedPlanner(Planner):
     ) -> PreparedPlannerInput:
         """A script consumes its file, not IDs from the current observation."""
 
+        affordance_enumeration = enumerate_affordance_set(
+            observation,
+            delivered=False,
+        )
         return PreparedPlannerInput(
             context=AuthoredPlannerContext(
                 manifest=planner_context_manifest(
@@ -71,5 +76,6 @@ class ScriptedPlanner(Planner):
                     input_kind="scripted",
                 ),
                 observation=observation,
-            )
+            ),
+            affordance_set=affordance_enumeration.as_evidence(context_id=context_id),
         )

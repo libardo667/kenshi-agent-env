@@ -1,0 +1,345 @@
+{
+  "$defs": {
+    "AffordanceSetOffer": {
+      "additionalProperties": false,
+      "description": "Replay-safe evidence for one choice in the delivered menu.",
+      "properties": {
+        "affordance_id": {
+          "pattern": "^aff-[0-9a-f]{20}$",
+          "title": "Affordance Id",
+          "type": "string"
+        },
+        "operation_kind": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Operation Kind",
+          "type": "string"
+        },
+        "source_adapter": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Source Adapter",
+          "type": "string"
+        },
+        "semantic": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Semantic",
+          "type": "string"
+        },
+        "selection_target_id": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selection Target Id"
+        },
+        "semantic_parameters": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AffordanceSetParameter"
+          },
+          "maxItems": 8,
+          "title": "Semantic Parameters",
+          "type": "array"
+        },
+        "applicable_targets": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AffordanceSetTarget"
+          },
+          "maxItems": 8,
+          "title": "Applicable Targets",
+          "type": "array"
+        },
+        "target_id_required": {
+          "title": "Target Id Required",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "affordance_id",
+        "operation_kind",
+        "source_adapter",
+        "semantic",
+        "target_id_required"
+      ],
+      "title": "AffordanceSetOffer",
+      "type": "object"
+    },
+    "AffordanceSetParameter": {
+      "additionalProperties": false,
+      "description": "One planner-authorable parameter without presentation prose.",
+      "properties": {
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "integer",
+            "number",
+            "text",
+            "choice"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "required": {
+          "title": "Required",
+          "type": "boolean"
+        },
+        "minimum": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minimum"
+        },
+        "maximum": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum"
+        },
+        "choices": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Choices",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "required"
+      ],
+      "title": "AffordanceSetParameter",
+      "type": "object"
+    },
+    "AffordanceSetTarget": {
+      "additionalProperties": false,
+      "description": "One opaque semantic participant, never a label or mechanical address.",
+      "properties": {
+        "role": {
+          "maxLength": 40,
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Role",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "kind": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "target_id",
+        "kind"
+      ],
+      "title": "AffordanceSetTarget",
+      "type": "object"
+    },
+    "AffordanceSourceCompleteness": {
+      "additionalProperties": false,
+      "description": "Typed completeness and withholding facts for one source adapter.",
+      "properties": {
+        "source_adapter": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Source Adapter",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/AffordanceSourceCompletenessStatus"
+        },
+        "withheld_categories": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AffordanceWithheldCategory"
+          },
+          "maxItems": 16,
+          "title": "Withheld Categories",
+          "type": "array"
+        }
+      },
+      "required": [
+        "source_adapter",
+        "status"
+      ],
+      "title": "AffordanceSourceCompleteness",
+      "type": "object"
+    },
+    "AffordanceSourceCompletenessStatus": {
+      "description": "How much of one adapter's source denominator was knowable.",
+      "enum": [
+        "complete",
+        "truncated",
+        "unknown",
+        "not_delivered"
+      ],
+      "title": "AffordanceSourceCompletenessStatus",
+      "type": "string"
+    },
+    "AffordanceWithheldCategory": {
+      "description": "Why a category of choices was not in the delivered set.\n\nThese are semantic evidence categories, never operation or native-command\nnames.  They explain the limit without publishing an unoffered command\ninventory as if it were a planner surface.",
+      "enum": [
+        "missing_telemetry",
+        "stale_telemetry",
+        "source_truncated",
+        "source_unknown",
+        "unprobed_targets",
+        "invalid_semantic_value",
+        "not_authorable",
+        "not_bindable",
+        "interface_scoped",
+        "not_delivered"
+      ],
+      "title": "AffordanceWithheldCategory",
+      "type": "string"
+    },
+    "WorldStateRevision": {
+      "additionalProperties": false,
+      "properties": {
+        "telemetry_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Telemetry Sequence"
+        },
+        "frame_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Frame Sequence"
+        },
+        "capability_epoch": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Capability Epoch",
+          "type": "integer"
+        },
+        "observed_at_monotonic": {
+          "minimum": 0.0,
+          "title": "Observed At Monotonic",
+          "type": "number"
+        }
+      },
+      "title": "WorldStateRevision",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The exact semantic choices delivered for one authored planner context.",
+  "properties": {
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "context_id": {
+      "pattern": "^pc-[1-9][0-9]{0,8}$",
+      "title": "Context Id",
+      "type": "string"
+    },
+    "authored_revision": {
+      "$ref": "#/$defs/WorldStateRevision"
+    },
+    "identity_session_id": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Identity Session Id"
+    },
+    "offers": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/AffordanceSetOffer"
+      },
+      "maxItems": 256,
+      "title": "Offers",
+      "type": "array"
+    },
+    "source_completeness": {
+      "items": {
+        "$ref": "#/$defs/AffordanceSourceCompleteness"
+      },
+      "maxItems": 32,
+      "minItems": 1,
+      "title": "Source Completeness",
+      "type": "array"
+    },
+    "withheld_categories": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/AffordanceWithheldCategory"
+      },
+      "maxItems": 16,
+      "title": "Withheld Categories",
+      "type": "array"
+    }
+  },
+  "required": [
+    "context_id",
+    "authored_revision",
+    "source_completeness"
+  ],
+  "title": "AffordanceSetEvent",
+  "type": "object"
+}

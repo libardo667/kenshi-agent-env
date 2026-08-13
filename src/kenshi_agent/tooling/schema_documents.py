@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..affordances import AffordanceSelection
-from ..core.affordance import AffordanceReceipt
+from ..core.affordance import AffordanceReceipt, AffordanceSetEvent
 from ..core.observation import Observation
 from ..core.operation import ACTION_ADAPTER
 from ..core.planning import PlanEnvelope, PlannerDecision, PlanPatch
@@ -25,6 +25,7 @@ def base_schema_documents() -> dict[str, dict[str, Any]]:
 
     return {
         "affordance_selection.schema.json": AffordanceSelection.model_json_schema(),
+        "affordance_set.schema.json": AffordanceSetEvent.model_json_schema(),
         "plan_proposal.schema.json": PlanProposal.model_json_schema(),
         "affordance_receipt.schema.json": AffordanceReceipt.model_json_schema(),
         "telemetry.schema.json": TelemetrySnapshot.model_json_schema(),

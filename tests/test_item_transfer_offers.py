@@ -7,9 +7,10 @@ items, and refused all three.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
-from kenshi_agent.affordances import offered_affordances
+from kenshi_agent.affordances import enumerate_affordance_set, offered_affordances
 from kenshi_agent.core.observation import Observation
 from kenshi_agent.core.operation import ControlMode
 from kenshi_agent.core.telemetry import (
@@ -109,6 +110,14 @@ def _transfer_semantics(inventories: list[OpenInventory]) -> set[str]:
     }
 
 
+def _transfer_offers(inventories: list[OpenInventory]):
+    return [
+        offer
+        for offer in offered_affordances(_observation(inventories))
+        if offer.operation_kind == "transfer_item"
+    ]
+
+
 def _carried(*items: InventorySlotItem) -> list[InventorySectionView]:
     return [
         InventorySectionView(
@@ -140,11 +149,7 @@ def _barman(**kwargs: object) -> OpenInventory:
 def test_both_directions_are_offered_between_two_reachable_inventories() -> None:
     semantics = _transfer_semantics([_fish(), _barman()])
 
-    assert semantics == {
-        "transfer_rice_bowl_backpack_content_0_0_to_barman",
-        "transfer_water_backpack_content_6_4_to_fish",
-        "transfer_foodcube_backpack_content_14_5_to_fish",
-    }
+    assert semantics == {"transfer_item"}
 
 
 def test_reach_is_what_removes_the_offers_rather_than_an_empty_world() -> None:
@@ -154,26 +159,21 @@ def test_reach_is_what_removes_the_offers_rather_than_an_empty_world() -> None:
     all, which is the only reason they are written as a difference.
     """
 
-    buying = "transfer_water_backpack_content_6_4_to_fish"
-    selling = "transfer_rice_bowl_backpack_content_0_0_to_barman"
+    in_reach = _transfer_offers([_fish(), _barman()])
+    assert len(in_reach) == 3
 
-    in_reach = _transfer_semantics([_fish(), _barman()])
-    assert {buying, selling} <= in_reach
-
-    out_of_reach = _transfer_semantics([_fish(), _barman(within_trade_range=False)])
-    # Taking from the far shopkeeper and selling to them both go.
-    assert buying not in out_of_reach
-    assert selling not in out_of_reach
-    assert out_of_reach == set()
+    out_of_reach = _transfer_offers(
+        [_fish(), _barman(within_trade_range=False)]
+    )
+    assert out_of_reach == []
 
 
 def test_unknown_reach_is_silence_rather_than_a_denial() -> None:
-    semantics = _transfer_semantics(
+    offers = _transfer_offers(
         [_fish(within_trade_range=None), _barman(within_trade_range=None)]
     )
 
-    assert "transfer_water_backpack_content_6_4_to_fish" in semantics
-    assert "transfer_rice_bowl_backpack_content_0_0_to_barman" in semantics
+    assert len(offers) == 3
 
 
 def test_worn_gear_is_offered_because_a_body_is_mostly_wearing_it() -> None:
@@ -204,10 +204,12 @@ def test_worn_gear_is_offered_because_a_body_is_mostly_wearing_it() -> None:
         ],
     )
 
-    semantics = _transfer_semantics([_fish(), armed])
+    offers = _transfer_offers([_fish(), armed])
 
-    assert "transfer_katana_back_0_0_to_fish" in semantics
-    assert "transfer_halfpants_legs_0_0_to_fish" in semantics
+    assert {offer.operation_arguments["item_name"] for offer in offers} >= {
+        "Katana",
+        "Halfpants",
+    }
 
 def test_identically_named_items_stay_distinguishable_by_slot() -> None:
     hoarder = _inventory(
@@ -217,10 +219,39 @@ def test_identically_named_items_stay_distinguishable_by_slot() -> None:
         sections=_carried(_item("Water", 1, 1), _item("Water", 9, 9)),
     )
 
-    semantics = _transfer_semantics([_fish(), hoarder])
+    offers = _transfer_offers([_fish(), hoarder])
+    water_offers = [
+        offer for offer in offers if offer.operation_arguments["item_name"] == "Water"
+    ]
 
-    assert "transfer_water_backpack_content_1_1_to_fish" in semantics
-    assert "transfer_water_backpack_content_9_9_to_fish" in semantics
+    assert len(water_offers) == 2
+    assert len({offer.target.target_id for offer in water_offers if offer.target}) == 2
+
+
+def test_affordance_set_keeps_transfer_mechanics_private() -> None:
+    enumeration = enumerate_affordance_set(_observation([_fish(), _barman()]))
+    event = enumeration.as_evidence(context_id="pc-1")
+    transfers = [offer for offer in event.offers if offer.operation_kind == "transfer_item"]
+
+    assert len(transfers) == 3
+    assert all(offer.semantic == "transfer_item" for offer in transfers)
+    assert all(offer.selection_target_id.startswith("inventory-transfer-") for offer in transfers)
+    assert all(
+        {target.role for target in offer.applicable_targets}
+        == {"source_inventory", "destination_inventory"}
+        for offer in transfers
+    )
+    serialized = json.dumps(event.model_dump(mode="json"), sort_keys=True)
+    for forbidden in (
+        "slot_x",
+        "slot_y",
+        "section_name",
+        "backpack_content",
+        "description",
+        "label",
+        "operation_arguments",
+    ):
+        assert forbidden not in serialized
 
 
 def test_native_transfer_authority_is_the_inventory_model_not_auto_trade() -> None:

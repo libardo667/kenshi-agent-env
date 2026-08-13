@@ -11,7 +11,12 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from ..affordances import AffordanceChoiceError, offered_affordances, selection_for
+from ..affordances import (
+    AffordanceChoiceError,
+    enumerate_affordance_set,
+    offered_affordances,
+    selection_for,
+)
 from ..config import PlannerConfig, PlanningConfig
 from ..core.observation import Observation
 from ..core.planning import PlannerOutput
@@ -225,6 +230,7 @@ class OpenRouterPlanner(Planner):
         *,
         context_id: str,
     ) -> PreparedPlannerInput:
+        affordance_enumeration = enumerate_affordance_set(observation)
         response_model = hosted_proposal_model(observation)
         schema_text = json.dumps(
             projected_response_format(response_model)["json_schema"]["schema"]
@@ -269,11 +275,15 @@ class OpenRouterPlanner(Planner):
             ),
         )
         if envelope.compaction_target_tokens is None:
-            payload = render_planner_payload(observation)
+            payload = render_planner_payload(
+                observation,
+                affordance_set=affordance_enumeration,
+            )
         else:
             assert envelope.hard_observation_tokens is not None
             payload = render_planner_payload(
                 observation,
+                affordance_set=affordance_enumeration,
                 max_chars=envelope.compaction_target_tokens,
                 max_context_chars=envelope.hard_observation_tokens,
                 measure=conservative_text_token_estimate,
@@ -283,6 +293,7 @@ class OpenRouterPlanner(Planner):
             observation,
             context_id=context_id,
             payload=payload,
+            affordance_enumeration=affordance_enumeration,
             context_capacity_source=envelope.capacity.source,
             context_window_tokens=envelope.capacity.context_window_tokens,
             compaction_target_tokens=envelope.compaction_target_tokens,

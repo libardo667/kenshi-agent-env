@@ -9,12 +9,9 @@ The menu this produces is exactly what a planner call would receive at that
 telemetry sequence. It is a window onto the existing enumeration, never a
 second enumeration path.
 
-What it cannot do: distinguish "a gate withheld a modeled affordance" from
-"this surface was never modeled". Both read as absence. Enumerators withhold by
-returning or continuing, so the reason evaporates at the branch. Recording
-typed withholding reasons is the separate, larger change that section 9.6 of
-the interaction-scope plan requires; until it lands, an empty menu is a
-question rather than an answer.
+The canonical enumeration now retains typed completeness and withholding
+evidence. This display remains compact, while saved `affordance_set` events
+carry the exact explanation needed for replay and diagnosis.
 
 It also cross-checks each offered kind against its own definition. Slice 1 made
 `AffordanceAdapter.offers` filter unauthorable offers, so this should always
@@ -30,7 +27,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from ..affordances import AFFORDANCE_ADAPTERS, AffordanceOffer
+from ..affordances import AFFORDANCE_ADAPTERS, AffordanceOffer, enumerate_affordance_set
 from ..core.observation import Observation
 from ..core.telemetry import TelemetrySnapshot
 from ..operation_definitions import OPERATION_DEFINITIONS
@@ -143,16 +140,10 @@ def observation_from_snapshot(
 def current_menu(observation: Observation) -> AffordanceMenu:
     """Enumerate every adapter exactly as a planner call would."""
 
-    offering: list[str] = []
-    silent: list[str] = []
-    rows: list[OfferRow] = []
-    for adapter in AFFORDANCE_ADAPTERS:
-        produced = [OfferRow.from_offer(offer) for offer in adapter.offers(observation)]
-        if produced:
-            offering.append(adapter.name)
-            rows.extend(produced)
-        else:
-            silent.append(adapter.name)
+    enumeration = enumerate_affordance_set(observation)
+    rows = [OfferRow.from_offer(offer) for offer in enumeration.offers]
+    offering = sorted({offer.source_adapter for offer in enumeration.evidence_offers})
+    silent = sorted({adapter.name for adapter in AFFORDANCE_ADAPTERS} - set(offering))
 
     unauthorable = sorted(
         {

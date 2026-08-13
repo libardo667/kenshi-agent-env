@@ -17,7 +17,10 @@ from collections import Counter
 from collections.abc import Callable
 from typing import Any
 
-from .affordances import offered_affordances
+from .affordances import (
+    AffordanceEnumeration,
+    enumerate_affordance_set,
+)
 from .config import PlanningConfig
 from .continuity import ContinuityLedger
 from .continuity_service import ContinuityService
@@ -30,10 +33,15 @@ from .nutrition import (
 from .observation_budget import budget_observation_payload
 
 
-def planner_affordance_digest(observation: Observation) -> list[dict[str, Any]]:
+def planner_affordance_digest(
+    observation: Observation,
+    *,
+    affordance_set: AffordanceEnumeration | None = None,
+) -> list[dict[str, Any]]:
     """Project the one runtime-authored action surface for the playing model."""
 
-    offers = offered_affordances(observation)
+    enumeration = affordance_set or enumerate_affordance_set(observation)
+    offers = enumeration.offers
     semantic_counts = Counter(offer.semantic for offer in offers)
     digest: list[dict[str, Any]] = []
     for offer in offers:
@@ -105,6 +113,7 @@ def _project_planner_payload(payload: dict[str, Any]) -> dict[str, Any]:
 def render_planner_payload(
     observation: Observation,
     *,
+    affordance_set: AffordanceEnumeration | None = None,
     max_chars: int | None = None,
     max_context_chars: int | None = None,
     measure: Callable[[str], int] = len,
@@ -114,7 +123,10 @@ def render_planner_payload(
 
     payload = observation.model_dump(mode="json", exclude={"screenshot_path"})
     payload["telemetry"] = model_facing_telemetry_payload(payload.get("telemetry"))
-    payload["affordances"] = planner_affordance_digest(observation)
+    payload["affordances"] = planner_affordance_digest(
+        observation,
+        affordance_set=affordance_set,
+    )
     payload["roster_nutrition"] = planner_nutrition_digest(observation)
     payload = _project_planner_payload(payload)
     if max_chars is None and max_context_chars is None:

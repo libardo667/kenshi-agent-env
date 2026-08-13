@@ -1,169 +1,141 @@
-# Checkpoint: Exact runnable-system generation manifest
+# Checkpoint: Exact planner affordance-set evidence
 
-Goal 11 adds a read-only `./dev generation-manifest` command that records the
-stable identity and provenance of the exact runnable KAE system. The manifest
-uses EvoGen's serialized `GenerationManifest` envelope while keeping all
-Kenshi-specific collection logic in KAE.
+Goal 12 records one typed `affordance_set` event for every planner context. The
+event is the exact semantic choice authority delivered to that planner call,
+not a reconstruction from prompt text and not evidence that any choice was
+selected, dispatched, completed, or changed Kenshi.
 
-This is a tooling, schema, and evidence checkpoint. It does not launch Kenshi,
-dispatch a command, mutate a save, install a DLL, or claim that a running world
-changed.
+This slice changes planner evidence and replay only. It does not launch Kenshi,
+dispatch input, modify a save, install a DLL, create an EvoGen capability
+manifest, or export a production trajectory.
 
 ## Repository and authority
 
 ```text
-parent commit          7e25459c992572b0f102297420f7117fbc2146d7
+parent commit          bfaa4d55ae10a34d33e7a06ee3959fc6659eceb4
 integration branch     main
 starting tree          clean
-EvoGen counterpart     303701c078ead81f1886933d10faa5d0891fac8d
+EvoGen counterpart     c37147b3120c38c9a979ca8671fcc11c5ab62c6c
 source plan revision   2026-08-10T21:25:08.835Z
-manifest schema        1
+affordance schema      1.0
 producer protocol      2.0.0
-memory schema          4
 ```
 
-The parent commit is the completed G10 session-event-sequence slice. G11 adds
-generation provenance only. It does not alter the runtime plane, planner
-behavior, evaluator, native controller, telemetry semantics, or proof rules.
+The parent commit is the completed G11 generation-manifest slice. G12 changes
+only the Python planner/evidence plane and its generated schemas, documentation,
+fixtures, and tests. Native code, controller protocol, telemetry schema,
+environment behavior, operation definitions, and evaluation rules are
+unchanged.
 
-## Stable generation identity
+## One enumeration and one delivery boundary
 
-The command builds a strict typed manifest, serializes canonical sorted compact
-JSON, and hashes every top-level field except `generation_id`. Two materially
-identical invocations therefore write byte-identical manifests with the same
-identity. The recorded timestamp comes from the source commit rather than the
-wall clock.
+`enumerate_affordance_set` is now the single immutable enumeration used to
+build the planner projection, delivery evidence, and read-only affordance
+watch. Hosted planners enumerate once before budgeting and reuse that snapshot.
+Scripted and direct-action in-process planners record that no semantic menu was
+delivered, rather than converting available runtime operations into false
+planner-delivery evidence. Budgeted planner input is rejected unless its
+complete `affordances` array equals the projection from the same enumeration.
 
-Source identity includes the full Git commit and a content digest for tracked
-changes and untracked files. The requested output is excluded lexically, so
-writing the manifest inside the checkout does not make its own identity drift.
-The writer rejects symlink outputs, symlinked parents, and existing non-files;
-publication uses a flushed, fsynced, same-directory temporary file followed by
-an atomic replace.
+`planner_context_prepared` remains delivery accounting: context identity,
+revision, included continuity, payload size, and budget information. The new
+`affordance_set` record is written after that accounting and immediately before
+`decide_prepared`. A planner failure therefore preserves the exact delivered
+choice set. A failed affordance-set log write prevents delivery rather than
+creating an unrecorded planner call.
 
-Focused falsifiers prove that each required semantic change produces a new
-identity: planner or advisor model, raw prompt or strategy corpus, operation
-definition, protocol schema, and installed DLL bytes. Reordered schema keys do
-not change identity. Missing and unreadable artifacts remain distinct typed
-states rather than being collapsed into empty content.
+## Typed semantic evidence
 
-## Recorded provenance
+Each offer records:
 
-The manifest records:
+- its opaque affordance identity;
+- operation kind and issuing source adapter;
+- semantic name and typed parameter constraints;
+- the opaque target disambiguator the planner must copy, when required;
+- applicable engine-owned target identities and semantic roles; and
+- the authored world revision and identity session for the containing set.
 
-- Git commit, dirty state, and a redacted content fingerprint;
-- the raw `uv.lock` digest;
-- the active planner and advisor route identifiers, including disabled advisor
-  state, plus a required script digest for the scripted planner;
-- raw system-prompt and strategy-corpus evidence and the rendered output-policy
-  prompt digest;
-- a redacted effective-config digest;
-- typed protocol, schema, evidence-semantics, memory, native-source, and
-  manifest versions plus canonical exported-schema digests;
-- both the generated operation-definition document digest and a semantic
-  projection of the live operation registry;
-- the canonical proof-ledger digest;
-- independently typed scenario-fixture and authored-start identities;
-- target Kenshi executable/version evidence and optional observed executable
-  evidence; and
-- independent source, header, built, staged, and installed native-binary
-  evidence with parity conclusions only when both compared artifacts exist.
+The set separately records every adapter's completeness status and typed
+withholding categories. Missing telemetry, stale telemetry, a truncated source,
+an unknown source, unprobed targets, invalid semantic values, authoring or
+binding refusal, interface scope, and intentional non-delivery remain distinct.
+An empty complete source therefore does not mean the same thing as an absent or
+incomplete source.
 
-The generated JSON schema at `schemas/generation_manifest.schema.json` and the
-generated development-command reference are maintained by the existing schema
-and documentation exporters and participate in their freshness gates.
+## Replay and confidentiality boundary
 
-## Redaction and fail-closed boundaries
+`load_affordance_sets` validates committed JSONL events as the typed schema and
+rejects logs with no such event; older runs remain readable elsewhere, but they
+cannot claim exact choice reconstruction. `reconstruct_choice` resolves a
+planner selection only from semantic identity, the emitted target
+disambiguator, and typed parameter constraints. It does not parse prompts,
+descriptions, or labels.
 
-Configuration references are inspected before interpolation. Only the exact
-reviewed KAE environment-variable allowlist may affect the effective-config
-digest; credential-like and unknown references fail closed, including nested
-default interpolation. Paths become role markers, arbitrary strings are
-hashed, and mutable telemetry, memory, runtime scenario, and attestation
-payloads are excluded from effective configuration because they have their own
-typed authorities.
-
-Model identifiers are a deliberately narrow reviewed projection. Path-like,
-credential-like, malformed, or overlong values fail closed. The command does
-not load `.env`, enumerate the process environment, serialize API keys, or let
-unrelated variables such as `HOME` affect the identity. Tests exercise both
-identity invariance and absence of secret values, credential names, and host
-paths in serialized output.
-
-Scenario and authored-start evidence are separate lineage channels and may
-coexist. Scenario evidence distinguishes a manually declared identifier, a
-configured attestation, and a verified CLI fixture; volatile session,
-sequence, observation-time, and runtime telemetry fields do not enter stable
-identity. Authored-start evidence separately hashes the selected typed start,
-canonical bundle manifest, and mod payload.
-
-## Native and game-version evidence
-
-File hashes establish only byte identity. The manifest preserves built, staged,
-and installed DLL evidence independently, including absent and unreadable
-states, rather than choosing one file as authoritative or asserting parity
-without a comparison. Kenshi evidence likewise separates the typed research
-target from an optionally observed executable and reports a match only when
-both are available.
-
-The capability digest currently names KAE's generated native
-`GameplayCapabilities.json` authority. Metadata marks this projection as
-provisional until G13. Although the complete output validates against EvoGen's
-serialized `GenerationManifest` model, G11 does **not** claim an EvoGen
-`CapabilityManifest` CAS object or subject-conformance/bootstrap readiness.
+The event excludes presentation labels, descriptions, operation arguments,
+keys, screen coordinates, inventory section/slot coordinates, and lists of
+unoffered native commands. Inventory transfers now use an opaque planner target
+while private runtime operation arguments retain the exact section and slot
+needed for binding. The event records source and destination inventory owners
+as semantic participants without publishing the private mechanical address.
 
 ## Independent review and withheld claims
 
-Shannon mapped every source authority, Dwork audited configuration and secret
-boundaries, and Merkle designed the identity falsifiers before implementation.
-Hopper expanded the executable falsifier suite. Saltzer's security review found
-and then verified repairs for model-ID leakage, symlink/path handling,
-external-target mutation, and absent-versus-unreadable evidence. Knuth's
-contract review verified all required authority fields, mutation behavior,
-generated-artifact freshness, local CLI behavior, and exact parsing through
-EvoGen's current `GenerationManifest` model.
+Cicero mapped the current planner and enumeration authorities, Kuhn designed
+failure-oriented falsifiers, and Hypatia audited semantic/mechanical and
+runtime/evolution boundaries before implementation. Their final read-only
+review found contradictory typed parameter/completeness contracts and unknown
+adapter/operation pairs were too easy to load. The repaired models now reject
+those cases, event models are frozen, and replay can cross-check retained offer,
+operation, and adapter identities. The final focused suites were rerun after
+those repairs.
+
+Cicero also confirmed that the generated reporting-surface report still shows
+no affordance-set event in its real pre-G12 live fixture. That gap is preserved
+intentionally: the new synthetic fixture proves typed replay, but it is not
+inserted into an older live capture or presented as live evidence.
 
 The following remain explicitly withheld:
 
-- a digest does not prove runtime loading, command acceptance, completion, a
-  world effect, goal progress, or goal achievement;
-- a matching executable or DLL hash does not identify a running process;
-- G11 does not create the authoritative planner-visible affordance-set event;
-- G11 does not complete the G13 subject adapter or its capability-manifest CAS;
-- G11 does not export production trajectories to EvoGen; and
-- no live process, save, DLL installation, or game state was changed to prove
-  this slice.
+- an offered affordance is not a planner selection or an accepted operation;
+- dispatch, acceptance, completion, and world effect still require their own
+  later independent evidence;
+- source completeness describes the adapter's observed denominator, not every
+  possible action in Kenshi;
+- old logs without `affordance_set` events cannot be upgraded by inference;
+- G12 does not create the G13 KAE subject adapter or permanent EvoGen
+  capability-manifest authority;
+- G12 does not perform the G14 production trajectory export; and
+- no live process, save, DLL installation, or game state was changed.
 
 ## Completion boundary and next goal
 
-G11 stops after the command and schema are independently reviewed, the complete
-portable gate passes, this checkpoint is committed on `main`, the public push
-is clean, and hosted CI is green. Only then may the central EvoGen plan ratchet
-mark G11 complete and name G12 as the sole next goal.
+G12 stops after independent review, generated-artifact freshness, the complete
+portable gate, a clean commit on `main`, public push, hosted Python matrix, and
+the central EvoGen plan/checkpoint/cockpit ratchet. Only then may G13 begin.
 
-G12 owns one authoritative planner-visible affordance-set event. G13 still owns
-the KAE subject adapter and permanent capability-manifest authority, and G14
-owns the production trajectory exporter.
+G13 owns the real KAE subject adapter and permanent content-addressed
+capability-manifest authority. G14 still owns trajectory export. G28 begins
+supervised live observation, and G29 remains the first end-to-end live candidate
+evolution proof.
 
 ## Verification
 
 ```bash
-UV_CACHE_DIR=/tmp/kae-uv-cache uv run --frozen --no-sync pytest \
-  -p no:cacheprovider -q tests/test_generation_manifest.py \
-  tests/test_docs_hygiene.py tests/test_dev_entrypoint.py \
-  tests/test_live_dev.py tests/test_native_provenance.py \
+PYTEST_ADDOPTS='-p no:cacheprovider' UV_CACHE_DIR=/tmp/kae-uv-cache \
+  uv run --frozen --no-sync pytest -q tests/test_affordance_set_event.py \
+  tests/test_item_transfer_offers.py tests/test_affordance_watch.py \
+  tests/test_continuity.py tests/test_planner_base_mutation.py \
+  tests/test_reporting_surface.py tests/test_session_event_dispositions.py \
   tests/test_checkpoint_freshness.py
-RUFF_CACHE_DIR=/tmp/kae-ruff-g11 UV_CACHE_DIR=/tmp/kae-uv-cache \
+RUFF_CACHE_DIR=/tmp/kae-ruff-g12 UV_CACHE_DIR=/tmp/kae-uv-cache \
   uv run --frozen --no-sync ruff check .
-UV_CACHE_DIR=/tmp/kae-uv-cache MYPY_CACHE_DIR=/tmp/kae-mypy-g11 \
+UV_CACHE_DIR=/tmp/kae-uv-cache MYPY_CACHE_DIR=/tmp/kae-mypy-g12 \
   uv run --frozen --no-sync mypy src
 UV_CACHE_DIR=/tmp/kae-uv-cache ./dev verify-portable
 git diff --check
 ```
 
-The focused manifest, redaction, mutation, CLI, native-provenance,
-generated-artifact, and checkpoint tests pass on the independently reviewed
-candidate. The complete portable gate also passes: locked environment, Ruff,
-strict mypy over 152 source files, research validation, disposition/schema/doc
-regeneration, the full pytest suite, architecture checks, and whitespace
-checks. Hosted CI remains the post-push completion authority.
+The focused tests, Ruff, strict mypy over 153 source files, checkpoint
+freshness, generated-artifact checks, the full pytest suite, and the complete
+portable gate pass on the independently reviewed candidate. Hosted CI remains
+the post-push completion authority.

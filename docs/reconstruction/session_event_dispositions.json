@@ -80,6 +80,12 @@
       "rationale": "Retain the selected affordance lifecycle as KAE evidence; it is not the complete planner-visible affordance set and is not execution proof."
     },
     {
+      "source_event_type": "affordance_set",
+      "disposition": "exact_evogen_event",
+      "evogen_kind": "affordance_set",
+      "rationale": "The typed event is the exact semantic offer set delivered for one authored planner context; it records choice authority and source completeness without claiming selection, dispatch, completion, or world effect."
+    },
+    {
       "source_event_type": "agent_takeover_cancelled",
       "disposition": "subject_only_raw_evidence",
       "evogen_kind": null,
@@ -401,7 +407,7 @@
       "source_event_type": "planner_context_prepared",
       "disposition": "subject_only_raw_evidence",
       "evogen_kind": null,
-      "rationale": "Retain the prepared context and offered/withheld diagnostics, but missing telemetry or preparation failure can make the apparent set incomplete; G12 owns a dedicated affordance-set contract."
+      "rationale": "Retain prepared-context delivery accounting, memory identities, and context-capacity facts; the dedicated affordance_set event owns exact planner-choice evidence."
     },
     {
       "source_event_type": "planner_error",

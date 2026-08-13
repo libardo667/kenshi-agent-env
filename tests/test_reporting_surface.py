@@ -1,8 +1,7 @@
 """The reporting-surface probes must name fields the code actually emits.
 
 Three questions were reported as unanswerable gaps in a bundle that answered
-all three. The probes said `offers`, `withheld` and `task_state`; the emitters
-write `offered`, `withheld_unauthorable` and `character_work`. Because the
+all three. The probes named fields absent from the relevant typed payloads. Because the
 probes were resolved by substring-searching the rendered JSON, a name that
 matched nothing was indistinguishable from evidence that was never recorded -
 so the tool built to measure the reporting surface manufactured gaps in it, and
@@ -104,6 +103,12 @@ def _receipt_fields() -> set[str]:
     return set(AffordanceReceipt.model_fields)
 
 
+def _affordance_set_fields() -> set[str]:
+    from kenshi_agent.core.affordance import AffordanceSetEvent
+
+    return set(AffordanceSetEvent.model_fields)
+
+
 @pytest.mark.parametrize(
     "question",
     POST_MORTEM_QUESTIONS,
@@ -118,6 +123,8 @@ def test_every_probe_names_a_field_the_emitter_writes(question) -> None:  # type
         )
     elif question.event_type == "planner_context_prepared":
         assert question.probe.split(".")[0] in _manifest_fields()
+    elif question.event_type == "affordance_set":
+        assert question.probe.split(".")[0] in _affordance_set_fields()
     elif question.event_type == "affordance_receipt":
         head, _, rest = question.probe.partition(".")
         # The emitter wraps the receipt model under a "receipt" key.

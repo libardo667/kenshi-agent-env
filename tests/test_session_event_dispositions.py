@@ -35,6 +35,7 @@ EXPECTED_EVENTS = frozenset(
         "advisor_suppressed",
         "advisor_task_failed",
         "affordance_receipt",
+        "affordance_set",
         "agent_takeover_cancelled",
         "agent_takeover_countdown",
         "agent_takeover_ready",
@@ -131,7 +132,7 @@ def test_source_inventory_and_review_authority_are_exact() -> None:
     inventory = discover_source_inventory()
     rows = validate_reviewed_dispositions(inventory, load_reviewed_dispositions())
 
-    assert len(inventory.event_types) == 89
+    assert len(inventory.event_types) == 90
     assert inventory.event_types == EXPECTED_EVENTS
     assert [row["source_event_type"] for row in rows] == sorted(EXPECTED_EVENTS)
 
@@ -421,6 +422,6 @@ def test_generated_json_contains_every_event_once() -> None:
     payload = json.loads(render_generated_dispositions())
     event_types = [row["source_event_type"] for row in payload["events"]]
 
-    assert len(event_types) == 89
+    assert len(event_types) == 90
     assert len(event_types) == len(set(event_types))
     assert set(event_types) == EXPECTED_EVENTS

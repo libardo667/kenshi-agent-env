@@ -9,6 +9,7 @@ private executor operation after re-enumerating the same source.
 from __future__ import annotations
 
 import json
+from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from enum import StrEnum
@@ -29,8 +30,15 @@ from .core.affordance import (
     AffordanceLifecycleStatus,
     AffordanceParameter,
     AffordanceReceipt,
+    AffordanceSetEvent,
+    AffordanceSetOffer,
+    AffordanceSetParameter,
+    AffordanceSetTarget,
     AffordanceSource,
+    AffordanceSourceCompleteness,
+    AffordanceSourceCompletenessStatus,
     AffordanceTarget,
+    AffordanceWithheldCategory,
     BoundAffordance,
 )
 from .core.authority import AuthorizationCode
@@ -50,6 +58,7 @@ from .core.telemetry import (
     inventory_owner_is_within_trade_authoring_distance,
     map_destination_travel_available,
 )
+from .core.world import WorldStateRevision
 from .operation_definitions import (
     NATIVE_CHARACTER_ORDER_CAPABILITY,
     NATIVE_CLOSE_INTERFACE_CAPABILITY,
@@ -223,6 +232,7 @@ class AffordanceOffer(_StrictModel):
     operation_kind: str = Field(min_length=1, max_length=80)
     operation_arguments: dict[str, JsonValue] = Field(default_factory=dict)
     offered_at_telemetry_sequence: int = Field(ge=0)
+    applicable_targets: tuple[AffordanceSetTarget, ...] = ()
 
     def planner_digest(self) -> dict[str, JsonValue]:
         """Project only semantic choice, exact target, and gameplay parameters."""
@@ -291,11 +301,21 @@ def _offer(
     target: AffordanceTarget | None = None,
     parameters: tuple[AffordanceParameterSpec, ...] = (),
     arguments: dict[str, JsonValue] | None = None,
+    applicable_targets: tuple[AffordanceSetTarget, ...] = (),
 ) -> AffordanceOffer:
     telemetry = observation.telemetry
     if telemetry is None:
         raise ValueError("cannot offer a game affordance without telemetry")
     operation_arguments = arguments or {}
+    semantic_targets = applicable_targets
+    if not semantic_targets and target is not None:
+        semantic_targets = (
+            AffordanceSetTarget(
+                role="target",
+                target_id=target.target_id,
+                kind=target.kind,
+            ),
+        )
     return AffordanceOffer(
         affordance_id=_offer_id(
             sequence=telemetry.sequence,
@@ -313,6 +333,7 @@ def _offer(
         operation_kind=operation_kind,
         operation_arguments=operation_arguments,
         offered_at_telemetry_sequence=telemetry.sequence,
+        applicable_targets=semantic_targets,
     )
 
 
@@ -676,15 +697,11 @@ def _character_order_offers(observation: Observation) -> Iterable[AffordanceOffe
             )
 
 
-def _semantic_slug(value: str) -> str:
-    """A stable lower-snake fragment for naming one choice among many."""
+def _opaque_semantic_target_id(prefix: str, value: dict[str, JsonValue]) -> str:
+    """Name one semantic choice without publishing its mechanical address."""
 
-    cleaned = "".join(
-        character.lower() if character.isalnum() else "_" for character in value
-    ).strip("_")
-    while "__" in cleaned:
-        cleaned = cleaned.replace("__", "_")
-    return cleaned or "unnamed"
+    identity = json.dumps(value, sort_keys=True, separators=(",", ":"))
+    return f"{prefix}-{sha256(identity.encode('utf-8')).hexdigest()[:24]}"
 
 
 MAX_TRADE_WINDOWS_OFFERED = 12
@@ -929,26 +946,22 @@ def _item_transfer_offers(observation: Observation) -> Iterable[AffordanceOffer]
                 # refusal that hid it was inherited from a crash that turned out
                 # to be a calling convention, not equipment.
                 for item in section.items:
-                    # The item and destination are part of the semantic, not
-                    # decoration. The target is the *source* inventory, so two
-                    # items in it collapsed to one indistinguishable choice and
-                    # the planner's selection was refused for matching two.
-                    # `_character_order_offers` learned this first: one person
-                    # affording several orders needs the order in the semantic.
-                    #
-                    # The slot is in the name because the item's name is not its
-                    # identity: two characters carry identically named gear, and
-                    # one inventory can hold the same item twice. Section and
-                    # coordinates are what the engine transfers by, so they are
-                    # what distinguishes one choice from another.
+                    operation_arguments: dict[str, JsonValue] = {
+                        "source_owner_id": source.owner_id,
+                        "destination_owner_id": destination.owner_id,
+                        "section_name": section.name,
+                        "slot_x": item.x,
+                        "slot_y": item.y,
+                        "item_name": item.item_name,
+                    }
+                    # The runtime needs section and slot coordinates to bind an
+                    # exact item.  The planner does not.  Give it one opaque
+                    # semantic target and retain the two engine-owned inventory
+                    # identities separately in affordance-set evidence.
                     yield _offer(
                         observation,
                         source=AffordanceSource.INVENTORY,
-                        semantic=(
-                            f"transfer_{_semantic_slug(item.item_name)}"
-                            f"_{_semantic_slug(section.name)}_{item.x}_{item.y}"
-                            f"_to_{_semantic_slug(destination.owner_name)}"
-                        ),
+                        semantic="transfer_item",
                         description=(
                             f"Move {item.item_name!r} from {source.owner_name!r} "
                             f"to {destination.owner_name!r} through the native "
@@ -956,18 +969,26 @@ def _item_transfer_offers(observation: Observation) -> Iterable[AffordanceOffer]
                         ),
                         operation_kind="transfer_item",
                         target=AffordanceTarget(
-                            target_id=source.owner_id,
+                            target_id=_opaque_semantic_target_id(
+                                "inventory-transfer",
+                                operation_arguments,
+                            ),
                             label=f"{item.item_name} to {destination.owner_name}",
-                            kind="inventory_item",
+                            kind="inventory_transfer",
                         ),
-                        arguments={
-                            "source_owner_id": source.owner_id,
-                            "destination_owner_id": destination.owner_id,
-                            "section_name": section.name,
-                            "slot_x": item.x,
-                            "slot_y": item.y,
-                            "item_name": item.item_name,
-                        },
+                        arguments=operation_arguments,
+                        applicable_targets=(
+                            AffordanceSetTarget(
+                                role="source_inventory",
+                                target_id=source.owner_id,
+                                kind="inventory_owner",
+                            ),
+                            AffordanceSetTarget(
+                                role="destination_inventory",
+                                target_id=destination.owner_id,
+                                kind="inventory_owner",
+                            ),
+                        ),
                     )
 
 
@@ -1319,6 +1340,127 @@ def _native_and_composite_offers(
             ),
         )
 
+@dataclass(frozen=True, slots=True)
+class _SourceCompleteness:
+    status: AffordanceSourceCompletenessStatus
+    categories: frozenset[AffordanceWithheldCategory] = frozenset()
+
+
+def _complete_source(observation: Observation) -> _SourceCompleteness:
+    del observation
+    return _SourceCompleteness(AffordanceSourceCompletenessStatus.COMPLETE)
+
+
+def _truncated_source(*, unprobed: bool = False) -> _SourceCompleteness:
+    categories = {AffordanceWithheldCategory.SOURCE_TRUNCATED}
+    if unprobed:
+        categories.add(AffordanceWithheldCategory.UNPROBED_TARGETS)
+    return _SourceCompleteness(
+        AffordanceSourceCompletenessStatus.TRUNCATED,
+        frozenset(categories),
+    )
+
+
+def _dialogue_options_source(observation: Observation) -> _SourceCompleteness:
+    assert observation.telemetry is not None
+    ui = observation.telemetry.ui
+    if ui.dialogue_open is True and ui.dialogue_options is None:
+        return _SourceCompleteness(
+            AffordanceSourceCompletenessStatus.UNKNOWN,
+            frozenset({AffordanceWithheldCategory.SOURCE_UNKNOWN}),
+        )
+    invalid = bool(
+        ui.dialogue_options is not None
+        and any(not value or len(value) > 500 for value in ui.dialogue_options)
+    )
+    return _SourceCompleteness(
+        AffordanceSourceCompletenessStatus.COMPLETE,
+        frozenset(
+            {AffordanceWithheldCategory.INVALID_SEMANTIC_VALUE}
+            if invalid
+            else set()
+        ),
+    )
+
+
+def _nearby_source(observation: Observation) -> _SourceCompleteness:
+    assert observation.telemetry is not None
+    return (
+        _complete_source(observation)
+        if observation.telemetry.nearby_entities_complete
+        else _truncated_source()
+    )
+
+
+def _character_order_source(observation: Observation) -> _SourceCompleteness:
+    assert observation.telemetry is not None
+    telemetry = observation.telemetry
+    unprobed = any(
+        entity.kind == "character" and not entity.advertised_tasks_probed
+        for entity in telemetry.nearby_entities
+    )
+    if not telemetry.nearby_entities_complete or unprobed:
+        return _truncated_source(unprobed=unprobed)
+    return _complete_source(observation)
+
+
+def _inventory_source(observation: Observation) -> _SourceCompleteness:
+    assert observation.telemetry is not None
+    return (
+        _complete_source(observation)
+        if observation.telemetry.ui.open_inventories_complete
+        else _truncated_source()
+    )
+
+
+def _trade_window_source(observation: Observation) -> _SourceCompleteness:
+    assert observation.telemetry is not None
+    telemetry = observation.telemetry
+    possible_owners = (
+        len(telemetry.roster)
+        + len(telemetry.world_targets)
+        + len(telemetry.nearby_entities)
+    )
+    if (
+        not telemetry.roster_complete
+        or not telemetry.nearby_entities_complete
+        or possible_owners > MAX_TRADE_WINDOWS_OFFERED
+    ):
+        return _truncated_source()
+    return _complete_source(observation)
+
+
+def _context_order_source(observation: Observation) -> _SourceCompleteness:
+    assert observation.telemetry is not None
+    telemetry = observation.telemetry
+    if not telemetry.nearby_entities_complete or not telemetry.discovered_objects_complete:
+        return _truncated_source()
+    return _complete_source(observation)
+
+
+def _character_source(observation: Observation) -> _SourceCompleteness:
+    assert observation.telemetry is not None
+    telemetry = observation.telemetry
+    if (
+        not telemetry.roster_complete
+        or not telemetry.selected_character_ids_complete
+        or not telemetry.nearby_entities_complete
+    ):
+        return _truncated_source()
+    return _complete_source(observation)
+
+
+def _native_composite_source(observation: Observation) -> _SourceCompleteness:
+    assert observation.telemetry is not None
+    telemetry = observation.telemetry
+    if (
+        not telemetry.roster_complete
+        or not telemetry.selected_character_ids_complete
+        or not telemetry.nearby_entities_complete
+        or not telemetry.discovered_objects_complete
+    ):
+        return _truncated_source()
+    return _complete_source(observation)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1330,6 +1472,7 @@ class AffordanceAdapter:
     operation_kinds: frozenset[str]
     denominator: str
     completeness_boundary: str
+    completeness: Callable[[Observation], _SourceCompleteness]
     enumerate: Callable[[Observation], Iterable[AffordanceOffer]]
 
     def offers(self, observation: Observation) -> Iterable[AffordanceOffer]:
@@ -1375,6 +1518,7 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
             "The editor is exported from Kenshi's own character-editor mode and "
             "the operation invokes only its exact CONFIRM control."
         ),
+        completeness=_complete_source,
         enumerate=_character_editor_offers,
     ),
     AffordanceAdapter(
@@ -1386,6 +1530,7 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
             "The producer exports the complete rendered reply list. Empty captions "
             "and captions beyond the 500-character exact-address contract are withheld."
         ),
+        completeness=_dialogue_options_source,
         enumerate=_dialogue_option_offers,
     ),
     AffordanceAdapter(
@@ -1397,6 +1542,7 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
             "Native cleanup covers Prospecting, dialogue, message boxes, trade and "
             "inventory windows, and ordinary registered GUI windows."
         ),
+        completeness=_complete_source,
         enumerate=_interface_exit_offers,
     ),
     AffordanceAdapter(
@@ -1420,6 +1566,7 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
         ),
         denominator="Runtime control, playback, advisor, memory, and fieldbook state.",
         completeness_boundary="Only choices applicable to the current run state.",
+        completeness=_complete_source,
         enumerate=_runtime_offers,
     ),
     AffordanceAdapter(
@@ -1434,6 +1581,7 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
             "context action is withheld rather than routed through the retired "
             "pointer path."
         ),
+        completeness=_context_order_source,
         enumerate=_context_order_offers,
     ),
     AffordanceAdapter(
@@ -1448,6 +1596,7 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
             "outside the reported radius cannot be offered and a hostile one is "
             "deliberately withheld."
         ),
+        completeness=_nearby_source,
         enumerate=_body_shift_offers,
     ),
     AffordanceAdapter(
@@ -1461,6 +1610,7 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
             "Bounded by the native probe budget: the nearest few people are asked what "
             "they afford, and the rest report that they were not asked."
         ),
+        completeness=_character_order_source,
         enumerate=_character_order_offers,
     ),
     AffordanceAdapter(
@@ -1476,6 +1626,7 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
             "capacity and simplified shop pricing are enforced at dispatch; Kenshi's "
             "richer trade and theft adjudication is not claimed."
         ),
+        completeness=_inventory_source,
         enumerate=_item_transfer_offers,
     ),
     AffordanceAdapter(
@@ -1492,6 +1643,7 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
             "After a local open, Kenshi's exact trade-range predicate remains the "
             "terminal authority; nearby people remain subject to the stable owner cap."
         ),
+        completeness=_trade_window_source,
         enumerate=_trade_window_offers,
     ),
     AffordanceAdapter(
@@ -1500,6 +1652,7 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
         operation_kinds=frozenset({"approach_dialogue_target"}),
         denominator="Every exact current non-hostile character confirmed talkable.",
         completeness_boundary="Native-assisted stable identity and dialogue-role evidence.",
+        completeness=_nearby_source,
         enumerate=_dialogue_target_offers,
     ),
     AffordanceAdapter(
@@ -1523,6 +1676,7 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
         completeness_boundary=(
             "Offers require the source-specific selection, identity, geometry, and safety facts."
         ),
+        completeness=_character_source,
         enumerate=_character_offers,
     ),
     AffordanceAdapter(
@@ -1531,6 +1685,7 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
         operation_kinds=frozenset({"travel_to_map_destination"}),
         denominator="Every currently known exact map destination.",
         completeness_boundary="Only destinations with authoritative current travel applicability.",
+        completeness=_complete_source,
         enumerate=_map_offers,
     ),
     AffordanceAdapter(
@@ -1556,6 +1711,7 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
             "boundary. Resource production stops at observed output; transferring "
             "that output remains a separate inventory operation."
         ),
+        completeness=_native_composite_source,
         enumerate=_native_and_composite_offers,
     ),
 )
@@ -1621,47 +1777,194 @@ def _offer_binds_now(offer: AffordanceOffer, observation: Observation) -> bool:
     return not (completion.owner is TerminalOwner.RUNTIME_CONDITIONS and not completion.conditions)
 
 
-def offered_affordances(observation: Observation) -> tuple[AffordanceOffer, ...]:
-    """Enumerate one immutable, fail-closed offer set for this observation."""
+@dataclass(frozen=True, slots=True)
+class AffordanceEnumeration:
+    """One immutable enumeration shared by planner projection and evidence."""
+
+    offers: tuple[AffordanceOffer, ...]
+    evidence_offers: tuple[AffordanceSetOffer, ...]
+    source_completeness: tuple[AffordanceSourceCompleteness, ...]
+    withheld_categories: tuple[AffordanceWithheldCategory, ...]
+    authored_revision: WorldStateRevision
+    identity_session_id: str | None
+
+    def as_evidence(self, *, context_id: str) -> AffordanceSetEvent:
+        return AffordanceSetEvent(
+            context_id=context_id,
+            authored_revision=self.authored_revision,
+            identity_session_id=self.identity_session_id,
+            offers=self.evidence_offers,
+            source_completeness=self.source_completeness,
+            withheld_categories=self.withheld_categories,
+        )
+
+
+def _unavailable_affordance_enumeration(
+    observation: Observation,
+    *,
+    status: AffordanceSourceCompletenessStatus,
+    category: AffordanceWithheldCategory,
+) -> AffordanceEnumeration:
+    sources = tuple(
+        AffordanceSourceCompleteness(
+            source_adapter=adapter.name,
+            status=status,
+            withheld_categories=(category,),
+        )
+        for adapter in sorted(AFFORDANCE_ADAPTERS, key=lambda item: item.name)
+    )
+    telemetry = observation.telemetry
+    return AffordanceEnumeration(
+        offers=(),
+        evidence_offers=(),
+        source_completeness=sources,
+        withheld_categories=(category,),
+        authored_revision=observation.world_revision,
+        identity_session_id=(
+            telemetry.identity_session_id if telemetry is not None else None
+        ),
+    )
+
+
+def enumerate_affordance_set(
+    observation: Observation,
+    *,
+    delivered: bool = True,
+) -> AffordanceEnumeration:
+    """Enumerate the one planner set and retain safe replay provenance."""
 
     telemetry = observation.telemetry
-    if telemetry is None or observation.telemetry_stale:
-        return ()
+    if not delivered:
+        return _unavailable_affordance_enumeration(
+            observation,
+            status=AffordanceSourceCompletenessStatus.NOT_DELIVERED,
+            category=AffordanceWithheldCategory.NOT_DELIVERED,
+        )
+    if telemetry is None:
+        return _unavailable_affordance_enumeration(
+            observation,
+            status=AffordanceSourceCompletenessStatus.UNKNOWN,
+            category=AffordanceWithheldCategory.MISSING_TELEMETRY,
+        )
+    if observation.telemetry_stale:
+        return _unavailable_affordance_enumeration(
+            observation,
+            status=AffordanceSourceCompletenessStatus.UNKNOWN,
+            category=AffordanceWithheldCategory.STALE_TELEMETRY,
+        )
+
     interface_clear = bool(
         telemetry.ui.active_screen == "world"
         and telemetry.ui.modal_open is False
         and telemetry.ui.dialogue_open is False
     )
-    enumerated = tuple(
-        (adapter, offer)
-        for adapter in AFFORDANCE_ADAPTERS
-        for offer in adapter.offers(observation)
-        if interface_clear or offer.operation_kind in INTERFACE_SCOPED_OPERATION_KINDS
-    )
-    offers_by_id: dict[str, AffordanceOffer] = {}
-    for adapter, offer in enumerated:
-        if offer.source not in adapter.sources:
-            raise RuntimeError(
-                f"adapter {adapter.name!r} emitted undeclared source {offer.source.value!r}"
-            )
-        if offer.operation_kind not in adapter.operation_kinds:
-            raise RuntimeError(
-                f"adapter {adapter.name!r} emitted undeclared operation {offer.operation_kind!r}"
-            )
-        if not _offer_binds_now(offer, observation):
-            continue
-        existing = offers_by_id.get(offer.affordance_id)
-        if existing is None:
-            offers_by_id[offer.affordance_id] = offer
-            continue
-        if existing != offer:
-            raise RuntimeError("source adapters generated a colliding affordance ID")
-    offers = tuple(offers_by_id.values())
+    offers_by_id: dict[str, tuple[str, AffordanceOffer]] = {}
+    categories_by_adapter: dict[str, set[AffordanceWithheldCategory]] = {}
+    completeness_by_adapter: dict[str, _SourceCompleteness] = {}
+    for adapter in AFFORDANCE_ADAPTERS:
+        completeness_by_adapter[adapter.name] = adapter.completeness(observation)
+        categories = categories_by_adapter.setdefault(
+            adapter.name,
+            set(completeness_by_adapter[adapter.name].categories),
+        )
+        for offer in adapter.enumerate(observation):
+            if offer.source not in adapter.sources:
+                raise RuntimeError(
+                    f"adapter {adapter.name!r} emitted undeclared source "
+                    f"{offer.source.value!r}"
+                )
+            if offer.operation_kind not in adapter.operation_kinds:
+                raise RuntimeError(
+                    f"adapter {adapter.name!r} emitted undeclared operation "
+                    f"{offer.operation_kind!r}"
+                )
+            definition = OPERATION_DEFINITIONS.get(offer.operation_kind)
+            if definition is not None and not definition.is_currently_authorable(observation):
+                categories.add(AffordanceWithheldCategory.NOT_AUTHORABLE)
+                continue
+            if (
+                not interface_clear
+                and offer.operation_kind not in INTERFACE_SCOPED_OPERATION_KINDS
+            ):
+                categories.add(AffordanceWithheldCategory.INTERFACE_SCOPED)
+                continue
+            if not _offer_binds_now(offer, observation):
+                categories.add(AffordanceWithheldCategory.NOT_BINDABLE)
+                continue
+            existing = offers_by_id.get(offer.affordance_id)
+            if existing is None:
+                offers_by_id[offer.affordance_id] = (adapter.name, offer)
+                continue
+            if existing != (adapter.name, offer):
+                raise RuntimeError("source adapters generated a colliding affordance ID")
+
+    ordered = tuple(offers_by_id[key] for key in sorted(offers_by_id))
+    offers = tuple(offer for _, offer in ordered)
     if any(
-        len(spec.choices) != len(set(spec.choices)) for offer in offers for spec in offer.parameters
+        len(spec.choices) != len(set(spec.choices))
+        for offer in offers
+        for spec in offer.parameters
     ):
         raise RuntimeError("source adapter generated duplicate parameter choices")
-    return tuple(sorted(offers, key=lambda offer: offer.affordance_id))
+    semantic_counts = Counter(offer.semantic for offer in offers)
+    evidence_offers = tuple(
+        AffordanceSetOffer(
+            affordance_id=offer.affordance_id,
+            operation_kind=offer.operation_kind,
+            source_adapter=adapter_name,
+            semantic=offer.semantic,
+            selection_target_id=(
+                offer.target.target_id
+                if offer.target is not None and semantic_counts[offer.semantic] > 1
+                else None
+            ),
+            semantic_parameters=tuple(
+                AffordanceSetParameter(
+                    name=parameter.name,
+                    kind=parameter.kind.value,
+                    required=parameter.required,
+                    minimum=parameter.minimum,
+                    maximum=parameter.maximum,
+                    choices=parameter.choices,
+                )
+                for parameter in offer.parameters
+            ),
+            applicable_targets=offer.applicable_targets,
+            target_id_required=semantic_counts[offer.semantic] > 1,
+        )
+        for adapter_name, offer in ordered
+    )
+    source_completeness = tuple(
+        AffordanceSourceCompleteness(
+            source_adapter=adapter.name,
+            status=completeness_by_adapter[adapter.name].status,
+            withheld_categories=tuple(sorted(categories_by_adapter[adapter.name])),
+        )
+        for adapter in sorted(AFFORDANCE_ADAPTERS, key=lambda item: item.name)
+    )
+    withheld = tuple(
+        sorted(
+            {
+                category
+                for source in source_completeness
+                for category in source.withheld_categories
+            }
+        )
+    )
+    return AffordanceEnumeration(
+        offers=offers,
+        evidence_offers=evidence_offers,
+        source_completeness=source_completeness,
+        withheld_categories=withheld,
+        authored_revision=observation.world_revision,
+        identity_session_id=telemetry.identity_session_id,
+    )
+
+
+def offered_affordances(observation: Observation) -> tuple[AffordanceOffer, ...]:
+    """Return the exact immutable offer set from the canonical enumeration."""
+
+    return enumerate_affordance_set(observation).offers
 
 
 def _validated_parameters(

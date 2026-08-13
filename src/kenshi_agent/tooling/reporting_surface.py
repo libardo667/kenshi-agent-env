@@ -59,8 +59,8 @@ POST_MORTEM_QUESTIONS: tuple[PostMortemQuestion, ...] = (
     ),
     PostMortemQuestion(
         question="What else could it have chosen at that moment?",
-        event_type="planner_context_prepared",
-        probe="offered",
+        event_type="affordance_set",
+        probe="offers",
         why_it_matters=(
             "Separates 'the model ignored a good option' from 'the option was "
             "never on the menu'. These have completely different fixes, and "
@@ -69,8 +69,8 @@ POST_MORTEM_QUESTIONS: tuple[PostMortemQuestion, ...] = (
     ),
     PostMortemQuestion(
         question="Why was an expected affordance not offered?",
-        event_type="planner_context_prepared",
-        probe="withheld_unauthorable",
+        event_type="affordance_set",
+        probe="source_completeness.withheld_categories",
         why_it_matters=(
             "The most common question after a disappointing run, and the one "
             "that currently costs an hour of reading enumeration code."

@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 from operation_test_support import one_step_plan, operation_port
 
+from kenshi_agent.affordances import enumerate_affordance_set
 from kenshi_agent.campaign import CampaignScope, CampaignScopeOrigin
 from kenshi_agent.continuity import (
     COMMITMENT_CLOSURE_AUTHORITIES,
@@ -2675,7 +2676,12 @@ def test_runtime_records_delivery_from_the_final_prepared_input_only(
             context_id: str,
         ) -> PreparedPlannerInput:
             for budget in range(4000, 60001, 1000):
-                payload = render_planner_payload(current, max_chars=budget)
+                affordance_enumeration = enumerate_affordance_set(current)
+                payload = render_planner_payload(
+                    current,
+                    affordance_set=affordance_enumeration,
+                    max_chars=budget,
+                )
                 document = json.loads(payload)
                 included = {record["memory_id"] for record in document["memories"]}
                 if included < {record.memory_id for record in current.memories}:
@@ -2684,6 +2690,7 @@ def test_runtime_records_delivery_from_the_final_prepared_input_only(
                         current,
                         context_id=context_id,
                         payload=payload,
+                        affordance_enumeration=affordance_enumeration,
                     )
             raise AssertionError("test setup did not force any memory omission")
 
@@ -2742,13 +2749,19 @@ def test_planner_context_is_logged_before_a_provider_failure(tmp_path: Path) -> 
             for index, event in enumerate(events)
             if event["event_type"] == "planner_context_prepared"
         )
+        affordance_index = next(
+            index
+            for index, event in enumerate(events)
+            if event["event_type"] == "affordance_set"
+        )
         failure_index = next(
             index for index, event in enumerate(events) if event["event_type"] == "planner_error"
         )
         context = events[context_index]["payload"]
         assert context["context_id"] == "pc-1"
         assert context["input_kind"] == "full_observation"
-        assert context_index < failure_index
+        assert events[affordance_index]["payload"]["context_id"] == "pc-1"
+        assert context_index < affordance_index < failure_index
 
     asyncio.run(scenario())
 

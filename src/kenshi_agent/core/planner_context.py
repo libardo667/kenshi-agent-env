@@ -39,20 +39,6 @@ class PlannerContextManifest(StrictModel):
     fieldbook_receipt_ids: list[str] = Field(default_factory=list, max_length=8)
     fieldbook_read_receipt_ids: list[str] = Field(default_factory=list, max_length=8)
     advisor_brief_ids: list[str] = Field(default_factory=list, max_length=8)
-    # The menu the model actually chose from, and what was kept off it.
-    #
-    # A manifest that records only the chosen affordance cannot distinguish
-    # "the model ignored a good option" from "the option was never offered" -
-    # different problems with different fixes, and guessed wrong more than once
-    # in a single session. Recorded as `semantic:operation_kind` rather than
-    # affordance ids, because ids are per-sequence and say nothing months later.
-    offered: list[str] = Field(default_factory=list, max_length=256)
-    offered_count: int = Field(default=0, ge=0)
-    # Operation kinds the registry currently declares unauthorable. This does
-    # not explain every absence - an enumerator that returns early leaves no
-    # trace - but it separates "refused by its own definition" from "never
-    # enumerated", which was previously indistinguishable.
-    withheld_unauthorable: list[str] = Field(default_factory=list, max_length=64)
     candidate_memory_count: int = Field(default=0, ge=0)
     payload_characters: int | None = Field(default=None, ge=0)
     context_capacity_source: str | None = None

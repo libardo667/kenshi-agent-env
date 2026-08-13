@@ -92,6 +92,14 @@ class PlannerService:
             observation=observation,
         )
         self._continuity.clear_pending_reads()
+        # This is the last durable boundary before the planner receives the
+        # prepared context.  The payload is the same immutable enumeration that
+        # built the planner input, not a prompt parse or a second source walk.
+        self._logger.write(
+            "affordance_set",
+            step_index=observation.step_index,
+            payload=prepared.affordance_set.model_dump(mode="json"),
+        )
         try:
             output = await self._planner.decide_prepared(prepared)
         except Exception:

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 import kenshi_agent.planners.base as planner_base
+from kenshi_agent.affordances import enumerate_affordance_set
 from kenshi_agent.core.continuity import (
     ContinuityOperationStatus,
     ContinuityOrigin,
@@ -394,4 +395,7 @@ def test_budgeted_input_rejects_every_non_object_with_exact_diagnostic() -> None
                 Observation(run_id="input", step_index=0, mode="mock"),
                 context_id="pc-1",
                 payload=payload,
+                affordance_enumeration=enumerate_affordance_set(
+                    Observation(run_id="input", step_index=0, mode="mock")
+                ),
             )

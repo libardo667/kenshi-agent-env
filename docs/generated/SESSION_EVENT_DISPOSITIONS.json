@@ -85,6 +85,12 @@
       "source_event_type": "affordance_receipt"
     },
     {
+      "disposition": "exact_evogen_event",
+      "evogen_kind": "affordance_set",
+      "rationale": "The typed event is the exact semantic offer set delivered for one authored planner context; it records choice authority and source completeness without claiming selection, dispatch, completion, or world effect.",
+      "source_event_type": "affordance_set"
+    },
+    {
       "disposition": "subject_only_raw_evidence",
       "evogen_kind": null,
       "rationale": "Retain agent_takeover_cancelled as KAE ownership evidence; payload state and surrounding events are required before projecting human intervention or recovery.",
@@ -405,7 +411,7 @@
     {
       "disposition": "subject_only_raw_evidence",
       "evogen_kind": null,
-      "rationale": "Retain the prepared context and offered/withheld diagnostics, but missing telemetry or preparation failure can make the apparent set incomplete; G12 owns a dedicated affordance-set contract.",
+      "rationale": "Retain prepared-context delivery accounting, memory identities, and context-capacity facts; the dedicated affordance_set event owns exact planner-choice evidence.",
       "source_event_type": "planner_context_prepared"
     },
     {
@@ -543,8 +549,8 @@
   ],
   "schema_version": 1,
   "source_inventory": {
-    "event_type_count": 89,
-    "fingerprint": "cfee5a8cd3be695a8b1a344ee1cece9c44f33757cc21cb90998a3b658749369b",
+    "event_type_count": 90,
+    "fingerprint": "4327bc54075c8eaa5287043a17a11e90195086570071269909ddc4f55b871e28",
     "open_string_sinks": [
       {
         "expression": "event_type",
@@ -1187,6 +1193,12 @@
       {
         "owner": "PlannerService.decide",
         "sink_kind": "session_logger.write",
+        "source_event_type": "affordance_set",
+        "source_file": "kenshi_agent/planner_service.py"
+      },
+      {
+        "owner": "PlannerService.decide",
+        "sink_kind": "session_logger.write",
         "source_event_type": "planner_context_prepared",
         "source_file": "kenshi_agent/planner_service.py"
       },
@@ -1419,6 +1431,6 @@
         "source_file": "kenshi_agent/run_coordinator.py"
       }
     ],
-    "source_record_count": 127
+    "source_record_count": 128
   }
 }

@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
 
+from ..affordances import AffordanceEnumeration, enumerate_affordance_set
 from ..config import PlannerConfig, PlannerOutputPolicy
+from ..core.affordance import AffordanceSetEvent
 from ..core.observation import Observation
 from ..core.planner_context import (
     AuthoredPlannerContext,
@@ -118,45 +120,6 @@ def _string_ids(items: Any, key: str) -> set[str]:
         for value in [item.get(key)]
         if isinstance(value, str)
     }
-
-
-def _offer_menu(observation: Observation) -> tuple[list[str], list[str]]:
-    """The affordance menu this context was built against, and what it withheld.
-
-    Recorded so a post-mortem can tell an ignored option from an absent one.
-    Enumeration is a pure function of the observation, so this re-derives the
-    menu rather than threading it through - the adapters are the same ones the
-    planner's payload was built from, at the same revision.
-
-    Withholding is only partially explainable: an enumerator that returns early
-    leaves no trace. What is recoverable is which registered operations their
-    own definition currently refuses, which separates "refused" from "never
-    enumerated" and was previously indistinguishable.
-    """
-
-    from ..affordances import AFFORDANCE_ADAPTERS
-    from ..operation_definitions import OPERATION_DEFINITION_LIST
-
-    if getattr(observation, "telemetry", None) is None:
-        return [], []
-    offered: list[str] = []
-    seen: set[str] = set()
-    offered_kinds: set[str] = set()
-    for adapter in AFFORDANCE_ADAPTERS:
-        for offer in adapter.offers(observation):
-            offered_kinds.add(offer.operation_kind)
-            entry = f"{offer.semantic}:{offer.operation_kind}"
-            if entry in seen:
-                continue
-            seen.add(entry)
-            offered.append(entry)
-    withheld = sorted(
-        definition.kind
-        for definition in OPERATION_DEFINITION_LIST
-        if definition.kind not in offered_kinds
-        and not definition.is_currently_authorable(observation)
-    )
-    return sorted(offered), withheld
 
 
 def _payload_target_ids(payload: dict[str, Any], observation: Observation) -> set[str]:
@@ -397,12 +360,6 @@ def planner_context_manifest(
         current_target_ids = _payload_target_ids(payload, observation)
         current_observation_delivered = "world_revision" in payload
 
-    try:
-        offered, withheld = _offer_menu(observation)
-    except (AttributeError, TypeError, ValueError):
-        # The menu is evidence about the run, not part of it. An observation
-        # shape that enumeration cannot read costs the record, never the run.
-        offered, withheld = [], []
     return PlannerContextManifest(
         context_id=context_id,
         run_id=observation.run_id,
@@ -423,9 +380,6 @@ def planner_context_manifest(
         fieldbook_receipt_ids=sorted(fieldbook_receipt_ids),
         fieldbook_read_receipt_ids=sorted(fieldbook_read_receipt_ids),
         advisor_brief_ids=sorted(advisor_brief_ids),
-        offered=offered,
-        offered_count=len(offered),
-        withheld_unauthorable=withheld,
         candidate_memory_count=len(candidate_memory_ids),
         payload_characters=payload_characters,
         context_capacity_source=context_capacity_source,
@@ -446,6 +400,7 @@ class PreparedPlannerInput:
     """Final planner representation paired with its immutable authored basis."""
 
     context: AuthoredPlannerContext
+    affordance_set: AffordanceSetEvent
     payload: str | None = None
 
 
@@ -606,6 +561,7 @@ def prepared_budgeted_input(
     *,
     context_id: str,
     payload: str,
+    affordance_enumeration: AffordanceEnumeration,
     context_capacity_source: str | None = None,
     context_window_tokens: int | None = None,
     compaction_target_tokens: int | None = None,
@@ -619,6 +575,17 @@ def prepared_budgeted_input(
     document = json.loads(payload)
     if not isinstance(document, dict):
         raise ValueError("Planner observation payload must be one JSON object.")
+    delivered = document.get("affordances")
+    if not isinstance(delivered, list):
+        raise ValueError("Planner observation payload must carry an affordance list.")
+    from ..planner_context import planner_affordance_digest
+
+    expected = planner_affordance_digest(
+        observation,
+        affordance_set=affordance_enumeration,
+    )
+    if delivered != expected:
+        raise ValueError("Planner payload and affordance-set evidence disagree.")
     return PreparedPlannerInput(
         context=AuthoredPlannerContext(
             manifest=planner_context_manifest(
@@ -639,6 +606,7 @@ def prepared_budgeted_input(
             ),
             observation=observation,
         ),
+        affordance_set=affordance_enumeration.as_evidence(context_id=context_id),
         payload=payload,
     )
 
@@ -656,6 +624,15 @@ class Planner(ABC):
         Hosted planners override this with their final budgeted JSON.
         """
 
+        # The base in-process interface receives only the typed Observation and
+        # returns direct runtime actions.  It is not handed the semantic menu,
+        # so recording current offers here would turn availability into false
+        # delivery evidence. Hosted planners override this method and record
+        # the enumeration actually serialized into their payload.
+        affordance_enumeration = enumerate_affordance_set(
+            observation,
+            delivered=False,
+        )
         return PreparedPlannerInput(
             context=AuthoredPlannerContext(
                 manifest=planner_context_manifest(
@@ -664,7 +641,8 @@ class Planner(ABC):
                     input_kind="full_observation",
                 ),
                 observation=observation,
-            )
+            ),
+            affordance_set=affordance_enumeration.as_evidence(context_id=context_id),
         )
 
     async def decide_prepared(self, prepared: PreparedPlannerInput) -> PlannerOutput:
