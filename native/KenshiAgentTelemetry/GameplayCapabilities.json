@@ -1,60 +1,219 @@
 {
-  "schema_version": 1,
-  "always": [
-    "game.pause",
-    "game.speed",
-    "game.money",
-    "game.time",
-    "game.location",
-    "game.location.identity",
-    "camera.position",
-    "roster.basic",
-    "roster.hunger",
-    "roster.health",
-    "roster.inventory",
-    "roster.indoors",
-    "roster.current_goal",
-    "roster.work_channels",
-    "platoons.membership",
-    "platoons.active",
-    "selection.complete",
-    "primary.character",
-    "ui.inventory",
-    "ui.dialogue",
-    "ui.dialogue.target",
-    "ui.dialogue.options",
-    "ui.prospecting",
-    "ui.tooltip",
-    "ui.visible_controls",
-    "ui.context_inventory_target",
-    "ui.context_menu.orders",
-    "nearby.characters",
-    "nearby.roles",
-    "nearby.orderable_tasks",
-    "control.approach_vendor",
-    "control.move_to_character",
-    "control.select_squad_member",
-    "control.regroup_with_squad_member",
-    "control.move_in_direction",
-    "control.travel_to_map_destination",
-    "control.exit_current_building",
-    "world.known_map_destinations",
-    "world.context_targets",
-    "world.resource_operators",
-    "world.context_target_screen_positions",
-    "control.perform_context_action",
-    "control.survey_local_resources",
-    "control.produce_resource_output",
-    "control.open_trade_window",
-    "control.close_active_interface",
-    "control.confirm_character_editor",
-    "control.select_dialogue_option",
-    "control.transfer_item",
-    "control.shift_into_body",
-    "control.perform_character_order",
-    "identity.stable_handles"
-  ],
-  "conditional": [
-    "nearby.shop_owners"
-  ]
+    "schema_version": 2,
+    "always": [
+        {
+            "name": "game.pause",
+            "category": "sensing"
+        },
+        {
+            "name": "game.speed",
+            "category": "sensing"
+        },
+        {
+            "name": "game.money",
+            "category": "sensing"
+        },
+        {
+            "name": "game.time",
+            "category": "sensing"
+        },
+        {
+            "name": "game.location",
+            "category": "sensing"
+        },
+        {
+            "name": "game.location.identity",
+            "category": "sensing"
+        },
+        {
+            "name": "camera.position",
+            "category": "sensing"
+        },
+        {
+            "name": "roster.basic",
+            "category": "sensing"
+        },
+        {
+            "name": "roster.hunger",
+            "category": "sensing"
+        },
+        {
+            "name": "roster.health",
+            "category": "sensing"
+        },
+        {
+            "name": "roster.inventory",
+            "category": "sensing"
+        },
+        {
+            "name": "roster.indoors",
+            "category": "sensing"
+        },
+        {
+            "name": "roster.current_goal",
+            "category": "sensing"
+        },
+        {
+            "name": "roster.work_channels",
+            "category": "sensing"
+        },
+        {
+            "name": "platoons.membership",
+            "category": "representation"
+        },
+        {
+            "name": "platoons.active",
+            "category": "representation"
+        },
+        {
+            "name": "selection.complete",
+            "category": "representation"
+        },
+        {
+            "name": "primary.character",
+            "category": "representation"
+        },
+        {
+            "name": "ui.inventory",
+            "category": "sensing"
+        },
+        {
+            "name": "ui.dialogue",
+            "category": "sensing"
+        },
+        {
+            "name": "ui.dialogue.target",
+            "category": "sensing"
+        },
+        {
+            "name": "ui.dialogue.options",
+            "category": "sensing"
+        },
+        {
+            "name": "ui.prospecting",
+            "category": "sensing"
+        },
+        {
+            "name": "ui.tooltip",
+            "category": "sensing"
+        },
+        {
+            "name": "ui.visible_controls",
+            "category": "sensing"
+        },
+        {
+            "name": "ui.context_inventory_target",
+            "category": "sensing"
+        },
+        {
+            "name": "ui.context_menu.orders",
+            "category": "sensing"
+        },
+        {
+            "name": "nearby.characters",
+            "category": "sensing"
+        },
+        {
+            "name": "nearby.roles",
+            "category": "sensing"
+        },
+        {
+            "name": "nearby.orderable_tasks",
+            "category": "sensing"
+        },
+        {
+            "name": "control.approach_vendor",
+            "category": "action"
+        },
+        {
+            "name": "control.move_to_character",
+            "category": "action"
+        },
+        {
+            "name": "control.select_squad_member",
+            "category": "action"
+        },
+        {
+            "name": "control.regroup_with_squad_member",
+            "category": "action"
+        },
+        {
+            "name": "control.move_in_direction",
+            "category": "action"
+        },
+        {
+            "name": "control.travel_to_map_destination",
+            "category": "action"
+        },
+        {
+            "name": "control.exit_current_building",
+            "category": "action"
+        },
+        {
+            "name": "world.known_map_destinations",
+            "category": "representation"
+        },
+        {
+            "name": "world.context_targets",
+            "category": "representation"
+        },
+        {
+            "name": "world.resource_operators",
+            "category": "representation"
+        },
+        {
+            "name": "world.context_target_screen_positions",
+            "category": "representation"
+        },
+        {
+            "name": "control.perform_context_action",
+            "category": "action"
+        },
+        {
+            "name": "control.survey_local_resources",
+            "category": "action"
+        },
+        {
+            "name": "control.produce_resource_output",
+            "category": "action"
+        },
+        {
+            "name": "control.open_trade_window",
+            "category": "action"
+        },
+        {
+            "name": "control.close_active_interface",
+            "category": "action"
+        },
+        {
+            "name": "control.confirm_character_editor",
+            "category": "action"
+        },
+        {
+            "name": "control.select_dialogue_option",
+            "category": "action"
+        },
+        {
+            "name": "control.transfer_item",
+            "category": "action"
+        },
+        {
+            "name": "control.shift_into_body",
+            "category": "action"
+        },
+        {
+            "name": "control.perform_character_order",
+            "category": "action"
+        },
+        {
+            "name": "identity.stable_handles",
+            "category": "representation"
+        }
+    ],
+    "conditional": [
+        {
+            "name": "nearby.shop_owners",
+            "category": "sensing"
+        }
+    ]
 }

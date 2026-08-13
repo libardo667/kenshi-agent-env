@@ -1,0 +1,205 @@
+{
+  "$defs": {
+    "Capability": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "purpose": {
+          "minLength": 1,
+          "title": "Purpose",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "sensing",
+            "representation",
+            "memory",
+            "action",
+            "verification",
+            "recovery"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "semantic_effects": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Semantic Effects",
+          "type": "array"
+        },
+        "owner_component": {
+          "minLength": 1,
+          "title": "Owner Component",
+          "type": "string"
+        },
+        "input_schema": {
+          "additionalProperties": true,
+          "title": "Input Schema",
+          "type": "object"
+        },
+        "output_schema": {
+          "additionalProperties": true,
+          "title": "Output Schema",
+          "type": "object"
+        },
+        "applicability": {
+          "minLength": 1,
+          "title": "Applicability",
+          "type": "string"
+        },
+        "completion_evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Completion Evidence",
+          "type": "array"
+        },
+        "evidence_refs": {
+          "items": {
+            "$ref": "#/$defs/CapabilityEvidenceRef"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        },
+        "implementation_ref": {
+          "minLength": 1,
+          "title": "Implementation Ref",
+          "type": "string"
+        },
+        "evidence_state": {
+          "enum": [
+            "proven",
+            "absent",
+            "unproven",
+            "withheld",
+            "unknown",
+            "unsupported"
+          ],
+          "title": "Evidence State",
+          "type": "string"
+        },
+        "proof_class": {
+          "anyOf": [
+            {
+              "enum": [
+                "synthetic",
+                "portable",
+                "replay",
+                "live"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Proof Class"
+        },
+        "introduced_generation": {
+          "minLength": 1,
+          "title": "Introduced Generation",
+          "type": "string"
+        },
+        "limitations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Limitations",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "purpose",
+        "kind",
+        "owner_component",
+        "applicability",
+        "implementation_ref",
+        "evidence_state",
+        "proof_class",
+        "introduced_generation"
+      ],
+      "title": "Capability",
+      "type": "object"
+    },
+    "CapabilityEvidenceRef": {
+      "additionalProperties": false,
+      "properties": {
+        "authority_ref": {
+          "minLength": 1,
+          "title": "Authority Ref",
+          "type": "string"
+        },
+        "content_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Digest",
+          "type": "string"
+        },
+        "evidence_state": {
+          "enum": [
+            "proven",
+            "absent",
+            "unproven",
+            "withheld",
+            "unknown",
+            "unsupported"
+          ],
+          "title": "Evidence State",
+          "type": "string"
+        },
+        "proof_class": {
+          "anyOf": [
+            {
+              "enum": [
+                "synthetic",
+                "portable",
+                "replay",
+                "live"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Proof Class"
+        }
+      },
+      "required": [
+        "authority_ref",
+        "content_digest",
+        "evidence_state",
+        "proof_class"
+      ],
+      "title": "CapabilityEvidenceRef",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "generation_id": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Generation Id",
+      "type": "string"
+    },
+    "capabilities": {
+      "items": {
+        "$ref": "#/$defs/Capability"
+      },
+      "title": "Capabilities",
+      "type": "array"
+    }
+  },
+  "required": [
+    "generation_id",
+    "capabilities"
+  ],
+  "title": "CapabilityManifest",
+  "type": "object"
+}

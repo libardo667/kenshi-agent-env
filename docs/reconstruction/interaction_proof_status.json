@@ -27,6 +27,7 @@
   ],
   "planner_output_contract": {
     "proof_status": "unit_proven",
+    "artifact_refs": ["tests/test_plan_proposal.py"],
     "evidence": [
       "PlannerOutputPolicy is the typed singleton-cardinality owner used by PlanProposal schema bounds, generated prompt language, request text, token budgeting, and compiler diagnostics",
       "tests/test_plan_proposal.py structurally compares the policy with the schema, schema example, rendered prompt, request, and exact compiler rejection",
@@ -37,6 +38,7 @@
   },
   "protocol_2_world_model": {
     "proof_status": "unit_proven",
+    "artifact_refs": ["docs/reconstruction/protocol_2_cutover.json", "tests/test_protocol_2_world_model.py"],
     "evidence": [
       "Protocol2WorldModel and TelemetrySnapshot are strict 2.0 authorities with no 1.x inheritance, aliases, or compatibility reader",
       "the native producer emits controller_commands.commands and every Python consumer treats it as plural",
@@ -49,6 +51,7 @@
   },
   "player_topology": {
     "proof_status": "live_proven",
+    "artifact_refs": ["game_sources/research/player_topology/live_evidence/player-topology-20260809T161112Z.json"],
     "evidence": [
       "game_sources/research/player_topology records the inspected KenshiLib, ForgottenGUI, and current native call sites",
       "tests/fixtures/native_telemetry/valid_player_topology.json is shared by the strict Python model and compiled C++ conformance target",
@@ -70,6 +73,7 @@
   },
   "task_channels": {
     "proof_status": "live_proven",
+    "artifact_refs": ["game_sources/research/task_channels/live_evidence/task-channels-20260809T172100Z.json"],
     "evidence": [
       "game_sources/research/task_channels records the inspected KenshiLib task owners, ForgottenGUI Jobs surface, executable call-site metadata, and current producer calls",
       "the strict 1.20 model and shared native fixture separately represent retained ordinary orders, configured Jobs, permanent Jobs, and current activity",
@@ -98,6 +102,7 @@
     {
       "operation_kind": "close_active_interface",
       "proof_status": "live_proven",
+      "artifact_refs": ["game_sources/research/prospecting_window/live_evidence/prospecting-dialogue-lifecycle-20260810.json"],
       "evidence": [
         "OperationDefinition owns the sole planner-visible interface exit and KenshiAgentTelemetry calls each interface family's native close method",
         "native-cleanup-interface-regression-20260810-r7 opened the exact Barman dialogue at telemetry sequence 222, completed close_active_interface at 231, and later reported world/dialogue false/modal false/prospecting false",
@@ -111,6 +116,7 @@
     {
       "operation_kind": "confirm_character_editor",
       "proof_status": "unit_proven",
+      "artifact_refs": ["docs/reconstruction/character_editor_confirmation_20260810.json"],
       "evidence": [
         "Pinned native CharacterEditWindow headers and the installed Kenshi_CharacterEditor.layout identify the exact ConfirmButton and its game-owned click event",
         "the strict UI model, affordance adapter, operation registry, shared native request fixture, and native monitor all pin the parameterless empty-selection lifecycle",
@@ -121,6 +127,7 @@
     {
       "operation_kind": "consult_advisor",
       "proof_status": "source_proven",
+      "artifact_refs": ["src/kenshi_agent/execution/handlers/cognition.py"],
       "evidence": [
         "cognition.advisor handler performs no Kenshi input"
       ],
@@ -147,6 +154,7 @@
     {
       "operation_kind": "noop",
       "proof_status": "source_proven",
+      "artifact_refs": ["src/kenshi_agent/operation_definitions.py"],
       "evidence": [
         "operation_definitions.py NOOP_DEFINITION emits no world command"
       ],
@@ -155,6 +163,7 @@
     {
       "operation_kind": "open_trade_window",
       "proof_status": "live_proven",
+      "artifact_refs": ["game_sources/research/inventory_transfer/live_evidence/inventory-transfer-20260808.json", "docs/reconstruction/native_mining_local_trade_20260810.json"],
       "evidence": [
         "closure-loot-20260808 command cmd-ad044f547c894764b0506d8459545a81 paired Fish with unconscious Burn and completed as trade_window_open",
         "closure-harvest-fixed-20260808 command cmd-1c78e8d12e4a403f83bfc3df8f3bee46 paired Fish with the Iron Resource and completed as trade_window_open",
@@ -170,6 +179,7 @@
     {
       "operation_kind": "pause",
       "proof_status": "live_proven",
+      "artifact_refs": ["game_sources/research/prospecting_window/live_evidence/prospecting-dialogue-lifecycle-20260810.json"],
       "evidence": [
         "operation_definitions.py PAUSE_DEFINITION is internal-only",
         "native-cleanup-interface-regression-20260810-r7 completed native pause as world_paused at sequence 245 and retained a clean paused frame through sequence 262",
@@ -180,6 +190,7 @@
     {
       "operation_kind": "perform_character_order",
       "proof_status": "source_proven",
+      "artifact_refs": ["game_sources/research/context_menu_orders/conclusion.md"],
       "evidence": [
         "game_sources/research/context_menu_orders records the inspected source, ABI, contradictions, crashes, tests, and historical live observation"
       ],
@@ -192,6 +203,7 @@
       "operation_kind": "perform_character_order",
       "subcase": "player_talk_to",
       "proof_status": "live_proven",
+      "artifact_refs": ["game_sources/research/prospecting_window/live_evidence/prospecting-dialogue-lifecycle-20260810.json"],
       "evidence": [
         "native-cleanup-interface-regression-20260810-r7 completed cmd-5642a486cd044d3595e6d8f7c8344015 as context_task_started at telemetry sequence 202 with zero primitives",
         "later telemetry sequence 222 and live frame 4 prove dialogue_open true for the exact Barman target while Prospecting remained closed",
@@ -213,6 +225,7 @@
       "operation_kind": "perform_context_action",
       "subcase": "operate",
       "proof_status": "live_proven",
+      "artifact_refs": ["game_sources/research/resource_operators/live_evidence/resource-operators-20260809T201826Z.json"],
       "evidence": [
         "runs/resource-operators-20260809T201826Z/manifest.json records matching 1.21 built and installed DLL hashes, exact request, pre-state, later engine state, and final disposition",
         "game_sources/research/resource_operators/live_evidence/resource-operators-20260809T201826Z.json durably preserves the decisive evidence and hashes omitted raw files",
@@ -227,6 +240,7 @@
     {
       "operation_kind": "produce_resource_output",
       "proof_status": "live_proven",
+      "artifact_refs": ["docs/reconstruction/native_mining_local_trade_20260810.json"],
       "evidence": [
         "closure-harvest-fixed-20260808 command cmd-9f5f58ce387f40398e780a21f5b76d75 adopted the exact already-running two-character resource task without reissuing it, remained monitored while its acknowledgement was accepted, and reached resource_output_ready at telemetry sequence 2718",
         "The same run then exposed Raw Iron in the resource output inventory and transferred it to Fish, separating production proof from inventory-transfer proof",
@@ -239,6 +253,7 @@
     {
       "operation_kind": "read_fieldbook",
       "proof_status": "source_proven",
+      "artifact_refs": ["src/kenshi_agent/execution/handlers/cognition.py"],
       "evidence": [
         "cognition.fieldbook handler performs no Kenshi input"
       ],
@@ -247,6 +262,7 @@
     {
       "operation_kind": "recall_memory",
       "proof_status": "source_proven",
+      "artifact_refs": ["src/kenshi_agent/execution/handlers/cognition.py"],
       "evidence": [
         "cognition.memory handler performs no Kenshi input"
       ],
@@ -267,6 +283,7 @@
     {
       "operation_kind": "select_dialogue_option",
       "proof_status": "live_proven",
+      "artifact_refs": ["game_sources/research/dialogue_options/live_evidence/mercenary-hiring-dialogue-20260810.json"],
       "evidence": [
         "protocol-2-native-dialogue-regression-20260810-r1 offered all three exact Mercenary Captain replies plus native return-to-world",
         "cmd-c533cd40cb084f2c989a009a409c78af completed dialogue_options_changed and cmd-b81386a9cdad4ac0b399201b4179ccc4 completed dialogue_closed; both receipts recorded zero primitives",
@@ -280,6 +297,7 @@
     {
       "operation_kind": "select_squad_member_exact",
       "proof_status": "source_proven",
+      "artifact_refs": ["src/kenshi_agent/operation_definitions.py"],
       "evidence": [
         "operation_definitions.py SELECT_SQUAD_MEMBER_EXACT_DEFINITION targets named character identity"
       ],
@@ -288,6 +306,7 @@
     {
       "operation_kind": "set_speed",
       "proof_status": "live_proven",
+      "artifact_refs": ["docs/reconstruction/native_mining_local_trade_20260810.json"],
       "evidence": [
         "operation_definitions.py SET_SPEED_DEFINITION is internal-only",
         "native-mining-local-trade-regression-20260810-r1 sequences 158 and 159 retained the accepted productive command beside completed world_speed_set records and later reported speed 5.0 with zero primitives",
@@ -298,6 +317,7 @@
     {
       "operation_kind": "shift_into_body",
       "proof_status": "source_proven",
+      "artifact_refs": ["game_sources/research/body_shift/conclusion.md"],
       "evidence": [
         "game_sources/research/body_shift records the canonical source, ABI, fixture, and incomplete Molly conclusion"
       ],
@@ -309,6 +329,7 @@
     {
       "operation_kind": "stop",
       "proof_status": "source_proven",
+      "artifact_refs": ["src/kenshi_agent/operation_definitions.py"],
       "evidence": [
         "operation_definitions.py STOP_DEFINITION ends the run, touches no character"
       ],
@@ -317,6 +338,7 @@
     {
       "operation_kind": "survey_local_resources",
       "proof_status": "live_proven",
+      "artifact_refs": ["game_sources/research/prospecting_window/live_evidence/prospecting-dialogue-lifecycle-20260810.json"],
       "evidence": [
         "game_sources/research/prospecting_window records the deleted direct sampler, window ABI, crash, scalar contradiction, and current caption-copy path",
         "native-cleanup-interface-regression-20260810-r7 accepted the survey at sequence 175 while native playback advanced, captured five populated rows, completed only after close and restored pause at 176, and remained clear at later frame 2",
@@ -330,6 +352,7 @@
     {
       "operation_kind": "transfer_item",
       "proof_status": "live_proven",
+      "artifact_refs": ["game_sources/research/inventory_transfer/live_evidence/inventory-transfer-20260808.json", "docs/reconstruction/native_mining_local_trade_20260810.json"],
       "evidence": [
         "closure-loot-20260808 transferred Burn's equipped Katana and Halfpants (ragged) into Fish with item_transferred terminals cmd-460ee0bb31814fd98e7d7057747348f6 and cmd-2538e63cec614d87a06511aa925f4256; later open-inventory telemetry showed Burn empty and Fish holding the moved items",
         "closure-harvest-fixed-20260808 transferred Raw Iron from the Iron Resource output slot into Fish with item_transferred terminal cmd-90f4f3ab3ea449539a64040290c7f1e3 and later inventory telemetry recorded the resource loss and Fish gain",
@@ -345,6 +368,7 @@
     {
       "operation_kind": "travel_to_map_destination",
       "proof_status": "live_proven",
+      "artifact_refs": ["docs/reconstruction/native_mining_local_trade_20260810.json"],
       "evidence": [
         "native-mining-local-trade-regression-20260810-r1 command cmd-b46758df2f224a95a3ed81f7fbd77963 completed map_destination_reached at sequence 271 with zero primitive actions",
         "the later run position was inside The Hub and the subsequent Barman approach began from 312.47 units",
@@ -355,6 +379,7 @@
     {
       "operation_kind": "wait",
       "proof_status": "source_proven",
+      "artifact_refs": ["src/kenshi_agent/operation_definitions.py"],
       "evidence": [
         "operation_definitions.py WAIT_DEFINITION is internal-only run control"
       ],

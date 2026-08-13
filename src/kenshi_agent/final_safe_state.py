@@ -8,6 +8,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict
 
 from .control.base import InputController, PrimitiveInputAction
+from .core.capability import CapabilityDescriptor
 from .telemetry import TelemetryReader, TelemetryReadError
 from .terminal_state import terminal_window_title
 
@@ -31,6 +32,19 @@ class FinalSafeStateOutcome(BaseModel):
     confirmed_sequence: int | None = None
     input_attempted: bool = False
     input_executed: bool = False
+
+
+CAPABILITY_DESCRIPTOR = CapabilityDescriptor(
+    name="recovery.safe_state",
+    purpose=(
+        "Recover toward a known safe state when capability, input, interface, "
+        "or process conditions change."
+    ),
+    kind="recovery",
+    owner_component="kenshi_agent.final_safe_state",
+    implementation_ref="kenshi_agent.final_safe_state.ensure_final_safe_state",
+    semantic_effects=("recover.safe_state",),
+)
 
 
 def _terminal_window_failure(

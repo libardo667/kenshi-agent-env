@@ -12,6 +12,7 @@ _CAPABILITY_NAME = re.compile(r"^[a-z][a-z_]*(?:\.[a-z][a-z_]*)+$")
 class GameplayCapabilities:
     always: tuple[str, ...]
     conditional: tuple[str, ...]
+    categories: dict[str, tuple[str, ...]]
 
 
 def load_gameplay_capabilities(path: Path) -> GameplayCapabilities:
@@ -22,27 +23,42 @@ def load_gameplay_capabilities(path: Path) -> GameplayCapabilities:
         "conditional",
     }:
         raise ValueError("native capability manifest has unexpected fields")
-    if payload["schema_version"] != 1:
-        raise ValueError("native capability manifest schema_version must be 1")
+    if payload["schema_version"] != 2:
+        raise ValueError("native capability manifest schema_version must be 2")
 
     groups: dict[str, tuple[str, ...]] = {}
+    category_names: dict[str, list[str]] = {"action": [], "representation": [], "sensing": []}
     for field in ("always", "conditional"):
         values = payload[field]
         if not isinstance(values, list) or not values:
             raise ValueError(f"native capability manifest {field} must be a non-empty list")
-        if not all(
-            isinstance(value, str) and _CAPABILITY_NAME.fullmatch(value)
-            for value in values
-        ):
+        names: list[str] = []
+        for value in values:
+            if isinstance(value, dict) and set(value) == {"name", "category"}:
+                name, category = value["name"], value["category"]
+            else:
+                raise ValueError(f"native capability manifest {field} has malformed entry")
+            if not isinstance(name, str) or _CAPABILITY_NAME.fullmatch(name) is None:
+                raise ValueError(f"native capability manifest {field} has an invalid name")
+            if category not in category_names:
+                raise ValueError(f"native capability manifest has unknown category {category!r}")
+            names.append(name)
+            category_names[category].append(name)
+        if not names:
             raise ValueError(f"native capability manifest {field} has an invalid name")
-        groups[field] = tuple(values)
+        groups[field] = tuple(names)
 
     combined = (*groups["always"], *groups["conditional"])
     if len(set(combined)) != len(combined):
         raise ValueError("native capability manifest contains duplicate names")
+    categories = {key: tuple(value) for key, value in category_names.items()}
+    categorized = [name for values in categories.values() for name in values]
+    if set(categorized) != set(combined) or len(categorized) != len(set(categorized)):
+        raise ValueError("native capability manifest categories must partition capabilities")
     return GameplayCapabilities(
         always=groups["always"],
         conditional=groups["conditional"],
+        categories=categories,
     )
 
 

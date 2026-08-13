@@ -14,10 +14,49 @@ from typing import Annotated, Generic, Literal, TypeVar
 from pydantic import Field, StringConstraints, model_validator
 
 from .base import StrictModel
+from .capability import CapabilityDescriptor
 from .lifecycle import MonitorDisposition
 
 EntityId = Annotated[str, StringConstraints(min_length=1, max_length=200)]
 CommandId = Annotated[str, StringConstraints(pattern=r"^cmd-[0-9a-f]{32}$")]
+
+CAPABILITY_DESCRIPTOR = CapabilityDescriptor(
+    name="representation.protocol_2_world_model",
+    purpose=(
+        "Represent bounded world, selection, task, and command collections "
+        "without collapsing missing or truncated data."
+    ),
+    kind="representation",
+    owner_component="kenshi_agent.core.protocol_2",
+    implementation_ref="kenshi_agent.core.protocol_2.Protocol2WorldModel",
+    semantic_effects=("represent.protocol_2_world_model",),
+    proof_key="protocol_2_world_model",
+)
+
+CAPABILITY_DESCRIPTORS = (
+    CAPABILITY_DESCRIPTOR,
+    CapabilityDescriptor(
+        name="representation.player_topology",
+        purpose="Represent bounded player roster, membership, primary, and selection topology.",
+        kind="representation",
+        owner_component="kenshi_agent.core.protocol_2",
+        implementation_ref="kenshi_agent.core.protocol_2.Protocol2WorldModel",
+        semantic_effects=("represent.player_topology",),
+        proof_key="player_topology",
+    ),
+    CapabilityDescriptor(
+        name="representation.task_channels",
+        purpose=(
+            "Represent retained orders, configured jobs, and current task activity "
+            "as distinct channels."
+        ),
+        kind="representation",
+        owner_component="kenshi_agent.core.protocol_2",
+        implementation_ref="kenshi_agent.core.protocol_2.Protocol2WorldModel",
+        semantic_effects=("represent.task_channels",),
+        proof_key="task_channels",
+    ),
+)
 
 ItemT = TypeVar("ItemT")
 

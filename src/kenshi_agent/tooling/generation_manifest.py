@@ -26,6 +26,7 @@ from typing import Any, Literal, cast
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from ..affordances import AFFORDANCE_ADAPTERS
 from ..config import AppConfig, load_config
 from ..core.lifecycle import EVIDENCE_SEMANTICS_VERSION
 from ..core.scenario import ScenarioAttestation
@@ -34,6 +35,12 @@ from ..memory import SCHEMA_VERSION as MEMORY_SCHEMA_VERSION
 from ..operation_definitions import OPERATION_DEFINITION_LIST, OperationDefinition
 from ..planners.base import render_planner_instructions
 from .authored_starts import AuthoredGameStart, load_authored_starts_bundle
+from .capability_manifest import (
+    build_capability_manifest,
+    capability_manifest_digest,
+    capability_proof_digest,
+)
+from .native_contract_export import load_gameplay_capabilities
 from .native_provenance import (
     CAPABILITY_MANIFEST,
     GENERATED_HEADER,
@@ -48,6 +55,12 @@ DEFAULT_STAGED_DLL = (
 )
 DEFAULT_OPERATION_DOC = ROOT / "docs" / "generated" / "OPERATION_DEFINITIONS.md"
 DEFAULT_PROOF_LEDGER = ROOT / "docs" / "reconstruction" / "interaction_proof_status.json"
+CAPABILITY_AUTHORITY_PATH = CAPABILITY_MANIFEST
+TELEMETRY_AUTHORITY_PATH = ROOT / "src" / "kenshi_agent" / "core" / "telemetry.py"
+PROTOCOL_AUTHORITY_PATH = ROOT / "src" / "kenshi_agent" / "core" / "protocol_2.py"
+CONTINUITY_AUTHORITY_PATH = ROOT / "src" / "kenshi_agent" / "continuity_service.py"
+OUTCOME_AUTHORITY_PATH = ROOT / "src" / "kenshi_agent" / "outcome_recorder.py"
+RECOVERY_AUTHORITY_PATH = ROOT / "src" / "kenshi_agent" / "final_safe_state.py"
 DEFAULT_TOPOLOGY = (
     ROOT / "game_sources" / "research" / "player_topology" / "call_sites.json"
 )
@@ -185,9 +198,21 @@ class ProtocolEvidence(ManifestModel):
 
 
 class CapabilityManifestAuthority(ManifestModel):
-    kind: Literal["native_gameplay_capabilities"] = "native_gameplay_capabilities"
-    scope: Literal["native"] = "native"
-    provisional_until_goal: Literal["G13"] = "G13"
+    kind: Literal["generated_capability_manifest"] = "generated_capability_manifest"
+    scope: Literal["subject"] = "subject"
+    lifecycle: Literal["permanent"] = "permanent"
+
+
+class CapabilityAuthorityDigests(ManifestModel):
+    native: str = Field(pattern=r"^[0-9a-f]{64}$")
+    operations: str = Field(pattern=r"^[0-9a-f]{64}$")
+    affordances: str = Field(pattern=r"^[0-9a-f]{64}$")
+    telemetry: str = Field(pattern=r"^[0-9a-f]{64}$")
+    protocol: str = Field(pattern=r"^[0-9a-f]{64}$")
+    continuity: str = Field(pattern=r"^[0-9a-f]{64}$")
+    outcome: str = Field(pattern=r"^[0-9a-f]{64}$")
+    recovery: str = Field(pattern=r"^[0-9a-f]{64}$")
+    proof: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class GenerationMetadata(ManifestModel):
@@ -202,6 +227,7 @@ class GenerationMetadata(ManifestModel):
     native: NativeEvidence
     memory_schema_version: int = Field(ge=1)
     operation_count: int = Field(ge=1)
+    capability_authority_digests: CapabilityAuthorityDigests
     capability_manifest_authority: CapabilityManifestAuthority = Field(
         default_factory=CapabilityManifestAuthority
     )
@@ -528,6 +554,22 @@ def operation_registry_digest(
     return digest_json(rows)
 
 
+def capability_native_digest(path: Path | None = None) -> str:
+    authority = load_gameplay_capabilities(CAPABILITY_AUTHORITY_PATH if path is None else path)
+    return digest_json(
+        sorted(
+            (availability, name, category)
+            for availability, names in (
+                ("always", authority.always),
+                ("conditional", authority.conditional),
+            )
+            for name in names
+            for category, category_names in authority.categories.items()
+            if name in category_names
+        )
+    )
+
+
 def _scenario_evidence(
     attestation_path: Path | None,
     config: AppConfig,
@@ -722,6 +764,7 @@ def _model_identities(config: AppConfig) -> dict[str, str]:
 def build_generation_manifest(
     *,
     output: str | Path,
+    proof_ledger_path: str | Path | None = None,
     config_path: str | Path = "config/live.yaml",
     prompt_file: str | Path | None = None,
     advisor_corpus_file: str | Path | None = None,
@@ -736,6 +779,11 @@ def build_generation_manifest(
     """Build one manifest without launching, contacting, or mutating Kenshi."""
 
     config_path = Path(config_path).expanduser().resolve()
+    selected_proof_ledger = (
+        DEFAULT_PROOF_LEDGER
+        if proof_ledger_path is None
+        else Path(proof_ledger_path).expanduser().resolve()
+    )
     output_path = _lexical_absolute(output)
     _validate_output_path(output_path)
     try:
@@ -781,9 +829,7 @@ def build_generation_manifest(
             "generated operation definitions",
         ),
         "operation_registry_semantics": operation_registry_digest(),
-        "proof_ledger": digest_json(
-            json.loads(DEFAULT_PROOF_LEDGER.read_text(encoding="utf-8"))
-        ),
+        "proof_ledger": capability_proof_digest(selected_proof_ledger),
         "uv_lock": _required_file_digest(ROOT / "uv.lock", "Python lock"),
     }
     if config.planner.kind == "scripted":
@@ -797,16 +843,13 @@ def build_generation_manifest(
         raise ValueError("--script-file is valid only for the scripted planner")
 
     try:
-        capability_manifest = json.loads(CAPABILITY_MANIFEST.read_text(encoding="utf-8"))
+        capability_manifest = json.loads(
+            CAPABILITY_AUTHORITY_PATH.read_text(encoding="utf-8")
+        )
     except (OSError, ValueError) as exc:
         raise ValueError("native capability manifest is unreadable or invalid") from exc
     if not isinstance(capability_manifest, dict):
         raise ValueError("native capability manifest must be a JSON object")
-    capability_digest = _required_file_digest(
-        CAPABILITY_MANIFEST,
-        "native capability manifest",
-    )
-
     git = _git_evidence(output_path)
     source_ref = git.commit
     if git.material_dirty_sha256 is not None:
@@ -845,13 +888,53 @@ def build_generation_manifest(
         native=native,
         memory_schema_version=MEMORY_SCHEMA_VERSION,
         operation_count=len(OPERATION_DEFINITION_LIST),
+        capability_authority_digests=CapabilityAuthorityDigests(
+            native=capability_native_digest(),
+            operations=operation_registry_digest(),
+            affordances=digest_json(
+                [
+                    {
+                        "name": adapter.name,
+                        "sources": sorted(str(source) for source in adapter.sources),
+                        "operation_kinds": sorted(adapter.operation_kinds),
+                        "denominator": adapter.denominator,
+                        "completeness_boundary": adapter.completeness_boundary,
+                    }
+                    for adapter in sorted(AFFORDANCE_ADAPTERS, key=lambda item: item.name)
+                ]
+            ),
+            telemetry=_required_file_digest(
+                TELEMETRY_AUTHORITY_PATH,
+                "telemetry capability authority",
+            ),
+            protocol=_required_file_digest(
+                PROTOCOL_AUTHORITY_PATH,
+                "protocol capability authority",
+            ),
+            continuity=_required_file_digest(
+                CONTINUITY_AUTHORITY_PATH,
+                "continuity capability authority",
+            ),
+            outcome=_required_file_digest(
+                OUTCOME_AUTHORITY_PATH,
+                "outcome capability authority",
+            ),
+            recovery=_required_file_digest(
+                RECOVERY_AUTHORITY_PATH,
+                "recovery capability authority",
+            ),
+            proof=capability_proof_digest(selected_proof_ledger),
+        ),
     )
     manifest_values: dict[str, Any] = {
         "parent_generation_id": None,
         "created_at": created_at,
         "subject": "kenshi-agent-env",
         "source_ref": source_ref,
-        "capability_manifest_digest": capability_digest,
+        # Filled after the generation identity is computed.  The underlying
+        # authorities above are the identity inputs; capability bytes are the
+        # generated linked artifact, not an identity input.
+        "capability_manifest_digest": "0" * 64,
         "artifact_digests": artifact_digests,
         "models": _model_identities(config),
         "prompts": prompts,
@@ -863,8 +946,16 @@ def build_generation_manifest(
     }
     identity_projection = GenerationManifest.model_validate(
         {"generation_id": "0" * 64, **manifest_values}
-    ).model_dump(mode="json", exclude={"generation_id"})
+    ).model_dump(mode="json", exclude={"generation_id", "capability_manifest_digest"})
     generation_id = digest_json(identity_projection)
+    generated_capabilities = build_capability_manifest(
+        generation_id,
+        native_authority_path=CAPABILITY_AUTHORITY_PATH,
+        proof_ledger_path=selected_proof_ledger,
+    )
+    manifest_values["capability_manifest_digest"] = capability_manifest_digest(
+        generated_capabilities
+    )
     return GenerationManifest(generation_id=generation_id, **manifest_values)
 
 

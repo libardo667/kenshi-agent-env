@@ -178,6 +178,12 @@ APPROVED_OPEN_SINKS: tuple[OpenSink, ...] = (
         "payload",
     ),
     OpenSink(
+        "kenshi_agent/tooling/capability_manifest.py",
+        "write_capability_manifest",
+        "reviewed_non_event.write",
+        "capability_manifest_bytes(manifest)",
+    ),
+    OpenSink(
         "kenshi_agent/tooling/generation_manifest.py",
         "write_generation_manifest",
         "reviewed_non_event.write",

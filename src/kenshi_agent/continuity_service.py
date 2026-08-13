@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from .continuity import ContinuityAuthority, ContinuityLedger
+from .core.capability import CapabilityDescriptor
 from .core.continuity import (
     ContinuityOperation,
     ContinuityOrigin,
@@ -62,6 +63,20 @@ from .session_log import SessionLogger
 # repeated, not as a second history.
 MAX_SURFACED_CONTINUITY_RECEIPTS = 4
 MAX_SURFACED_FIELDBOOK_RECEIPTS = 4
+
+# EvoGen capability projection descriptor.  The contributor lives beside the
+# service that owns the semantics; the generator only consumes this value.
+CAPABILITY_DESCRIPTOR = CapabilityDescriptor(
+    name="memory.continuity",
+    purpose=(
+        "Retain and retrieve runtime-owned action and plan outcomes across "
+        "context windows and restarts."
+    ),
+    kind="memory",
+    owner_component="kenshi_agent.continuity_service",
+    implementation_ref="kenshi_agent.continuity_service.ContinuityService",
+    semantic_effects=("retain.runtime_continuity",),
+)
 
 
 class ContinuityService:

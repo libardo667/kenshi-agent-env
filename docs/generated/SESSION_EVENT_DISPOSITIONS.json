@@ -550,7 +550,7 @@
   "schema_version": 1,
   "source_inventory": {
     "event_type_count": 90,
-    "fingerprint": "4327bc54075c8eaa5287043a17a11e90195086570071269909ddc4f55b871e28",
+    "fingerprint": "f8e51fba1d7cc5660ca81e43ccc909d50d8adddd2720d02d05cad6a0c8be3e0b",
     "open_string_sinks": [
       {
         "expression": "event_type",
@@ -629,6 +629,12 @@
         "owner": "write_snapshot_atomic",
         "sink_kind": "reviewed_non_event.write",
         "source_file": "kenshi_agent/telemetry/writer.py"
+      },
+      {
+        "expression": "capability_manifest_bytes(manifest)",
+        "owner": "write_capability_manifest",
+        "sink_kind": "reviewed_non_event.write",
+        "source_file": "kenshi_agent/tooling/capability_manifest.py"
       },
       {
         "expression": "payload",

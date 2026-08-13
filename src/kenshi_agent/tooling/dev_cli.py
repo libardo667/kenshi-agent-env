@@ -501,6 +501,27 @@ def build_parser(
         help="Optional exact DLL loaded by Kenshi to hash.",
     )
 
+    capability = commands.add_parser(
+        "capability-manifest",
+        help="Write the exact generated EvoGen capability manifest without launching Kenshi.",
+        description=(
+            "Project KAE's operation, protocol, continuity, outcome, recovery, and proof "
+            "authorities into one canonical capability manifest."
+        ),
+        formatter_class=formatter,
+    )
+    capability.add_argument(
+        "--generation-id",
+        required=True,
+        help="The already-computed 64-character generation identity.",
+    )
+    capability.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="Atomic JSON output path; its parent directory must already exist.",
+    )
+
     return parser
 
 

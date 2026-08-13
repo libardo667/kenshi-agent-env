@@ -1,141 +1,120 @@
-# Checkpoint: Exact planner affordance-set evidence
+# Checkpoint: G13 capability-manifest candidate
 
-Goal 12 records one typed `affordance_set` event for every planner context. The
-event is the exact semantic choice authority delivered to that planner call,
-not a reconstruction from prompt text and not evidence that any choice was
-selected, dispatched, completed, or changed Kenshi.
+G13 projects KAE's existing operation, native protocol, continuity, outcome,
+recovery, and proof authorities into one exact EvoGen-compatible capability
+manifest. Proof-ledger subcases are retained as evidence; the weakest subcase
+controls the exported evidence state.
 
-This slice changes planner evidence and replay only. It does not launch Kenshi,
-dispatch input, modify a save, install a DLL, create an EvoGen capability
-manifest, or export a production trajectory.
+This candidate changes only the offline projection and generic contract boundary.
+It does not launch Kenshi, dispatch input, modify a save, install a DLL, change
+native behavior, or export a production trajectory.
 
 ## Repository and authority
 
 ```text
-parent commit          bfaa4d55ae10a34d33e7a06ee3959fc6659eceb4
+parent commit          0560b9de6e049f0dc06fab9afbef76f76d198092
 integration branch     main
 starting tree          clean
-EvoGen counterpart     c37147b3120c38c9a979ca8671fcc11c5ab62c6c
-source plan revision   2026-08-10T21:25:08.835Z
-affordance schema      1.0
+EvoGen counterpart     4270e8332f8a03757b39a306b2e936ac8a618cc3
+source plan revision   G13 frozen packet
+capability schema      EvoGen CapabilityDefinition with typed evidence_state
 producer protocol      2.0.0
 ```
 
-The parent commit is the completed G11 generation-manifest slice. G12 changes
-only the Python planner/evidence plane and its generated schemas, documentation,
-fixtures, and tests. Native code, controller protocol, telemetry schema,
-environment behavior, operation definitions, and evaluation rules are
+The parent commit is the completed G12 affordance-set slice. EvoGen commit
+`4270e8332f8a03757b39a306b2e936ac8a618cc3` is the G13 prerequisite contract
+on public main. This candidate
+derives rows from existing authorities and leaves native code, controller
+protocol, telemetry behavior, environment behavior, and evaluation rules
 unchanged.
 
-## One enumeration and one delivery boundary
+## One generated authority and one freshness owner
 
-`enumerate_affordance_set` is now the single immutable enumeration used to
-build the planner projection, delivery evidence, and read-only affordance
-watch. Hosted planners enumerate once before budgeting and reuse that snapshot.
-Scripted and direct-action in-process planners record that no semantic menu was
-delivered, rather than converting available runtime operations into false
-planner-delivery evidence. Budgeted planner input is rejected unless its
-complete `affordances` array equals the projection from the same enumeration.
+`kenshi_agent.tooling.capability_manifest` is the sole generated capability
+projection. Operation rows derive from `OPERATION_DEFINITION_LIST`; telemetry
+rows derive from the native gameplay-capability authority; continuity,
+representation, outcome, and recovery descriptors live beside their owning
+modules. The proof ledger contributes status and references only; incident scope
+and limits remain in the referenced artifacts, while generated limitations
+describe projection boundaries such as missing producer support. It supplies
+no semantic operation rows. The public read-only command is:
+`./dev capability-manifest --generation-id <id> --output <path>`.
 
-`planner_context_prepared` remains delivery accounting: context identity,
-revision, included continuity, payload size, and budget information. The new
-`affordance_set` record is written after that accounting and immediately before
-`decide_prepared`. A planner failure therefore preserves the exact delivered
-choice set. A failed affordance-set log write prevents delivery rather than
-creating an unrecorded planner call.
+Generation identity is computed from canonical underlying authorities while
+excluding the final capability digest and per-entry introduced generation. The
+generation ID is injected into the exact manifest bytes and its digest is then
+linked into `GenerationManifest`, avoiding a fixed-point cycle.
 
 ## Typed semantic evidence
 
-Each offer records:
+Each exported capability records:
 
-- its opaque affordance identity;
-- operation kind and issuing source adapter;
-- semantic name and typed parameter constraints;
-- the opaque target disambiguator the planner must copy, when required;
-- applicable engine-owned target identities and semantic roles; and
-- the authored world revision and identity session for the containing set.
+- its deterministic semantic name and owning component;
+- its category: sensing, representation, memory, action, verification, or recovery;
+- one owner-derived semantic effect used by downstream diagnosis;
+- its typed evidence state and optional proof class; and
+- retained evidence references and known limitations.
 
-The set separately records every adapter's completeness status and typed
-withholding categories. Missing telemetry, stale telemetry, a truncated source,
-an unknown source, unprobed targets, invalid semantic values, authoring or
-binding refusal, interface scope, and intentional non-delivery remain distinct.
-An empty complete source therefore does not mean the same thing as an absent or
-incomplete source.
+Unproven, withheld, unknown, and unsupported capabilities carry no proof class;
+source/unit proof maps to proven portable and live proof maps to proven live.
 
-## Replay and confidentiality boundary
+## Semantic-versus-evidence separation
 
-`load_affordance_sets` validates committed JSONL events as the typed schema and
-rejects logs with no such event; older runs remain readable elsewhere, but they
-cannot claim exact choice reconstruction. `reconstruct_choice` resolves a
-planner selection only from semantic identity, the emitted target
-disambiguator, and typed parameter constraints. It does not parse prompts,
-descriptions, or labels.
+The public manifest keeps semantic rows free of scenario identifiers, target
+names, expected answers, and incident-specific mechanics. Detailed evidence
+remains public and reconstructable in the referenced repository artifacts.
 
-The event excludes presentation labels, descriptions, operation arguments,
-keys, screen coordinates, inventory section/slot coordinates, and lists of
-unoffered native commands. Inventory transfers now use an opaque planner target
-while private runtime operation arguments retain the exact section and slot
-needed for binding. The event records source and destination inventory owners
-as semantic participants without publishing the private mechanical address.
+Operation definitions and native capability declarations remain the only
+semantic authorities; aliases do not create duplicate capability rows.
+Semantic effects are derived from those operation kinds, native names, and
+owner descriptors rather than from a hand-maintained sibling registry.
+
+The retained manifest has 69 rows: 26 action, 27 sensing, 13 representation,
+and one each memory, verification, and recovery. Evidence states are 23 proven,
+45 unproven, and one unsupported. The unsupported row is
+`action.respond_to_immediate_threat`: its operation requires the absent
+`nearby.visible_entities` producer capability while native authority advertises
+`nearby.characters` and `nearby.roles`. This is a retained authority boundary,
+not a reason to change native behavior or protocol in G13.
 
 ## Independent review and withheld claims
 
-Cicero mapped the current planner and enumeration authorities, Kuhn designed
-failure-oriented falsifiers, and Hypatia audited semantic/mechanical and
-runtime/evolution boundaries before implementation. Their final read-only
-review found contradictory typed parameter/completeness contracts and unknown
-adapter/operation pairs were too easy to load. The repaired models now reject
-those cases, event models are frozen, and replay can cross-check retained offer,
-operation, and adapter identities. The final focused suites were rerun after
-those repairs.
-
-Cicero also confirmed that the generated reporting-surface report still shows
-no affordance-set event in its real pre-G12 live fixture. That gap is preserved
-intentionally: the new synthetic fixture proves typed replay, but it is not
-inserted into an older live capture or presented as live evidence.
+Focused diagnostics cover exact serialization, duplicate/malformed authority
+rejection, stale schemas/docs, and generation linkage. The manifest is not live
+evidence: dispatch, acceptance, completion, and world effect still require
+later independent evidence.
 
 The following remain explicitly withheld:
 
 - an offered affordance is not a planner selection or an accepted operation;
 - dispatch, acceptance, completion, and world effect still require their own
   later independent evidence;
-- source completeness describes the adapter's observed denominator, not every
-  possible action in Kenshi;
-- old logs without `affordance_set` events cannot be upgraded by inference;
-- G12 does not create the G13 KAE subject adapter or permanent EvoGen
-  capability-manifest authority;
-- G12 does not perform the G14 production trajectory export; and
+- the candidate does not register a G15 plugin or change native behavior;
+- the candidate does not perform the G14 production trajectory export; and
 - no live process, save, DLL installation, or game state was changed.
 
 ## Completion boundary and next goal
 
-G12 stops after independent review, generated-artifact freshness, the complete
-portable gate, a clean commit on `main`, public push, hosted Python matrix, and
-the central EvoGen plan/checkpoint/cockpit ratchet. Only then may G13 begin.
-
-G13 owns the real KAE subject adapter and permanent content-addressed
-capability-manifest authority. G14 still owns trajectory export. G28 begins
-supervised live observation, and G29 remains the first end-to-end live candidate
-evolution proof.
+G13 requires the full portable gate, generated-artifact freshness, and this
+checkpoint to travel with the G13 candidate commit. Exact identity is
+established by Git. Public push, hosted CI, and the parent EvoGen ratchet
+remain required before G13 completes; G14 owns trajectory export.
 
 ## Verification
 
 ```bash
 PYTEST_ADDOPTS='-p no:cacheprovider' UV_CACHE_DIR=/tmp/kae-uv-cache \
-  uv run --frozen --no-sync pytest -q tests/test_affordance_set_event.py \
-  tests/test_item_transfer_offers.py tests/test_affordance_watch.py \
-  tests/test_continuity.py tests/test_planner_base_mutation.py \
-  tests/test_reporting_surface.py tests/test_session_event_dispositions.py \
-  tests/test_checkpoint_freshness.py
-RUFF_CACHE_DIR=/tmp/kae-ruff-g12 UV_CACHE_DIR=/tmp/kae-uv-cache \
-  uv run --frozen --no-sync ruff check .
-UV_CACHE_DIR=/tmp/kae-uv-cache MYPY_CACHE_DIR=/tmp/kae-mypy-g12 \
-  uv run --frozen --no-sync mypy src
-UV_CACHE_DIR=/tmp/kae-uv-cache ./dev verify-portable
+  uv run --frozen --no-sync pytest -q tests/test_generation_manifest.py \
+  tests/test_capability_manifest.py tests/test_capability_consistency.py \
+  tests/test_docs_hygiene.py
+UV_CACHE_DIR=/tmp/kae-uv-cache ./dev capability-manifest \
+  --generation-id 0000000000000000000000000000000000000000000000000000000000000000 \
+  --output /tmp/kae-capability-manifest.json
 git diff --check
 ```
 
-The focused tests, Ruff, strict mypy over 153 source files, checkpoint
-freshness, generated-artifact checks, the full pytest suite, and the complete
-portable gate pass on the independently reviewed candidate. Hosted CI remains
-the post-push completion authority.
+The repaired exact tree passed the full `./dev verify-portable` gate, including
+generated-artifact freshness. Faraday, the independent authority reviewer, and
+Averroes, the independent acceptance reviewer, each recorded a final PASS.
+Public push, hosted CI, and the parent EvoGen ratchet remain required, so G13 is
+not yet complete and final publication is not claimed here.

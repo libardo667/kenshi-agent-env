@@ -122,25 +122,88 @@
       "title": "AuthoredStartEvidence",
       "type": "object"
     },
+    "CapabilityAuthorityDigests": {
+      "additionalProperties": false,
+      "properties": {
+        "native": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Native",
+          "type": "string"
+        },
+        "operations": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Operations",
+          "type": "string"
+        },
+        "affordances": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Affordances",
+          "type": "string"
+        },
+        "telemetry": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Telemetry",
+          "type": "string"
+        },
+        "protocol": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Protocol",
+          "type": "string"
+        },
+        "continuity": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Continuity",
+          "type": "string"
+        },
+        "outcome": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Outcome",
+          "type": "string"
+        },
+        "recovery": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Recovery",
+          "type": "string"
+        },
+        "proof": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Proof",
+          "type": "string"
+        }
+      },
+      "required": [
+        "native",
+        "operations",
+        "affordances",
+        "telemetry",
+        "protocol",
+        "continuity",
+        "outcome",
+        "recovery",
+        "proof"
+      ],
+      "title": "CapabilityAuthorityDigests",
+      "type": "object"
+    },
     "CapabilityManifestAuthority": {
       "additionalProperties": false,
       "properties": {
         "kind": {
-          "const": "native_gameplay_capabilities",
-          "default": "native_gameplay_capabilities",
+          "const": "generated_capability_manifest",
+          "default": "generated_capability_manifest",
           "title": "Kind",
           "type": "string"
         },
         "scope": {
-          "const": "native",
-          "default": "native",
+          "const": "subject",
+          "default": "subject",
           "title": "Scope",
           "type": "string"
         },
-        "provisional_until_goal": {
-          "const": "G13",
-          "default": "G13",
-          "title": "Provisional Until Goal",
+        "lifecycle": {
+          "const": "permanent",
+          "default": "permanent",
+          "title": "Lifecycle",
           "type": "string"
         }
       },
@@ -232,6 +295,9 @@
           "title": "Operation Count",
           "type": "integer"
         },
+        "capability_authority_digests": {
+          "$ref": "#/$defs/CapabilityAuthorityDigests"
+        },
         "capability_manifest_authority": {
           "$ref": "#/$defs/CapabilityManifestAuthority"
         }
@@ -245,7 +311,8 @@
         "kenshi",
         "native",
         "memory_schema_version",
-        "operation_count"
+        "operation_count",
+        "capability_authority_digests"
       ],
       "title": "GenerationMetadata",
       "type": "object"

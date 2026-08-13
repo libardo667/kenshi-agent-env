@@ -8,6 +8,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .core.capability import CapabilityDescriptor
 from .core.continuity import MemoryRetrievalPolicy
 from .core.operation import (
     ControlMode,
@@ -89,6 +90,16 @@ class PlannerOutputPolicy(ConfigModel):
 
 
 PLANNER_OUTPUT_POLICY = PlannerOutputPolicy()
+
+CAPABILITY_DESCRIPTOR = CapabilityDescriptor(
+    name="representation.planner_output_contract",
+    purpose="Represent the typed planner output cardinality and validation contract.",
+    kind="representation",
+    owner_component="kenshi_agent.config",
+    implementation_ref="kenshi_agent.config.PlannerOutputPolicy",
+    semantic_effects=("represent.planner_output_contract",),
+    proof_key="planner_output_contract",
+)
 
 
 class PlanningConfig(ConfigModel):

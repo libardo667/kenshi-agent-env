@@ -31,6 +31,8 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .native_contract_export import load_gameplay_capabilities
+
 ROOT = Path(__file__).resolve().parents[3]
 SOURCE = ROOT / "native" / "KenshiAgentTelemetry" / "KenshiAgentTelemetry.cpp"
 CAPABILITY_MANIFEST = ROOT / "native" / "KenshiAgentTelemetry" / "GameplayCapabilities.json"
@@ -191,16 +193,8 @@ def assess_native_provenance(
 
 
 def _manifest_capabilities() -> set[str]:
-    import json
-
-    data = json.loads(CAPABILITY_MANIFEST.read_text(encoding="utf-8"))
-    names: set[str] = set(data.get("always", []))
-    for entry in data.get("conditional", []) or []:
-        if isinstance(entry, str):
-            names.add(entry)
-        elif isinstance(entry, dict) and "name" in entry:
-            names.add(str(entry["name"]))
-    return names
+    authority = load_gameplay_capabilities(CAPABILITY_MANIFEST)
+    return set((*authority.always, *authority.conditional))
 
 
 def _capability_header_check() -> ArtifactCheck:

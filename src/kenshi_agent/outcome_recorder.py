@@ -19,6 +19,7 @@ from math import dist
 from PIL import Image, ImageChops
 
 from .continuity import ContinuityLedger
+from .core.capability import CapabilityDescriptor
 from .core.evidence import (
     ActionOutcome,
     ActionOutcomeAssessment,
@@ -46,6 +47,18 @@ from .planner_service import bounded_text
 from .reporting import ConsoleDecisionReporter
 from .session_log import SessionLogger
 from .world_state import StoreUpdate, WorldStateError, WorldStateStore
+
+CAPABILITY_DESCRIPTOR = CapabilityDescriptor(
+    name="verification.outcome_evidence",
+    purpose=(
+        "Assess later independent world evidence rather than treating dispatch "
+        "or acknowledgement as proof."
+    ),
+    kind="verification",
+    owner_component="kenshi_agent.outcome_recorder",
+    implementation_ref="kenshi_agent.outcome_recorder.OutcomeRecorder",
+    semantic_effects=("verify.world_outcome",),
+)
 
 
 @dataclass(frozen=True, slots=True)

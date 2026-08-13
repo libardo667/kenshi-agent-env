@@ -149,7 +149,7 @@ def test_manifest_carries_every_goal_11_authority(tmp_path: Path) -> None:
         "generation_manifest": "1",
         "memory": "4",
         "native_command_request": "1.6",
-        "native_gameplay_capabilities": "1",
+        "native_gameplay_capabilities": "2",
         "native_source_protocol": "2.0.0",
         "protocol_2_world_model": "2.0.0",
         "runtime_plan": "1.0",

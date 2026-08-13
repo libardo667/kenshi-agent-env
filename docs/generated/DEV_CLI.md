@@ -6,12 +6,12 @@ Regenerate with `python scripts/export_docs.py`.
 ## `./dev`
 
 ```text
-usage: ./dev [-h] {verify-portable,doctor,launch,run,tui,telemetry,affordances,snapshot,recover,stop,scenario,setup,generation-manifest} ...
+usage: ./dev [-h] {verify-portable,doctor,launch,run,tui,telemetry,affordances,snapshot,recover,stop,scenario,setup,generation-manifest,capability-manifest} ...
 
 Safe, state-aware Kenshi live development. Use 'run' for the normal launch-and-agent workflow.
 
 positional arguments:
-  {verify-portable,doctor,launch,run,tui,telemetry,affordances,snapshot,recover,stop,scenario,setup,generation-manifest}
+  {verify-portable,doctor,launch,run,tui,telemetry,affordances,snapshot,recover,stop,scenario,setup,generation-manifest,capability-manifest}
     verify-portable           Run the complete reproducible gate without touching Windows or Kenshi.
     doctor                    Check every launch prerequisite without sending input.
     launch                    Launch Kenshi without starting an agent.
@@ -25,6 +25,7 @@ positional arguments:
     scenario                  Manage reproducible starts and immutable save fixtures.
     setup                     Apply an explicit reversible host repair.
     generation-manifest       Write a deterministic, redacted generation provenance manifest.
+    capability-manifest       Write the exact generated EvoGen capability manifest without launching Kenshi.
 
 options:
   -h, --help                  show this help message and exit
@@ -276,4 +277,18 @@ options:
   --staged-dll STAGED_DLL     Optional staged DLL override; repository staging is checked by default. (default: None)
   --installed-dll INSTALLED_DLL
                               Optional exact DLL loaded by Kenshi to hash. (default: None)
+```
+
+## `./dev capability-manifest`
+
+```text
+usage: ./dev capability-manifest [-h] --generation-id GENERATION_ID --output OUTPUT
+
+Project KAE's operation, protocol, continuity, outcome, recovery, and proof authorities into one canonical capability manifest.
+
+options:
+  -h, --help                  show this help message and exit
+  --generation-id GENERATION_ID
+                              The already-computed 64-character generation identity.
+  --output OUTPUT             Atomic JSON output path; its parent directory must already exist.
 ```
