@@ -1,0 +1,265 @@
+{
+  "$defs": {
+    "FieldCounts": {
+      "additionalProperties": false,
+      "properties": {
+        "present": {
+          "minimum": 0,
+          "title": "Present",
+          "type": "integer"
+        },
+        "missing": {
+          "minimum": 0,
+          "title": "Missing",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "present",
+        "missing"
+      ],
+      "title": "FieldCounts",
+      "type": "object"
+    },
+    "ReviewedDispositionManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "authority": {
+          "const": "docs/reconstruction/session_event_dispositions.json",
+          "title": "Authority",
+          "type": "string"
+        },
+        "fingerprint": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Fingerprint",
+          "type": "string"
+        },
+        "source_inventory_fingerprint": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Inventory Fingerprint",
+          "type": "string"
+        },
+        "source_event_type_count": {
+          "minimum": 1,
+          "title": "Source Event Type Count",
+          "type": "integer"
+        },
+        "source_record_count": {
+          "minimum": 1,
+          "title": "Source Record Count",
+          "type": "integer"
+        },
+        "disposition_counts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Disposition Counts",
+          "type": "object"
+        }
+      },
+      "required": [
+        "authority",
+        "fingerprint",
+        "source_inventory_fingerprint",
+        "source_event_type_count",
+        "source_record_count",
+        "disposition_counts"
+      ],
+      "title": "ReviewedDispositionManifest",
+      "type": "object"
+    },
+    "SourceManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "const": "raw-events.jsonl",
+          "title": "File",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "record_count": {
+          "minimum": 1,
+          "title": "Record Count",
+          "type": "integer"
+        },
+        "event_types": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Event Types",
+          "type": "array"
+        },
+        "sequence_mode": {
+          "enum": [
+            "legacy_prefix",
+            "legacy_prefix_and_sequenced_suffix",
+            "sequenced"
+          ],
+          "title": "Sequence Mode",
+          "type": "string"
+        },
+        "source_sequence_counts": {
+          "$ref": "#/$defs/FieldCounts"
+        },
+        "source_event_id_counts": {
+          "$ref": "#/$defs/FieldCounts"
+        }
+      },
+      "required": [
+        "file",
+        "sha256",
+        "record_count",
+        "event_types",
+        "sequence_mode",
+        "source_sequence_counts",
+        "source_event_id_counts"
+      ],
+      "title": "SourceManifest",
+      "type": "object"
+    },
+    "TrajectoryManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "const": "trajectory.jsonl",
+          "title": "File",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "event_count": {
+          "minimum": 0,
+          "title": "Event Count",
+          "type": "integer"
+        },
+        "kind_counts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Kind Counts",
+          "type": "object"
+        },
+        "withheld_projection_kinds": {
+          "items": {
+            "enum": [
+              "binding",
+              "dispatch"
+            ],
+            "type": "string"
+          },
+          "title": "Withheld Projection Kinds",
+          "type": "array"
+        }
+      },
+      "required": [
+        "file",
+        "sha256",
+        "event_count",
+        "kind_counts",
+        "withheld_projection_kinds"
+      ],
+      "title": "TrajectoryManifest",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The deterministic, typed manifest published beside one trajectory.",
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "bundle_kind": {
+      "const": "kenshi-agent-env-trajectory",
+      "default": "kenshi-agent-env-trajectory",
+      "title": "Bundle Kind",
+      "type": "string"
+    },
+    "bundle_id": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Bundle Id",
+      "type": "string"
+    },
+    "generation_id": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Generation Id",
+      "type": "string"
+    },
+    "capability_generation_id": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Capability Generation Id",
+      "type": "string"
+    },
+    "capability_manifest_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Capability Manifest Digest",
+      "type": "string"
+    },
+    "generation_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Generation Manifest Sha256",
+      "type": "string"
+    },
+    "capability_manifest_file_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Capability Manifest File Sha256",
+      "type": "string"
+    },
+    "generation_linkage": {
+      "const": "supplied_external_manifest",
+      "title": "Generation Linkage",
+      "type": "string"
+    },
+    "scenario_linkage": {
+      "enum": [
+        "generation_manifest",
+        "declared_external"
+      ],
+      "title": "Scenario Linkage",
+      "type": "string"
+    },
+    "scenario_id": {
+      "title": "Scenario Id",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "source": {
+      "$ref": "#/$defs/SourceManifest"
+    },
+    "trajectory": {
+      "$ref": "#/$defs/TrajectoryManifest"
+    },
+    "reviewed_dispositions": {
+      "$ref": "#/$defs/ReviewedDispositionManifest"
+    }
+  },
+  "required": [
+    "bundle_id",
+    "generation_id",
+    "capability_generation_id",
+    "capability_manifest_digest",
+    "generation_manifest_sha256",
+    "capability_manifest_file_sha256",
+    "generation_linkage",
+    "scenario_linkage",
+    "scenario_id",
+    "run_id",
+    "source",
+    "trajectory",
+    "reviewed_dispositions"
+  ],
+  "title": "ExportManifest",
+  "type": "object"
+}

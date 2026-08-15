@@ -7,6 +7,7 @@ from typing import Any
 from .capability_manifest import CapabilityManifest
 from .generation_manifest import GenerationManifest
 from .schema_documents import base_schema_documents
+from .trajectory_export import ExportManifest, TrajectoryEventEnvelope
 
 
 def schema_documents() -> dict[str, dict[str, Any]]:
@@ -15,6 +16,8 @@ def schema_documents() -> dict[str, dict[str, Any]]:
     schemas = base_schema_documents()
     schemas["generation_manifest.schema.json"] = GenerationManifest.model_json_schema()
     schemas["capability-manifest.schema.json"] = CapabilityManifest.model_json_schema()
+    schemas["trajectory-event.schema.json"] = TrajectoryEventEnvelope.model_json_schema()
+    schemas["trajectory-export-manifest.schema.json"] = ExportManifest.model_json_schema()
     return schemas
 
 

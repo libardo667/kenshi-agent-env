@@ -6,12 +6,12 @@ Regenerate with `python scripts/export_docs.py`.
 ## `./dev`
 
 ```text
-usage: ./dev [-h] {verify-portable,doctor,launch,run,tui,telemetry,affordances,snapshot,recover,stop,scenario,setup,generation-manifest,capability-manifest} ...
+usage: ./dev [-h] {verify-portable,doctor,launch,run,tui,telemetry,affordances,snapshot,recover,stop,scenario,setup,generation-manifest,capability-manifest,trajectory-export} ...
 
 Safe, state-aware Kenshi live development. Use 'run' for the normal launch-and-agent workflow.
 
 positional arguments:
-  {verify-portable,doctor,launch,run,tui,telemetry,affordances,snapshot,recover,stop,scenario,setup,generation-manifest,capability-manifest}
+  {verify-portable,doctor,launch,run,tui,telemetry,affordances,snapshot,recover,stop,scenario,setup,generation-manifest,capability-manifest,trajectory-export}
     verify-portable           Run the complete reproducible gate without touching Windows or Kenshi.
     doctor                    Check every launch prerequisite without sending input.
     launch                    Launch Kenshi without starting an agent.
@@ -26,6 +26,7 @@ positional arguments:
     setup                     Apply an explicit reversible host repair.
     generation-manifest       Write a deterministic, redacted generation provenance manifest.
     capability-manifest       Write the exact generated EvoGen capability manifest without launching Kenshi.
+    trajectory-export         Export one exact KAE event log into an EvoGen trajectory bundle.
 
 options:
   -h, --help                  show this help message and exit
@@ -291,4 +292,22 @@ options:
   --generation-id GENERATION_ID
                               The already-computed 64-character generation identity.
   --output OUTPUT             Atomic JSON output path; its parent directory must already exist.
+```
+
+## `./dev trajectory-export`
+
+```text
+usage: ./dev trajectory-export [-h] --events EVENTS --generation-manifest GENERATION --capability-manifest CAPABILITY --scenario-id SCENARIO_ID --output OUTPUT
+
+Validate exact source events and linked generation/capability manifests, then atomically publish raw and normalized trajectory evidence.
+
+options:
+  -h, --help                  show this help message and exit
+  --events EVENTS             Closed source SessionLogger JSONL event file.
+  --generation-manifest GENERATION
+                              Exact generation manifest linked to the capability manifest.
+  --capability-manifest CAPABILITY
+                              Exact generated capability manifest linked to the generation.
+  --scenario-id SCENARIO_ID   Explicit scenario identity for the exported trajectory.
+  --output OUTPUT             New output bundle directory; publication is atomic and never overwrites.
 ```

@@ -550,7 +550,7 @@
   "schema_version": 1,
   "source_inventory": {
     "event_type_count": 90,
-    "fingerprint": "f8e51fba1d7cc5660ca81e43ccc909d50d8adddd2720d02d05cad6a0c8be3e0b",
+    "fingerprint": "09401f0292b7d8e6a023f2a5d9e76a45531fd54b0a511f58b9ceb61e2e6b473d",
     "open_string_sinks": [
       {
         "expression": "event_type",
@@ -653,6 +653,12 @@
         "owner": "_emit_affordance_menu",
         "sink_kind": "reviewed_non_event.write",
         "source_file": "kenshi_agent/tooling/live_dev.py"
+      },
+      {
+        "expression": "data",
+        "owner": "_write_bytes",
+        "sink_kind": "reviewed_non_event.write",
+        "source_file": "kenshi_agent/tooling/trajectory_export.py"
       },
       {
         "expression": "'\\n'",

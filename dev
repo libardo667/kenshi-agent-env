@@ -261,6 +261,21 @@ def main(argv: list[str] | None = None) -> int:
             cwd=REPO_DIR,
             check=False,
         ).returncode
+    if args.command == "trajectory-export":
+        return subprocess.run(
+            (
+                "uv",
+                "run",
+                "--frozen",
+                "--no-sync",
+                "python",
+                "-m",
+                "kenshi_agent.tooling.trajectory_export",
+                *raw_argv[1:],
+            ),
+            cwd=REPO_DIR,
+            check=False,
+        ).returncode
     if args.command == "tui":
         try:
             return _run_tui(args, environment=os.environ.copy())

@@ -147,6 +147,7 @@ def test_live_dev_exposes_only_the_approved_top_level_commands() -> None:
         "setup",
         "generation-manifest",
         "capability-manifest",
+        "trajectory-export",
     }
 
 

@@ -202,6 +202,12 @@ APPROVED_OPEN_SINKS: tuple[OpenSink, ...] = (
         "json.dumps(payload, separators=(',', ':')) + '\\n'",
     ),
     OpenSink(
+        "kenshi_agent/tooling/trajectory_export.py",
+        "_write_bytes",
+        "reviewed_non_event.write",
+        "data",
+    ),
+    OpenSink(
         "kenshi_agent/wiki_corpus.py",
         "write_snapshot",
         "reviewed_non_event.write",

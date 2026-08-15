@@ -1,0 +1,153 @@
+{
+  "additionalProperties": false,
+  "description": "KAE-owned mirror of EvoGen's current strict trajectory envelope.",
+  "properties": {
+    "envelope_version": {
+      "const": "1.0",
+      "title": "Envelope Version",
+      "type": "string"
+    },
+    "event_id": {
+      "minLength": 1,
+      "title": "Event Id",
+      "type": "string"
+    },
+    "run_id": {
+      "minLength": 1,
+      "title": "Run Id",
+      "type": "string"
+    },
+    "generation_id": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Generation Id",
+      "type": "string"
+    },
+    "scenario_id": {
+      "minLength": 1,
+      "title": "Scenario Id",
+      "type": "string"
+    },
+    "sequence": {
+      "minimum": 0,
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "recorded_at": {
+      "format": "date-time",
+      "title": "Recorded At",
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "run_started",
+        "observation",
+        "observation_delta",
+        "affordance_set",
+        "decision",
+        "binding",
+        "dispatch",
+        "execution_receipt",
+        "outcome_observation",
+        "memory_update",
+        "human_intervention",
+        "recovery",
+        "error",
+        "goal_blocked",
+        "goal_achieved",
+        "run_finished"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "world_revision": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "World Revision"
+    },
+    "source_event_type": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Source Event Type"
+    },
+    "source_event_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Source Event Id"
+    },
+    "source_sequence": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Source Sequence"
+    },
+    "source_step_index": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Source Step Index"
+    },
+    "source_world_revision": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Source World Revision"
+    },
+    "payload": {
+      "additionalProperties": true,
+      "title": "Payload",
+      "type": "object"
+    }
+  },
+  "required": [
+    "envelope_version",
+    "event_id",
+    "run_id",
+    "generation_id",
+    "scenario_id",
+    "sequence",
+    "recorded_at",
+    "kind",
+    "world_revision",
+    "source_event_type",
+    "source_event_id",
+    "source_sequence",
+    "source_step_index",
+    "source_world_revision",
+    "payload"
+  ],
+  "title": "TrajectoryEventEnvelope",
+  "type": "object"
+}

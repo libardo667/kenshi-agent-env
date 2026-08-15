@@ -522,6 +522,36 @@ def build_parser(
         help="Atomic JSON output path; its parent directory must already exist.",
     )
 
+    trajectory = commands.add_parser(
+        "trajectory-export",
+        help="Export one exact KAE event log into an EvoGen trajectory bundle.",
+        description=(
+            "Validate exact source events and linked generation/capability manifests, "
+            "then atomically publish raw and normalized trajectory evidence."
+        ),
+        formatter_class=formatter,
+    )
+    trajectory.add_argument(
+        "--events", type=Path, required=True,
+        help="Closed source SessionLogger JSONL event file.",
+    )
+    trajectory.add_argument(
+        "--generation-manifest", dest="generation", type=Path, required=True,
+        help="Exact generation manifest linked to the capability manifest.",
+    )
+    trajectory.add_argument(
+        "--capability-manifest", dest="capability", type=Path, required=True,
+        help="Exact generated capability manifest linked to the generation.",
+    )
+    trajectory.add_argument(
+        "--scenario-id", required=True,
+        help="Explicit scenario identity for the exported trajectory.",
+    )
+    trajectory.add_argument(
+        "--output", type=Path, required=True,
+        help="New output bundle directory; publication is atomic and never overwrites.",
+    )
+
     return parser
 
 
