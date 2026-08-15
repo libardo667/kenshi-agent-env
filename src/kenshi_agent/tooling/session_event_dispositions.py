@@ -87,12 +87,8 @@ class SourceInventory:
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-_LOGGER_RECEIVERS = frozenset(
-    {"logger", "self.logger", "self._logger", "self.continuity.logger"}
-)
-_CALLBACK_METHODS = frozenset(
-    {"event", "_event", "_plan_event", "_log_read", "_reservation_event"}
-)
+_LOGGER_RECEIVERS = frozenset({"logger", "self.logger", "self._logger", "self.continuity.logger"})
+_CALLBACK_METHODS = frozenset({"event", "_event", "_plan_event", "_log_read", "_reservation_event"})
 _EVENT_METHODS = _CALLBACK_METHODS | {"progress", "write"}
 
 # These are deliberately open string pass-throughs, not event producers.  Their
@@ -104,6 +100,18 @@ APPROVED_OPEN_SINKS: tuple[OpenSink, ...] = (
         "ContinuityService._log_read",
         "session_logger.write",
         "event_type",
+    ),
+    OpenSink(
+        "kenshi_agent/evogen_subject/adapter.py",
+        "KAEConformanceRunner.run",
+        "reviewed_non_event.write",
+        "'\\n'",
+    ),
+    OpenSink(
+        "kenshi_agent/evogen_subject/adapter.py",
+        "KAEConformanceRunner.run",
+        "reviewed_non_event.write",
+        "event.model_dump_json()",
     ),
     OpenSink(
         "kenshi_agent/execution/kernel.py",

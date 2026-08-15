@@ -137,6 +137,33 @@ def test_source_inventory_and_review_authority_are_exact() -> None:
     assert [row["source_event_type"] for row in rows] == sorted(EXPECTED_EVENTS)
 
 
+def test_optional_conformance_sinks_are_reviewed_and_runtime_producers_are_visible(
+    tmp_path: Path,
+) -> None:
+    source = _copy_source(tmp_path)
+    inventory = discover_source_inventory(source)
+    adapter_sinks = [
+        sink for sink in inventory.open_sinks if "evogen_subject/adapter.py" in sink.source_file
+    ]
+    assert len(adapter_sinks) == 2
+    assert {sink.expression for sink in adapter_sinks} == {"event.model_dump_json()", "'\\n'"}
+
+    runtime_producer = source / "evogen_subject" / "runtime_event_producer.py"
+    for import_source in (
+        "",
+        "import kenshi_agent.env.live as live\n",
+        "from kenshi_agent import env\n",
+        "from .. import env\n",
+        "from ..env import live\n",
+    ):
+        runtime_producer.write_text(
+            f"{import_source}\nlogger.write('hidden_runtime_event')\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(SessionEventDispositionError, match="do not match source"):
+            render_generated_dispositions(source, REVIEWED_PATH)
+
+
 def test_generated_disposition_map_is_fresh() -> None:
     assert GENERATED_PATH.read_text(encoding="utf-8") == render_generated_dispositions()
 
@@ -169,8 +196,7 @@ def test_annotated_control_ownership_event_fails_until_reviewed(tmp_path: Path) 
     _replace_once(
         ownership,
         '    READY = "agent_takeover_ready"\n',
-        '    READY = "agent_takeover_ready"\n'
-        '    PAUSED: str = "agent_takeover_paused"\n',
+        '    READY = "agent_takeover_ready"\n    PAUSED: str = "agent_takeover_paused"\n',
     )
 
     with pytest.raises(SessionEventDispositionError, match="do not match source"):
@@ -216,8 +242,7 @@ def test_malformed_or_splatted_logger_call_fails_closed(
     _replace_once(
         coordinator,
         '        self.logger.write(\n            "run_started",',
-        f"        {call}\n"
-        '        self.logger.write(\n            "run_started",',
+        f'        {call}\n        self.logger.write(\n            "run_started",',
     )
 
     with pytest.raises(SessionEventDispositionError, match="Unreviewed open event sink"):
@@ -230,9 +255,7 @@ def test_aliased_operation_progress_cannot_evade_inventory(tmp_path: Path) -> No
     _replace_once(
         cognition,
         "        context.progress(\n            action.question,",
-        "        ctx = context\n"
-        "        ctx.progress(\n"
-        "            action.question,",
+        "        ctx = context\n        ctx.progress(\n            action.question,",
     )
     _replace_once(
         cognition,
@@ -250,7 +273,7 @@ def test_new_logger_alias_cannot_evade_inventory(tmp_path: Path) -> None:
     _replace_once(
         coordinator,
         '        self.logger.write(\n            "run_started",',
-        '        audit = self.logger\n'
+        "        audit = self.logger\n"
         '        audit.write("aliased_source_event")\n'
         '        self.logger.write(\n            "run_started",',
     )
@@ -265,7 +288,7 @@ def test_keyword_logger_alias_cannot_evade_inventory(tmp_path: Path) -> None:
     _replace_once(
         coordinator,
         '        self.logger.write(\n            "run_started",',
-        '        audit = self.logger\n'
+        "        audit = self.logger\n"
         '        audit.write(event_type="aliased_keyword_event")\n'
         '        self.logger.write(\n            "run_started",',
     )
@@ -279,10 +302,8 @@ def test_keyword_logger_alias_cannot_evade_inventory(tmp_path: Path) -> None:
     [
         '        emit_event = self.logger.write\n        emit_event("bound_logger_new")\n',
         '        emit_plan = self._plan_event\n        emit_plan("bound_plan_new")\n',
-        '        emit_event, = (self.logger.write,)\n'
-        '        emit_event("tuple_logger_new")\n',
-        '        emit_plan, = (self._plan_event,)\n'
-        '        emit_plan("tuple_plan_new")\n',
+        '        emit_event, = (self.logger.write,)\n        emit_event("tuple_logger_new")\n',
+        '        emit_plan, = (self._plan_event,)\n        emit_plan("tuple_plan_new")\n',
         '        emit_event = getattr(self.logger, "write")\n'
         '        emit_event("assigned_getattr_logger_new")\n',
     ],

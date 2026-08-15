@@ -149,6 +149,30 @@ uv run kenshi-agent run --config config/default.yaml --mode mock --steps 8
 The default config uses a seeded mock world and the built-in heuristic planner. It
 does not send input to Windows or Kenshi. Run files are written under `runs/`.
 
+## Optional EvoGen subject adapter
+
+KAE exposes an optional `kenshi` subject plugin for EvoGen API 1.1. It is
+isolated from ordinary `kenshi_agent` imports and uses KAE's generated
+`docs/generated/CAPABILITY_MANIFEST.json` as its read-only capability
+authority. Install it only on Python 3.11 through 3.13:
+
+```bash
+uv sync --extra evogen
+uv run evogen subject doctor kenshi
+```
+
+The portable gate installs this extra on Python 3.11 through 3.13, so the G15
+tests and host conformance checks run there. On Python 3.14 the dependency
+marker intentionally excludes EvoGen; ordinary KAE tests remain supported and
+only EvoGen-dependent tests are skipped.
+
+The G15 adapter is synthetic, deterministic, read-only, and conformance-only.
+Its runner emits typed trajectory evidence with a receipt followed by a later
+outcome observation, and rejects scenarios outside its opaque conformance
+suite. It does not launch or control Kenshi, read replay data, touch saves or
+DLLs, or claim live gameplay capability. G16 observer and run-bundle ingestion
+remain withheld.
+
 ## Set up live Kenshi
 
 The supported live setup currently runs Kenshi on Windows from this repository under

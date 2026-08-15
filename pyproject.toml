@@ -25,12 +25,21 @@ dev = [
   "mypy>=1.14,<2",
   "types-PyYAML>=6,<7",
 ]
+evogen = [
+  "evogen @ git+https://github.com/libardo667/evogen.git@5e72ca364f0a1b2c5b23d41c9af5a2a15099b946 ; python_version < '3.14'",
+]
 
 [project.scripts]
 kenshi-agent = "kenshi_agent.cli:main"
 
+[project.entry-points."evogen.subjects"]
+kenshi = "kenshi_agent.evogen_subject:build_subject_plugin"
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.data-files]
+"share/kenshi-agent-env/evogen" = ["docs/generated/CAPABILITY_MANIFEST.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -550,13 +550,25 @@
   "schema_version": 1,
   "source_inventory": {
     "event_type_count": 90,
-    "fingerprint": "09401f0292b7d8e6a023f2a5d9e76a45531fd54b0a511f58b9ceb61e2e6b473d",
+    "fingerprint": "6789a26b15ed73bdef9149c97486684926017c68005df68d947a0067a0085df1",
     "open_string_sinks": [
       {
         "expression": "event_type",
         "owner": "ContinuityService._log_read",
         "sink_kind": "session_logger.write",
         "source_file": "kenshi_agent/continuity_service.py"
+      },
+      {
+        "expression": "'\\n'",
+        "owner": "KAEConformanceRunner.run",
+        "sink_kind": "reviewed_non_event.write",
+        "source_file": "kenshi_agent/evogen_subject/adapter.py"
+      },
+      {
+        "expression": "event.model_dump_json()",
+        "owner": "KAEConformanceRunner.run",
+        "sink_kind": "reviewed_non_event.write",
+        "source_file": "kenshi_agent/evogen_subject/adapter.py"
       },
       {
         "expression": "progress.event_type",

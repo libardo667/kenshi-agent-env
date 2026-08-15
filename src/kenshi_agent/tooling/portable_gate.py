@@ -8,7 +8,10 @@ from pathlib import Path
 GENERATED_ROOTS = (Path("schemas"), Path("docs/generated"))
 
 CHECKS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("install locked development environment", ("uv", "sync", "--frozen", "--extra", "dev")),
+    (
+        "install locked development environment",
+        ("uv", "sync", "--frozen", "--extra", "dev", "--extra", "evogen"),
+    ),
     (
         "Ruff",
         ("uv", "run", "--frozen", "--no-sync", "ruff", "check", "."),
