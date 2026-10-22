@@ -149,7 +149,6 @@ def test_human_and_disarmed_states_have_distinct_banners() -> None:
     assert human[1] != disarmed[1]
 
 
-
 def test_events_are_colour_coded_by_what_the_operator_must_notice() -> None:
     from kenshi_agent.tooling.overlay import EVENT_COLOURS, event_category
 

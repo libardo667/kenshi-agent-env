@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection
 from datetime import UTC, datetime
 from enum import StrEnum
 from math import inf, sqrt
-from typing import Any, ClassVar, Literal
+from typing import ClassVar, Literal
 
 from pydantic import (
     Field,
@@ -774,98 +774,6 @@ class NormalizedPointerBounds(StrictModel):
 # payload's measured envelope. A hand-picked count is wrong on both sides - it
 # starves a dense trade screen while leaving room unused on a sparse one - and
 # picking a new one just moves the cliff.
-MAX_DIGESTED_VISIBLE_CONTROLS = 4096
-
-
-def group_controls_by_window(
-    entries: Sequence[dict[str, Any]],
-    owners: Mapping[str, dict[str, Any]] | None = None,
-) -> list[dict[str, Any]]:
-    """Present controls the way Kenshi actually arranges them: per window.
-
-    A flat list repeats the window on all 188 entries and still leaves the
-    planner to reconstruct which of two open inventories a cell sits in. That
-    question is not cosmetic: in a trade the same right-click buys from the
-    shop's window and sells from your own, so "which window" is the whole
-    difference between spending and being robbed. A probe that ignored it once
-    sold a character's clothes and weapon.
-
-    Windows keep first-appearance order and controls keep document order within
-    a window, so positional reasoning still holds. The key is the exact string
-    an action's `window` argument takes, empty string included - it is meant to
-    be copied, not read.
-    """
-
-    groups: dict[str, list[dict[str, Any]]] = {}
-    for entry in entries:
-        window = str(entry.get("window", ""))
-        groups.setdefault(window, []).append(
-            {key: value for key, value in entry.items() if key != "window"}
-        )
-
-    resolved = owners or {}
-    grouped = []
-    for window, controls in groups.items():
-        group: dict[str, Any] = {"window": window}
-        # Say whose window it is rather than leaving the planner to infer
-        # inventory ownership from a caption string. Item transfers bind owner
-        # identity directly.
-        group.update(resolved.get(normalize_control_label(window), {}))
-        group["controls"] = controls
-        grouped.append(group)
-    return grouped
-
-
-def budgeted_visible_controls(
-    controls: Sequence[VisibleUIControl],
-    limit: int = MAX_DIGESTED_VISIBLE_CONTROLS,
-) -> list[VisibleUIControl]:
-    """Trim the control list to a budget without starving any one role.
-
-    The plug-in emits buttons first, then item cells, then text. Taking a flat
-    prefix therefore drops text first and drops it entirely: a trade screen
-    exports over two hundred controls, so every text widget fell outside a
-    hundred-and-twenty entry window. Text is where Kenshi puts its refusals -
-    "you can't afford that" - so the agent could act, be refused, and see a
-    screen identical to the one before it acted.
-
-    Round-robin across roles instead, so each role is represented before any
-    role takes a second share, then restore document order so positional
-    reasoning still holds. Truncation stays fail-closed: an unlisted control is
-    one the planner will not author, never one it may author blindly.
-    """
-
-    by_role: dict[str, list[VisibleUIControl]] = {}
-    for control in controls:
-        by_role.setdefault(control.role, []).append(control)
-    if not by_role:
-        return []
-
-    effective_limit = max(0, limit)
-    chosen = [
-        bucket[round_index]
-        for round_index in range(max(len(bucket) for bucket in by_role.values()))
-        for bucket in by_role.values()
-        if round_index < len(bucket)
-    ][:effective_limit]
-
-    positions = {id(control): order for order, control in enumerate(controls)}
-    chosen.sort(key=lambda control: positions[id(control)])
-    return chosen
-
-
-# Where a MyGUI window's close box sits relative to the window's own rect,
-# measured live: the title bar's right end. Derived from observed bounds, so it
-# follows the window when it moves and survives a resolution change - unlike the
-# calibrated screen coordinates this replaces.
-WINDOW_CLOSE_INSET_X = 0.012
-WINDOW_CLOSE_INSET_Y = 0.011
-
-
-def window_close_point(bounds: NormalizedPointerBounds) -> tuple[float, float]:
-    """The close box of a window occupying these bounds."""
-
-    return (bounds.max_x - WINDOW_CLOSE_INSET_X, bounds.min_y + WINDOW_CLOSE_INSET_Y)
 
 
 def normalize_control_label(value: str) -> str:
@@ -1018,34 +926,6 @@ class VisibleUIControl(StrictModel):
             (self.bounds.min_x + self.bounds.max_x) / 2.0,
             (self.bounds.min_y + self.bounds.max_y) / 2.0,
         )
-
-
-RUNTIME_OWNED_TIME_WIDGETS = frozenset(
-    {
-        "TimeSpeedButton1",
-        "TimeSpeedButton2",
-        "TimeSpeedButton3",
-        "TimeSpeedButton4",
-    }
-)
-
-
-def is_runtime_owned_visible_control(control: VisibleUIControl) -> bool:
-    """Whether a visible widget is mechanics owned by a semantic option.
-
-    Kenshi's time buttons are caption-less, so the exporter advertises their
-    opaque MyGUI instance names as labels. They are real visible controls, but
-    they are not independent gameplay intentions: monitored options own the
-    corresponding pause, playback, observation, and terminal cleanup. Keep the
-    widget identity out of the generic action surface even when an older
-    snapshot carries it only in ``label`` rather than ``widget_name``.
-    """
-
-    return any(
-        layout_widget_name_of(name) in RUNTIME_OWNED_TIME_WIDGETS
-        for name in (control.widget_name, control.label)
-        if name
-    )
 
 
 class ToolTipLine(StrictModel):

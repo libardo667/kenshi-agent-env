@@ -8,7 +8,7 @@ live-world evidence.
 ## Repository and authority
 
 ```text
-parent commit             16fb7ae635a551e56b445520c3f59046ac70ed4e
+parent commit             92e2bcc307df282cf60cd9f9d7a14ce23784fde6
 integration branch        main
 candidate state           root-accepted locally; publication pending
 EvoGen API source         public commit 5e72ca364f0a1b2c5b23d41c9af5a2a15099b946

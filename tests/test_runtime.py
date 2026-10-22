@@ -209,8 +209,6 @@ def test_telemetry_changes_report_vendor_route_progress() -> None:
     assert "camera bearing to Barman: -70.0 -> -25.0 degrees" in changes
 
 
-
-
 def test_displacement_without_new_choices_is_not_progress() -> None:
     """A move that reveals nothing is a no-op, however far it travelled.
 
@@ -296,8 +294,6 @@ def test_world_time_transition_alone_is_not_progress() -> None:
 
     assert assessment == "no_op"
     assert "world time" in feedback.lower()
-
-
 
 
 def test_telemetry_changes_mark_mechanical_deltas_as_not_decision_relevant() -> None:

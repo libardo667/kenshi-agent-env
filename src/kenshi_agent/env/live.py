@@ -9,7 +9,6 @@ from ..control.base import InputController
 from ..control.capture import WindowCapture
 from ..core.observation import Observation
 from ..core.operation import (
-    QUICKSAVE_COMPLETION_CAPABILITY,
     ControlMode,
 )
 from ..core.telemetry import (
@@ -44,14 +43,7 @@ class LiveEnvironment(AgentEnvironment):
         emergency_stop_key: str,
         final_pause_timeout_seconds: float = 2.0,
         control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
-        quicksave_dir: Path | None = None,
-        quicksave_timeout_seconds: float = 10.0,
-        quicksave_stable_seconds: float = 0.5,
     ) -> None:
-        if quicksave_timeout_seconds <= 0.0 or quicksave_stable_seconds <= 0.0:
-            raise ValueError("Quicksave monitoring times must be positive.")
-        if quicksave_stable_seconds >= quicksave_timeout_seconds:
-            raise ValueError("Quicksave stable time must be shorter than its completion timeout.")
         self.run_id = run_id
         self.run_dir = run_dir
         self.telemetry_reader = telemetry
@@ -63,9 +55,6 @@ class LiveEnvironment(AgentEnvironment):
         self.emergency_stop_key = emergency_stop_key
         self.final_pause_timeout_seconds = final_pause_timeout_seconds
         self.control_mode = control_mode
-        self.quicksave_dir = quicksave_dir
-        self.quicksave_timeout_seconds = quicksave_timeout_seconds
-        self.quicksave_stable_seconds = quicksave_stable_seconds
         self._step_index = 0
         self._capture_sequence = 0
         self._last_observation: Observation | None = None
@@ -242,8 +231,6 @@ class LiveEnvironment(AgentEnvironment):
         """Withhold native-control evidence that `interface_only` may not use."""
 
         capabilities = list(snapshot.capabilities)
-        if self.quicksave_dir is not None and QUICKSAVE_COMPLETION_CAPABILITY not in capabilities:
-            capabilities.append(QUICKSAVE_COMPLETION_CAPABILITY)
         if self._capture is not None and "camera.recovery" not in capabilities:
             # This is a controller capability, not a native plug-in claim. It is
             # advertised only when this environment actually owns a capture

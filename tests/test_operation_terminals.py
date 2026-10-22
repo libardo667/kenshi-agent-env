@@ -71,9 +71,6 @@ def assert_one_runtime_condition(
     assert condition.expected == expected
 
 
-
-
-
 def test_receipt_terminal_controls_do_not_need_a_fictional_world_effect() -> None:
     completion = runtime_control_terminal(WaitAction(seconds=0.5))
 

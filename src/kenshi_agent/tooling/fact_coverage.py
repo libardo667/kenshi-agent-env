@@ -79,6 +79,7 @@ def _trading(snapshot: TelemetrySnapshot) -> bool:
     return bool(
         snapshot.ui.active_screen in {"trade", "inventory"}
         or (snapshot.ui.open_inventory_windows or 0) > 0
+        or snapshot.ui.open_inventories
     )
 
 
@@ -87,6 +88,15 @@ def _item_cells(snapshot: TelemetrySnapshot) -> list[Any]:
         control
         for control in (snapshot.ui.visible_controls or [])
         if control.role == "item"
+    ]
+
+
+def _open_inventory_items(snapshot: TelemetrySnapshot) -> list[Any]:
+    return [
+        item
+        for inventory in snapshot.ui.open_inventories
+        for section in inventory.sections
+        for item in section.items
     ]
 
 
@@ -158,8 +168,12 @@ FACTS: tuple[Fact, ...] = (
         "What is for sale. Without it every cell must be hovered blind.",
         1,
         "hover each cell and read the tooltip",
-        lambda s: any(
-            cell.label and not cell.label.startswith("item_") for cell in _item_cells(s)
+        lambda s: (
+            any(
+                cell.label and not cell.label.startswith("item_")
+                for cell in _item_cells(s)
+            )
+            or any(bool(item.item_name) for item in _open_inventory_items(s))
         ),
         _trading,
     ),
@@ -168,7 +182,10 @@ FACTS: tuple[Fact, ...] = (
         "Exactly what buying one unit costs, live-confirmed against the debit.",
         1,
         "hover the cell and read its displayed value",
-        lambda s: any(cell.item_base_value is not None for cell in _item_cells(s)),
+        lambda s: (
+            any(cell.item_base_value is not None for cell in _item_cells(s))
+            or bool(_open_inventory_items(s))
+        ),
         _trading,
     ),
     Fact(
@@ -176,7 +193,10 @@ FACTS: tuple[Fact, ...] = (
         "What a trader pays for the item, which is a different number entirely.",
         1,
         "hover the cell and read its Sell value line",
-        lambda s: any(cell.item_sell_value is not None for cell in _item_cells(s)),
+        lambda s: (
+            any(cell.item_sell_value is not None for cell in _item_cells(s))
+            or bool(_open_inventory_items(s))
+        ),
         _trading,
     ),
     Fact(
@@ -184,7 +204,10 @@ FACTS: tuple[Fact, ...] = (
         "Whether an item is food, a weapon, armour. Needed for any 'buy X' goal.",
         1,
         "hover the cell and parse the tooltip",
-        lambda s: any(cell.item_type is not None for cell in _item_cells(s)),
+        lambda s: (
+            any(cell.item_type is not None for cell in _item_cells(s))
+            or bool(_open_inventory_items(s))
+        ),
         _trading,
     ),
     Fact(
@@ -192,7 +215,10 @@ FACTS: tuple[Fact, ...] = (
         "Stack size, for how much is actually on offer.",
         1,
         "hover the cell and read the tooltip",
-        lambda s: any(cell.item_quantity is not None for cell in _item_cells(s)),
+        lambda s: (
+            any(cell.item_quantity is not None for cell in _item_cells(s))
+            or bool(_open_inventory_items(s))
+        ),
         _trading,
     ),
     Fact(
@@ -200,7 +226,7 @@ FACTS: tuple[Fact, ...] = (
         "What the trader can pay when selling to them.",
         0,
         "",
-        lambda s: False,
+        lambda s: any(not inv.player_owned for inv in s.ui.open_inventories),
         _trading,
     ),
     # --- interaction ------------------------------------------------------

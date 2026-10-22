@@ -40,8 +40,6 @@ def test_format_action_renders_operation_arguments_compactly() -> None:
     )
 
 
-
-
 def test_console_reporter_narrates_continuous_plan_and_each_action() -> None:
     narrator = RecordingNarrator()
     reporter = ConsoleDecisionReporter(

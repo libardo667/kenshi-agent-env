@@ -1,6 +1,5 @@
 import asyncio
 from collections.abc import Callable
-from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -213,15 +212,6 @@ class PulseController(InputController):
         )
 
 
-class ResizeInsideLeaseController(PulseController):
-    @asynccontextmanager
-    async def input_lease(self, *, alt_tab_on_restore: bool = False):
-        del alt_tab_on_restore
-        self.client_width = 1280
-        self.client_height = 720
-        yield
-
-
 def _authorized_for(observation, action) -> dict[str, object]:
     """Recipient basis kwargs for one action against one observation.
 
@@ -254,9 +244,6 @@ def live_environment(
     controller: PulseController,
     *,
     control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
-    quicksave_dir: Path | None = None,
-    quicksave_timeout_seconds: float = 10.0,
-    quicksave_stable_seconds: float = 0.5,
 ) -> LiveEnvironment:
     return LiveEnvironment(
         run_id="pulse-test",
@@ -275,15 +262,7 @@ def live_environment(
         execute_actions=True,
         emergency_stop_key="f12",
         control_mode=control_mode,
-        quicksave_dir=quicksave_dir,
-        quicksave_timeout_seconds=quicksave_timeout_seconds,
-        quicksave_stable_seconds=quicksave_stable_seconds,
     )
-
-
-
-
-
 
 
 def test_live_close_causally_pauses_once_and_is_idempotent(tmp_path: Path) -> None:
@@ -1322,7 +1301,6 @@ def test_supervisor_pause_uses_native_command_after_human_input(tmp_path: Path) 
     asyncio.run(scenario())
 
 
-
 def test_squad_member_selection_uses_exact_native_identity_without_pointer_input(
     tmp_path: Path,
 ) -> None:
@@ -1433,7 +1411,6 @@ def test_native_character_movement_carries_the_complete_selected_group(
         assert controller.request.target_id == "entity-vendor"
 
     asyncio.run(scenario())
-
 
 
 def test_native_vendor_request_is_seen_by_watcher_before_matching_later_ack(
@@ -1731,11 +1708,6 @@ def control_environment(
         controller,
     )
     return environment, controller
-
-
-
-
-
 
 
 def test_semantic_approach_adopts_an_already_active_order_for_the_same_target(
@@ -2309,7 +2281,6 @@ def test_trade_window_waits_through_accepted_to_exact_native_terminal(
         assert controller.time_control_request is None
 
     asyncio.run(scenario())
-
 
 
 def test_visible_nearby_dialogue_target_still_uses_native_talk_order(

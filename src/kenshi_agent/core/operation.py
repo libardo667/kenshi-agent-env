@@ -282,29 +282,6 @@ class SelectSquadMemberExactAction(StrictModel):
     target_id: str = Field(min_length=1, max_length=200)
 
 
-class GameScreen(StrEnum):
-    """A screen the agent wants open, named by what it is rather than a key."""
-
-    INVENTORY = "inventory"
-    STATS = "stats"
-    MAP = "map"
-    RESEARCH = "research"
-    CRAFTING = "crafting"
-
-
-# Which management tab index each screen occupies, measured live in
-# live-management-tabs-20260729-r3 and r4 rather than assumed: map 0,
-# research 2, crafting 3, and -1 whenever the window is closed. Map, research
-# and crafting share one window, so the tab index is the only thing that
-# distinguishes "research opened" from "some management screen opened".
-MANAGEMENT_TAB_INDICES: dict[GameScreen, int] = {
-    GameScreen.MAP: 0,
-    GameScreen.RESEARCH: 2,
-    GameScreen.CRAFTING: 3,
-}
-MANAGEMENT_TAB_CLOSED = -1
-
-
 class ProduceResourceOutputAction(StrictModel):
     """Internal production phase retained until a bounded output yield exists."""
 
@@ -543,10 +520,6 @@ class MoveToCharacterAction(StrictModel):
 
     kind: Literal["move_to_character"] = "move_to_character"
     target_id: str = Field(min_length=1, max_length=200)
-
-
-QUICKSAVE_COMPLETION_CAPABILITY = "host.quicksave_completion"
-"""Controller can attribute F5 to one completed exact quicksave tree."""
 
 
 class GameBinding(StrEnum):

@@ -1185,11 +1185,6 @@ def test_plan_validation_accepts_every_configured_boundary_at_equality() -> None
         )
 
 
-
-
-
-
-
 def test_plan_patch_carries_optimistic_concurrency_basis() -> None:
     patch = PlanPatch(
         schema_version="1.0",
@@ -1626,7 +1621,6 @@ def test_plan_budget_reservations_release_or_commit_transactionally() -> None:
     ledger.commit()
     assert ledger.remaining_actions == 1
     assert ledger.committed_actions == 1
-
 
 
 def test_builtin_heuristic_emits_a_two_step_continuous_plan() -> None:

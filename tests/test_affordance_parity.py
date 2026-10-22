@@ -35,7 +35,6 @@ def test_controls_parser_preserves_alternates_and_equals_key() -> None:
     ]
 
 
-
 def test_a_new_game_binding_cannot_disappear_inside_our_own_denominator() -> None:
     expanded = parse_controls_cfg(
         CONTROLS_SNAPSHOT.read_text(encoding="utf-8")

@@ -5595,6 +5595,18 @@ namespace
                 g_activeNativeCommand.outdoorWindow);
             g_activeNativeCommand.originX = 0.0f;
             g_activeNativeCommand.originZ = 0.0f;
+            g_activeNativeCommand.originX = 0.0f;
+            g_activeNativeCommand.originZ = 0.0f;
+            if (ou != NULL && ou->isPaused())
+            {
+                ou->setGameSpeed(1.0f, false);
+                ou->userPause(false);
+            }
+            g_lastNativeCommandResult =
+                exactTaskAlreadyActive
+                    ? "adopted_existing_task"
+                    : "issued";
+            return;
             g_lastNativeCommandResult =
                 exactTaskAlreadyActive
                     ? "adopted_existing_task"

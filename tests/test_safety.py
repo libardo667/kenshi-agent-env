@@ -515,19 +515,6 @@ def generic_purchase_observation() -> Observation:
     )
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 def test_wait_limit() -> None:
     guard = OperationPolicy(safety_config())
     observation = Observation(run_id="run", step_index=0, mode="mock")

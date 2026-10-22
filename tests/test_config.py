@@ -156,7 +156,6 @@ def test_real_env_file_is_ignored_but_template_is_trackable() -> None:
     assert (root / ".env.example").is_file()
 
 
-
 def test_canonical_live_config_allowlists_every_affordance_operation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -161,7 +161,6 @@ def test_native_command_request_carries_its_resolved_recipients() -> None:
     assert "recipient_character_ids" in fields
 
 
-
 def test_wire_command_vocabulary_has_exactly_one_python_definition() -> None:
     """One vocabulary, not five copies that drift apart.
 

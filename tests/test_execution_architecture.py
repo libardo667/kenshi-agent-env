@@ -137,7 +137,6 @@ def test_the_mechanics_composition_root_implements_nothing_itself() -> None:
     assert len(node.bases) >= 2
 
 
-
 def test_the_control_surface_holds_no_operation_semantics() -> None:
     """The shared surface is external delivery only: no operation may live in it."""
 

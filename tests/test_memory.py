@@ -202,7 +202,6 @@ def test_entity_recall_orders_globally_by_salience_then_creation(
     ]
 
 
-
 def test_target_partitions_conserve_every_identity_once() -> None:
     for chunk_size in (1, 2, 500):
         for count in (0, 1, 2, 499, 500, 501, 1001):
@@ -217,7 +216,6 @@ def test_target_partitions_conserve_every_identity_once() -> None:
     for invalid_size in (0, -1):
         with pytest.raises(ValueError, match="positive"):
             _partition_target_ids([], invalid_size)
-
 
 
 def test_current_target_memory_survives_general_recall_overflow(
@@ -313,7 +311,6 @@ def test_target_memory_never_attaches_by_name_or_stale_identity(
         assert runner.planner_context.decorate(stale_old_identity).memories == []
     finally:
         store.close()
-
 
 
 def test_opening_a_scoped_memory_store_does_not_rebuild_its_schema(

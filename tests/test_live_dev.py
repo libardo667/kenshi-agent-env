@@ -1032,7 +1032,6 @@ def resource_inventory_snapshot(
     )
 
 
-
 def test_launcher_wait_fails_immediately_on_crash_reporter() -> None:
     async def scenario() -> None:
         controller = LaunchController(title="RE_Kenshi Crash Reporter")
@@ -2223,7 +2222,6 @@ def test_post_load_health_rejects_recovered_kernel_gpu_timeout() -> None:
     import asyncio
 
     asyncio.run(scenario())
-
 
 
 def _run_args(*extra: str) -> object:

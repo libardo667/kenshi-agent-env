@@ -191,7 +191,6 @@ TRADE_CONTROLS = [
 class TestGenericComposition:
 
 
-
     def test_a_single_action_plan_is_acceptable(self) -> None:
         composed = plan(
             [step("approach", ApproachDialogueTargetAction(target_id=CIVILIAN_ID))],
@@ -252,7 +251,6 @@ class TestGenericPolicyRejections:
         )
         errors = live_plan_policy_errors(composed)
         assert any("native-assisted cost" in error for error in errors)
-
 
 
 def later(observation: Observation, *, sequence: int = 60) -> Observation:
@@ -434,8 +432,6 @@ class TestDismissScreen:
         )
 
 
-
-
 class TestCapabilityAliases:
     """The generic capability name must work against a legacy-named plug-in."""
 
@@ -591,4 +587,3 @@ def test_capability_presence_can_never_count_as_causal_effect_proof() -> None:
     assert not _is_causal_condition(condition.kind, condition.path)
     # Run bookkeeping still is not evidence the world moved.
     assert not _is_causal_condition(ConditionKind.FIELD, "control_mode")
-

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Literal, TypeAlias
 
@@ -23,7 +22,6 @@ from .continuity import (
 from .operation import (
     Action,
     ControlMode,
-    GameBinding,
     IdempotencyPolicy,
     InterruptPolicy,
     ObservationPolicy,
@@ -128,79 +126,6 @@ class FieldConditionPath(StrEnum):
 # hosted schema names the narrower vocabulary honestly as FieldConditionPath.
 ConditionPath = FieldConditionPath
 _ALLOWED_CONDITION_PATHS = frozenset(path.value for path in FieldConditionPath)
-
-
-class BindingWitness(StrEnum):
-    """How a later observation proves one binding actually landed."""
-
-    # Any change in the field proves it: a tab index that moved, a session that
-    # rotated, a speed that is no longer what it was.
-    CHANGED = "changed"
-    # A boolean that must end up as the opposite of what it was.
-    TOGGLED = "toggled"
-
-
-@dataclass(frozen=True, slots=True)
-class BindingTerminal:
-    path: FieldConditionPath
-    witness: BindingWitness
-    required_capabilities: tuple[str, ...] = ()
-
-
-# Which observation proves each binding landed. Declarative rather than a chain
-# of hand-written branches, because only four of sixty-eight bindings had one:
-# every other binding was wired, counted as parity coverage, and then rejected
-# at plan validation with "has no causal success condition". A binding with no
-# entry here and no entry below fails a test rather than silently arriving
-# unusable.
-GAME_BINDING_TERMINALS: dict[GameBinding, BindingTerminal] = {
-    GameBinding.QUICKLOAD: BindingTerminal(
-        FieldConditionPath.TELEMETRY_IDENTITY_SESSION_ID,
-        BindingWitness.CHANGED,
-        ("identity.stable_handles",),
-    ),
-    GameBinding.TOGGLE_INVENTORY: BindingTerminal(
-        FieldConditionPath.TELEMETRY_UI_OPEN_INVENTORY_WINDOWS,
-        BindingWitness.CHANGED,
-    ),
-    GameBinding.TOGGLE_STATS: BindingTerminal(
-        FieldConditionPath.TELEMETRY_UI_STATS_WINDOW_OPEN,
-        BindingWitness.TOGGLED,
-    ),
-    # Map, research and crafting are tabs of one management window, so the tab
-    # index moves whether the window opens, switches tab, or closes. Watching
-    # `management_screen_open` instead cannot see a switch between two tabs.
-    GameBinding.TOGGLE_MAP: BindingTerminal(
-        FieldConditionPath.TELEMETRY_UI_MANAGEMENT_TAB,
-        BindingWitness.CHANGED,
-    ),
-    GameBinding.TOGGLE_RESEARCH: BindingTerminal(
-        FieldConditionPath.TELEMETRY_UI_MANAGEMENT_TAB,
-        BindingWitness.CHANGED,
-    ),
-    GameBinding.TOGGLE_CRAFTING: BindingTerminal(
-        FieldConditionPath.TELEMETRY_UI_MANAGEMENT_TAB,
-        BindingWitness.CHANGED,
-    ),
-    # Squad selection is witnessed by who ends up selected.
-    GameBinding.SELECT_ALL: BindingTerminal(
-        FieldConditionPath.TELEMETRY_SELECTED_CHARACTER_COUNT,
-        BindingWitness.CHANGED,
-        ("identity.stable_handles", "roster.basic"),
-    ),
-    GameBinding.CHARACTER_NEXT: BindingTerminal(
-        FieldConditionPath.TELEMETRY_UI_SELECTED_CHARACTER_ID,
-        BindingWitness.CHANGED,
-    ),
-    GameBinding.CHARACTER_PREV: BindingTerminal(
-        FieldConditionPath.TELEMETRY_UI_SELECTED_CHARACTER_ID,
-        BindingWitness.CHANGED,
-    ),
-    GameBinding.CHANGE_SQUAD: BindingTerminal(
-        FieldConditionPath.TELEMETRY_UI_SELECTED_CHARACTER_ID,
-        BindingWitness.CHANGED,
-    ),
-}
 
 
 def _is_field_condition_path(value: object) -> bool:
@@ -368,71 +293,6 @@ class Condition(RootModel[ConditionValue]):
     @property
     def required_capabilities(self) -> list[str]:
         return getattr(self.root, "required_capabilities", [])
-
-
-# Bindings nothing in telemetry can witness. Pressing them works; proving they
-# worked is impossible for the runtime AND for the model, so neither can author
-# a causal condition. Each needs a native export before it becomes usable, which
-# is different work from wiring a condition to a signal that already exists.
-UNWITNESSED_BINDINGS: dict[GameBinding, str] = {
-    GameBinding.TOGGLE_BUILD: "Build mode has no exported state.",
-    GameBinding.BUILD_APPLY: "Build mode has no exported state.",
-    GameBinding.BUILD_UNDO: "Build mode has no exported state.",
-    GameBinding.BUILD_MOVE_UP: "Build mode has no exported state.",
-    GameBinding.BUILD_MOVE_DOWN: "Build mode has no exported state.",
-    GameBinding.BUILD_ROTATE_LEFT: "Build mode has no exported state.",
-    GameBinding.BUILD_ROTATE_RIGHT: "Build mode has no exported state.",
-    GameBinding.BUILD_TILT_INCREASE: "Build mode has no exported state.",
-    GameBinding.BUILD_TILT_DECREASE: "Build mode has no exported state.",
-    GameBinding.FLOOR_UP: "The active building floor is not exported.",
-    GameBinding.FLOOR_DOWN: "The active building floor is not exported.",
-    GameBinding.GIZMO_MOVE: "Editor gizmo mode is not exported.",
-    GameBinding.GIZMO_ROTATE: "Editor gizmo mode is not exported.",
-    GameBinding.GIZMO_SCALE: "Editor gizmo mode is not exported.",
-    GameBinding.EDITOR_TOGGLE: "Editor mode is not exported.",
-    GameBinding.EDITOR_DELETE: "Editor mode is not exported.",
-    GameBinding.REBUILD_NAVMESH: "World-data rebuilds have no observable result.",
-    GameBinding.RELOAD_BIOMES: "World-data reloads have no observable result.",
-    GameBinding.TOGGLE_HELP: "The help window is not exported.",
-    GameBinding.TOGGLE_HOLD: "Per-character stance is not exported.",
-    GameBinding.TOGGLE_BLOCK: "Per-character stance is not exported.",
-    GameBinding.TOGGLE_BAR: "Per-character stance is not exported.",
-    GameBinding.TOGGLE_PASSIVE: "Per-character stance is not exported.",
-    GameBinding.TOGGLE_RANGED: "Per-character stance is not exported.",
-    GameBinding.TOGGLE_SNEAK: "Per-character stance is not exported.",
-    GameBinding.TOGGLE_TAUNT: "Per-character stance is not exported.",
-    GameBinding.TOGGLE_FPS_CAMERA: "Camera mode is not exported.",
-    GameBinding.CAMERA_FORWARD: "Camera position is not exported as a condition path.",
-    GameBinding.CAMERA_BACK: "Camera position is not exported as a condition path.",
-    GameBinding.CAMERA_LEFT: "Camera position is not exported as a condition path.",
-    GameBinding.CAMERA_RIGHT: "Camera position is not exported as a condition path.",
-    GameBinding.CAMERA_ROTATE_LEFT: "Camera orientation is not exported.",
-    GameBinding.CAMERA_ROTATE_RIGHT: "Camera orientation is not exported.",
-    GameBinding.CAMERA_TILT_UP: "Camera orientation is not exported.",
-    GameBinding.CAMERA_TILT_DOWN: "Camera orientation is not exported.",
-    GameBinding.CAMERA_ZOOM_IN: "Camera zoom is not exported.",
-    GameBinding.CAMERA_ZOOM_OUT: "Camera zoom is not exported.",
-    GameBinding.FOCUS_CHAR: "Camera position is not exported as a condition path.",
-    GameBinding.HIGHLIGHT: "The highlight overlay is not exported.",
-    GameBinding.CYCLE_RUN_SPEED: "Run-speed mode is not exported.",
-    GameBinding.STOP_MOVEMENT: (
-        "No exported field distinguishes a stopped order from an idle one."
-    ),
-    GameBinding.MEDIC: "Squad job flags are not exported.",
-    GameBinding.RESCUE: "Squad job flags are not exported.",
-    GameBinding.PAUSE: "Time control belongs to PauseAction, which owns its own terminal.",
-    GameBinding.SPEED_1: "Time control belongs to SetSpeedAction, which owns its own terminal.",
-    GameBinding.SPEED_2: "Time control belongs to SetSpeedAction, which owns its own terminal.",
-    GameBinding.SPEED_3: "Time control belongs to SetSpeedAction, which owns its own terminal.",
-    GameBinding.QUICKSAVE: (
-        "Completion is controller-owned through the save directory, not a field."
-    ),
-}
-for _index in range(10):
-    UNWITNESSED_BINDINGS[GameBinding[f"SELECT_GROUP_{_index}"]] = (
-        "Squad group membership is not exported, so a group that is already "
-        "selected cannot be distinguished from one that failed to select."
-    )
 
 
 class ConditionEvaluation(StrictModel):

@@ -1193,8 +1193,6 @@ def test_executor_uses_dispatch_time_completion_without_model_restatement(
     asyncio.run(scenario())
 
 
-
-
 def test_continuous_actions_reach_the_next_planner_outcome_ledger(
     tmp_path: Path,
 ) -> None:
@@ -2920,12 +2918,6 @@ SEMANTIC_CAPABILITIES = (
     "ui.dialogue.target",
     "ui.visible_controls",
 )
-
-
-
-
-
-
 
 
 def test_a_malformed_planner_response_is_retried_not_fatal(tmp_path: Path) -> None:

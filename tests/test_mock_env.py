@@ -45,5 +45,3 @@ def test_mock_set_speed_represents_a_running_playback_state(tmp_path: Path) -> N
         assert transition.observation.telemetry.game.speed_multiplier == 5.0
 
     asyncio.run(scenario())
-
-

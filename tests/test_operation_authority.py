@@ -80,9 +80,6 @@ def _policy(*, allow: bool = True) -> OperationPolicy:
     )
 
 
-
-
-
 def test_capability_and_selection_refusals_remain_distinct() -> None:
     actor = CharacterState(id="actor-1", name="Bark")
     target = NearbyEntity(

@@ -1321,7 +1321,6 @@ def test_the_planner_schema_avoids_keywords_providers_reject() -> None:
         walk(schema)
 
 
-
 def test_runtime_offer_projection_keeps_playback_mechanics_out() -> None:
     for paused in (True, False):
         current = observation().model_copy(
@@ -1479,7 +1478,6 @@ def test_an_unrelated_bad_request_is_not_retried_as_a_schema_problem() -> None:
     rate_limited = Exception("Error code: 429 - schema")
     rate_limited.status_code = 429  # type: ignore[attr-defined]
     assert not _is_schema_refusal(rate_limited)
-
 
 
 def test_somewhere_to_go_survives_the_payload_budget() -> None:

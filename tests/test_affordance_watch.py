@@ -77,7 +77,6 @@ def test_fingerprint_ignores_sequence_but_tracks_selection() -> None:
     assert first.fingerprint() != changed.fingerprint()
 
 
-
 def test_menu_never_offers_what_the_registry_would_refuse() -> None:
     """Enumeration and authorability answer to one owner now.
 
@@ -151,4 +150,3 @@ def test_empty_menu_states_that_absence_is_ambiguous() -> None:
 
     assert "NO AFFORDANCES OFFERED" in body
     assert "never modeled" in body
-

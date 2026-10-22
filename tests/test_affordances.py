@@ -110,10 +110,6 @@ def _observation(
     )
 
 
-
-
-
-
 def test_character_adapter_exposes_one_runtime_chosen_squad_reunion() -> None:
     bark = CharacterState(
         id="entity-bark",
@@ -910,7 +906,6 @@ def test_runtime_wait_offer_exposes_live_safe_bounds() -> None:
     assert "stationary/local gate" in speeds[0].description
 
 
-
 def test_reviewed_first_aid_context_order_uses_the_generic_native_route() -> None:
     healer = CharacterState(id="squad-healer", name="Plant")
     target = WorldTarget(
@@ -948,8 +943,6 @@ def test_reviewed_first_aid_context_order_uses_the_generic_native_route() -> Non
 
     assert offer.semantic == "first_aid"
     assert offer.operation_kind == "perform_context_action"
-
-
 
 
 def test_map_adapter_offers_every_currently_travelable_exact_destination() -> None:

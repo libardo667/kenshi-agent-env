@@ -350,10 +350,6 @@ class TestVisibleControlBinding:
     """Every case here exercised a retired clicking operation."""
 
 
-
-
-
-
 class TestExitCurrentBuildingBinding:
     def test_binds_only_one_selected_character_confirmed_indoors(self) -> None:
         state = observation(
@@ -716,16 +712,6 @@ class TestResourceProductionContracts:
         ambiguous_binding = PRODUCE_RESOURCE_OUTPUT_DEFINITION.bind(action, ambiguous)
         assert not ambiguous_binding.bound
         assert "ambiguous" in ambiguous_binding.reason
-
-
-
-
-
-
-
-
-
-
 
 
 class TestDefinitionPolicy:

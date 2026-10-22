@@ -9,7 +9,8 @@ $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot
 
 foreach ($name in @("KENSHILIB_DIR", "KENSHILIB_DEPS_DIR", "BOOST_INCLUDE_PATH", "BOOST_ROOT")) {
-    if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name, "Process"))) {
+    $processValue = [Environment]::GetEnvironmentVariable($name, "Process")
+    if ([string]::IsNullOrWhiteSpace($processValue) -or -not (Test-Path -LiteralPath $processValue)) {
         $userValue = [Environment]::GetEnvironmentVariable($name, "User")
         if (-not [string]::IsNullOrWhiteSpace($userValue)) {
             [Environment]::SetEnvironmentVariable($name, $userValue, "Process")

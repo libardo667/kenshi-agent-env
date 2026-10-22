@@ -43,8 +43,6 @@ from kenshi_agent.core.telemetry import (
     VisibleUIControl,
     WorldTarget,
     _nearest_first,
-    budgeted_visible_controls,
-    group_controls_by_window,
     normalize_control_label,
 )
 from kenshi_agent.core.world import WorldStateRevision
@@ -397,72 +395,6 @@ def test_nearest_first_treats_unknown_distance_as_farther_than_every_number() ->
         "near",
         "far",
         "unknown",
-    ]
-
-
-def _expected_role_balanced_controls(
-    controls: list[VisibleUIControl],
-    limit: int,
-) -> list[VisibleUIControl]:
-    if limit <= 0:
-        return []
-    roles = list(dict.fromkeys(control.role for control in controls))
-    buckets = {role: [control for control in controls if control.role == role] for role in roles}
-    selected: list[VisibleUIControl] = []
-    for round_index in range(len(controls)):
-        for role in roles:
-            if round_index < len(buckets[role]):
-                selected.append(buckets[role][round_index])
-                if len(selected) == min(limit, len(controls)):
-                    positions = {id(control): index for index, control in enumerate(controls)}
-                    return sorted(selected, key=lambda item: positions[id(item)])
-    return selected
-
-
-def test_visible_control_budget_is_role_balanced_bounded_and_order_preserving() -> None:
-    controls = [
-        _control("button-1", "button"),
-        _control("button-2", "button"),
-        _control("item-1", "item", item_name="Ore"),
-        _control("text-1", "text"),
-        _control("item-2", "item", item_name="Food"),
-        _control("button-3", "button"),
-    ]
-
-    for limit in range(-1, len(controls) + 3):
-        assert budgeted_visible_controls(controls, limit) == (
-            _expected_role_balanced_controls(controls, limit)
-        )
-        assert budgeted_visible_controls([], limit) == []
-
-
-def test_control_groups_preserve_missing_window_identity_and_attach_exact_owner() -> None:
-    entries = [
-        {"exact_label": "Unowned", "role": "button"},
-        {"exact_label": "Empty", "role": "text", "window": ""},
-        {"exact_label": "Stock", "role": "item", "window": "VENDOR"},
-    ]
-    owners = {
-        "vendor": {
-            "belongs_to": "vendor",
-            "seller_id": "entity-vendor",
-        }
-    }
-
-    assert group_controls_by_window(entries, owners) == [
-        {
-            "window": "",
-            "controls": [
-                {"exact_label": "Unowned", "role": "button"},
-                {"exact_label": "Empty", "role": "text"},
-            ],
-        },
-        {
-            "window": "VENDOR",
-            "belongs_to": "vendor",
-            "seller_id": "entity-vendor",
-            "controls": [{"exact_label": "Stock", "role": "item"}],
-        },
     ]
 
 

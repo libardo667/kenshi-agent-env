@@ -18,10 +18,6 @@ from typing import Literal, Protocol
 from ... import native_commands
 from ...config import CaptureConfig, ControlsConfig, RuntimeConfig
 from ...control.base import InputController, PrimitiveInputAction
-from ...control.calibration import (
-    evaluate_calibration_identity,
-    validate_expected_client_size,
-)
 from ...control.capture import CapturedFrame
 from ...core.authority import InputBoundaryDecision
 from ...core.evidence import SemanticActionReceipt
@@ -35,7 +31,6 @@ from ...core.operation import (
     KeyAction,
     OpenTradeWindowAction,
     PauseAction,
-    PointerActionClass,
     SelectDialogueOptionAction,
     SetSpeedAction,
     TransferItemAction,
@@ -53,7 +48,6 @@ from ...core.telemetry import (
 )
 from ...core.transport import (
     ActionReceipt,
-    CalibrationReport,
     CommandDispatchContext,
     NativeCommandRequest,
     Transition,
@@ -87,9 +81,6 @@ class LiveExternalPort(Protocol):
     capture_config: CaptureConfig
     execute_actions: bool
     emergency_stop_key: str
-    quicksave_dir: Path | None
-    quicksave_stable_seconds: float
-    quicksave_timeout_seconds: float
     run_id: str
     run_dir: Path
     control_mode: ControlMode
@@ -235,26 +226,6 @@ class KenshiControlSurface:
     @property
     def last_observation(self) -> Observation | None:
         return self._port._last_observation
-
-    def calibration_report(self, pointer_class: PointerActionClass) -> CalibrationReport:
-        return evaluate_calibration_identity(
-            action_class=pointer_class,
-            expected=self.controls_config.expected_calibration_identity(),
-            observed=self.controller.observed_calibration_identity(),
-        )
-
-    def _raise_for_calibration(self, report: CalibrationReport) -> None:
-        if report.observed is not None and (
-            "client_width" in report.mismatched_fields
-            or "client_height" in report.mismatched_fields
-        ):
-            validate_expected_client_size(
-                report.observed.client_width or 0,
-                report.observed.client_height or 0,
-                expected_width=self.controls_config.calibrated_client_width,
-                expected_height=self.controls_config.calibrated_client_height,
-            )
-        raise RuntimeError(f"No pointer input was sent. {report.reason}")
 
     async def run_exact(
         self,
