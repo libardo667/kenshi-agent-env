@@ -510,60 +510,6 @@ def test_control_label_normalization_has_one_space_between_casefolded_words(
     assert normalize_control_label(raw) == normalized
 
 
-def test_open_windows_ignore_empty_captions_and_preserve_first_appearance() -> None:
-    observation = _rich_observation(item_control_count=0)
-    assert observation.telemetry is not None
-    observation.telemetry.ui.visible_controls = [
-        _control("empty", "text"),
-        _control("first", "button", window="First"),
-        _control("first-again", "text", window="First"),
-        _control("second", "button", window="Second"),
-    ]
-
-    assert observation.open_window_captions() == ["First", "Second"]
-
-
-def test_window_ownership_requires_positive_vendor_evidence_and_roster_wins() -> None:
-    observation = _rich_observation(item_control_count=0)
-    assert observation.telemetry is not None
-    observation.telemetry.nearby_entities = [
-        NearbyEntity(
-            id="not-owner",
-            name="Unowned",
-            shop_inventory_owner=False,
-        ),
-        NearbyEntity(
-            id="vendor",
-            name="Shared",
-            shop_inventory_owner=True,
-        ),
-    ]
-    observation.telemetry.primary_character_id = None
-    observation.telemetry.selected_character_ids = []
-    observation.telemetry.roster = [
-        CharacterState(id="player", name="Shared"),
-    ]
-
-    assert observation.window_owners() == {
-        "shared": {"belongs_to": "you", "owner_id": "player"},
-    }
-
-
-def test_duplicate_roster_window_names_fail_closed() -> None:
-    observation = _rich_observation(item_control_count=0)
-    assert observation.telemetry is not None
-    observation.telemetry.primary_character_id = None
-    observation.telemetry.selected_character_ids = []
-    observation.telemetry.roster = [
-        CharacterState(id="first", name="Shared"),
-        CharacterState(id="second", name="shared"),
-    ]
-
-    assert observation.window_owners()["shared"] == {
-        "belongs_to": "ambiguous",
-    }
-
-
 def test_dialogue_digest_conserves_every_exact_target_field() -> None:
     observation = _rich_observation(item_control_count=0)
 
@@ -657,63 +603,6 @@ def test_context_target_digest_is_sorted_attemptable_and_bounded() -> None:
         }
         for target in expected_targets
     ]
-
-
-def test_visible_control_digest_preserves_item_metadata_and_button_ambiguity() -> None:
-    observation = _rich_observation(item_control_count=0)
-    assert observation.telemetry is not None
-    observation.telemetry.ui.visible_controls = [
-        _control(
-            "cell 1",
-            "item",
-            window="Stock",
-            item_name="Copper",
-            item_base_value=123,
-            item_quantity=4,
-            selected_inventory_accepts_item=False,
-            section="backpack",
-        ),
-        _control("Same", "button", window="Choice"),
-        _control("Same", "button", window="Choice"),
-    ]
-
-    assert observation.visible_control_digest() == [
-        {
-            "exact_label": "cell 1",
-            "role": "item",
-            "window": "Stock",
-            "ambiguous": False,
-            "item_name": "Copper",
-            "buy_price": 123,
-            "sell_price": None,
-            "item_quantity": 4,
-            "selected_inventory_accepts_item": False,
-            "section": "backpack",
-        },
-        {
-            "exact_label": "Same",
-            "role": "button",
-            "window": "Choice",
-            "ambiguous": True,
-        },
-        {
-            "exact_label": "Same",
-            "role": "button",
-            "window": "Choice",
-            "ambiguous": True,
-        },
-    ]
-
-
-def test_visible_control_digest_keeps_unnamed_item_cells_distinct() -> None:
-    observation = _rich_observation(item_control_count=0)
-    assert observation.telemetry is not None
-    observation.telemetry.ui.visible_controls = [
-        _control("cell", "item", window="Stock"),
-        _control("cell", "item", window="Stock"),
-    ]
-
-    assert [entry["ambiguous"] for entry in observation.visible_control_digest()] == [True, True]
 
 
 def test_affordance_digest_is_plain_json_without_runtime_mechanics() -> None:

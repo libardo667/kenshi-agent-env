@@ -128,6 +128,61 @@ class OutcomeRecorder:
             if entity.is_confirmed_vendor()
         }
 
+    @staticmethod
+    def _open_inventories_digest(
+        snapshot: TelemetrySnapshot,
+    ) -> list[tuple[object, ...]]:
+        return [
+            (
+                inventory.owner_id,
+                inventory.money,
+                tuple(
+                    (
+                        section.name,
+                        tuple(
+                            (item.item_name, item.item_quantity, item.x, item.y)
+                            for item in section.items
+                        ),
+                    )
+                    for section in inventory.sections
+                ),
+            )
+            for inventory in snapshot.ui.open_inventories
+        ]
+
+    @staticmethod
+    def _character_inventory_digest(
+        character: CharacterState,
+    ) -> list[tuple[str, int, str | None, bool | None]]:
+        return [
+            (item.name, item.quantity, item.section, item.equipped)
+            for item in character.inventory
+        ]
+
+    @staticmethod
+    def _character_work_digest(
+        character: CharacterState,
+    ) -> dict[str, object] | None:
+        if character.work is None:
+            return None
+        return character.work.model_dump(mode="json")
+
+    @staticmethod
+    def _resource_targets_digest(
+        snapshot: TelemetrySnapshot,
+    ) -> dict[str, tuple[tuple[str, ...], tuple[tuple[str, int], ...]]]:
+        return {
+            target.id: (
+                tuple(target.current_operator_ids),
+                tuple(
+                    (item.name, item.quantity)
+                    for item in target.output_inventory
+                ),
+            )
+            for target in snapshot.world_targets
+            if target.kind == "natural_resource"
+        }
+
     @classmethod
     def _assess_outcome(
         cls,
@@ -157,7 +212,6 @@ class OutcomeRecorder:
                 "The action has no causally later validated world revision. "
                 "Do not treat raw or pre-command state as progress.",
             )
-
 
         if mechanical_only:
             # The screenshot cannot outvote this: walking repaints the frame
@@ -254,7 +308,7 @@ class OutcomeRecorder:
             started_after_revision=receipt.started_after_revision,
             completed_at_revision=receipt.completed_at_revision,
             visual_change_fraction=visual_change,
-            telemetry_changes=[change.label for change in telemetry_changes],
+            telemetry_changes=[change.label for change in telemetry_changes][:30],
             selected_character_name=(
                 selected_after.name
                 if selected_after is not None
@@ -430,9 +484,32 @@ class OutcomeRecorder:
         changed("location", before.game.location_name, after.game.location_name)
         changed("active screen", before.ui.active_screen, after.ui.active_screen)
         changed("modal open", before.ui.modal_open, after.ui.modal_open)
+        changed(
+            "character editor open",
+            before.ui.character_editor_open,
+            after.ui.character_editor_open,
+        )
         changed("dialogue open", before.ui.dialogue_open, after.ui.dialogue_open)
         changed("dialogue options", before.ui.dialogue_options, after.ui.dialogue_options)
         changed("context menu open", before.ui.context_menu_open, after.ui.context_menu_open)
+        changed(
+            "open inventory windows",
+            before.ui.open_inventory_windows,
+            after.ui.open_inventory_windows,
+        )
+        if cls._open_inventories_digest(before) != cls._open_inventories_digest(after):
+            changes.append(
+                TelemetryChange(
+                    "open inventories: "
+                    f"{len(before.ui.open_inventories)} -> {len(after.ui.open_inventories)}"
+                )
+            )
+        if before.prospect_survey != after.prospect_survey and after.prospect_survey is not None:
+            changes.append(
+                TelemetryChange(
+                    f"prospect survey: {len(after.prospect_survey.readings)} reading(s)"
+                )
+            )
         changed(
             "selected character",
             before.primary_character_id,
@@ -443,6 +520,10 @@ class OutcomeRecorder:
             sorted(before.selected_character_ids),
             sorted(after.selected_character_ids),
         )
+        if [c.id for c in before.roster] != [c.id for c in after.roster]:
+            changes.append(
+                TelemetryChange(f"roster size: {len(before.roster)} -> {len(after.roster)}")
+            )
 
         selected_before = cls._selected_character(before)
         selected_after = cls._selected_character(after)
@@ -452,6 +533,19 @@ class OutcomeRecorder:
             changed("alive", selected_before.alive, selected_after.alive)
             changed("conscious", selected_before.conscious, selected_after.conscious)
             changed("in combat", selected_before.in_combat, selected_after.in_combat)
+            if cls._character_inventory_digest(selected_before) != cls._character_inventory_digest(
+                selected_after
+            ):
+                changes.append(
+                    TelemetryChange(
+                        f"inventory items: {len(selected_before.inventory)} -> "
+                        f"{len(selected_after.inventory)}"
+                    )
+                )
+            if cls._character_work_digest(selected_before) != cls._character_work_digest(
+                selected_after
+            ):
+                changes.append(TelemetryChange("selected work state changed"))
             reserve_change = nutrition_reserve_change(
                 selected_before.hunger,
                 selected_after.hunger,
@@ -478,6 +572,9 @@ class OutcomeRecorder:
                             decision_relevant=False,
                         )
                     )
+
+        if cls._resource_targets_digest(before) != cls._resource_targets_digest(after):
+            changes.append(TelemetryChange("natural resource state changed"))
 
         visible_before = {
             entity.name for entity in before.nearby_entities if entity.visible is True
@@ -606,12 +703,6 @@ class OutcomeRecorder:
             )
             if selected is not None:
                 return selected
-        # Without an exported primary, only an unambiguous selection can stand
-        # in for one. The old fallback returned the first `selected` character
-        # of several - which is roster order, not Kenshi's primary - and then,
-        # if none were selected at all, `roster[0]`, who need not be selected in
-        # any sense. Facts about "the selected character" were answered about
-        # somebody else and reported as true.
         selected_members = snapshot.selected_characters()
         if len(selected_members) == 1:
             return selected_members[0]

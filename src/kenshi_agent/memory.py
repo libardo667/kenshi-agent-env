@@ -388,7 +388,6 @@ def _row_float(row: sqlite3.Row, column: str) -> float:
     return float(value)
 
 
-
 def _row_text(row: sqlite3.Row, column: str) -> str:
     value = _row_value(row, column)
     if not isinstance(value, str):

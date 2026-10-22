@@ -14,8 +14,6 @@ from pydantic import BaseModel
 from ..affordances import (
     AffordanceChoiceError,
     enumerate_affordance_set,
-    offered_affordances,
-    selection_for,
 )
 from ..config import PlannerConfig, PlanningConfig
 from ..core.observation import Observation
@@ -123,15 +121,6 @@ def _contains_screenshot(value: object) -> bool:
     if value.get("type") == "image_url":
         return True
     return any(_contains_screenshot(item) for item in value.values())
-
-
-def _observe_selection(observation: Observation) -> dict[str, Any]:
-    offer = next(
-        offer
-        for offer in offered_affordances(observation)
-        if offer.semantic == "observe"
-    )
-    return selection_for(offer).model_dump(mode="json")
 
 
 def _sum_optional(
@@ -353,9 +342,6 @@ class OpenRouterPlanner(Planner):
                 }
             )
 
-        # Generation limits belong to the request actually sent, not only the
-        # local config. Reasoning is added to OpenRouter's provider-neutral
-        # `reasoning` object in `_request`; `none` omits it entirely.
         extra: dict[str, Any] = {}
         extra["max_tokens"] = output_token_budget(
             self.config,
@@ -411,10 +397,6 @@ class OpenRouterPlanner(Planner):
                     if not _is_schema_refusal(exc):
                         raise
                     schema_refusal_count += 1
-                    # Some providers cap how large a schema they will compile
-                    # into a decoding grammar, and this catalog is over the cap.
-                    # Asking in the prompt still gets a conforming answer, and
-                    # the reply is validated against the model either way.
                     schema_prompt_fallbacks.add(schema_surface)
                     response = await self._request(
                         messages,
@@ -483,6 +465,12 @@ class OpenRouterPlanner(Planner):
             "planning",
             PlanningConfig(),
         )
+        if observation.active_plan is not None:
+            raise ValueError(
+                "Hosted planning cannot pre-bind a future affordance while a "
+                "plan is active; observe again after the current affordance "
+                "completes."
+            )
         try:
             document = json.loads(_json_body(combined_response))
             compiled = compile_hosted_plan_proposal(
@@ -501,40 +489,22 @@ class OpenRouterPlanner(Planner):
                     ),
                 )
         except ValueError as exc:
-            # A choice that is no longer offered is the planner picking from a
-            # menu that has moved, not a malformed response - and it is worth
-            # telling it so. Silently substituting an observe turn burned
-            # seventeen consecutive turns on a trade screen whose controls
-            # repaint constantly: the run looked like a noop loop from outside,
-            # and the only record was `proposal_fallback_reason` in the bundle.
-            #
-            # Raising instead engages the coordinator's replan-with-feedback
-            # path, which is bounded by max_consecutive_replans and the
-            # identical-failure limit, so a genuinely stuck run stops and says
-            # why rather than idling until its step ceiling.
-            if isinstance(exc, AffordanceChoiceError):
-                self._last_call_diagnostics = replace(
-                    diagnostics,
-                    proposal_fallback_reason=str(exc)[:1000],
-                )
-                raise HostedPlannerStaleChoiceError(diagnostics, detail=str(exc)) from exc
-            output = compile_hosted_plan_proposal(
-                {
-                    "objective": "Regain a fresh planning turn after an unusable proposal.",
-                    "steps": [
-                        {
-                            "selection": _observe_selection(observation),
-                        }
-                    ],
-                },
-                observation=observation,
-                context_id=prepared.context.manifest.context_id,
-                planning=planning,
-            ).output
-            self._last_call_diagnostics = replace(
+            updated_diagnostics = replace(
                 diagnostics,
                 proposal_fallback_reason=str(exc)[:1000],
             )
+            self._last_call_diagnostics = updated_diagnostics
+            if isinstance(exc, AffordanceChoiceError):
+                raise HostedPlannerStaleChoiceError(
+                    updated_diagnostics,
+                    detail=str(exc),
+                ) from exc
+            raise HostedPlannerResponseError(
+                "malformed_structured_output",
+                updated_diagnostics,
+                detail=str(exc),
+                response_excerpt=combined_response,
+            ) from exc
         return output
 
     async def _request(
@@ -553,8 +523,6 @@ class OpenRouterPlanner(Planner):
         schema = json.dumps(response_format["json_schema"]["schema"])
         kwargs: dict[str, Any] = {}
         if constrained:
-            # Sending the model class instead would let the SDK build a schema
-            # only OpenAI accepts; every other provider 400s on it.
             kwargs["response_format"] = response_format
         elif not continuation:
             messages = [

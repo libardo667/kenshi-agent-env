@@ -10,8 +10,8 @@ Regenerate with `python scripts/export_docs.py`.
 
 ```text
 modeled rows   33
-implemented    28
-unimplemented   5
+implemented    29
+unimplemented   4
 stranding   0  (missing exits)
 on pixels   0  (covered, but fragile)
 
@@ -26,8 +26,7 @@ WORLD
 DIALOGUE
   ok  enter     Open a conversation with a specific observed person.  [native: approach_dialogue_target]
   ok  navigate  Read the available replies.  [native: telemetry.ui.dialogue.options]
-  GAP interact  Choose one exact reply.  [none: -]
-        -> The retired visible-control click has no native replacement yet.
+  ok  interact  Choose one exact reply.  [native: select_dialogue_option]
   ok  exit      Leave the conversation.  [native: close_active_interface]
 
 INVENTORY
@@ -44,7 +43,7 @@ TRADE
 
 PROSPECTING
   ok  enter     Read the local resource field without leaving its source window open.  [native: survey_local_resources]
-  ok  navigate  Read the exact published resource rows.  [native: telemetry.resource_survey.readings]
+  ok  navigate  Read the exact published resource rows.  [native: telemetry.prospect_survey.readings]
   ok  exit      Return to the prior interface as part of the survey transaction.  [native: survey_local_resources / close_active_interface]
 
 CHARACTER_STATS

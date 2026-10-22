@@ -73,6 +73,7 @@ class ReplayOperationPort:
     select_dialogue_option = _execute
     select_squad_member_exact = _execute
     set_speed = _execute
+    shift_into_body = _execute
     travel_to_map_destination = _execute
     transfer_item = _execute
     open_trade_window = _execute

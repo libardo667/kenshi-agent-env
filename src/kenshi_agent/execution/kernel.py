@@ -54,7 +54,6 @@ from .types import (
 _GENERIC_NO_TRANSITION = "World-command handler returned no causal transition."
 
 
-
 def _authored_recipient_kwargs(bound: BoundOperation) -> dict[str, Any]:
     """Carry the authored recipient basis into the dispatch context.
 

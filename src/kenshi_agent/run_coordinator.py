@@ -139,7 +139,6 @@ class _RunSession:
     observation_pump: ObservationPump | None
 
 
-
 def _character_work_at_exit(observation: Observation | None) -> dict[str, object]:
     """Separately report Kenshi's retained channels and current activity."""
 

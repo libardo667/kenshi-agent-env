@@ -21,17 +21,14 @@ from .continuity import (
     FieldbookOperation,
 )
 from .operation import (
-    MANAGEMENT_TAB_INDICES,
     Action,
     ControlMode,
     GameBinding,
-    GameScreen,
     IdempotencyPolicy,
     InterruptPolicy,
     ObservationPolicy,
     UnmonitoredRuntimeAction,
 )
-from .telemetry import TelemetrySnapshot
 from .world import WorldStateRevision
 
 
@@ -435,194 +432,6 @@ for _index in range(10):
     UNWITNESSED_BINDINGS[GameBinding[f"SELECT_GROUP_{_index}"]] = (
         "Squad group membership is not exported, so a group that is already "
         "selected cannot be distinguished from one that failed to select."
-    )
-
-
-def _binding_terminal_value(
-    telemetry: TelemetrySnapshot,
-    path: FieldConditionPath,
-) -> ConditionScalar:
-    """Read exactly the fields a binding terminal may watch.
-
-    Deliberately narrow rather than reusing the planner's full path map, which
-    lives in `planning` and cannot be imported here. A terminal naming a path
-    this cannot read returns None and is caught by a test rather than silently
-    producing no condition.
-    """
-
-    if path is FieldConditionPath.TELEMETRY_IDENTITY_SESSION_ID:
-        return telemetry.identity_session_id
-    if path is FieldConditionPath.TELEMETRY_UI_OPEN_INVENTORY_WINDOWS:
-        return telemetry.ui.open_inventory_windows
-    if path is FieldConditionPath.TELEMETRY_UI_STATS_WINDOW_OPEN:
-        return telemetry.ui.stats_window_open
-    if path is FieldConditionPath.TELEMETRY_UI_MANAGEMENT_TAB:
-        return telemetry.ui.management_tab
-    if path is FieldConditionPath.TELEMETRY_UI_SELECTED_CHARACTER_ID:
-        return telemetry.primary_character_id
-    if path is FieldConditionPath.TELEMETRY_SELECTED_CHARACTER_COUNT:
-        return len(telemetry.selected_character_ids)
-    return None
-
-
-def game_binding_success_condition(
-    binding: GameBinding,
-    telemetry: TelemetrySnapshot | None,
-) -> Condition | None:
-    """Describe the exact observable state one reversible binding must change.
-
-    Derived from `GAME_BINDING_TERMINALS` rather than written per binding, so a
-    newly wired binding inherits a condition instead of landing unusable. Four
-    of sixty-eight had one when this was a chain of branches.
-    """
-
-    if telemetry is None:
-        return None
-    terminal = GAME_BINDING_TERMINALS.get(binding)
-    if terminal is None:
-        return None
-    for capability in terminal.required_capabilities:
-        if capability not in telemetry.capabilities:
-            return None
-    current = _binding_terminal_value(telemetry, terminal.path)
-    if current is None:
-        return None
-    if binding is GameBinding.SELECT_ALL:
-        return Condition(
-            kind=ConditionKind.FIELD,
-            path=terminal.path,
-            operator=ConditionOperator.EQUALS,
-            expected=len(telemetry.roster),
-            max_age_seconds=3.0,
-            required_capabilities=list(terminal.required_capabilities),
-        )
-    if terminal.witness is BindingWitness.TOGGLED:
-        if not isinstance(current, bool):
-            return None
-        return Condition(
-            kind=ConditionKind.FIELD,
-            path=terminal.path,
-            operator=ConditionOperator.EQUALS,
-            expected=not current,
-            max_age_seconds=3.0,
-            required_capabilities=list(terminal.required_capabilities),
-        )
-    return Condition(
-        kind=ConditionKind.FIELD,
-        path=terminal.path,
-        operator=ConditionOperator.NOT_EQUALS,
-        expected=current,
-        max_age_seconds=3.0,
-        required_capabilities=list(terminal.required_capabilities),
-    )
-
-
-SCREEN_BINDINGS: dict[GameScreen, GameBinding] = {
-    GameScreen.INVENTORY: GameBinding.TOGGLE_INVENTORY,
-    GameScreen.STATS: GameBinding.TOGGLE_STATS,
-    GameScreen.MAP: GameBinding.TOGGLE_MAP,
-    GameScreen.RESEARCH: GameBinding.TOGGLE_RESEARCH,
-    GameScreen.CRAFTING: GameBinding.TOGGLE_CRAFTING,
-}
-
-
-def screen_is_open(screen: GameScreen, telemetry: TelemetrySnapshot | None) -> bool | None:
-    """Whether the exact named screen is up, or None when it cannot be read.
-
-    The distinction matters more than it looks: pressing a toggle to "open" a
-    screen that is already open closes it, so an agent that wanted the inventory
-    and pressed I twice ends with no inventory and a receipt saying something
-    changed both times.
-    """
-
-    if telemetry is None:
-        return None
-    if screen is GameScreen.INVENTORY:
-        windows = telemetry.ui.open_inventory_windows
-        return None if windows is None else windows > 0
-    if screen is GameScreen.STATS:
-        return telemetry.ui.stats_window_open
-    tab = telemetry.ui.management_tab
-    if tab is None:
-        return None
-    return tab == MANAGEMENT_TAB_INDICES[screen]
-
-
-def open_screen_success_condition(
-    screen: GameScreen,
-    telemetry: TelemetrySnapshot | None,
-) -> Condition | None:
-    """The exact observation proving this screen, not merely some screen, is up."""
-
-    if telemetry is None:
-        return None
-    if screen is GameScreen.INVENTORY:
-        if telemetry.ui.open_inventory_windows is None:
-            return None
-        return Condition(
-            kind=ConditionKind.FIELD,
-            path=FieldConditionPath.TELEMETRY_UI_OPEN_INVENTORY_WINDOWS,
-            operator=ConditionOperator.GREATER_THAN,
-            expected=0,
-            max_age_seconds=3.0,
-        )
-    if screen is GameScreen.STATS:
-        if telemetry.ui.stats_window_open is None:
-            return None
-        return Condition(
-            kind=ConditionKind.FIELD,
-            path=FieldConditionPath.TELEMETRY_UI_STATS_WINDOW_OPEN,
-            operator=ConditionOperator.EQUALS,
-            expected=True,
-            max_age_seconds=3.0,
-        )
-    if telemetry.ui.management_tab is None:
-        return None
-    return Condition(
-        kind=ConditionKind.FIELD,
-        path=FieldConditionPath.TELEMETRY_UI_MANAGEMENT_TAB,
-        operator=ConditionOperator.EQUALS,
-        expected=MANAGEMENT_TAB_INDICES[screen],
-        max_age_seconds=3.0,
-    )
-
-
-def close_screen_success_condition(
-    screen: GameScreen,
-    telemetry: TelemetrySnapshot | None,
-) -> Condition | None:
-    """The exact observation proving one named screen is no longer open."""
-
-    if telemetry is None:
-        return None
-    if screen is GameScreen.INVENTORY:
-        if telemetry.ui.open_inventory_windows is None:
-            return None
-        return Condition(
-            kind=ConditionKind.FIELD,
-            path=FieldConditionPath.TELEMETRY_UI_OPEN_INVENTORY_WINDOWS,
-            operator=ConditionOperator.EQUALS,
-            expected=0,
-            max_age_seconds=3.0,
-        )
-    if screen is GameScreen.STATS:
-        if telemetry.ui.stats_window_open is None:
-            return None
-        return Condition(
-            kind=ConditionKind.FIELD,
-            path=FieldConditionPath.TELEMETRY_UI_STATS_WINDOW_OPEN,
-            operator=ConditionOperator.EQUALS,
-            expected=False,
-            max_age_seconds=3.0,
-        )
-    if telemetry.ui.management_tab is None:
-        return None
-    return Condition(
-        kind=ConditionKind.FIELD,
-        path=FieldConditionPath.TELEMETRY_UI_MANAGEMENT_TAB,
-        operator=ConditionOperator.NOT_EQUALS,
-        expected=MANAGEMENT_TAB_INDICES[screen],
-        max_age_seconds=3.0,
     )
 
 

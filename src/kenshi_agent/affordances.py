@@ -1022,7 +1022,6 @@ def _dialogue_target_offers(observation: Observation) -> Iterable[AffordanceOffe
         )
 
 
-
 def _character_offers(observation: Observation) -> Iterable[AffordanceOffer]:
     telemetry = observation.telemetry
     if telemetry is None:

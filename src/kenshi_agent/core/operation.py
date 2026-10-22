@@ -305,18 +305,6 @@ MANAGEMENT_TAB_INDICES: dict[GameScreen, int] = {
 MANAGEMENT_TAB_CLOSED = -1
 
 
-# `use_game_binding` makes the planner name a mechanism when what it has is an
-# intent: "I need the inventory" became `toggle_inventory` plus a hand-authored
-# causal condition proving it opened. Verifying that pressing I opened the
-# inventory is a mechanical fact about Kenshi, not a strategic choice, and the
-# controller owns mechanical facts.
-#
-# This also promises the screen is *open*, which a toggle cannot: pressing the
-# binding when the screen is already up closes it, so an agent that wanted the
-# inventory and pressed I twice ends with no inventory and a receipt saying
-# something changed both times.
-
-
 class ProduceResourceOutputAction(StrictModel):
     """Internal production phase retained until a bounded output yield exists."""
 

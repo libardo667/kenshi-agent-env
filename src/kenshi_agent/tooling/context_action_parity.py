@@ -86,20 +86,23 @@ class ContextActionCoverage:
 # from TaskType.h.
 CONTEXT_ACTION_DECISIONS: dict[tuple[str, int], ContextActionDecision] = {
     ("natural_resource", 26): WiredContextAction(
-        adapter_routes=("native_and_composite:harvest",),
+        adapter_routes=(
+            "trade_windows:open_trade_window",
+            "item_transfers:transfer_item",
+        ),
         rationale=(
-            "the composite adapter opens the exact resource inventory and "
-            "conserves the output transfer as runtime-owned phases"
+            "paired inventory windows and native inventory-model transfer "
+            "conserve the resource output transfer"
         ),
     ),
     ("natural_resource", 87): WiredContextAction(
         adapter_routes=(
             "context_orders:operate",
-            "native_and_composite:harvest",
+            "native_and_composite:produce_resource_output",
         ),
         rationale=(
-            "the context adapter owns exact task acceptance and the composite "
-            "adapter owns production through conserved output"
+            "the context adapter owns exact task acceptance and the resource "
+            "production adapter owns production through conserved output"
         ),
     ),
     ("squad_character", 25): WiredContextAction(

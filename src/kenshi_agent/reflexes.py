@@ -2,10 +2,38 @@ from __future__ import annotations
 
 from .core.observation import Observation
 from .core.operation import (
+    ControlMode,
     PauseAction,
     StopAction,
 )
 from .core.planning import PlannerDecision
+from .core.telemetry import Disposition
+
+
+def _can_shift_into_nearby_body(observation: Observation) -> bool:
+    """Whether total-party-loss recovery via `shift_into_body` is reachable."""
+
+    telemetry = observation.telemetry
+    if (
+        telemetry is None
+        or observation.telemetry_stale
+        or observation.control_mode != ControlMode.NATIVE_ASSISTED
+    ):
+        return False
+    required = {
+        "control.shift_into_body",
+        "identity.stable_handles",
+        "nearby.characters",
+    }
+    if not required.issubset(telemetry.capabilities):
+        return False
+    return any(
+        bool(entity.id and entity.name)
+        and entity.is_animal is not True
+        and entity.conscious is True
+        and entity.disposition != Disposition.HOSTILE
+        for entity in telemetry.nearby_entities
+    )
 
 
 class ReflexEngine:
@@ -39,7 +67,11 @@ class ReflexEngine:
         if telemetry is None:
             return None
         squad = telemetry.roster
-        if squad and all(member.alive is False for member in squad):
+        if (
+            squad
+            and all(member.alive is False for member in squad)
+            and not _can_shift_into_nearby_body(observation)
+        ):
             return PlannerDecision(
                 intent="End the episode.",
                 rationale="Every observed squad member is dead.",

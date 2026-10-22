@@ -743,7 +743,7 @@ def test_openrouter_keeps_gameplay_when_one_proposed_memory_is_invalid() -> None
     assert diagnostics.proposal_sidecar_rejections[0].startswith("continuity_operations[0]:")
 
 
-def test_openrouter_turns_malformed_plan_proposal_into_safe_reobservation() -> None:
+def test_openrouter_rejects_malformed_plan_proposal_with_retry_feedback() -> None:
     class MalformedCompletion:
         async def create(self, **kwargs: Any) -> SimpleNamespace:
             del kwargs
@@ -765,16 +765,15 @@ def test_openrouter_turns_malformed_plan_proposal_into_safe_reobservation() -> N
         chat=SimpleNamespace(completions=MalformedCompletion()),
     )
 
-    result = asyncio.run(planner.decide(observation()))
+    with pytest.raises(HostedPlannerResponseError) as exc_info:
+        asyncio.run(planner.decide(observation()))
 
-    assert isinstance(result, PlanEnvelope)
-    assert result.steps[0].action.kind == "noop"
-    assert result.steps[0].action.reason == "Re-evaluate current evidence."
+    assert exc_info.value.category == "malformed_structured_output"
+    assert "delimiter" in exc_info.value.detail
     diagnostics = planner.take_call_diagnostics()
     assert diagnostics is not None
     assert diagnostics.proposal_fallback_reason is not None
     assert "delimiter" in diagnostics.proposal_fallback_reason
-
 
 def test_openrouter_never_executes_an_unadvertised_action_the_model_emits() -> None:
     """The model cannot smuggle an affordance the observation never offered.

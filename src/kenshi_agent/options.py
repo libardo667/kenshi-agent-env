@@ -372,7 +372,6 @@ class StatefulThreatResponseOption:
         )
 
 
-
 def _required_native_terminal_reasons(action: Action) -> frozenset[str]:
     """The exact native reasons this operation's definition accepts as complete.
 

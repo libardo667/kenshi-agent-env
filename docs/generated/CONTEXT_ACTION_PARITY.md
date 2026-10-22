@@ -18,6 +18,6 @@ unclassified     0
 
 | target kind | Kenshi task | value | captures | semantic route |
 | --- | --- | ---: | ---: | --- |
-| natural_resource | `LOOT_TARGET` | 26 | 4 | wired: native_and_composite:harvest |
-| natural_resource | `OPERATE_MACHINERY` | 87 | 4 | wired: context_orders:operate -> native_and_composite:harvest |
+| natural_resource | `LOOT_TARGET` | 26 | 4 | wired: trade_windows:open_trade_window -> item_transfers:transfer_item |
+| natural_resource | `OPERATE_MACHINERY` | 87 | 4 | wired: context_orders:operate -> native_and_composite:produce_resource_output |
 | squad_character | `FIRST_AID_ORDER` | 25 | 1 | wired: context_orders:first_aid |

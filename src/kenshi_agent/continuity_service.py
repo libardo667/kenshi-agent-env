@@ -118,6 +118,10 @@ class ContinuityService:
         )
         self._pending_memory_search: MemoryReadReceipt | None = None
         self._pending_fieldbook_read: FieldbookReadReceipt | None = None
+        self._cached_recall_key: tuple[int, frozenset[str], str | None, str | None] | None = None
+        self._cached_recall: ObservationRecall | None = None
+        self._cached_fieldbook_key: tuple[int, int, str | None] | None = None
+        self._cached_fieldbook_index: tuple[list[Any], Any] | None = None
 
     # --- state the planner context is allowed to see -----------------------
 
@@ -150,6 +154,10 @@ class ContinuityService:
         self._fieldbook_receipts.clear()
         self._pending_memory_search = None
         self._pending_fieldbook_read = None
+        self._cached_recall_key = None
+        self._cached_recall = None
+        self._cached_fieldbook_key = None
+        self._cached_fieldbook_index = None
 
     def clear_pending_reads(self) -> None:
         """Drop read results once the context that would show them is built."""
@@ -194,6 +202,11 @@ class ContinuityService:
                 payload={"boundary": failure.boundary, "reason": failure.reason},
             )
 
+    def _store_change_token(self) -> int | None:
+        connection = getattr(self._store, "_connection", None)
+        changes = getattr(connection, "total_changes", None)
+        return changes if isinstance(changes, int) else None
+
     def recall(self, observation: Observation) -> ObservationRecall | None:
         """Recall what this observation makes relevant, within the run's budget.
 
@@ -203,11 +216,29 @@ class ContinuityService:
 
         if self._store is None:
             return None
+        target_ids = observation.current_memory_target_ids()
+        change_token = self._store_change_token()
+        cache_key = (
+            (
+                change_token,
+                frozenset(target_ids),
+                self._authority.reads_degraded_reason,
+                self._authority.writes_degraded_reason,
+            )
+            if change_token is not None
+            else None
+        )
+        if (
+            cache_key is not None
+            and cache_key == self._cached_recall_key
+            and self._cached_recall is not None
+        ):
+            return self._cached_recall
         recalled = recall_for_observation(
             self._store,
             self._authority,
             budget=self._recall_budget,
-            target_ids=observation.current_memory_target_ids(),
+            target_ids=target_ids,
         )
         if recalled.failure is not None:
             self._logger.write(
@@ -218,6 +249,9 @@ class ContinuityService:
                     "reason": recalled.failure.reason,
                 },
             )
+        elif cache_key is not None:
+            self._cached_recall_key = cache_key
+            self._cached_recall = recalled
         return recalled
 
     def fieldbook_index(self, observation: Observation) -> tuple[list[Any], Any]:
@@ -225,8 +259,24 @@ class ContinuityService:
 
         if self._store is None or self._authority.reads_degraded_reason is not None:
             return [], None
+        change_token = self._store_change_token()
+        cache_key = (
+            (
+                change_token,
+                self._fieldbook_project_limit,
+                self._authority.reads_degraded_reason,
+            )
+            if change_token is not None
+            else None
+        )
+        if (
+            cache_key is not None
+            and cache_key == self._cached_fieldbook_key
+            and self._cached_fieldbook_index is not None
+        ):
+            return self._cached_fieldbook_index
         try:
-            return (
+            result = (
                 self._store.fieldbook.list_projects(limit=self._fieldbook_project_limit),
                 self._store.fieldbook.active_project_summary(),
             )
@@ -238,6 +288,10 @@ class ContinuityService:
                 payload={"boundary": "automatic_fieldbook_index", "reason": reason},
             )
             return [], None
+        if cache_key is not None:
+            self._cached_fieldbook_key = cache_key
+            self._cached_fieldbook_index = result
+        return result
 
     # --- commits -----------------------------------------------------------
 

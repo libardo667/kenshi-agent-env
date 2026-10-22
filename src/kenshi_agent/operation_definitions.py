@@ -452,12 +452,6 @@ def runtime_control_terminal(
     return None
 
 
-
-
-
-
-
-
 def _world_interface_error(observation: Observation) -> str | None:
     telemetry = observation.telemetry
     if telemetry is None:
@@ -594,8 +588,6 @@ def bind_select_dialogue_option(
         resolved_label=action.option_text,
         source_revision=observation.world_revision,
     )
-
-
 
 
 def bind_approach_dialogue_target(
@@ -988,14 +980,6 @@ def context_action_is_currently_authorable(observation: Observation) -> bool:
     )
 
 
-
-
-
-
-
-
-
-
 def bind_select_squad_member_exact(
     action: Action,
     observation: Observation,
@@ -1060,10 +1044,6 @@ def exact_squad_member_selection_is_currently_authorable(
             for character in telemetry.roster
         )
     )
-
-
-
-
 
 
 def _bind_exact_natural_resource(
@@ -1169,10 +1149,6 @@ def resource_production_is_currently_authorable(observation: Observation) -> boo
     )
 
 
-
-
-
-
 def _observed_inventory_owner(
     target_id: str,
     observation: Observation,
@@ -1202,8 +1178,6 @@ def _observed_inventory_owner(
         if discovered.id == target_id:
             return discovered.name, discovered.category
     return None
-
-
 
 
 def bind_open_trade_window(
@@ -1386,8 +1360,6 @@ def transfer_item_is_currently_authorable(observation: Observation) -> bool:
     if len(inventories) < 2:
         return False
     return any(section.items for inventory in inventories for section in inventory.sections)
-
-
 
 
 def bind_move_in_direction(
@@ -1623,7 +1595,7 @@ def bind_exit_current_building(
     action: Action,
     observation: Observation,
 ) -> BoundNamedOperation | BindingFailure:
-    """Bind a parameter-free exit request to one selected indoor character."""
+    """Bind a parameter-free exit request to the current indoor selection."""
 
     if not isinstance(action, ExitCurrentBuildingAction):
         return _unbound("Action is not an exit_current_building action.")
@@ -1637,26 +1609,24 @@ def bind_exit_current_building(
     if failure := _world_interface_error(observation):
         return _unbound(failure)
     selected = telemetry.selected_characters()
-    if len(selected) != 1:
+    if not selected:
         return _unbound(
-            f"{len(selected)} characters are selected; exactly one must be, so the "
-            "building occupant is unambiguous."
+            "0 characters are selected; at least one indoor character must be selected."
         )
-    character = selected[0]
-    if character.indoors is not True:
-        return _unbound(
-            f"Selected character {character.name!r} is not confirmed inside a building."
-        )
+    for character in selected:
+        if character.indoors is not True:
+            return _unbound(
+                f"Selected character {character.name!r} is not confirmed inside a building."
+            )
+    primary = telemetry.primary_character() or selected[0]
     return BoundNamedOperation(
         reason=(
             f"Bound a controller-owned exit from the selected character "
-            f"{character.name!r}'s current building."
+            f"{primary.name!r}'s current building."
         ),
-        resolved_label=character.name,
+        resolved_label=primary.name,
         source_revision=observation.world_revision,
     )
-
-
 
 
 def bind_respond_to_immediate_threat(
@@ -1689,30 +1659,6 @@ def threat_response_is_currently_authorable(observation: Observation) -> bool:
         strategy=ThreatResponseStrategy.ENGAGE,
     )
     return threat_response_authority_error(probe, observation) is None
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 @dataclass(frozen=True, slots=True)
@@ -2186,18 +2132,6 @@ def operation_identity(
     )
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 def _selected_squad_member(
     action: Action,
     observation: Observation,
@@ -2452,9 +2386,6 @@ APPROACH_DIALOGUE_TARGET_DEFINITION = OperationDefinition(
 )
 
 
-
-
-
 SELECT_SQUAD_MEMBER_EXACT_DEFINITION = OperationDefinition(
     kind="select_squad_member_exact",
     wire_command="select_squad_member",
@@ -2491,8 +2422,6 @@ SELECT_SQUAD_MEMBER_EXACT_DEFINITION = OperationDefinition(
     native_terminal_success_reasons=frozenset({"exact_squad_member_selected"}),
     authorable_when=exact_squad_member_selection_is_currently_authorable,
 )
-
-
 
 
 PERFORM_CONTEXT_ACTION_DEFINITION = OperationDefinition(
@@ -2606,7 +2535,6 @@ PRODUCE_RESOURCE_OUTPUT_DEFINITION = OperationDefinition(
 )
 
 
-
 PERFORM_CHARACTER_ORDER_DEFINITION = OperationDefinition(
     kind="perform_character_order",
     wire_command="perform_character_order",
@@ -2703,7 +2631,6 @@ RESPOND_TO_IMMEDIATE_THREAT_DEFINITION = OperationDefinition(
     controller_verified=True,
     authorable_when=threat_response_is_currently_authorable,
 )
-
 
 
 OPEN_TRADE_WINDOW_DEFINITION = OperationDefinition(
@@ -3280,24 +3207,6 @@ MOVE_TO_CHARACTER_DEFINITION = OperationDefinition(
     handler_key="movement.move_to_character",
     controller_verified=True,
 )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 OPERATION_DEFINITION_LIST: tuple[OperationDefinition, ...] = (

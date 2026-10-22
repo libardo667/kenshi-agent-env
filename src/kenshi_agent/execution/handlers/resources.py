@@ -255,7 +255,6 @@ class KenshiResourceMechanics:
         )
 
 
-
     async def _execute_context_action(
         self,
         action: PerformContextAction,

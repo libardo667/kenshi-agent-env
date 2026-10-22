@@ -7,9 +7,11 @@ from .core.operation import (
     ExitCurrentBuildingAction,
     MoveInDirectionAction,
     MoveToCharacterAction,
+    PerformCharacterOrderAction,
     PerformContextAction,
     ProduceResourceOutputAction,
     RegroupWithSquadMemberAction,
+    SurveyLocalResourcesAction,
     TravelToMapDestinationAction,
 )
 
@@ -23,6 +25,8 @@ def has_keyed_native_movement_terminal(action: Action) -> bool:
         or isinstance(action, RegroupWithSquadMemberAction)
         or isinstance(action, TravelToMapDestinationAction)
         or isinstance(action, ExitCurrentBuildingAction)
+        or isinstance(action, PerformCharacterOrderAction)
         or isinstance(action, PerformContextAction)
         or isinstance(action, ProduceResourceOutputAction)
+        or isinstance(action, SurveyLocalResourcesAction)
     )

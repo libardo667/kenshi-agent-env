@@ -9,7 +9,6 @@ from typing import Literal, TypeAlias
 from pydantic import (
     ConfigDict,
     Field,
-    model_validator,
 )
 
 from .base import StrictModel
@@ -218,68 +217,6 @@ outcome is not the outcome.
 """
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-class QuicksaveStatus(StrEnum):
-    SAVED = "saved"
-    NOT_OBSERVED = "not_observed"
-
-
-def _validate_quicksave_completion(
-    status: QuicksaveStatus,
-    changed_files: int,
-    quick_save_size_bytes: int | None,
-) -> None:
-    """Keep a terminal save verdict coupled to observable filesystem proof."""
-
-    if status is QuicksaveStatus.SAVED and (changed_files < 1 or quick_save_size_bytes is None):
-        raise ValueError("saved quicksave evidence requires a changed tree and nonempty quick.save")
-
-
-class QuicksaveEvidence(StrictModel):
-    """Controller-owned proof that F5 replaced the exact quicksave tree."""
-
-    status: QuicksaveStatus
-    slot: Literal["quicksave"] = "quicksave"
-    changed_files: int = Field(ge=0)
-    quick_save_size_bytes: int | None = Field(default=None, gt=0)
-    quiescent_seconds: float = Field(ge=0.0)
-    reason: str = Field(min_length=1, max_length=1000)
-
-    @model_validator(mode="after")
-    def saved_requires_a_changed_nonempty_quick_save(self) -> QuicksaveEvidence:
-        _validate_quicksave_completion(
-            self.status,
-            self.changed_files,
-            self.quick_save_size_bytes,
-        )
-        return self
-
-
 class SemanticActionReceipt(StrictModel):
     """Causal evidence for one reusable semantic action.
 
@@ -297,4 +234,3 @@ class SemanticActionReceipt(StrictModel):
     source_revision: WorldStateRevision | None = None
     option_id: str | None = Field(default=None, max_length=128)
     revalidation: str = Field(min_length=1, max_length=1000)
-    quicksave: QuicksaveEvidence | None = None

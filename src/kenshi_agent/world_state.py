@@ -332,6 +332,7 @@ class WorldStateStore:
         self._active_command: CommandState | None = None
         self._command_history: deque[CommandState] = deque(maxlen=event_limit)
         self._context_menu_evidence = ContextMenuEvidenceTracker()
+        self._latest_semantic_payload: dict[str, object] = {}
         self._closed = False
 
     @property
@@ -405,6 +406,7 @@ class WorldStateStore:
             deep=True,
         )
         self._latest = decorated
+        self._latest_semantic_payload = self._semantic_payload(decorated)
         if self._history:
             self._history[-1] = decorated.model_copy(deep=True)
         return decorated.model_copy(deep=True)
@@ -951,8 +953,13 @@ class WorldStateStore:
         previous: Observation | None,
         current: Observation,
     ) -> StateDelta:
-        before = self._semantic_payload(previous) if previous is not None else {}
+        before = (
+            self._latest_semantic_payload
+            if previous is self._latest and previous is not None and self._latest_semantic_payload
+            else (self._semantic_payload(previous) if previous is not None else {})
+        )
         after = self._semantic_payload(current)
+        self._latest_semantic_payload = after
         changed = sorted(
             path for path in set(before) | set(after) if before.get(path) != after.get(path)
         )

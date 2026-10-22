@@ -2467,6 +2467,12 @@ namespace
             ownerHandle = selected->getHandle();
             return true;
         }
+        Building* building = FindExactNaturalResource(player, targetId);
+        if (building != NULL && building->isValid())
+        {
+            ownerHandle = building->getHandle();
+            return true;
+        }
 
         if (ou == NULL)
             return false;
@@ -5815,7 +5821,19 @@ namespace
             // simpler economics than Kenshi's -- no haggling, no stolen-goods
             // penalty -- and it is ours to keep honest, which is stated plainly
             // rather than left to be discovered.
-            const bool shopTradeOpen = InventoryGUI::getNPCTrader() != NULL;
+            Character* sourceOwner = source->getCallbackCharacter();
+            Character* destinationOwner = destination->getCallbackCharacter();
+            const bool sourceIsPlayer =
+                sourceOwner != NULL &&
+                sourceOwner->isValid() &&
+                sourceOwner->isPlayerCharacter();
+            const bool destinationIsPlayer =
+                destinationOwner != NULL &&
+                destinationOwner->isValid() &&
+                destinationOwner->isPlayerCharacter();
+            const bool shopTradeOpen =
+                InventoryGUI::getNPCTrader() != NULL &&
+                !(sourceIsPlayer && destinationIsPlayer);
             // How many, chosen by the agent rather than implied by the stack.
             // Zero means the whole stack, which is what this always silently
             // did -- one buy took every Dried Fish the Barman had, and nothing
@@ -5831,11 +5849,6 @@ namespace
             Inventory* payee = NULL;
             if (shopTradeOpen)
             {
-                Character* destinationOwner = destination->getCallbackCharacter();
-                const bool destinationIsPlayer =
-                    destinationOwner != NULL &&
-                    destinationOwner->isValid() &&
-                    destinationOwner->isPlayerCharacter();
                 // Buying is the player receiving; selling is the player giving.
                 // Kenshi asks more to buy than it pays to sell, and those are
                 // two different numbers on the same item.
@@ -5914,7 +5927,13 @@ namespace
             const unsigned int destinationAfter =
                 static_cast<unsigned int>(
                     destinationInventory->getAllItems().size());
-            const bool destinationGained = destinationAfter > destinationBefore;
+            const int destinationHeldAfter =
+                pricedGameData != NULL
+                    ? destinationInventory->getNumItems(pricedGameData)
+                    : 0;
+            const bool destinationGained =
+                destinationAfter > destinationBefore ||
+                destinationHeldAfter > destinationHeldBefore;
             const bool sourceSlotReleased =
                 section->getItemAt(request.slotX, request.slotY) != item;
 
@@ -6240,7 +6259,9 @@ namespace
             g_activeNativeCommand.active = true;
             g_activeNativeCommand.commandId = request.commandId;
             g_activeNativeCommand.targetId = request.targetId;
-            g_activeNativeCommand.selectedCharacterId = request.selectedCharacterId;
+            g_activeNativeCommand.selectedCharacterId = selectedId;
+            g_activeNativeCommand.selectedCharacterIds =
+                request.selectedCharacterIds;
             g_activeNativeCommand.selectedHandle = selectedHandle;
             g_activeNativeCommand.isWalk = true;
             g_activeNativeCommand.hasFixedDestination = true;
@@ -6341,8 +6362,9 @@ namespace
             g_activeNativeCommand.commandId = request.commandId;
             g_activeNativeCommand.targetId.clear();
             g_activeNativeCommand.destinationId.clear();
-            g_activeNativeCommand.selectedCharacterId =
-                request.selectedCharacterId;
+            g_activeNativeCommand.selectedCharacterId = selectedId;
+            g_activeNativeCommand.selectedCharacterIds =
+                request.selectedCharacterIds;
             g_activeNativeCommand.targetHandle = hand();
             g_activeNativeCommand.selectedHandle = selectedHandle;
             g_activeNativeCommand.isWalk = true;

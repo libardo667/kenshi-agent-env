@@ -7,6 +7,7 @@ from math import inf
 from typing import Any
 
 JsonObject = dict[str, Any]
+UndoMutation = Callable[[], None]
 
 _ROOT_COLLECTION_PATHS = (
     "events",
@@ -101,21 +102,21 @@ def budget_observation_payload(
             required_units=required_units,
         )
 
-    def attempt(mutator: Callable[[JsonObject], None]) -> None:
-        nonlocal retained, text
-        candidate = deepcopy(retained)
-        mutator(candidate)
+    def attempt(mutator: Callable[[JsonObject], UndoMutation]) -> None:
+        nonlocal text
+        undo = mutator(retained)
         candidate_text = _serialize_budgeted(
             original,
-            candidate,
+            retained,
             max_chars=max_chars,
             hard_max_chars=hard_max_chars,
             original_chars=original_units,
             measurement=measurement,
         )
         if measure(candidate_text) <= effective_max_chars:
-            retained = candidate
             text = candidate_text
+        else:
+            undo()
 
     telemetry = original.get("telemetry")
     if isinstance(telemetry, dict):
@@ -334,9 +335,6 @@ def irreducible_payload(
         if original["recent_action_outcomes"]
         else []
     )
-    # The most recent plan outcome carries the objective the agent was last
-    # pursuing and why it stopped. Dropping it first would leave the planner
-    # replanning against a purpose it can no longer see.
     retained["recent_plan_outcomes"] = (
         [deepcopy(original["recent_plan_outcomes"][-1])]
         if original["recent_plan_outcomes"]
@@ -450,9 +448,6 @@ def irreducible_payload(
                 ),
                 key=_entity_sort_key,
             ),
-            # The complete, authority-filtered list lives in the top-level
-            # `known_map_destinations` digest. Do not pay for a duplicate raw
-            # telemetry copy in the irreducible envelope.
             "known_map_destinations": [],
             "warnings": [],
         }
@@ -461,13 +456,6 @@ def irreducible_payload(
 
 
 def _decision_critical(memory: JsonObject, current_target_ids: set[str]) -> bool:
-    """Whether dropping this memory could make the next plan unsafe or amnesiac.
-
-    Two kinds survive budgeting: what the agent is currently committed to, and
-    what it knows about an entity in front of it right now. Everything else is
-    context, and context is what a budget is for.
-    """
-
     return (
         memory.get("kind") == "commitment"
         or memory.get("target_id") in current_target_ids
@@ -503,8 +491,6 @@ def _current_memory_target_ids(original: JsonObject) -> set[str]:
 
 
 def _memory_sort_key(memory: JsonObject) -> tuple[float, str, str]:
-    """Rank by what the agent declared and when it was made, never by reads."""
-
     return (
         float(memory["salience"]),
         str(memory["created_at"]),
@@ -543,17 +529,25 @@ def _serialize_budgeted(
     original_chars: int,
     measurement: str,
 ) -> str:
-    document = deepcopy(retained)
-    document["observation_budget"] = {
+    omitted = _omission_metadata(original, retained)
+    had_budget = "observation_budget" in retained
+    previous_budget = retained.get("observation_budget")
+    retained["observation_budget"] = {
         "truncated": True,
         "strategy": "semantic-v1",
         "target_units": max_chars,
         "hard_max_units": hard_max_chars,
         "original_units": original_chars,
         "measurement": measurement,
-        "omitted": _omission_metadata(original, retained),
+        "omitted": omitted,
     }
-    return _compact_json(document)
+    try:
+        return _compact_json(retained)
+    finally:
+        if had_budget:
+            retained["observation_budget"] = previous_budget
+        else:
+            retained.pop("observation_budget", None)
 
 
 def _omission_metadata(original: JsonObject, retained: JsonObject) -> JsonObject:
@@ -623,45 +617,66 @@ def _get_path(document: JsonObject, path: str) -> Any:
     return current
 
 
-def _set_path(document: JsonObject, path: str, value: Any) -> None:
+def _set_path(document: JsonObject, path: str, value: Any) -> UndoMutation:
     parts = path.split(".")
     current = document
     for part in parts[:-1]:
         current = current[part]
-    current[parts[-1]] = deepcopy(value)
+    leaf = parts[-1]
+    had_previous = leaf in current
+    previous = current.get(leaf)
+    current[leaf] = deepcopy(value)
+
+    def undo() -> None:
+        if had_previous:
+            current[leaf] = previous
+        else:
+            current.pop(leaf, None)
+
+    return undo
 
 
-def _append_path(document: JsonObject, path: str, value: Any) -> None:
+def _append_path(document: JsonObject, path: str, value: Any) -> UndoMutation:
     collection = _get_path(document, path)
     if not isinstance(collection, list):
         raise TypeError(f"{path} is not a retained collection")
     collection.append(deepcopy(value))
 
+    def undo() -> None:
+        collection.pop()
 
-def _prepend_path(document: JsonObject, path: str, value: Any) -> None:
+    return undo
+
+
+def _prepend_path(document: JsonObject, path: str, value: Any) -> UndoMutation:
     collection = _get_path(document, path)
     if not isinstance(collection, list):
         raise TypeError(f"{path} is not a retained collection")
     collection.insert(0, deepcopy(value))
 
+    def undo() -> None:
+        collection.pop(0)
 
-def _set_mutator(path: str, value: Any) -> Callable[[JsonObject], None]:
-    def mutate(candidate: JsonObject) -> None:
-        _set_path(candidate, path, value)
-
-    return mutate
+    return undo
 
 
-def _append_mutator(path: str, value: Any) -> Callable[[JsonObject], None]:
-    def mutate(candidate: JsonObject) -> None:
-        _append_path(candidate, path, value)
+def _set_mutator(path: str, value: Any) -> Callable[[JsonObject], UndoMutation]:
+    def mutate(candidate: JsonObject) -> UndoMutation:
+        return _set_path(candidate, path, value)
 
     return mutate
 
 
-def _prepend_mutator(path: str, value: Any) -> Callable[[JsonObject], None]:
-    def mutate(candidate: JsonObject) -> None:
-        _prepend_path(candidate, path, value)
+def _append_mutator(path: str, value: Any) -> Callable[[JsonObject], UndoMutation]:
+    def mutate(candidate: JsonObject) -> UndoMutation:
+        return _append_path(candidate, path, value)
+
+    return mutate
+
+
+def _prepend_mutator(path: str, value: Any) -> Callable[[JsonObject], UndoMutation]:
+    def mutate(candidate: JsonObject) -> UndoMutation:
+        return _prepend_path(candidate, path, value)
 
     return mutate
 
@@ -677,10 +692,6 @@ def _outcome_target_ids(outcome: JsonObject) -> set[str]:
     return ids
 
 
-# `json.dumps` intentionally treats `ensure_ascii=False` and `None` identically.
-# Exact Unicode, key-order, and separator behavior is asserted at this adapter's
-# boundary; mutating inside the stdlib delegation only manufactures equivalent
-# keyword-value mutants.
 # pragma: no mutate start
 def _canonical_json(value: Any) -> str:
     return json.dumps(

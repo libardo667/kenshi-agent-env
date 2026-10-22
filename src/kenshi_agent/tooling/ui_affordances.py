@@ -154,9 +154,9 @@ AFFORDANCES: tuple[Affordance, ...] = (
         Interface.DIALOGUE,
         Operation.INTERACT,
         "Choose one exact reply.",
-        Mechanism.NONE,
-        "",
-        gap="The retired visible-control click has no native replacement yet.",
+        Mechanism.NATIVE,
+        "select_dialogue_option",
+        native_entry_point="Dialogue::replyClicked",
     ),
     Affordance(
         Interface.DIALOGUE,
@@ -241,7 +241,7 @@ AFFORDANCES: tuple[Affordance, ...] = (
         Operation.NAVIGATE,
         "Read the exact published resource rows.",
         Mechanism.NATIVE,
-        "telemetry.resource_survey.readings",
+        "telemetry.prospect_survey.readings",
     ),
     Affordance(
         Interface.PROSPECTING,
